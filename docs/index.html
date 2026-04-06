@@ -3,20 +3,136 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AEGIS -- Autonomous Defense Platform</title>
-<meta name="description" content="Open-source cybersecurity platform. 11/11 detection score. Sub-18 microsecond pipeline. Honeypot deception. AI-powered autonomous response. Clone, compose, defend.">
-<meta property="og:title" content="AEGIS -- Autonomous Defense Platform">
-<meta property="og:description" content="Detect, analyze, and neutralize threats autonomously. Open source. Production ready.">
+<title>AEGIS — Open Source Autonomous Cybersecurity Defense Platform | SIEM Alternative</title>
+<meta name="description" content="AEGIS is an open-source autonomous cybersecurity platform with 11/11 detection score, 18-microsecond response, AI-powered honeypot deception, and autonomous threat response. Free alternative to CrowdStrike and Wazuh. Docker compose up and defend.">
+<meta name="keywords" content="cybersecurity platform, open source SIEM, autonomous defense, honeypot deception, threat detection, AI security, Wazuh alternative, CrowdStrike alternative, incident response, SOAR, attack surface management, endpoint detection, EDR, sigma rules, MITRE ATT&CK">
+<meta name="author" content="AEGIS Contributors">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://diego1128256-cmd.github.io/AEGIS/">
+<meta property="og:title" content="AEGIS — Open Source Autonomous Cybersecurity Defense Platform">
+<meta property="og:description" content="11/11 detection score. 18μs response. AI honeypot deception. Autonomous threat response. Free and open source. docker compose up and defend.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://diego1128256-cmd.github.io/AEGIS/">
 <meta property="og:image" content="https://diego1128256-cmd.github.io/AEGIS/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:site_name" content="AEGIS Defense">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="AEGIS -- Autonomous Defense Platform">
-<meta name="twitter:description" content="Detect, analyze, and neutralize threats autonomously. Open source. Production ready.">
+<meta name="twitter:title" content="AEGIS — Open Source Autonomous Cybersecurity Platform">
+<meta name="twitter:description" content="11/11 detection. 18μs response. AI honeypots. Autonomous defense. Free. docker compose up.">
 <meta name="twitter:image" content="https://diego1128256-cmd.github.io/AEGIS/og-image.png">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+
+<!-- JSON-LD Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "AEGIS",
+  "alternateName": "AEGIS Defense Platform",
+  "description": "Open-source autonomous cybersecurity defense platform with AI-powered threat detection, honeypot deception, and autonomous incident response.",
+  "url": "https://diego1128256-cmd.github.io/AEGIS/",
+  "applicationCategory": "SecurityApplication",
+  "operatingSystem": "Linux, macOS, Windows",
+  "softwareVersion": "1.1.0",
+  "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+  "isAccessibleForFree": true,
+  "downloadUrl": "https://github.com/diego1128256-cmd/AEGIS",
+  "installUrl": "https://github.com/diego1128256-cmd/AEGIS#5-minute-install",
+  "screenshot": "https://diego1128256-cmd.github.io/AEGIS/og-image.png",
+  "offers": [
+    {
+      "@type": "Offer",
+      "name": "Free",
+      "price": "0",
+      "priceCurrency": "USD",
+      "description": "Full detection pipeline, honeypots, AI triage, Sigma rules, dashboard. Up to 3 nodes."
+    },
+    {
+      "@type": "Offer",
+      "name": "Pro",
+      "price": "29",
+      "priceCurrency": "USD",
+      "billingIncrement": "P1M",
+      "description": "Smart honeypots, quantum entropy analysis, SBOM scanner, advanced reports. Up to 25 nodes."
+    },
+    {
+      "@type": "Offer",
+      "name": "Enterprise",
+      "price": "99",
+      "priceCurrency": "USD",
+      "billingIncrement": "P1M",
+      "description": "Adversarial ML detection, compliance dashboard, SSO, custom Sigma rules. Unlimited nodes."
+    }
+  ],
+  "featureList": [
+    "11/11 detection score verified through live pentesting",
+    "18-microsecond detection pipeline",
+    "122 Sigma correlation rules with chain detection",
+    "AI-powered threat triage with MITRE ATT&CK mapping",
+    "SSH and HTTP honeypot deception with breadcrumb traps",
+    "Smart AI-driven honeypots that imitate real applications",
+    "Autonomous incident response with guardrails",
+    "Multi-tenant isolation with RBAC",
+    "Shared threat intelligence across instances",
+    "Rust endpoint agent for Windows EDR",
+    "Counter-attack AI with attacker profiling"
+  ],
+  "author": {
+    "@type": "Organization",
+    "name": "AEGIS Contributors",
+    "url": "https://github.com/diego1128256-cmd/AEGIS"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is AEGIS?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "AEGIS is an open-source autonomous cybersecurity defense platform that detects, analyzes, and neutralizes threats without human intervention. It features a 5-layer detection pipeline with 18-microsecond response time, 122 Sigma rules, AI-powered triage, honeypot deception, and autonomous incident response."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does AEGIS compare to Wazuh and CrowdStrike?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "AEGIS matches or exceeds Wazuh and CrowdStrike in detection capabilities while being fully open source. It uniquely offers honeypot deception with breadcrumb traps, AI-powered counter-attack analysis, shared community threat intelligence, and an 18-microsecond detection pipeline — all deployable with a single docker compose up command."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I install AEGIS?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Clone the repository, copy .env.example to .env, set your AEGIS_SECRET_KEY, and run docker compose up. Open your browser to localhost:3000 and the setup wizard walks you through creating your organization, configuring AI, discovering assets, and deploying honeypots."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is AEGIS free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. AEGIS is fully open source under AGPL-3.0. The free tier includes the complete detection pipeline, honeypots, AI triage, Sigma rules, counter-attack AI, shared threat intelligence, and dashboard for up to 3 nodes and 25 assets. Pro ($29/mo) and Enterprise ($99/mo) tiers unlock smart honeypots, quantum analysis, compliance dashboards, and higher limits."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the AEGIS detection score?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "AEGIS achieves an 11/11 detection score, verified through live penetration testing. It detects SQL injection, XSS, path traversal, command injection, SSH brute force, port scanning, scanner detection, breadcrumb traps, lateral movement, C2 beacons, and credential stuffing — all with autonomous response."
+      }
+    }
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&display=swap" rel="stylesheet">
@@ -1540,6 +1656,78 @@ nav.scrolled {
 }
 
 /* ================================================================
+   FAQ
+   ================================================================ */
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 48px;
+}
+
+.faq-item {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.faq-item[open] {
+  border-color: var(--border-hover);
+}
+
+.faq-item summary {
+  padding: 20px 24px;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--fg);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  transition: background 0.15s;
+}
+
+.faq-item summary:hover {
+  background: var(--surface-hover);
+}
+
+.faq-item summary::after {
+  content: '+';
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--fg-quaternary);
+  transition: transform 0.2s;
+}
+
+.faq-item[open] summary::after {
+  content: '−';
+  color: var(--cyan);
+}
+
+.faq-item summary::-webkit-details-marker { display: none; }
+
+.faq-item p {
+  padding: 0 24px 20px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--fg-secondary);
+  background: var(--surface);
+}
+
+.faq-item code {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  background: rgba(34, 211, 238, 0.08);
+  color: var(--cyan);
+  border-radius: 4px;
+}
+
+/* ================================================================
    FOOTER -- Clean, minimal
    ================================================================ */
 footer {
@@ -2247,6 +2435,45 @@ footer {
         </ul>
         <a class="price-btn price-btn-outline" href="mailto:alejandxr@icloud.com">Contact Sales</a>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     FAQ (GEO/AI Search Optimization)
+     ================================================================ -->
+<section class="section-pad" id="faq">
+  <div class="wrap-narrow">
+    <div class="reveal">
+      <div class="section-label">FAQ</div>
+      <h2 class="section-title">Common questions</h2>
+    </div>
+
+    <div class="faq-list reveal">
+      <details class="faq-item" open>
+        <summary>What is AEGIS?</summary>
+        <p>AEGIS is an open-source autonomous cybersecurity defense platform that detects, analyzes, and neutralizes threats without human intervention. It features a 5-layer detection pipeline with 18-microsecond response time, 122 Sigma rules, AI-powered triage with MITRE ATT&CK mapping, honeypot deception with breadcrumb traps, and autonomous incident response. Deploy with a single <code>docker compose up</code> command.</p>
+      </details>
+      <details class="faq-item">
+        <summary>How does AEGIS compare to Wazuh and CrowdStrike?</summary>
+        <p>AEGIS matches or exceeds both in detection while being fully open source (AGPL-3.0). Unlike Wazuh, AEGIS includes AI-powered honeypot deception and counter-attack analysis. Unlike CrowdStrike, AEGIS is free, self-hosted, and transparent. AEGIS uniquely offers breadcrumb credential traps, shared community threat intelligence, and an 18-microsecond detection pipeline.</p>
+      </details>
+      <details class="faq-item">
+        <summary>How do I install AEGIS?</summary>
+        <p>Clone the repo, copy <code>.env.example</code> to <code>.env</code>, set your <code>AEGIS_SECRET_KEY</code>, and run <code>docker compose up</code>. Open <code>localhost:3000</code> — the setup wizard walks you through creating your organization, configuring AI, discovering assets, deploying honeypots, and enabling threat intel sharing. No default credentials — you create your admin account.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Is AEGIS free?</summary>
+        <p>Yes. The free tier includes the complete 5-layer detection pipeline, SSH and HTTP honeypots, AI triage, 122 Sigma rules, counter-attack AI, shared threat intelligence, behavioral ML, dashboard with RBAC — for up to 3 nodes and 25 assets. Pro ($29/mo) adds smart AI honeypots, quantum analysis, and SBOM scanning. Enterprise ($99/mo) adds compliance dashboards, SSO, and unlimited nodes.</p>
+      </details>
+      <details class="faq-item">
+        <summary>What attacks does AEGIS detect?</summary>
+        <p>AEGIS has an 11/11 verified detection score: SQL injection, XSS, path traversal, command injection, SSH brute force, port scanning, scanner detection (nmap/sqlmap/nikto), breadcrumb credential theft, lateral movement, C2 beacons (via Renyi entropy analysis), and distributed credential stuffing. Every detection was verified through live penetration testing from Kali Linux.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Does AEGIS require an AI API key?</summary>
+        <p>No. AEGIS works without any AI key using deterministic Sigma rules and playbooks. AI features (triage, classification, counter-attack analysis) activate when you configure an OpenRouter, OpenAI, Anthropic, or Ollama provider. Free AI models are available through OpenRouter. Ollama provides fully local AI with no external API calls.</p>
+      </details>
     </div>
   </div>
 </section>
