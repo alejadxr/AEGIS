@@ -1,0 +1,5 @@
+# Network monitoring dependencies for AEGIS DNS/NDR modules
+# Install with: pip install -r requirements-network.txt
+dnspython>=2.6.0
+scapy>=2.5.0
+psutil>=5.9.0

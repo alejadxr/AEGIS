@@ -1,0 +1,19 @@
+{
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-skip-taskbar",
+    "core:window:allow-close",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
+    "log:default"
+  ]
+}

@@ -1,0 +1,3 @@
+# PDF report generation dependencies
+# Install with: pip install -r requirements-reports.txt
+reportlab>=4.1
