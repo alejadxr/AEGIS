@@ -1,0 +1,32 @@
+[package]
+name = "aegis-agent-rust"
+version = "0.1.0"
+edition = "2021"
+description = "AEGIS EDR-lite endpoint agent — Rust prototype"
+license = "MIT"
+
+[lib]
+name = "aegis_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aegis-agent-rust"
+path = "src/main.rs"
+
+[dependencies]
+sysinfo = "0.34"
+notify = "7"
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+local-ip-address = "0.6"
+hostname = "0.4"
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+
+[profile.release]
+opt-level = "z"     # optimize for size
+lto = true          # link-time optimization
+strip = true        # strip debug symbols
+codegen-units = 1   # single codegen unit for better optimization

@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  # ------------------------------------------------------------------
+  # Run tests before release
+  # ------------------------------------------------------------------
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  # ------------------------------------------------------------------
+  # Build Tauri desktop app (macOS, Windows, Linux)
+  # ------------------------------------------------------------------
+  build-tauri:
+    needs: [test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            label: macOS-arm64
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            label: macOS-x64
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: Linux-x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: Windows-x64
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: frontend
+          tauriScript: npx tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: "AEGIS ${{ github.ref_name }}"
+          releaseBody: |
+            AEGIS Defense Platform ${{ github.ref_name }}
+
+            ## Changes
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            ## Downloads
+            | Platform | File |
+            |----------|------|
+            | macOS (Apple Silicon) | `.dmg` |
+            | macOS (Intel) | `.dmg` |
+            | Windows | `.msi` / `.exe` |
+            | Linux | `.AppImage` / `.deb` |
+          releaseDraft: true
+          prerelease: false
+
+  # ------------------------------------------------------------------
+  # Build and push Docker images
+  # ------------------------------------------------------------------
+  docker-release:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/aegis-api:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository }}/aegis-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/aegis-frontend:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository }}/aegis-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

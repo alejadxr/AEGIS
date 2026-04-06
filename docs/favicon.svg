@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#0891B2"/>
+    </linearGradient>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0891B2" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <!-- Shield fill -->
+  <path d="M32 4 L58 15 L58 40 L32 60 L6 40 L6 15 Z" fill="url(#s)"/>
+  <!-- Shield outline -->
+  <path d="M32 4 L58 15 L58 40 L32 60 L6 40 L6 15 Z" fill="none" stroke="url(#g)" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- Inner shield -->
+  <path d="M32 14 L50 22 L50 38 L32 52 L14 38 L14 22 Z" fill="none" stroke="#22D3EE" stroke-width="1" stroke-opacity="0.3" stroke-linejoin="round"/>
+  <!-- Center dot -->
+  <circle cx="32" cy="33" r="4" fill="#22D3EE"/>
+  <circle cx="32" cy="33" r="8" fill="none" stroke="#22D3EE" stroke-width="0.8" stroke-opacity="0.3"/>
+</svg>
