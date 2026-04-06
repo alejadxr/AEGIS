@@ -1,0 +1,2353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AEGIS -- Autonomous Defense Platform</title>
+<meta name="description" content="Open-source cybersecurity platform. 11/11 detection score. Sub-18 microsecond pipeline. Honeypot deception. AI-powered autonomous response. Clone, compose, defend.">
+<meta property="og:title" content="AEGIS -- Autonomous Defense Platform">
+<meta property="og:description" content="Detect, analyze, and neutralize threats autonomously. Open source. Production ready.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://diego1128256-cmd.github.io/AEGIS/">
+<meta property="og:image" content="https://diego1128256-cmd.github.io/AEGIS/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AEGIS -- Autonomous Defense Platform">
+<meta name="twitter:description" content="Detect, analyze, and neutralize threats autonomously. Open source. Production ready.">
+<meta name="twitter:image" content="https://diego1128256-cmd.github.io/AEGIS/og-image.png">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&display=swap" rel="stylesheet">
+<style>
+/* ================================================================
+   AEGIS -- Premium Landing Page
+   Design: Linear (dark precision) + Sentry (security weight)
+          + Vercel (minimal, B&W + accent)
+   ================================================================ */
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Surfaces */
+  --bg: #08090A;
+  --bg-elevated: #0E0F11;
+  --surface: #111114;
+  --surface-hover: #16171A;
+  --card: #111114;
+  --card-hover: #151619;
+
+  /* Text */
+  --fg: #F7F8F8;
+  --fg-secondary: #D0D6E0;
+  --fg-tertiary: #8A8F98;
+  --fg-quaternary: #62666D;
+
+  /* Accent */
+  --cyan: #22D3EE;
+  --cyan-dim: rgba(34, 211, 238, 0.08);
+  --cyan-glow: rgba(34, 211, 238, 0.15);
+  --cyan-border: rgba(34, 211, 238, 0.25);
+  --cyan-strong: #06B6D4;
+
+  /* Status */
+  --green: #34D399;
+  --green-dim: rgba(52, 211, 153, 0.10);
+  --amber: #FBBF24;
+  --red: #F87171;
+  --purple: #A78BFA;
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.12);
+
+  /* Fonts */
+  --sans: 'Outfit', system-ui, -apple-system, sans-serif;
+  --serif: 'Playfair Display', Georgia, serif;
+  --mono: 'Azeret Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--fg);
+  overflow-x: hidden;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+a { color: inherit; text-decoration: none; }
+
+::selection {
+  background: rgba(34, 211, 238, 0.20);
+  color: var(--fg);
+}
+
+/* ================================================================
+   GLOBAL TEXTURES
+   ================================================================ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: -50%;
+  left: -30%;
+  width: 160%;
+  height: 100%;
+  background: radial-gradient(ellipse at 30% 20%, rgba(34, 211, 238, 0.04) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+section, nav, footer, header {
+  position: relative;
+  z-index: 1;
+}
+
+/* ================================================================
+   LAYOUT
+   ================================================================ */
+.wrap {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 64px;
+}
+
+.wrap-narrow {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 64px;
+}
+
+/* Section dividers */
+.section-divider {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--border-subtle) 20%, var(--border-subtle) 80%, transparent 100%);
+}
+
+/* ================================================================
+   NAV -- Linear-style: minimal, transparent, refined
+   ================================================================ */
+nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 0 32px;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+nav.scrolled {
+  background: rgba(8, 9, 10, 0.8);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.nav-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+}
+
+.nav-logo {
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 4px;
+  color: var(--fg);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.nav-logo span {
+  color: var(--cyan);
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+}
+
+.nav-links a {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-tertiary);
+  letter-spacing: 0.2px;
+  transition: color 0.25s;
+}
+
+.nav-links a:hover {
+  color: var(--fg);
+}
+
+.nav-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-secondary);
+  transition: all 0.3s;
+}
+
+.nav-gh:hover {
+  border-color: var(--border-hover);
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.nav-gh svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+/* ================================================================
+   HERO -- Full viewport, asymmetric, premium
+   ================================================================ */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 100px 0 0;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 80px;
+  align-items: center;
+  width: 100%;
+}
+
+.hero-text {
+  position: relative;
+  z-index: 2;
+}
+
+/* Pre-heading badge */
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--cyan);
+  padding: 6px 16px 6px 12px;
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 100px;
+  background: rgba(34, 211, 238, 0.04);
+  margin-bottom: 36px;
+  opacity: 0;
+  animation: heroFadeUp 0.7s ease 0.1s forwards;
+}
+
+.hero-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+.hero h1 {
+  font-family: var(--sans);
+  font-size: clamp(44px, 5.5vw, 80px);
+  font-weight: 800;
+  line-height: 1.0;
+  letter-spacing: -3px;
+  color: var(--fg);
+  opacity: 0;
+  animation: heroFadeUp 0.7s ease 0.2s forwards;
+}
+
+.hero h1 em {
+  display: block;
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--cyan);
+  letter-spacing: -1px;
+  margin-top: 4px;
+}
+
+.hero-desc {
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--fg-secondary);
+  line-height: 1.7;
+  max-width: 480px;
+  margin-top: 28px;
+  opacity: 0;
+  animation: heroFadeUp 0.7s ease 0.35s forwards;
+}
+
+/* Install command in hero */
+.hero-install {
+  margin-top: 36px;
+  opacity: 0;
+  animation: heroFadeUp 0.7s ease 0.5s forwards;
+}
+
+.install-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  max-width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.install-cmd:hover {
+  border-color: var(--cyan-border);
+  background: var(--surface-hover);
+  box-shadow: 0 0 0 1px var(--cyan-border), 0 8px 40px -12px rgba(34, 211, 238, 0.10);
+}
+
+.install-cmd .prompt {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--green);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.install-cmd .cmd-text {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--fg-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.install-cmd .copy-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--fg-quaternary);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.install-cmd:hover .copy-label {
+  border-color: var(--cyan-border);
+  color: var(--cyan);
+}
+
+/* Hero CTA buttons */
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  opacity: 0;
+  animation: heroFadeUp 0.7s ease 0.65s forwards;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: var(--cyan);
+  color: var(--bg);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-primary:hover {
+  background: var(--cyan-strong);
+  box-shadow: 0 8px 32px -8px rgba(34, 211, 238, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-secondary);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-ghost:hover {
+  border-color: var(--border-hover);
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-ghost .arrow {
+  transition: transform 0.3s;
+}
+
+.btn-ghost:hover .arrow {
+  transform: translateX(3px);
+}
+
+/* Hero right -- geometric CSS art */
+.hero-visual {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 560px;
+  opacity: 0;
+  animation: heroFadeIn 1s ease 0.4s forwards;
+}
+
+.geo-container {
+  position: relative;
+  width: 420px;
+  height: 480px;
+  /* Ambient glow behind the entire shield */
+  filter: drop-shadow(0 0 60px rgba(34, 211, 238, 0.08));
+}
+
+/* Ambient radial glow behind shield */
+.geo-container::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 320px;
+  height: 360px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse, rgba(34, 211, 238, 0.07) 0%, transparent 70%);
+  pointer-events: none;
+  animation: corePulse 4s ease-in-out infinite;
+}
+
+/* Main hexagonal shield -- outer shell */
+.geo-shield {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 260px;
+  height: 300px;
+  clip-path: polygon(50% 0%, 100% 14%, 100% 64%, 50% 100%, 0% 64%, 0% 14%);
+  background: linear-gradient(170deg,
+    rgba(34, 211, 238, 0.10) 0%,
+    rgba(34, 211, 238, 0.02) 40%,
+    rgba(6, 182, 212, 0.06) 100%
+  );
+}
+
+/* Inner dot matrix */
+.geo-shield::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle, rgba(34, 211, 238, 0.22) 1px, transparent 1px);
+  background-size: 16px 16px;
+  animation: matrixShift 25s linear infinite;
+  opacity: 0.6;
+}
+
+/* Bright border outline on shield */
+.geo-shield::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(50% 0%, 100% 14%, 100% 64%, 50% 100%, 0% 64%, 0% 14%);
+  background: linear-gradient(180deg,
+    rgba(34, 211, 238, 0.35) 0%,
+    rgba(34, 211, 238, 0.08) 30%,
+    rgba(34, 211, 238, 0.04) 60%,
+    rgba(34, 211, 238, 0.20) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1.5px;
+}
+
+/* Inner shield (smaller, creates layered depth) */
+.geo-shield-inner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 230px;
+  clip-path: polygon(50% 0%, 100% 14%, 100% 64%, 50% 100%, 0% 64%, 0% 14%);
+  background: linear-gradient(180deg,
+    rgba(34, 211, 238, 0.04) 0%,
+    rgba(8, 9, 10, 0.4) 50%,
+    rgba(34, 211, 238, 0.03) 100%
+  );
+}
+
+.geo-shield-inner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(50% 0%, 100% 14%, 100% 64%, 50% 100%, 0% 64%, 0% 14%);
+  background: linear-gradient(180deg,
+    rgba(34, 211, 238, 0.18) 0%,
+    rgba(34, 211, 238, 0.04) 40%,
+    rgba(34, 211, 238, 0.12) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1px;
+}
+
+/* Rotating ring -- primary orbit */
+.geo-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 390px;
+  height: 390px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  animation: rotateRing 30s linear infinite;
+}
+
+/* Ring with gradient arc (not full circle) */
+.geo-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  background: conic-gradient(
+    from 0deg,
+    rgba(34, 211, 238, 0.25) 0deg,
+    rgba(34, 211, 238, 0.08) 60deg,
+    transparent 120deg,
+    transparent 240deg,
+    rgba(34, 211, 238, 0.08) 300deg,
+    rgba(34, 211, 238, 0.25) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1.5px;
+}
+
+/* Orbital node dot */
+.geo-ring::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan), 0 0 20px rgba(34, 211, 238, 0.4), 0 0 40px rgba(34, 211, 238, 0.15);
+  transform: translateX(-50%);
+}
+
+/* Second ring -- counter-rotation */
+.geo-ring-2 {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 350px;
+  height: 350px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  animation: rotateRing 22s linear infinite reverse;
+}
+
+.geo-ring-2::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px dashed rgba(34, 211, 238, 0.06);
+}
+
+.geo-ring-2::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(34, 211, 238, 0.6);
+  box-shadow: 0 0 6px var(--cyan), 0 0 12px rgba(34, 211, 238, 0.2);
+  transform: translateX(-50%);
+}
+
+/* Third ring -- slow outer orbit */
+.geo-ring-3 {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 430px;
+  height: 430px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  animation: rotateRing 45s linear infinite;
+}
+
+.geo-ring-3::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: conic-gradient(
+    from 90deg,
+    transparent 0deg,
+    rgba(34, 211, 238, 0.10) 30deg,
+    transparent 90deg,
+    transparent 180deg,
+    rgba(34, 211, 238, 0.06) 220deg,
+    transparent 270deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1px;
+}
+
+/* Shield vertex nodes -- glowing dots at hexagon points */
+.geo-node {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 6px var(--cyan), 0 0 14px rgba(34, 211, 238, 0.3);
+  z-index: 4;
+}
+
+.geo-node::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  animation: nodeRipple 3s ease-out infinite;
+}
+
+/* Position nodes at shield vertices */
+.geo-node-1 { top: calc(50% - 150px); left: calc(50% - 3px); animation-delay: 0s; }     /* top */
+.geo-node-2 { top: calc(50% - 108px); right: calc(50% - 133px); animation-delay: 0.5s; } /* top-right */
+.geo-node-3 { top: calc(50% + 42px); right: calc(50% - 133px); animation-delay: 1s; }    /* bot-right */
+.geo-node-4 { top: calc(50% + 150px); left: calc(50% - 3px); animation-delay: 1.5s; }    /* bottom */
+.geo-node-5 { top: calc(50% + 42px); left: calc(50% - 133px); animation-delay: 2s; }     /* bot-left */
+.geo-node-6 { top: calc(50% - 108px); left: calc(50% - 133px); animation-delay: 2.5s; }  /* top-left */
+
+/* Corner accents -- extended with tick marks */
+.geo-corner {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-color: rgba(34, 211, 238, 0.10);
+  border-style: solid;
+}
+
+.geo-corner::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 1px;
+  background: rgba(34, 211, 238, 0.15);
+}
+
+.geo-corner-tl {
+  top: 14px;
+  left: 14px;
+  border-width: 1px 0 0 1px;
+}
+.geo-corner-tl::after { bottom: -8px; left: 0; }
+
+.geo-corner-tr {
+  top: 14px;
+  right: 14px;
+  border-width: 1px 1px 0 0;
+}
+.geo-corner-tr::after { bottom: -8px; right: 0; }
+
+.geo-corner-bl {
+  bottom: 14px;
+  left: 14px;
+  border-width: 0 0 1px 1px;
+}
+.geo-corner-bl::after { top: -8px; left: 0; }
+
+.geo-corner-br {
+  bottom: 14px;
+  right: 14px;
+  border-width: 0 1px 1px 0;
+}
+.geo-corner-br::after { top: -8px; right: 0; }
+
+/* Floating data labels */
+.geo-label {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--fg-quaternary);
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: rgba(8, 9, 10, 0.85);
+  backdrop-filter: blur(4px);
+  z-index: 5;
+}
+
+/* Connecting lines from labels to shield */
+.geo-label::before {
+  content: '';
+  position: absolute;
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.geo-label-1 {
+  top: 30px;
+  right: 15px;
+}
+.geo-label-1::before {
+  bottom: -16px;
+  left: 50%;
+  width: 1px;
+  height: 16px;
+}
+
+.geo-label-2 {
+  bottom: 50px;
+  left: 0;
+}
+.geo-label-2::before {
+  top: -14px;
+  left: 50%;
+  width: 1px;
+  height: 14px;
+}
+
+.geo-label-3 {
+  top: 50%;
+  left: -20px;
+  transform: translateY(-50%);
+}
+.geo-label-3::before {
+  top: 50%;
+  right: -12px;
+  width: 12px;
+  height: 1px;
+}
+
+/* Status indicator dot on labels */
+.geo-label .dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+.geo-label .dot-green { background: var(--green); box-shadow: 0 0 4px var(--green); }
+.geo-label .dot-cyan { background: var(--cyan); box-shadow: 0 0 4px var(--cyan); }
+.geo-label .dot-amber { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
+
+/* Radar sweep inside shield */
+.geo-radar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 260px;
+  height: 300px;
+  transform: translate(-50%, -50%);
+  clip-path: polygon(50% 0%, 100% 14%, 100% 64%, 50% 100%, 0% 64%, 0% 14%);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.geo-radar::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(34, 211, 238, 0.06) 30deg,
+    transparent 60deg
+  );
+  animation: radarSweep 6s linear infinite;
+}
+
+/* Scanning line (horizontal) */
+.geo-scanline {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 260px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.5), transparent);
+  opacity: 0;
+  animation: scanPulse 4s ease-in-out infinite;
+}
+
+/* Vertical scanline */
+.geo-scanline-v {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1px;
+  height: 240px;
+  background: linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.3), transparent);
+  opacity: 0;
+  animation: scanPulse 5s ease-in-out 2s infinite;
+}
+
+/* Central data display */
+.geo-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 5;
+}
+
+.geo-center-val {
+  font-family: var(--mono);
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--cyan);
+  letter-spacing: 6px;
+  text-shadow: 0 0 20px rgba(34, 211, 238, 0.35), 0 0 60px rgba(34, 211, 238, 0.1);
+  position: relative;
+}
+
+/* Underline accent */
+.geo-center-val::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  border-radius: 1px;
+}
+
+.geo-center-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 500;
+  color: var(--fg-tertiary);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-top: 14px;
+  opacity: 0.7;
+}
+
+/* Live status below center text */
+.geo-center-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 16px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--green);
+  letter-spacing: 1px;
+}
+
+.geo-center-status .pulse-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+/* Hero stat bar */
+.hero-stats {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(8, 9, 10, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  opacity: 0;
+  animation: heroFadeUp 0.7s ease 0.85s forwards;
+}
+
+.hero-stats .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  height: 56px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 32px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--fg-tertiary);
+  letter-spacing: 0.2px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.stat-item:last-child {
+  border-right: none;
+}
+
+.stat-val {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--fg);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+/* ================================================================
+   SECTION HEADERS -- Shared
+   ================================================================ */
+.section-pad {
+  padding: 140px 0;
+}
+
+.section-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.section-label::before {
+  content: '';
+  width: 32px;
+  height: 1px;
+  background: var(--cyan);
+  opacity: 0.5;
+}
+
+.section-title {
+  font-family: var(--sans);
+  font-size: clamp(36px, 4.5vw, 56px);
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1.05;
+  color: var(--fg);
+  max-width: 700px;
+}
+
+.section-title em {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+.section-subtitle {
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--fg-tertiary);
+  line-height: 1.7;
+  max-width: 560px;
+  margin-top: 20px;
+}
+
+/* ================================================================
+   FEATURES -- 6 cards, 3x2 grid
+   ================================================================ */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border-subtle);
+  border-radius: 20px;
+  overflow: hidden;
+  margin-top: 64px;
+  border: 1px solid var(--border-subtle);
+}
+
+.feat-card {
+  background: var(--bg);
+  padding: 44px 36px 40px;
+  position: relative;
+  transition: background 0.4s;
+}
+
+.feat-card:hover {
+  background: var(--bg-elevated);
+}
+
+.feat-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin-bottom: 28px;
+}
+
+.feat-card-num {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-quaternary);
+  opacity: 0.5;
+}
+
+.feat-card h3 {
+  font-family: var(--sans);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  margin-bottom: 12px;
+  color: var(--fg);
+}
+
+.feat-card p {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--fg-tertiary);
+  line-height: 1.7;
+}
+
+/* ================================================================
+   DETECTION SCORECARD -- The 11/11 section, prominent
+   ================================================================ */
+.scorecard-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.scorecard-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    var(--bg) 0%,
+    rgba(34, 211, 238, 0.02) 40%,
+    rgba(34, 211, 238, 0.02) 60%,
+    var(--bg) 100%
+  );
+  pointer-events: none;
+}
+
+.scorecard-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+}
+
+.scorecard-visual {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.score-display {
+  text-align: center;
+}
+
+.score-big {
+  font-family: var(--sans);
+  font-size: clamp(100px, 14vw, 160px);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -8px;
+  background: linear-gradient(180deg, var(--cyan) 0%, rgba(34, 211, 238, 0.5) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  position: relative;
+}
+
+.score-big::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  height: 40px;
+  background: radial-gradient(ellipse, rgba(34, 211, 238, 0.15), transparent);
+  filter: blur(20px);
+}
+
+.score-subtitle {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin-top: 20px;
+}
+
+.scorecard-content h2 {
+  font-family: var(--sans);
+  font-size: clamp(28px, 3.5vw, 40px);
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1.15;
+  margin-bottom: 20px;
+}
+
+.scorecard-content h2 em {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--cyan);
+}
+
+.scorecard-content p {
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--fg-secondary);
+  line-height: 1.75;
+  margin-bottom: 14px;
+  max-width: 480px;
+}
+
+/* Attack type badges */
+.attack-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 32px;
+}
+
+.attack-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-secondary);
+  letter-spacing: 0.3px;
+  transition: all 0.3s;
+}
+
+.attack-badge:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.attack-badge .check {
+  color: var(--green);
+  font-size: 12px;
+}
+
+/* ================================================================
+   SPEED COMPARISON -- Clean data visualization
+   ================================================================ */
+.speed-table {
+  margin-top: 64px;
+  max-width: 800px;
+}
+
+.speed-header-row {
+  display: grid;
+  grid-template-columns: 160px 1fr 100px;
+  gap: 24px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: 8px;
+}
+
+.speed-header-row span {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--fg-quaternary);
+}
+
+.speed-header-row span:last-child {
+  text-align: right;
+}
+
+.speed-row {
+  display: grid;
+  grid-template-columns: 160px 1fr 100px;
+  gap: 24px;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.2s;
+}
+
+.speed-row:hover {
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.speed-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+.speed-name.highlight {
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.speed-bar-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.speed-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 1.5s cubic-bezier(0.16, 1, 0.3, 1);
+  width: 0;
+}
+
+.speed-bar-fill.aegis {
+  background: linear-gradient(90deg, var(--cyan), var(--cyan-strong));
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.25);
+}
+
+.speed-bar-fill.other {
+  background: var(--fg-quaternary);
+}
+
+.speed-val {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+  letter-spacing: -0.3px;
+  color: var(--fg-tertiary);
+}
+
+.speed-val.highlight {
+  color: var(--cyan);
+}
+
+.speed-footnote {
+  font-size: 13px;
+  color: var(--fg-quaternary);
+  margin-top: 28px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+/* ================================================================
+   PRICING -- 3 cards, Pro elevated
+   ================================================================ */
+.price-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 64px;
+  align-items: start;
+}
+
+.price-card {
+  padding: 44px 36px 40px;
+  border-radius: 16px;
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.price-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-hover);
+}
+
+/* Pro card -- elevated */
+.price-card.pro {
+  transform: translateY(-8px);
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.04) 0%, var(--card) 50%);
+  border-color: var(--cyan-border);
+  box-shadow:
+    0 32px 80px -24px rgba(34, 211, 238, 0.12),
+    0 0 0 1px var(--cyan-border);
+}
+
+.price-card.pro:hover {
+  transform: translateY(-14px);
+  box-shadow:
+    0 40px 100px -24px rgba(34, 211, 238, 0.18),
+    0 0 0 1px var(--cyan-border);
+}
+
+.price-card.pro::before {
+  content: 'RECOMMENDED';
+  position: absolute;
+  top: -12px;
+  left: 36px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  padding: 4px 14px;
+  background: var(--cyan);
+  color: var(--bg);
+  border-radius: 4px;
+}
+
+.price-tier {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-tertiary);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.price-amount {
+  font-family: var(--sans);
+  font-size: 56px;
+  font-weight: 800;
+  color: var(--fg);
+  letter-spacing: -3px;
+  line-height: 1;
+}
+
+.price-amount span {
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--fg-tertiary);
+  letter-spacing: 0;
+}
+
+.price-desc {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--fg-tertiary);
+  margin-top: 10px;
+  margin-bottom: 36px;
+}
+
+.price-features {
+  list-style: none;
+  margin-bottom: 36px;
+}
+
+.price-features li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--fg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.price-features li:last-child {
+  border-bottom: none;
+}
+
+.price-features .ck {
+  color: var(--green);
+  font-size: 14px;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.price-features .xk {
+  color: var(--fg-quaternary);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.price-btn {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border-radius: 8px;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.3s;
+  cursor: pointer;
+  border: none;
+  letter-spacing: 0.2px;
+}
+
+.price-btn-primary {
+  background: var(--cyan);
+  color: var(--bg);
+}
+
+.price-btn-primary:hover {
+  background: var(--cyan-strong);
+  box-shadow: 0 8px 32px -8px rgba(34, 211, 238, 0.3);
+  transform: translateY(-1px);
+}
+
+.price-btn-outline {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.price-btn-outline:hover {
+  border-color: var(--border-hover);
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ================================================================
+   FOOTER -- Clean, minimal
+   ================================================================ */
+footer {
+  padding: 48px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.footer-logo {
+  font-family: var(--sans);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--fg-tertiary);
+}
+
+.footer-logo span {
+  color: var(--cyan);
+}
+
+.footer-links {
+  display: flex;
+  gap: 24px;
+}
+
+.footer-links a {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--fg-tertiary);
+  transition: color 0.25s;
+}
+
+.footer-links a:hover {
+  color: var(--fg);
+}
+
+.footer-right {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-quaternary);
+  letter-spacing: 0.5px;
+}
+
+.footer-right a {
+  color: var(--fg-tertiary);
+  transition: color 0.25s;
+}
+
+.footer-right a:hover {
+  color: var(--cyan);
+}
+
+/* ================================================================
+   ANIMATIONS
+   ================================================================ */
+@keyframes heroFadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes heroFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--cyan); }
+  50% { opacity: 0.5; box-shadow: 0 0 4px var(--cyan); }
+}
+
+@keyframes matrixShift {
+  from { background-position: 0 0; }
+  to { background-position: 16px 16px; }
+}
+
+@keyframes rotateRing {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes scanPulse {
+  0%, 100% { opacity: 0; transform: translate(-50%, -50%) scaleX(0.3); }
+  50% { opacity: 0.6; transform: translate(-50%, -50%) scaleX(1); }
+}
+
+@keyframes corePulse {
+  0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+}
+
+@keyframes radarSweep {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes nodeRipple {
+  0% { width: 18px; height: 18px; opacity: 0.6; }
+  100% { width: 36px; height: 36px; opacity: 0; }
+}
+
+/* Scroll reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Staggered delays for child reveals */
+.stagger-1 { transition-delay: 0.05s; }
+.stagger-2 { transition-delay: 0.10s; }
+.stagger-3 { transition-delay: 0.15s; }
+.stagger-4 { transition-delay: 0.20s; }
+.stagger-5 { transition-delay: 0.25s; }
+.stagger-6 { transition-delay: 0.30s; }
+.stagger-7 { transition-delay: 0.35s; }
+.stagger-8 { transition-delay: 0.40s; }
+
+/* ================================================================
+   RESPONSIVE
+   ================================================================ */
+@media (max-width: 1200px) {
+  .wrap, .wrap-narrow {
+    padding: 0 40px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+
+  .hero-text {
+    text-align: center;
+    order: 1;
+  }
+
+  .hero-desc {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero-install {
+    display: flex;
+    justify-content: center;
+  }
+
+  .hero-actions {
+    justify-content: center;
+  }
+
+  .hero-visual {
+    order: 0;
+    height: 360px;
+  }
+
+  .geo-container {
+    width: 320px;
+    height: 360px;
+  }
+
+  .geo-shield {
+    width: 200px;
+    height: 230px;
+  }
+
+  .geo-shield-inner {
+    width: 155px;
+    height: 178px;
+  }
+
+  .geo-ring { width: 290px; height: 290px; }
+  .geo-ring-2 { width: 260px; height: 260px; }
+  .geo-ring-3 { width: 330px; height: 330px; }
+  .geo-scanline { width: 200px; }
+  .geo-scanline-v { height: 180px; }
+  .geo-radar { width: 200px; height: 230px; }
+  .geo-label { display: none; }
+  .geo-node { display: none; }
+
+  .scorecard-inner {
+    grid-template-columns: 1fr;
+    gap: 48px;
+    text-align: center;
+  }
+
+  .scorecard-visual {
+    min-height: 240px;
+  }
+
+  .scorecard-content p {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .attack-grid {
+    justify-content: center;
+  }
+
+  .features-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .price-grid {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .price-card.pro {
+    transform: none;
+  }
+
+  .price-card.pro:hover {
+    transform: translateY(-4px);
+  }
+
+  .stat-item {
+    padding: 0 20px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .wrap, .wrap-narrow {
+    padding: 0 24px;
+  }
+
+  nav { padding: 0 20px; }
+
+  .nav-links a:not(.nav-gh) {
+    display: none;
+  }
+
+  .hero {
+    min-height: auto;
+    padding: 120px 0 80px;
+  }
+
+  .hero h1 {
+    font-size: 38px;
+    letter-spacing: -1.5px;
+  }
+
+  .hero-visual {
+    height: 280px;
+  }
+
+  .geo-container {
+    width: 260px;
+    height: 280px;
+  }
+
+  .geo-shield {
+    width: 160px;
+    height: 185px;
+  }
+
+  .geo-shield-inner {
+    width: 124px;
+    height: 143px;
+  }
+
+  .geo-ring { width: 230px; height: 230px; }
+  .geo-ring-2 { width: 205px; height: 205px; }
+  .geo-ring-3 { width: 265px; height: 265px; }
+  .geo-scanline { width: 160px; }
+  .geo-scanline-v { height: 140px; }
+  .geo-radar { width: 160px; height: 185px; }
+  .geo-corner { display: none; }
+  .geo-node { display: none; }
+
+  .hero-stats .wrap {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 16px 24px;
+    gap: 4px;
+    justify-content: center;
+  }
+
+  .stat-item {
+    border-right: none;
+    padding: 4px 16px;
+  }
+
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-pad {
+    padding: 100px 0;
+  }
+
+  .section-title {
+    font-size: 32px;
+    letter-spacing: -1px;
+  }
+
+  .speed-header-row,
+  .speed-row {
+    grid-template-columns: 100px 1fr 80px;
+    gap: 16px;
+  }
+
+  .speed-name { font-size: 13px; }
+
+  .install-cmd {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  .install-cmd .cmd-text {
+    font-size: 11px;
+    width: 100%;
+    order: 3;
+  }
+
+  .footer-inner {
+    flex-direction: column;
+    gap: 20px;
+    text-align: center;
+  }
+
+  .footer-left {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .score-big {
+    font-size: 100px;
+    letter-spacing: -4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero h1 {
+    font-size: 32px;
+    letter-spacing: -1px;
+  }
+
+  .hero-badge {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+  }
+
+  .hero-desc {
+    font-size: 15px;
+  }
+
+  .score-big {
+    font-size: 80px;
+    letter-spacing: -3px;
+  }
+
+  .section-title {
+    font-size: 28px;
+    letter-spacing: -0.8px;
+  }
+
+  .price-amount {
+    font-size: 44px;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     NAV
+     ================================================================ -->
+<nav id="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo"><span>A</span>EGIS</a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#detection">Detection</a>
+      <a href="#speed">Performance</a>
+      <a href="#pricing">Pricing</a>
+      <a class="nav-gh" href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ================================================================
+     HERO
+     ================================================================ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <!-- Left: Text -->
+      <div class="hero-text">
+        <div class="hero-badge">Open Source Defense</div>
+        <h1>
+          Threats don't wait.
+          <em>Neither does AEGIS.</em>
+        </h1>
+        <p class="hero-desc">
+          Autonomous detection, AI-powered triage, honeypot deception, and active response.
+          Five layers of defense that never sleep. Clone, compose, defend.
+        </p>
+        <div class="hero-install">
+          <div class="install-cmd" onclick="navigator.clipboard.writeText('git clone https://github.com/diego1128256-cmd/AEGIS.git && cd AEGIS && docker compose up -d');var l=this.querySelector('.copy-label');l.textContent='COPIED';setTimeout(function(){l.textContent='COPY'},2000)">
+            <span class="prompt">$</span>
+            <span class="cmd-text">git clone ...AEGIS.git && cd AEGIS && docker compose up -d</span>
+            <span class="copy-label">COPY</span>
+          </div>
+        </div>
+        <div class="hero-actions">
+          <a class="btn-primary" href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">
+            Get Started
+          </a>
+          <a class="btn-ghost" href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">
+            See Docs <span class="arrow">&rarr;</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Right: Geometric shield visual -->
+      <div class="hero-visual">
+        <div class="geo-container">
+          <!-- Orbital rings -->
+          <div class="geo-ring-3"></div>
+          <div class="geo-ring"></div>
+          <div class="geo-ring-2"></div>
+
+          <!-- Shield layers -->
+          <div class="geo-shield"></div>
+          <div class="geo-shield-inner"></div>
+
+          <!-- Radar sweep inside shield -->
+          <div class="geo-radar"></div>
+
+          <!-- Scan effects -->
+          <div class="geo-scanline"></div>
+          <div class="geo-scanline-v"></div>
+
+          <!-- Center data -->
+          <div class="geo-center">
+            <div class="geo-center-val">AEGIS</div>
+            <div class="geo-center-label">Autonomous Defense</div>
+            <div class="geo-center-status">
+              <span class="pulse-dot"></span> ACTIVE
+            </div>
+          </div>
+
+          <!-- Vertex nodes -->
+          <div class="geo-node geo-node-1"></div>
+          <div class="geo-node geo-node-2"></div>
+          <div class="geo-node geo-node-3"></div>
+          <div class="geo-node geo-node-4"></div>
+          <div class="geo-node geo-node-5"></div>
+          <div class="geo-node geo-node-6"></div>
+
+          <!-- Corner brackets -->
+          <div class="geo-corner geo-corner-tl"></div>
+          <div class="geo-corner geo-corner-tr"></div>
+          <div class="geo-corner geo-corner-bl"></div>
+          <div class="geo-corner geo-corner-br"></div>
+
+          <!-- Data labels -->
+          <div class="geo-label geo-label-1"><span class="dot dot-green"></span>SHIELD:ON</div>
+          <div class="geo-label geo-label-2"><span class="dot dot-cyan"></span>LAYER:5</div>
+          <div class="geo-label geo-label-3"><span class="dot dot-amber"></span>AI:TRIAGE</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stat bar -->
+  <div class="hero-stats">
+    <div class="wrap">
+      <div class="stat-item"><span class="stat-val">11/11</span> detection</div>
+      <div class="stat-item"><span class="stat-val">18&micro;s</span> response</div>
+      <div class="stat-item"><span class="stat-val">122</span> sigma rules</div>
+      <div class="stat-item"><span class="stat-val">AGPL-3.0</span> open source</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     FEATURES
+     ================================================================ -->
+<section class="section-pad" id="features">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="section-label">Capabilities</div>
+      <h2 class="section-title">Five layers. <em>Zero blind spots.</em></h2>
+      <p class="section-subtitle">Each layer operates independently. Each can block autonomously. Together they form a detection pipeline verified through live pentesting.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feat-card reveal stagger-1">
+        <span class="feat-card-num">01</span>
+        <div class="feat-card-icon" style="background:var(--cyan-dim);color:var(--cyan)">L1</div>
+        <h3>Real-Time Middleware</h3>
+        <p>Compiled regex pattern matching with double URL-decode. SQLi, XSS, traversal, and command injection detected in 18 microseconds. Auto-blocks after 3 strikes.</p>
+      </div>
+      <div class="feat-card reveal stagger-2">
+        <span class="feat-card-num">02</span>
+        <div class="feat-card-icon" style="background:var(--green-dim);color:var(--green)">L2</div>
+        <h3>Log Watcher</h3>
+        <p>Real-time PM2 log tailing with brute-force tracking, port scan detection, and cross-service rate limiting. Seven pattern categories monitored continuously.</p>
+      </div>
+      <div class="feat-card reveal stagger-3">
+        <span class="feat-card-num">03</span>
+        <div class="feat-card-icon" style="background:rgba(251,191,36,0.08);color:var(--amber)">L3</div>
+        <h3>Sigma Correlation</h3>
+        <p>122 detection rules with 5 chain rules for multi-event correlation. Campaign tracker links recon, exploit, persistence, and exfiltration across a 10K event window.</p>
+      </div>
+      <div class="feat-card reveal stagger-4">
+        <span class="feat-card-num">04</span>
+        <div class="feat-card-icon" style="background:rgba(167,139,250,0.08);color:var(--purple)">AI</div>
+        <h3>AI Triage Engine</h3>
+        <p>13 model routes via OpenRouter including uncensored red-team analysis. Sub-300ms fast path. Full MITRE ATT&amp;CK mapping and audit trail on every decision.</p>
+      </div>
+      <div class="feat-card reveal stagger-5">
+        <span class="feat-card-num">05</span>
+        <div class="feat-card-icon" style="background:rgba(248,113,113,0.08);color:var(--red)">HP</div>
+        <h3>Honeypot Deception</h3>
+        <p>SSH and HTTP honeypots with breadcrumb trap credentials. Attacker steals fake .env, uses creds on real API, gets caught instantly. Full interaction profiling.</p>
+      </div>
+      <div class="feat-card reveal stagger-6">
+        <span class="feat-card-num">06</span>
+        <div class="feat-card-icon" style="background:var(--cyan-dim);color:var(--cyan)">CA</div>
+        <h3>Counter-Attack AI</h3>
+        <p>Uncensored AI analyzes attacker infrastructure and recommends intelligence gathering, deception campaigns, and abuse reporting. Guardrails enforced on all actions.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ================================================================
+     DETECTION SCORECARD (11/11)
+     ================================================================ -->
+<section class="section-pad scorecard-section" id="detection">
+  <div class="wrap">
+    <div class="scorecard-inner">
+      <div class="scorecard-visual reveal">
+        <div class="score-display">
+          <div class="score-big">11/11</div>
+          <div class="score-subtitle">Perfect Detection</div>
+        </div>
+      </div>
+      <div class="scorecard-content reveal stagger-2">
+        <div class="section-label">Verified Results</div>
+        <h2>Every attack type. <em>Caught.</em></h2>
+        <p>
+          Validated against a comprehensive penetration test suite using Kali Linux tooling against live production services. Not simulated. Not staged. Real attacks, real defenses.
+        </p>
+        <p>
+          Every request inspected. Every attack profiled. Every response logged and auditable.
+        </p>
+        <div class="attack-grid">
+          <div class="attack-badge"><span class="check">&#10003;</span> SQL Injection</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> XSS</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Path Traversal</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Command Injection</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Brute Force</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Port Scanning</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Scanner Detection</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Credential Stuffing</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Recon Chains</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Honeypot Trap</div>
+          <div class="attack-badge"><span class="check">&#10003;</span> Multi-Phase Campaign</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ================================================================
+     SPEED COMPARISON
+     ================================================================ -->
+<section class="section-pad" id="speed">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="section-label">Performance</div>
+      <h2 class="section-title">Measured, <em>not marketed.</em></h2>
+      <p class="section-subtitle">Layer 1 middleware detection latency. Measured on production hardware under real traffic load.</p>
+    </div>
+    <div class="speed-table">
+      <div class="speed-header-row reveal stagger-1">
+        <span>Platform</span>
+        <span>Latency</span>
+        <span>Time</span>
+      </div>
+      <div class="speed-row reveal stagger-2">
+        <div class="speed-name highlight">AEGIS</div>
+        <div class="speed-bar-track">
+          <div class="speed-bar-fill aegis" data-width="2%"></div>
+        </div>
+        <div class="speed-val highlight">18&micro;s</div>
+      </div>
+      <div class="speed-row reveal stagger-3">
+        <div class="speed-name">CrowdStrike</div>
+        <div class="speed-bar-track">
+          <div class="speed-bar-fill other" data-width="38%"></div>
+        </div>
+        <div class="speed-val">~200ms</div>
+      </div>
+      <div class="speed-row reveal stagger-4">
+        <div class="speed-name">Splunk SOAR</div>
+        <div class="speed-bar-track">
+          <div class="speed-bar-fill other" data-width="55%"></div>
+        </div>
+        <div class="speed-val">~500ms</div>
+      </div>
+      <div class="speed-row reveal stagger-5">
+        <div class="speed-name">Wazuh</div>
+        <div class="speed-bar-track">
+          <div class="speed-bar-fill other" data-width="100%"></div>
+        </div>
+        <div class="speed-val">1-5s</div>
+      </div>
+    </div>
+    <p class="speed-footnote reveal stagger-6">
+      Open source &mdash; verify it yourself. All benchmarks reproducible with the included test suite.
+    </p>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ================================================================
+     PRICING
+     ================================================================ -->
+<section class="section-pad" id="pricing">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="section-label">Pricing</div>
+      <h2 class="section-title">Start free. <em>Scale when ready.</em></h2>
+      <p class="section-subtitle">Full detection pipeline included in every tier. No feature walls on security.</p>
+    </div>
+    <div class="price-grid">
+      <!-- Free -->
+      <div class="price-card reveal stagger-1">
+        <div class="price-tier">Free</div>
+        <div class="price-amount">$0</div>
+        <div class="price-desc">3 nodes, 25 assets. For homelabs and small teams.</div>
+        <ul class="price-features">
+          <li><span class="ck">&#10003;</span> 5-layer detection pipeline</li>
+          <li><span class="ck">&#10003;</span> 122 Sigma rules</li>
+          <li><span class="ck">&#10003;</span> SSH + HTTP honeypots</li>
+          <li><span class="ck">&#10003;</span> Counter-attack AI</li>
+          <li><span class="ck">&#10003;</span> Shared threat intel</li>
+          <li><span class="xk">&mdash;</span> Quantum module</li>
+          <li><span class="xk">&mdash;</span> Compliance dashboard</li>
+        </ul>
+        <a class="price-btn price-btn-outline" href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">Get Started</a>
+      </div>
+      <!-- Pro -->
+      <div class="price-card pro reveal stagger-2">
+        <div class="price-tier">Pro</div>
+        <div class="price-amount">$29<span>/mo</span></div>
+        <div class="price-desc">25 nodes, 500 assets. For growing security teams.</div>
+        <ul class="price-features">
+          <li><span class="ck">&#10003;</span> Everything in Free</li>
+          <li><span class="ck">&#10003;</span> Quantum entropy analysis</li>
+          <li><span class="ck">&#10003;</span> SBOM scanner</li>
+          <li><span class="ck">&#10003;</span> Advanced PDF reports</li>
+          <li><span class="ck">&#10003;</span> Priority email support</li>
+          <li><span class="xk">&mdash;</span> Adversarial ML</li>
+          <li><span class="xk">&mdash;</span> SSO / SAML</li>
+        </ul>
+        <a class="price-btn price-btn-primary" href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">Upgrade to Pro</a>
+      </div>
+      <!-- Enterprise -->
+      <div class="price-card reveal stagger-3">
+        <div class="price-tier">Enterprise</div>
+        <div class="price-amount">$99<span>/mo</span></div>
+        <div class="price-desc">Unlimited nodes &amp; assets. For compliance-driven orgs.</div>
+        <ul class="price-features">
+          <li><span class="ck">&#10003;</span> Everything in Pro</li>
+          <li><span class="ck">&#10003;</span> Adversarial ML detection</li>
+          <li><span class="ck">&#10003;</span> Compliance dashboard</li>
+          <li><span class="ck">&#10003;</span> SSO (SAML / OIDC)</li>
+          <li><span class="ck">&#10003;</span> Custom Sigma rules</li>
+          <li><span class="ck">&#10003;</span> SLA guarantee</li>
+          <li><span class="ck">&#10003;</span> Dedicated support</li>
+        </ul>
+        <a class="price-btn price-btn-outline" href="mailto:alejandxr@icloud.com">Contact Sales</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     FOOTER
+     ================================================================ -->
+<footer>
+  <div class="wrap">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <div class="footer-logo"><span>A</span>EGIS</div>
+        <div class="footer-links">
+          <a href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/diego1128256-cmd/AEGIS/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+          <a href="https://github.com/diego1128256-cmd/AEGIS/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a>
+          <a href="https://github.com/diego1128256-cmd/AEGIS/blob/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>
+          <a href="mailto:alejandxr@icloud.com">Contact</a>
+        </div>
+      </div>
+      <div class="footer-right">
+        Built by <a href="https://github.com/diego1128256-cmd" target="_blank" rel="noopener">AEGIS contributors</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- ================================================================
+     SCRIPTS
+     ================================================================ -->
+<script>
+(function() {
+  'use strict';
+
+  // ---- Nav scroll state ----
+  var nav = document.getElementById('nav');
+
+  function onScroll() {
+    if (window.scrollY > 40) {
+      nav.classList.add('scrolled');
+    } else {
+      nav.classList.remove('scrolled');
+    }
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // ---- Scroll reveal with IntersectionObserver ----
+  var revealObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        // Once revealed, stop observing for performance
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.08,
+    rootMargin: '0px 0px -60px 0px'
+  });
+
+  document.querySelectorAll('.reveal').forEach(function(el) {
+    revealObserver.observe(el);
+  });
+
+  // ---- Speed bar animation ----
+  var barObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        var fill = entry.target.querySelector('.speed-bar-fill');
+        if (fill && fill.dataset.width) {
+          setTimeout(function() {
+            fill.style.width = fill.dataset.width;
+          }, 200);
+        }
+        barObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.3 });
+
+  document.querySelectorAll('.speed-row').forEach(function(el) {
+    barObserver.observe(el);
+  });
+
+  // ---- Smooth scroll for anchor links ----
+  document.querySelectorAll('a[href^="#"]').forEach(function(a) {
+    a.addEventListener('click', function(e) {
+      var href = this.getAttribute('href');
+      if (href === '#') return;
+      var target = document.querySelector(href);
+      if (target) {
+        e.preventDefault();
+        var offset = 80;
+        var top = target.getBoundingClientRect().top + window.pageYOffset - offset;
+        window.scrollTo({ top: top, behavior: 'smooth' });
+      }
+    });
+  });
+
+})();
+</script>
+</body>
+</html>

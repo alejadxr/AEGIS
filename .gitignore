@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+*.egg
+
+# Database
+*.db
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+logs/
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Rust/Tauri build
+target/
+Cargo.lock
+package-lock.json
+
+# Qdrant data
+qdrant_data/
+
+# Runtime
+blocked_ips.txt
+reports/
+
+# Misc
+*.bak
+*.tmp
+backend/tests/
+backend/pytest.ini
+.claude/
+docs/superpowers/
+CLAUDE.md
+langgraph_pentest.py
+deepagent_pentest.py
+deepagent_pentest_v2.py
+deepagent_pentest*.py
+langgraph_pentest*.py
+scripts/deploy_sync.py
+scripts/setup-wizard.py
+*.tsbuildinfo
