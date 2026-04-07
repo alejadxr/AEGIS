@@ -6,13 +6,20 @@ import httpx
 
 logger = logging.getLogger("aegis.firewall_client")
 
-FIREWALL_BASE_URL = os.environ.get("AEGIS_FIREWALL_URL", "http://localhost:8000")
-FIREWALL_API = f"{FIREWALL_BASE_URL}/api/rasputin"
+FIREWALL_API = os.environ.get("AEGIS_FIREWALL_URL", "").rstrip("/")
 TIMEOUT = 30.0
 
 
 class FirewallClient:
-    """Async HTTP client wrapping all firewall (Pi SIEM/firewall) endpoints."""
+    """Async HTTP client for an external firewall API.
+
+    Set AEGIS_FIREWALL_URL to the full base URL of your firewall's API
+    (e.g., http://firewall.local:8000/api). The firewall must expose:
+    /status, /block, /blocked, /attackers, /analyze, /events, etc.
+
+    If AEGIS_FIREWALL_URL is not set, all methods return graceful errors
+    and local middleware blocking is used instead.
+    """
 
     async def get_status(self) -> dict:
         try:

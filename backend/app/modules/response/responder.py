@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import log_audit
 from app.core.events import event_bus
 from app.core.ip_blocker import ip_blocker_service
-from app.core.rasputin_client import rasputin_client
+from app.core.firewall_client import firewall_client
 from app.models.action import Action
 
 logger = logging.getLogger("cayde6.responder")
@@ -98,9 +98,9 @@ class ActiveResponder:
     async def _block_ip(self, target: str, params: dict) -> dict:
         logger.warning(f"RESPONSE: Blocking IP {target} — executing real block")
 
-        # 1. Block via Rasputin (Pi iptables firewall)
-        rasputin_result = await rasputin_client.block_ip(target)
-        logger.info(f"Rasputin block result for {target}: {rasputin_result}")
+        # 1. Block via external firewall (if AEGIS_FIREWALL_URL is configured)
+        firewall_result = await firewall_client.block_ip(target)
+        logger.info(f"Firewall block result for {target}: {firewall_result}")
 
         # 2. Block locally via ip_blocker_service (blocked_ips.txt + in-memory set)
         local_result = ip_blocker_service.block_ip(target)
@@ -110,7 +110,7 @@ class ActiveResponder:
             "success": True,
             "action": "block_ip",
             "target": target,
-            "rasputin": rasputin_result,
+            "firewall": firewall_result,
             "local": local_result,
         }
 
