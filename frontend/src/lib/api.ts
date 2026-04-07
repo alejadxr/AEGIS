@@ -705,4 +705,33 @@ export const api = {
     schedule: () =>
       request<{ status: string; config: Record<string, unknown> }>('/reports/schedule'),
   },
+
+  // Auto-updates
+  updates: {
+    status: () =>
+      request<{
+        current_version: string;
+        latest_version: string | null;
+        update_available: boolean;
+        last_checked: string | null;
+        last_error: string | null;
+        release_notes: string | null;
+        release_url: string | null;
+        is_updating: boolean;
+      }>('/updates/status'),
+    check: () =>
+      request<{
+        current_version: string;
+        latest_version: string | null;
+        update_available: boolean;
+        release_notes: string | null;
+        release_url: string | null;
+      }>('/updates/check', { method: 'POST' }),
+    install: () =>
+      request<{ success: boolean; from: string; to: string }>('/updates/install', { method: 'POST' }),
+    getConfig: () =>
+      request<{ enabled: boolean; check_interval_hours: number; auto_install: boolean; notify_on_available: boolean }>('/updates/config'),
+    updateConfig: (cfg: { enabled: boolean; check_interval_hours: number; auto_install: boolean; notify_on_available: boolean }) =>
+      request('/updates/config', { method: 'PUT', body: JSON.stringify(cfg) }),
+  },
 };

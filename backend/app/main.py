@@ -50,6 +50,7 @@ from app.api import quantum as quantum_router
 from app.api import onboarding as onboarding_router
 from app.api import payments as payments_router
 from app.api import compliance as compliance_router
+from app.api import updates as updates_router
 
 # MongoDB threat intel hub
 from app.core.mongo_client import connect_mongo, close_mongo
@@ -298,9 +299,21 @@ async def lifespan(app: FastAPI):
     await interaction_processor.start(honeypot_queue)
     logger.info('Honeypot interaction processor started')
 
+    # Start auto-updater (background GitHub release checker)
+    try:
+        from app.services.auto_updater import auto_updater
+        await auto_updater.start()
+    except Exception as e:
+        logger.error(f'Failed to start auto-updater: {e}')
+
     yield
 
     # Shutdown
+    try:
+        from app.services.auto_updater import auto_updater
+        await auto_updater.stop()
+    except Exception:
+        pass
     await behavioral_engine.stop()
     await threat_intel_hub.stop()
     await close_mongo()
@@ -325,7 +338,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -371,6 +384,7 @@ app.include_router(quantum_router.router, prefix="/api/v1")
 app.include_router(onboarding_router.router, prefix="/api/v1")
 app.include_router(payments_router.router, prefix="/api/v1")
 app.include_router(compliance_router.router, prefix="/api/v1")
+app.include_router(updates_router.router, prefix="/api/v1")
 app.include_router(threat_intel_hub_router.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 
