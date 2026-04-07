@@ -72,7 +72,7 @@ _CONTROLS = {
             {"id": "CC6", "name": "Logical & Physical Access", "module": "Auth / RBAC", "status": "met", "evidence": "API key auth, JWT sessions, role-based access, middleware enforcement"},
             {"id": "CC7", "name": "System Operations", "module": "Infra / Scheduled Scanner", "status": "met", "evidence": "PM2 process management, scheduled scanning, system health monitoring"},
             {"id": "CC8", "name": "Change Management", "module": "-", "status": "not_met", "evidence": "Formal change management process not implemented in AEGIS"},
-            {"id": "CC9", "name": "Risk Mitigation", "module": "Response / Rasputin", "status": "met", "evidence": "Automated IP blocking via Rasputin firewall + local blocklist, AI-driven remediation"},
+            {"id": "CC9", "name": "Risk Mitigation", "module": "Response / Firewall", "status": "met", "evidence": "Automated IP blocking via external firewall integration + local blocklist, AI-driven remediation"},
             {"id": "A1", "name": "Availability", "module": "Infra / PM2", "status": "partial", "evidence": "PM2 auto-restart, health checks, but no formal SLA or redundancy"},
             {"id": "PI1", "name": "Processing Integrity", "module": "AI Engine", "status": "met", "evidence": "Multi-step AI pipeline with verification step, audit logging for all actions"},
             {"id": "C1", "name": "Confidentiality", "module": "Auth / Multi-tenant", "status": "met", "evidence": "Tenant isolation, encrypted API keys, JWT-based session management"},

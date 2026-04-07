@@ -279,20 +279,21 @@ class InteractionProcessor:
                     "tools": tools,
                     "honeypot_id": honeypot.id,
                 })
-                # Notify Rasputin about honeypot interaction from non-trusted IPs
+                # Notify external firewall about honeypot interaction from non-trusted IPs
                 trusted_ips = {"127.0.0.1", "::1", "localhost"}
-                if source_ip not in trusted_ips:
+                firewall_url = os.getenv("AEGIS_FIREWALL_URL", "").rstrip("/")
+                if source_ip not in trusted_ips and firewall_url:
                     try:
                         import aiohttp
                         async with aiohttp.ClientSession() as _sess:
                             await _sess.post(
-                                os.getenv("AEGIS_FIREWALL_URL", "http://localhost:8000") + "/api/rasputin/ai/analyze",
+                                f"{firewall_url}/analyze",
                                 json={"ip": source_ip, "attack_type": "honeypot_interaction"},
                                 timeout=aiohttp.ClientTimeout(total=3),
                             )
-                            logger.info(f"[Processor] Notified Rasputin about {source_ip}")
+                            logger.info(f"[Processor] Notified firewall about {source_ip}")
                     except Exception as _re:
-                        logger.debug(f"[Processor] Rasputin notification failed (non-fatal): {_re}")
+                        logger.debug(f"[Processor] Firewall notification failed (non-fatal): {_re}")
 
 
                 logger.info(
