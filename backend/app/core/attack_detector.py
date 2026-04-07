@@ -33,7 +33,7 @@ logger = logging.getLogger("cayde6.attack_detector")
 BLOCKED_IPS_FILE = Path.home() / "Cayde-6" / "backend" / "blocked_ips.txt"
 BLOCK_THRESHOLD = 3          # attacks before auto-block
 BLOCK_WINDOW    = 300         # seconds (5 min)
-RASPUTIN_URL    = os.getenv("AEGIS_FIREWALL_URL", "")
+FIREWALL_URL    = os.getenv("AEGIS_FIREWALL_URL", "")
 
 # Pre-built 403 response content (avoid re-creating per request)
 _BLOCKED_BODY = b'{"detail":"blocked"}'
@@ -267,7 +267,7 @@ def _blocked_response() -> Response:
 
 
 async def _block_ip(ip: str, reason: str):
-    """Block an IP: add to memory set, append to file, notify Rasputin."""
+    """Block an IP: add to memory set, append to file, notify external firewall."""
     if ip in SAFE_IPS:
         logger.warning(f"[AttackDetector] Refusing to block safe IP {ip}")
         return
@@ -293,8 +293,8 @@ async def _block_ip(ip: str, reason: str):
     # Create incident in DB (fire-and-forget to avoid blocking the response)
     asyncio.ensure_future(_create_block_incident(ip, reason))
 
-    # Notify Rasputin (fire-and-forget)
-    asyncio.ensure_future(_notify_rasputin(ip, reason))
+    # Notify external firewall (fire-and-forget)
+    asyncio.ensure_future(_notify_firewall(ip, reason))
 
     logger.warning(f"[AttackDetector] AUTO-BLOCKED IP {ip} -- reason: {reason}")
 
@@ -337,23 +337,25 @@ async def _create_block_incident(ip: str, reason: str):
         logger.error(f"[AttackDetector] Failed to create incident: {e}")
 
 
-async def _notify_rasputin(ip: str, reason: str):
-    """Notify Rasputin to block IP. Runs as fire-and-forget task."""
+async def _notify_firewall(ip: str, reason: str):
+    """Notify external firewall to block IP. Runs as fire-and-forget task."""
+    if not FIREWALL_URL:
+        return
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
             await session.post(
-                f"{RASPUTIN_URL}/block",
+                f"{FIREWALL_URL}/block",
                 json={
                     "ip": ip,
-                    "reason": f"cayde6_auto_block: {reason}",
+                    "reason": f"aegis_auto_block: {reason}",
                     "duration": 3600,
                 },
                 timeout=aiohttp.ClientTimeout(total=3),
             )
-            logger.info(f"[AttackDetector] Rasputin notified to block {ip}")
+            logger.info(f"[AttackDetector] Firewall notified to block {ip}")
     except Exception as e:
-        logger.debug(f"[AttackDetector] Rasputin block failed (non-fatal): {e}")
+        logger.debug(f"[AttackDetector] Firewall block failed (non-fatal): {e}")
 
 
 async def _share_to_mongo(ip: str, reason: str):
@@ -414,7 +416,7 @@ class AttackDetectorMiddleware(BaseHTTPMiddleware):
     3. Safe IP skip
     4. Mega-regex on path+query only (lazy body read)
     5. Body read only if path+query clean and method is POST/PUT/PATCH
-    6. Fire-and-forget for DB/Rasputin/Mongo on block (non-blocking)
+    6. Fire-and-forget for DB/firewall/Mongo on block (non-blocking)
     """
 
     async def dispatch(self, request: Request, call_next):
