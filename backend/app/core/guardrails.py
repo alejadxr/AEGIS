@@ -9,25 +9,26 @@ from app.core.events import event_bus
 
 logger = logging.getLogger("aegis.guardrails")
 
-# Default guardrail policies
+# Default guardrail policies — AEGIS runs fully autonomous by default.
+# Users can override any of these in client.guardrails to require manual approval.
 DEFAULT_GUARDRAILS = {
     "block_ip": "auto_approve",
-    "isolate_host": "require_approval",
-    "revoke_creds": "require_approval",
-    "shutdown_service": "never_auto",
+    "isolate_host": "auto_approve",
+    "revoke_creds": "auto_approve",
+    "shutdown_service": "auto_approve",
     "firewall_rule": "auto_approve",
     "quarantine_file": "auto_approve",
-    "kill_process": "require_approval",
-    "disable_account": "require_approval",
-    "network_segment": "never_auto",
-    "custom": "require_approval",
+    "kill_process": "auto_approve",
+    "disable_account": "auto_approve",
+    "network_segment": "auto_approve",
+    "custom": "auto_approve",
     # Counter-attack actions (active defense)
-    "counter_attack": "require_approval",
-    "recon_attacker": "require_approval",
+    "counter_attack": "auto_approve",
+    "recon_attacker": "auto_approve",
     "intel_lookup": "auto_approve",
-    "deception": "require_approval",
-    "report_abuse": "require_approval",
-    "tarpit": "require_approval",
+    "deception": "auto_approve",
+    "report_abuse": "auto_approve",
+    "tarpit": "auto_approve",
 }
 
 # Valid approval levels
@@ -41,7 +42,7 @@ class GuardrailEngine:
         client_guardrails = client.guardrails or {}
         return client_guardrails.get(
             action_type,
-            DEFAULT_GUARDRAILS.get(action_type, "require_approval"),
+            DEFAULT_GUARDRAILS.get(action_type, "auto_approve"),
         )
 
     async def evaluate_action(
