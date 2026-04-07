@@ -276,27 +276,63 @@ body {
 }
 
 [data-theme="light"] .text-white\/70 {
-  color: rgb(var(--c6-text-rgb) / 0.7) !important;
+  color: rgb(var(--c6-text-rgb) / 0.78) !important;
+}
+
+[data-theme="light"] .text-white\/60 {
+  color: #3F3F46 !important; /* zinc-700, WCAG AAA on white */
+}
+
+[data-theme="light"] .text-white\/50 {
+  color: #52525B !important; /* zinc-600, WCAG AAA on white */
 }
 
 [data-theme="light"] .text-white\/40 {
-  color: rgb(var(--c6-text-rgb) / 0.4) !important;
+  color: #52525B !important; /* zinc-600, 7.3:1 on white — was failing WCAG */
+}
+
+[data-theme="light"] .text-white\/30 {
+  color: #71717A !important; /* zinc-500, 4.9:1 AA on white */
 }
 
 [data-theme="light"] .text-white\/20 {
-  color: rgb(var(--c6-text-rgb) / 0.2) !important;
+  color: #71717A !important; /* zinc-500 — min readable */
 }
 
 [data-theme="light"] .text-white\/15 {
-  color: rgb(var(--c6-text-rgb) / 0.15) !important;
+  color: #A1A1AA !important; /* zinc-400 — decorative only */
+}
+
+[data-theme="light"] .text-white\/10 {
+  color: #A1A1AA !important; /* zinc-400 — decorative only */
+}
+
+[data-theme="light"] .text-white\/5 {
+  color: #D4D4D8 !important; /* zinc-300 — decorative/disabled */
 }
 
 [data-theme="light"] .text-zinc-200 {
-  color: rgb(var(--c6-text-rgb) / 0.92) !important;
+  color: #27272A !important; /* zinc-800, near-primary on white */
 }
 
 [data-theme="light"] .text-zinc-300 {
-  color: rgb(var(--c6-text-rgb) / 0.75) !important;
+  color: #3F3F46 !important; /* zinc-700, AAA on white */
+}
+
+[data-theme="light"] .text-zinc-400 {
+  color: #3F3F46 !important; /* zinc-700 — dark-mode zinc-400 is too light (fails WCAG) */
+}
+
+[data-theme="light"] .text-zinc-500 {
+  color: #52525B !important; /* zinc-600 — AAA (7.3:1) on white */
+}
+
+[data-theme="light"] .text-zinc-600 {
+  color: #3F3F46 !important; /* zinc-700 — darken the muted text */
+}
+
+[data-theme="light"] .text-zinc-700 {
+  color: #27272A !important; /* zinc-800 */
 }
 
 [data-theme="light"] .hover\:text-white:hover {
@@ -304,23 +340,23 @@ body {
 }
 
 [data-theme="light"] .hover\:text-zinc-200:hover {
-  color: rgb(var(--c6-text-rgb) / 0.9) !important;
+  color: #18181B !important;
 }
 
 [data-theme="light"] .hover\:text-zinc-300:hover {
-  color: rgb(var(--c6-text-rgb) / 0.85) !important;
+  color: #27272A !important;
 }
 
 [data-theme="light"] .hover\:text-zinc-400:hover {
-  color: rgb(var(--c6-text-rgb) / 0.75) !important;
+  color: #27272A !important;
 }
 
 [data-theme="light"] .hover\:text-zinc-500:hover {
-  color: rgb(var(--c6-text-rgb) / 0.65) !important;
+  color: #3F3F46 !important;
 }
 
 [data-theme="light"] .hover\:text-zinc-600:hover {
-  color: rgb(var(--c6-text-rgb) / 0.6) !important;
+  color: #3F3F46 !important;
 }
 
 [data-theme="light"] .hover\:bg-white\/\[0\.03\]:hover {
@@ -337,4 +373,101 @@ body {
 
 [data-theme="light"] .hover\:bg-white\/\[0\.08\]:hover {
   background-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+/* ── Additional light theme overrides for contrast (WCAG AA/AAA) ── */
+
+/* Backgrounds — translate faint white overlays to faint dark overlays on white */
+[data-theme="light"] .bg-white\/\[0\.02\] {
+  background-color: rgba(15, 23, 42, 0.03) !important;
+}
+
+[data-theme="light"] .bg-white\/\[0\.07\] {
+  background-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+[data-theme="light"] .bg-white\/\[0\.1\] {
+  background-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+[data-theme="light"] .bg-white\/\[0\.12\] {
+  background-color: rgba(15, 23, 42, 0.16) !important;
+}
+
+[data-theme="light"] .bg-white\/\[0\.15\] {
+  background-color: rgba(15, 23, 42, 0.18) !important;
+}
+
+[data-theme="light"] .bg-white\/10 {
+  background-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+[data-theme="light"] .bg-white\/20 {
+  background-color: rgba(15, 23, 42, 0.16) !important;
+}
+
+/* Borders — invisible white borders become visible dark borders */
+[data-theme="light"] .border-white\/\[0\.07\] {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+[data-theme="light"] .border-white\/\[0\.08\] {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+[data-theme="light"] .border-white\/\[0\.12\] {
+  border-color: rgba(15, 23, 42, 0.16) !important;
+}
+
+[data-theme="light"] .border-white\/\[0\.15\] {
+  border-color: rgba(15, 23, 42, 0.18) !important;
+}
+
+[data-theme="light"] .border-white\/10 {
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+[data-theme="light"] .border-white\/20 {
+  border-color: rgba(15, 23, 42, 0.18) !important;
+}
+
+/* Hover variants for backgrounds we newly introduced */
+[data-theme="light"] .hover\:bg-white\/\[0\.02\]:hover {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-theme="light"] .hover\:bg-white\/\[0\.07\]:hover {
+  background-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+[data-theme="light"] .hover\:bg-white\/\[0\.1\]:hover {
+  background-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+[data-theme="light"] .hover\:border-white\/\[0\.1\]:hover {
+  border-color: rgba(15, 23, 42, 0.16) !important;
+}
+
+[data-theme="light"] .hover\:border-white\/\[0\.12\]:hover {
+  border-color: rgba(15, 23, 42, 0.18) !important;
+}
+
+/* Placeholder text — dark-mode placeholders are near-invisible on white */
+[data-theme="light"] .placeholder\:text-zinc-500::placeholder,
+[data-theme="light"] .placeholder\:text-zinc-600::placeholder {
+  color: #71717A !important; /* zinc-500 on white is AA */
+}
+
+[data-theme="light"] .placeholder\:text-white\/40::placeholder,
+[data-theme="light"] .placeholder\:text-white\/30::placeholder {
+  color: #71717A !important;
+}
+
+/* Hardcoded dark surface backgrounds — cover a few more used shades */
+[data-theme="light"] .bg-\[\#0A0A0B\],
+[data-theme="light"] .bg-\[\#0B0B0D\],
+[data-theme="light"] .bg-\[\#0C0C0E\],
+[data-theme="light"] .bg-\[\#1A1A1D\],
+[data-theme="light"] .bg-\[\#1C1C1F\] {
+  background-color: var(--c6-surface) !important;
 }
