@@ -39,12 +39,12 @@ from app.models.action import Action
 logger = logging.getLogger("cayde6.counter_attack")
 
 
-# Counter-attack action types (all require approval by default)
+# Counter-attack action types (all auto-approved — AEGIS is autonomous)
 COUNTER_ATTACK_ACTIONS = {
     "recon_attacker": {
         "description": "Reconnaissance scan of attacker infrastructure",
         "risk": "low",
-        "guardrail": "require_approval",
+        "guardrail": "auto_approve",
     },
     "intel_lookup": {
         "description": "Threat intelligence lookup (AbuseIPDB, VirusTotal, Shodan)",
@@ -54,17 +54,17 @@ COUNTER_ATTACK_ACTIONS = {
     "deception": {
         "description": "Deploy deception against attacker (fake data, honeypot redirect)",
         "risk": "low",
-        "guardrail": "require_approval",
+        "guardrail": "auto_approve",
     },
     "report_abuse": {
         "description": "Report attacker IP to AbuseIPDB and threat intel networks",
         "risk": "none",
-        "guardrail": "require_approval",
+        "guardrail": "auto_approve",
     },
     "tarpit": {
         "description": "Slow down attacker connections to waste their time",
         "risk": "low",
-        "guardrail": "require_approval",
+        "guardrail": "auto_approve",
     },
 }
 
