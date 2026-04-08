@@ -232,7 +232,7 @@ Deploy decoy services that attract, profile, and trap attackers.
 - **Template Rotation** -- Decoy pages rotate every 4 hours to avoid fingerprinting
 - **Attacker Profiling** -- TTPs, tools, geolocation, threat scoring per IP with MITRE ATT&CK mapping
 
-#### Smart Honeypots (Pro)
+#### Smart Honeypots (Enterprise)
 
 AI-driven deception that imitates real applications:
 
@@ -425,31 +425,36 @@ Found a vulnerability? Please report it responsibly. See [SECURITY.md](SECURITY.
 
 ## Pricing
 
-AEGIS is fully open source. Premium tiers unlock advanced modules and higher limits.
+AEGIS is fully open source under AGPL-3.0. The free tier is production-ready and includes everything needed to defend real infrastructure. Enterprise is a custom-priced tier for companies that need advanced modules, unlimited scale, and dedicated support.
 
-| | Free | Pro ($29/mo) | Enterprise ($99/mo) |
-|---|---|---|---|
-| Detection pipeline (5 layers) | ✓ | ✓ | ✓ |
-| 122 Sigma rules + 10 playbooks | ✓ | ✓ | ✓ |
-| SSH + HTTP honeypots | ✓ | ✓ | ✓ |
-| Counter-attack AI | ✓ | ✓ | ✓ |
-| Shared threat intelligence | ✓ | ✓ | ✓ |
-| Behavioral ML | ✓ | ✓ | ✓ |
-| Dashboard + RBAC | ✓ | ✓ | ✓ |
-| Nodes | 3 | 25 | Unlimited |
-| Assets | 25 | 500 | Unlimited |
-| Users | 3 | 15 | Unlimited |
-| Smart Honeypots (AI deception) | - | ✓ | ✓ |
-| Quantum entropy analysis | - | ✓ | ✓ |
-| Grover's quantum calculator | - | ✓ | ✓ |
-| SBOM scanner | - | ✓ | ✓ |
-| Advanced PDF reports | - | ✓ | ✓ |
-| Adversarial ML detection | - | - | ✓ |
-| Compliance dashboard | - | - | ✓ |
-| SSO (SAML/OIDC) | - | - | ✓ |
-| Custom Sigma rules | - | - | ✓ |
+| | Free · Open Source | Enterprise |
+|---|---|---|
+| **Detection pipeline (5 layers, 18μs)** | ✓ | ✓ |
+| **122 Sigma rules + 10 playbooks** | ✓ | ✓ |
+| **SSH + HTTP honeypots + breadcrumb traps** | ✓ | ✓ |
+| **AI triage with MITRE ATT&CK mapping** | ✓ | ✓ |
+| **Counter-attack AI** | ✓ | ✓ |
+| **Behavioral ML (Isolation Forest)** | ✓ | ✓ |
+| **Shared threat intelligence** | ✓ | ✓ |
+| **Dashboard + RBAC + multi-tenant** | ✓ | ✓ |
+| **Rust endpoint agent** | ✓ | ✓ |
+| **Self-hosted with Docker Compose** | ✓ | ✓ |
+| **Auto-updates from GitHub** | ✓ | ✓ |
+| Nodes | 5 | Unlimited |
+| Assets | 50 | Unlimited |
+| Users | 5 | Unlimited |
+| Smart Honeypots (AI-driven deception) | — | ✓ |
+| Quantum entropy analysis | — | ✓ |
+| Grover's quantum calculator | — | ✓ |
+| Adversarial ML detection | — | ✓ |
+| SBOM scanner (NIS2 / DORA) | — | ✓ |
+| Compliance dashboard (ISO 27001, NIS2, SOC 2) | — | ✓ |
+| Advanced PDF reports + scheduling | — | ✓ |
+| SSO (SAML / OIDC) | — | ✓ |
+| Custom Sigma rules | — | ✓ |
+| SLA + dedicated support | — | ✓ |
 
-Payment via PayPal. Upgrade from Settings → Billing in the dashboard.
+Contact [alejandxr@icloud.com](mailto:alejandxr@icloud.com) for Enterprise pricing and deployment.
 
 ---
 

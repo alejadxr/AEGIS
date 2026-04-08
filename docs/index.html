@@ -46,23 +46,13 @@
       "name": "Free",
       "price": "0",
       "priceCurrency": "USD",
-      "description": "Full detection pipeline, honeypots, AI triage, Sigma rules, dashboard. Up to 3 nodes."
-    },
-    {
-      "@type": "Offer",
-      "name": "Pro",
-      "price": "29",
-      "priceCurrency": "USD",
-      "billingIncrement": "P1M",
-      "description": "Smart honeypots, quantum entropy analysis, SBOM scanner, advanced reports. Up to 25 nodes."
+      "description": "Full open-source detection pipeline, honeypots, AI triage, Sigma rules, counter-attack AI, dashboard, behavioral ML. 5 nodes, 50 assets, 5 users."
     },
     {
       "@type": "Offer",
       "name": "Enterprise",
-      "price": "99",
       "priceCurrency": "USD",
-      "billingIncrement": "P1M",
-      "description": "Adversarial ML detection, compliance dashboard, SSO, custom Sigma rules. Unlimited nodes."
+      "description": "Smart honeypots, quantum analysis, adversarial ML, compliance dashboard (ISO 27001 / NIS2 / SOC 2), SBOM scanner, SSO, custom Sigma rules, unlimited nodes, SLA and dedicated support. Custom pricing."
     }
   ],
   "featureList": [
@@ -119,7 +109,7 @@
       "name": "Is AEGIS free?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. AEGIS is fully open source under AGPL-3.0. The free tier includes the complete detection pipeline, honeypots, AI triage, Sigma rules, counter-attack AI, shared threat intelligence, and dashboard for up to 3 nodes and 25 assets. Pro ($29/mo) and Enterprise ($99/mo) tiers unlock smart honeypots, quantum analysis, compliance dashboards, and higher limits."
+        "text": "Yes. AEGIS is fully open source under AGPL-3.0. The free tier includes the complete 5-layer detection pipeline, honeypots with breadcrumb traps, AI triage with MITRE ATT&CK mapping, 122 Sigma rules, counter-attack AI, behavioral ML, shared threat intelligence, and dashboard — for up to 5 nodes, 50 assets, and 5 users. Enterprise is a custom-priced tier for companies that need smart honeypots, quantum analysis, compliance dashboards (ISO 27001 / NIS2 / SOC 2), SSO, unlimited scale, and dedicated support."
       }
     },
     {
@@ -1503,6 +1493,14 @@ nav.scrolled {
   align-items: start;
 }
 
+.price-grid-2col {
+  grid-template-columns: repeat(2, 1fr);
+  max-width: 920px;
+  margin-left: auto;
+  margin-right: auto;
+  gap: 24px;
+}
+
 .price-card {
   padding: 44px 36px 40px;
   border-radius: 16px;
@@ -2383,57 +2381,51 @@ footer {
   <div class="wrap">
     <div class="reveal">
       <div class="section-label">Pricing</div>
-      <h2 class="section-title">Start free. <em>Scale when ready.</em></h2>
-      <p class="section-subtitle">Full detection pipeline included in every tier. No feature walls on security.</p>
+      <h2 class="section-title">Free forever. <em>Enterprise when you need it.</em></h2>
+      <p class="section-subtitle">Full detection pipeline is always free. Enterprise unlocks premium modules, unlimited scale, and dedicated support.</p>
     </div>
-    <div class="price-grid">
-      <!-- Free -->
+    <div class="price-grid price-grid-2col">
+      <!-- Free / Open Source -->
       <div class="price-card reveal stagger-1">
-        <div class="price-tier">Free</div>
+        <div class="price-tier">Free &middot; Open Source</div>
         <div class="price-amount">$0</div>
-        <div class="price-desc">3 nodes, 25 assets. For homelabs and small teams.</div>
+        <div class="price-desc">For individuals, homelabs, and small teams. No credit card, no expiration.</div>
         <ul class="price-features">
-          <li><span class="ck">&#10003;</span> 5-layer detection pipeline</li>
-          <li><span class="ck">&#10003;</span> 122 Sigma rules</li>
+          <li><span class="ck">&#10003;</span> 5-layer detection pipeline (18&micro;s)</li>
+          <li><span class="ck">&#10003;</span> 122 Sigma correlation rules</li>
           <li><span class="ck">&#10003;</span> SSH + HTTP honeypots</li>
-          <li><span class="ck">&#10003;</span> Counter-attack AI</li>
-          <li><span class="ck">&#10003;</span> Shared threat intel</li>
-          <li><span class="xk">&mdash;</span> Quantum module</li>
-          <li><span class="xk">&mdash;</span> Compliance dashboard</li>
+          <li><span class="ck">&#10003;</span> Breadcrumb credential traps</li>
+          <li><span class="ck">&#10003;</span> AI triage + MITRE ATT&amp;CK mapping</li>
+          <li><span class="ck">&#10003;</span> Counter-attack AI (uncensored)</li>
+          <li><span class="ck">&#10003;</span> Behavioral ML + Isolation Forest</li>
+          <li><span class="ck">&#10003;</span> Shared threat intelligence</li>
+          <li><span class="ck">&#10003;</span> Dashboard + RBAC + multi-tenant</li>
+          <li><span class="ck">&#10003;</span> Rust endpoint agent</li>
+          <li><span class="ck">&#10003;</span> Self-hosted with Docker Compose</li>
+          <li><span class="ck">&#10003;</span> 5 nodes &middot; 50 assets &middot; 5 users</li>
         </ul>
-        <a class="price-btn price-btn-outline" href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">Get Started</a>
-      </div>
-      <!-- Pro -->
-      <div class="price-card pro reveal stagger-2">
-        <div class="price-tier">Pro</div>
-        <div class="price-amount">$29<span>/mo</span></div>
-        <div class="price-desc">25 nodes, 500 assets. For growing security teams.</div>
-        <ul class="price-features">
-          <li><span class="ck">&#10003;</span> Everything in Free</li>
-          <li><span class="ck">&#10003;</span> Quantum entropy analysis</li>
-          <li><span class="ck">&#10003;</span> SBOM scanner</li>
-          <li><span class="ck">&#10003;</span> Advanced PDF reports</li>
-          <li><span class="ck">&#10003;</span> Priority email support</li>
-          <li><span class="xk">&mdash;</span> Adversarial ML</li>
-          <li><span class="xk">&mdash;</span> SSO / SAML</li>
-        </ul>
-        <a class="price-btn price-btn-primary" href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">Upgrade to Pro</a>
+        <a class="price-btn price-btn-primary" href="https://github.com/diego1128256-cmd/AEGIS" target="_blank" rel="noopener">Download Free</a>
       </div>
       <!-- Enterprise -->
-      <div class="price-card reveal stagger-3">
+      <div class="price-card pro reveal stagger-2">
         <div class="price-tier">Enterprise</div>
-        <div class="price-amount">$99<span>/mo</span></div>
-        <div class="price-desc">Unlimited nodes &amp; assets. For compliance-driven orgs.</div>
+        <div class="price-amount">Custom</div>
+        <div class="price-desc">For companies that need advanced features, unlimited scale, and dedicated support.</div>
         <ul class="price-features">
-          <li><span class="ck">&#10003;</span> Everything in Pro</li>
+          <li><span class="ck">&#10003;</span> Everything in Free, plus:</li>
+          <li><span class="ck">&#10003;</span> Smart Honeypots (AI-driven deception)</li>
+          <li><span class="ck">&#10003;</span> Quantum entropy &amp; C2 detection</li>
+          <li><span class="ck">&#10003;</span> Grover crypto vulnerability calculator</li>
           <li><span class="ck">&#10003;</span> Adversarial ML detection</li>
-          <li><span class="ck">&#10003;</span> Compliance dashboard</li>
+          <li><span class="ck">&#10003;</span> SBOM scanner (NIS2 / DORA)</li>
+          <li><span class="ck">&#10003;</span> Compliance dashboard (ISO&nbsp;27001, NIS2, SOC&nbsp;2)</li>
+          <li><span class="ck">&#10003;</span> Advanced PDF reports &amp; scheduling</li>
           <li><span class="ck">&#10003;</span> SSO (SAML / OIDC)</li>
           <li><span class="ck">&#10003;</span> Custom Sigma rules</li>
-          <li><span class="ck">&#10003;</span> SLA guarantee</li>
-          <li><span class="ck">&#10003;</span> Dedicated support</li>
+          <li><span class="ck">&#10003;</span> Unlimited nodes, assets, users</li>
+          <li><span class="ck">&#10003;</span> SLA + dedicated support</li>
         </ul>
-        <a class="price-btn price-btn-outline" href="mailto:alejandxr@icloud.com">Contact Sales</a>
+        <a class="price-btn price-btn-primary" href="mailto:alejandxr@icloud.com?subject=AEGIS%20Enterprise%20Inquiry">Contact Sales</a>
       </div>
     </div>
   </div>
@@ -2464,7 +2456,7 @@ footer {
       </details>
       <details class="faq-item">
         <summary>Is AEGIS free?</summary>
-        <p>Yes. The free tier includes the complete 5-layer detection pipeline, SSH and HTTP honeypots, AI triage, 122 Sigma rules, counter-attack AI, shared threat intelligence, behavioral ML, dashboard with RBAC — for up to 3 nodes and 25 assets. Pro ($29/mo) adds smart AI honeypots, quantum analysis, and SBOM scanning. Enterprise ($99/mo) adds compliance dashboards, SSO, and unlimited nodes.</p>
+        <p>Yes. AEGIS is fully open source under AGPL-3.0. The free tier includes the complete 5-layer detection pipeline, SSH and HTTP honeypots with breadcrumb traps, AI triage with MITRE ATT&amp;CK mapping, 122 Sigma rules, counter-attack AI, behavioral ML, shared threat intelligence, dashboard with RBAC, and the Rust endpoint agent — for up to 5 nodes, 50 assets, and 5 users. Enterprise is a custom-priced tier for companies that need smart AI honeypots, quantum analysis, adversarial ML detection, compliance dashboards (ISO&nbsp;27001, NIS2, SOC&nbsp;2), SSO, unlimited scale, and dedicated support.</p>
       </details>
       <details class="faq-item">
         <summary>What attacks does AEGIS detect?</summary>

@@ -125,7 +125,7 @@ async def analyze_entropy(
     auth: AuthContext = Depends(require_viewer),
 ):
     """Compute multi-order Renyi entropy for the provided data."""
-    require_feature(auth.client, "quantum_entropy", "pro")
+    require_feature(auth.client, "quantum_entropy", "enterprise")
 
     # If no data provided, return a general entropy overview
     if not req.data_base64:
@@ -163,7 +163,7 @@ async def detect_c2(
     auth: AuthContext = Depends(require_viewer),
 ):
     """Analyze payload entropy to detect C2 beacon traffic patterns."""
-    require_feature(auth.client, "quantum_entropy", "pro")
+    require_feature(auth.client, "quantum_entropy", "enterprise")
     try:
         payload = base64.b64decode(req.payload_base64)
     except Exception:
@@ -183,7 +183,7 @@ async def detect_stego(
     auth: AuthContext = Depends(require_viewer),
 ):
     """Detect steganographic content using Renyi entropy deviation analysis."""
-    require_feature(auth.client, "quantum_entropy", "pro")
+    require_feature(auth.client, "quantum_entropy", "enterprise")
     try:
         data = base64.b64decode(req.data_base64)
     except Exception:
@@ -199,7 +199,7 @@ async def analyze_network_flow(
     auth: AuthContext = Depends(require_viewer),
 ):
     """Analyze entropy trend over a sequence of network packets."""
-    require_feature(auth.client, "quantum_entropy", "pro")
+    require_feature(auth.client, "quantum_entropy", "enterprise")
     try:
         packets = [base64.b64decode(p) for p in req.packets_base64]
     except Exception:
@@ -224,7 +224,7 @@ async def assess_all_crypto(
     Assess quantum vulnerability of common cryptographic algorithms.
     Returns assessments for all known algorithms in the database.
     """
-    require_feature(auth.client, "grover_calculator", "pro")
+    require_feature(auth.client, "grover_calculator", "enterprise")
     from app.modules.quantum.grover_calculator import CRYPTO_ASSESSMENTS
 
     results = []
@@ -249,7 +249,7 @@ async def assess_algorithm(
     auth: AuthContext = Depends(require_viewer),
 ):
     """Assess a specific cryptographic algorithm against quantum attacks."""
-    require_feature(auth.client, "grover_calculator", "pro")
+    require_feature(auth.client, "grover_calculator", "enterprise")
     result = grover_calculator.assess_key_strength(req.algorithm, req.key_bits)
     return result
 
@@ -260,7 +260,7 @@ async def assess_asset_crypto(
     auth: AuthContext = Depends(require_analyst),
 ):
     """Assess an asset's complete cryptographic posture against quantum threats."""
-    require_feature(auth.client, "grover_calculator", "pro")
+    require_feature(auth.client, "grover_calculator", "enterprise")
     result = grover_calculator.assess_asset(req.model_dump())
     return result
 
@@ -270,7 +270,7 @@ async def crypto_timeline(
     auth: AuthContext = Depends(require_viewer),
 ):
     """Get timeline of when each cryptographic algorithm becomes quantum-vulnerable."""
-    require_feature(auth.client, "grover_calculator", "pro")
+    require_feature(auth.client, "grover_calculator", "enterprise")
     return grover_calculator.get_vulnerability_timeline()
 
 

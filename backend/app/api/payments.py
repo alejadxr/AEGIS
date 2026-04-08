@@ -15,15 +15,10 @@ logger = logging.getLogger("aegis.payments")
 router = APIRouter(prefix="/payments", tags=["payments"])
 
 TIER_PRICES = {
-    "pro": {
-        "price": "29.00",
-        "name": "AEGIS Pro",
-        "description": "Pro tier - 25 nodes, 500 assets",
-    },
     "enterprise": {
         "price": "99.00",
         "name": "AEGIS Enterprise",
-        "description": "Enterprise - unlimited nodes, assets, users",
+        "description": "Enterprise - unlimited nodes, assets, users, all premium features",
     },
 }
 
@@ -42,7 +37,7 @@ async def get_paypal_token() -> str:
 
 
 class CreateOrderRequest(BaseModel):
-    tier: str  # "pro" or "enterprise"
+    tier: str  # "enterprise"
 
 
 class CaptureOrderRequest(BaseModel):
@@ -132,12 +127,9 @@ async def capture_order(
             400, f"Payment not completed: {capture_data.get('status')}"
         )
 
-    # Determine which tier was purchased from the order description
-    desc = capture_data.get("purchase_units", [{}])[0].get("description", "")
-    new_tier = (
-        "enterprise" if "Enterprise" in desc else "pro" if "Pro" in desc else "pro"
-    )
-    tier_config = TIERS.get(new_tier, TIERS["pro"])
+    # Only enterprise tier is paid — set it
+    new_tier = "enterprise"
+    tier_config = TIERS["enterprise"]
 
     # Upgrade client tier
     client_obj = auth.client
@@ -178,7 +170,7 @@ async def payment_status(auth: AuthContext = Depends(require_viewer)):
         "max_assets": client.max_assets,
         "max_users": client.max_users,
         "upgrades_available": [
-            t for t in ["pro", "enterprise"] if t != client.tier
+            t for t in ["enterprise"] if t != client.tier
         ],
         "prices": TIER_PRICES,
         "paypal_configured": bool(settings.PAYPAL_CLIENT_ID and settings.PAYPAL_SECRET),

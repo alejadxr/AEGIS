@@ -1236,7 +1236,7 @@ export default function SetupWizard() {
                 <div className="flex items-center gap-2 mb-3">
                   <Sparkles className="w-4 h-4 text-[#F97316]" />
                   <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Smart Honeypots</span>
-                  <span className="text-[10px] font-bold text-[#F97316] bg-[#F97316]/10 border border-[#F97316]/20 px-2 py-0.5 rounded-full">PRO</span>
+                  <span className="text-[10px] font-bold text-[#F97316] bg-[#F97316]/10 border border-[#F97316]/20 px-2 py-0.5 rounded-full">ENTERPRISE</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {SMART_HONEYPOT_TYPES.map(hp => {
@@ -1553,7 +1553,7 @@ export default function SetupWizard() {
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[#F97316]/10 border border-[#F97316]/20 mb-4">
                 <Crown className="w-7 h-7 text-[#F97316]" />
               </div>
-              <h3 className="text-xl font-bold text-white">Upgrade to Pro</h3>
+              <h3 className="text-xl font-bold text-white">Upgrade to Enterprise</h3>
               <p className="text-sm text-zinc-500 mt-2">
                 Smart Honeypots use AI to create indistinguishable decoys that mirror your real services, catching even sophisticated attackers.
               </p>
@@ -1574,7 +1574,7 @@ export default function SetupWizard() {
               className="w-full bg-[#F97316] hover:bg-[#EA580C] text-white font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#F97316]/20 active:scale-[0.98] flex items-center justify-center gap-2"
             >
               <Crown className="w-4 h-4" />
-              Upgrade to Pro
+              Contact Sales
             </button>
             <button
               onClick={() => setShowUpgradeModal(false)}
