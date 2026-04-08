@@ -440,9 +440,9 @@ AEGIS is fully open source under AGPL-3.0. The free tier is production-ready and
 | **Rust endpoint agent** | ✓ | ✓ |
 | **Self-hosted with Docker Compose** | ✓ | ✓ |
 | **Auto-updates from GitHub** | ✓ | ✓ |
-| Nodes | 5 | Unlimited |
-| Assets | 50 | Unlimited |
-| Users | 5 | Unlimited |
+| Nodes | 20 | Unlimited |
+| Assets | 100 | Unlimited |
+| Users | 3 | Unlimited |
 | Smart Honeypots (AI-driven deception) | — | ✓ |
 | Quantum entropy analysis | — | ✓ |
 | Grover's quantum calculator | — | ✓ |

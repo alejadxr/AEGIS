@@ -52,9 +52,9 @@ ENTERPRISE_FEATURES = [
 TIERS: dict[str, dict] = {
     "free": {
         "label": "Free",
-        "max_nodes": 5,
-        "max_assets": 50,
-        "max_users": 5,
+        "max_nodes": 20,
+        "max_assets": 100,
+        "max_users": 3,
         "features": list(FREE_FEATURES),
     },
     "enterprise": {
