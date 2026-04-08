@@ -46,6 +46,7 @@ ENTERPRISE_FEATURES = [
     "sso_saml",
     "custom_sigma_rules",
     "sla_support",
+    "honey_ai_deception",
 ]
 
 
@@ -98,6 +99,7 @@ FEATURE_LABELS: dict[str, str] = {
     "sso_saml": "SSO (SAML / OIDC)",
     "custom_sigma_rules": "Custom Sigma Rules",
     "sla_support": "SLA + Dedicated Support",
+    "honey_ai_deception": "Honey-AI Deception at Scale",
 }
 
 

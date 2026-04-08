@@ -11,6 +11,10 @@ from app.models.audit_log import AuditLog
 from app.models.attacker_profile import AttackerProfile
 from app.models.endpoint_agent import EndpointAgent, AgentEvent, ForensicSnapshot
 from app.models.shared_intel import SharedIOC
+from app.models.firewall_rule import FirewallRule
+from app.models.honey_breadcrumb import HoneyBreadcrumb
+from app.models.ransomware_event import RansomwareEvent
+from app.models.av_detection import AvDetection
 
 __all__ = [
     "Base",
@@ -30,4 +34,8 @@ __all__ = [
     "AgentEvent",
     "ForensicSnapshot",
     "SharedIOC",
+    "FirewallRule",
+    "HoneyBreadcrumb",
+    "RansomwareEvent",
+    "AvDetection",
 ]

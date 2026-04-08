@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -150,6 +150,145 @@ async def get_timeline(
 
     events.sort(key=lambda e: e.timestamp, reverse=True)
     return events[:limit]
+
+
+class Top10Row(BaseModel):
+    label: str
+    count: int
+    meta: str | None = None
+
+
+class LiveMetrics(BaseModel):
+    top_attackers: list[Top10Row]
+    top_targets: list[Top10Row]
+    top_attack_types: list[Top10Row]
+    incidents_open: int
+    honeypot_hits_24h: int
+    blocked_actions_24h: int
+    ai_decisions_24h: int
+    generated_at: str
+
+
+@router.get("/live-metrics", response_model=LiveMetrics)
+async def get_live_metrics(
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cached aggregates for the Live SOC dashboard:
+      - Top 10 attacker IPs (by incident count)
+      - Top 10 targets (assets by incident count)
+      - Top 10 attack types (by mitre_technique count)
+      - Rolling counters (open incidents, hits, blocks, decisions)
+    """
+    client = auth.client
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    # Top 10 attacker IPs
+    attackers_result = await db.execute(
+        select(
+            Incident.source_ip,
+            func.count(Incident.id).label("c"),
+        )
+        .where(
+            Incident.client_id == client.id,
+            Incident.source_ip.is_not(None),
+            Incident.detected_at >= cutoff,
+        )
+        .group_by(Incident.source_ip)
+        .order_by(func.count(Incident.id).desc())
+        .limit(10)
+    )
+    top_attackers = [
+        Top10Row(label=row[0] or "unknown", count=int(row[1] or 0))
+        for row in attackers_result.all()
+    ]
+
+    # Top 10 targets (by asset ip/hostname via incidents)
+    targets_result = await db.execute(
+        select(
+            Asset.hostname,
+            Asset.ip_address,
+            func.count(Incident.id).label("c"),
+        )
+        .join(Incident, Incident.target_asset_id == Asset.id, isouter=False)
+        .where(
+            Asset.client_id == client.id,
+            Incident.detected_at >= cutoff,
+        )
+        .group_by(Asset.hostname, Asset.ip_address)
+        .order_by(func.count(Incident.id).desc())
+        .limit(10)
+    )
+    top_targets = [
+        Top10Row(
+            label=row[0] or row[1] or "unknown",
+            count=int(row[2] or 0),
+            meta=row[1] if row[0] and row[1] else None,
+        )
+        for row in targets_result.all()
+    ]
+
+    # Top 10 attack types (by mitre_technique)
+    types_result = await db.execute(
+        select(
+            Incident.mitre_technique,
+            func.count(Incident.id).label("c"),
+        )
+        .where(
+            Incident.client_id == client.id,
+            Incident.mitre_technique.is_not(None),
+            Incident.detected_at >= cutoff,
+        )
+        .group_by(Incident.mitre_technique)
+        .order_by(func.count(Incident.id).desc())
+        .limit(10)
+    )
+    top_attack_types = [
+        Top10Row(label=row[0] or "unknown", count=int(row[1] or 0))
+        for row in types_result.all()
+    ]
+
+    # Counters
+    incidents_open = await db.scalar(
+        select(func.count(Incident.id)).where(
+            Incident.client_id == client.id,
+            Incident.status.in_(["open", "investigating"]),
+        )
+    ) or 0
+
+    honeypot_hits_24h = await db.scalar(
+        select(func.count(HoneypotInteraction.id)).where(
+            HoneypotInteraction.client_id == client.id,
+            HoneypotInteraction.timestamp >= cutoff,
+        )
+    ) or 0
+
+    blocked_actions_24h = await db.scalar(
+        select(func.count(Action.id)).where(
+            Action.client_id == client.id,
+            Action.status == "executed",
+            Action.created_at >= cutoff,
+        )
+    ) or 0
+
+    ai_decisions_24h = await db.scalar(
+        select(func.count(AuditLog.id)).where(
+            AuditLog.client_id == client.id,
+            AuditLog.timestamp >= cutoff,
+        )
+    ) or 0
+
+    return LiveMetrics(
+        top_attackers=top_attackers,
+        top_targets=top_targets,
+        top_attack_types=top_attack_types,
+        incidents_open=int(incidents_open),
+        honeypot_hits_24h=int(honeypot_hits_24h),
+        blocked_actions_24h=int(blocked_actions_24h),
+        ai_decisions_24h=int(ai_decisions_24h),
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 @router.get("/threat-map", response_model=list[ThreatMapEntry])
