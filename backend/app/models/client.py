@@ -12,11 +12,11 @@ class Client(Base, UUIDMixin, TimestampMixin):
     settings: Mapped[dict] = mapped_column(JSON, default=dict)
     guardrails: Mapped[dict] = mapped_column(JSON, default=dict)
 
-    # Subscription / freemium tiers
+    # Subscription tiers: free (open source) or enterprise (paid)
     tier: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
-    max_nodes: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
-    max_assets: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
-    max_users: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    max_nodes: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    max_assets: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    max_users: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
 
     # Relationships
     assets = relationship("Asset", back_populates="client", cascade="all, delete-orphan")
