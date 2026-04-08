@@ -113,13 +113,29 @@ def _detect_injections(text: str) -> list[str]:
 class SmartAPIHoneypot:
     """REST API honeypot with plausible fake data and injection tracking."""
 
-    def __init__(self, port: int = 9090):
+    def __init__(
+        self,
+        port: int = 9090,
+        theme: Optional[str] = None,
+        campaign_id: Optional[str] = None,
+        fake_user_count: int = 50,
+    ):
         self.port = port
+        self.theme = theme
+        self.campaign_id = campaign_id
         self._running = False
         self._runner: Optional[web.AppRunner] = None
         self._interaction_queue: Optional[asyncio.Queue] = None
-        # Pre-generate a stable set of fake users
-        self._users = [_fake_user(i) for i in range(1, 51)]
+        # Pre-generate fake users — use content_generator when a theme is
+        # set so the data + breadcrumbs match the deception campaign.
+        if theme:
+            try:
+                from app.services.honey_ai.content_generator import content_generator
+                self._users = content_generator.fake_users(theme, fake_user_count)
+            except Exception:
+                self._users = [_fake_user(i) for i in range(1, fake_user_count + 1)]
+        else:
+            self._users = [_fake_user(i) for i in range(1, fake_user_count + 1)]
         self._config = _fake_config()
         self._api_keys: dict[str, dict] = {
             _fake_api_key(): {"user_id": 1, "role": "admin", "created": datetime.utcnow().isoformat()},

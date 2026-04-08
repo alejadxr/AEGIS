@@ -556,6 +556,42 @@ class AttackDetectorMiddleware(BaseHTTPMiddleware):
                 _record_timing(time.perf_counter_ns() - t0)
                 return _blocked_response()
 
+        # ---- Configurable firewall rule engine (augments hardcoded checks) ----
+        # Uses the sync cache-only path so the detector stays fast. The cache
+        # is primed asynchronously by the firewall_engine loader on first hit
+        # or via CRUD invalidation.
+        try:
+            from app.services.firewall_engine import firewall_engine as _fw
+
+            event = {
+                "source_ip": ip,
+                "path": path,
+                "method": method,
+                "user_agent": user_agent,
+                "protocol": "http",
+                "port": request.url.port or 0,
+                "event_type": "http_request",
+            }
+            fw_matches = _fw.evaluate_all_sync(event)
+            if fw_matches:
+                # Highest priority match wins
+                top = fw_matches[0]
+                if top.action == "allow":
+                    _record_timing(time.perf_counter_ns() - t0)
+                    return await call_next(request)
+                if top.action in ("block_ip", "quarantine_host"):
+                    _record_attack(ip, f"fw_rule:{top.rule_name}")
+                    await _block_ip(ip, f"firewall_rule:{top.rule_name}")
+                    _record_timing(time.perf_counter_ns() - t0)
+                    return _blocked_response()
+                if top.action == "alert":
+                    logger.warning(
+                        f"[FW-RULE] {top.rule_name} alert from {ip} path={path}"
+                    )
+        except Exception as exc:
+            # Never fail the request because of rule engine errors
+            logger.debug(f"[AttackDetector] firewall_engine skipped: {exc}")
+
         # Record timing for clean requests too
         _record_timing(time.perf_counter_ns() - t0)
 
