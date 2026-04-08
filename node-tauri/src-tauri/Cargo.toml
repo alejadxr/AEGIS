@@ -28,9 +28,41 @@ chrono = "0.4"
 rand = "0.8"
 aegis-agent-rust = { path = "../../agent-rust" }
 notify = "7"
+sha2 = "0.10"
+flate2 = "1"
+bytes = "1"
+
+# Optional Tier-2 telemetry collectors
+ferrisetw = { version = "1", optional = true }
+aya = { version = "0.12", optional = true }
+
+# Optional AV engine backends
+sled = { version = "0.34", optional = true }
+yara = { version = "0.29", optional = true }
+
+[features]
+# Tier-2 EDR collectors — enable during release builds on target hosts.
+# On dev machines without admin / kernel access, leave disabled and the
+# Tier-1 poller takes over automatically.
+default = ["sled"]
+ferrisetw = ["dep:ferrisetw"]
+aya-bpf = ["dep:aya"]
+sled = ["dep:sled"]
+yara = ["dep:yara"]
+clamav = []
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Diagnostics_Etw",
+    "Win32_Security",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.29", features = ["signal", "process"] }
 
 [profile.release]
 opt-level = "z"

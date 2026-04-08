@@ -51,6 +51,12 @@ from app.api import onboarding as onboarding_router
 from app.api import payments as payments_router
 from app.api import compliance as compliance_router
 from app.api import updates as updates_router
+from app.api import firewall as firewall_router
+from app.api import ransomware as ransomware_router
+from app.api import deception as deception_router
+from app.api import edr as edr_router
+from app.api import antivirus as antivirus_router
+from app.services.signature_updater import signature_updater
 
 # MongoDB threat intel hub
 from app.core.mongo_client import connect_mongo, close_mongo
@@ -75,11 +81,34 @@ event_stream = EventStream(
 
 # --- WebSocket push handler (replaces old ConnectionManager) ---
 
+# Map internal event_bus event names to Live-dashboard topic names.
+# Multiple topics per event are allowed so a single incident event
+# can fan out to several widgets at once (e.g. attack feed AND top-10 refresh).
+EVENT_TO_TOPICS: dict[str, tuple[str, ...]] = {
+    "alert_processed": ("incidents.new", "metrics.top_attackers", "metrics.top_attack_types"),
+    "correlation_triggered": ("incidents.new",),
+    "fast_triage_completed": ("incidents.new",),
+    "playbook_executed": ("incidents.new",),
+    "action_executed": ("actions.new", "metrics.blocked"),
+    "action_requires_approval": ("actions.new",),
+    "honeypot_interaction": ("honeypot.interactions", "attackers.geo"),
+    "honeypot_deployed": ("honeypot.status",),
+    "scan_completed": ("scans.completed",),
+    "node_status": ("nodes.status",),
+    "log_line": ("logs.stream",),
+}
+
+
 async def ws_event_handler(data):
-    """Forward events to WebSocket clients via WSPushManager."""
-    await ws_push_manager.broadcast(
-        data if isinstance(data, dict) else {"data": data}
-    )
+    """Forward events to WebSocket clients via WSPushManager with topic routing."""
+    payload = data if isinstance(data, dict) else {"data": data}
+    event_type = payload.get("_event_type") or payload.get("type") or "event"
+    topics = EVENT_TO_TOPICS.get(event_type, (event_type,))
+    # Emit one broadcast per topic so each widget-subscriber gets a clean,
+    # topic-tagged message.
+    for topic in topics:
+        msg = {**payload, "topic": topic, "_event_type": event_type}
+        await ws_push_manager.broadcast(msg)
 
 
 async def _get_client(client_id: str | None) -> Client | None:
@@ -274,6 +303,10 @@ async def lifespan(app: FastAPI):
     await behavioral_engine.start()
     logger.info("Behavioral ML engine started")
 
+    # Task #6: Start antivirus signature updater (daily YARA + MalwareBazaar pull)
+    await signature_updater.start()
+    logger.info("Antivirus signature updater started")
+
     # Start MongoDB threat intel hub (conditional on AEGIS_MONGODB_URI)
     mongo_ok = await connect_mongo()
     if mongo_ok:
@@ -283,6 +316,21 @@ async def lifespan(app: FastAPI):
         logger.info("MongoDB not configured - threat intel hub disabled")
 
     logger.info(f"Cayde-6 ready on port {settings.AEGIS_API_PORT}")
+
+    # Prime configurable firewall rule cache for all tenants
+    try:
+        from sqlalchemy import select as _sa_select
+        from app.services.firewall_engine import firewall_engine
+        async with async_session() as db:
+            result = await db.execute(_sa_select(Client).limit(50))
+            for c in result.scalars().all():
+                try:
+                    await firewall_engine.load_rules(c.id, force=True)
+                except Exception as exc:
+                    logger.debug(f"firewall_engine warm for {c.id} failed: {exc}")
+        logger.info("Configurable firewall rule cache primed")
+    except Exception as e:
+        logger.error(f"Failed to prime firewall engine cache: {e}")
 
     # Start honeypots (SSH on 2222, HTTP on 8888)
     honeypot_queue = asyncio.Queue()
@@ -385,6 +433,11 @@ app.include_router(onboarding_router.router, prefix="/api/v1")
 app.include_router(payments_router.router, prefix="/api/v1")
 app.include_router(compliance_router.router, prefix="/api/v1")
 app.include_router(updates_router.router, prefix="/api/v1")
+app.include_router(firewall_router.router, prefix="/api/v1")
+app.include_router(ransomware_router.router, prefix="/api/v1")
+app.include_router(deception_router.router, prefix="/api/v1")
+app.include_router(edr_router.router, prefix="/api/v1")
+app.include_router(antivirus_router.router, prefix="/api/v1")
 app.include_router(threat_intel_hub_router.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 
@@ -407,13 +460,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     ws_push_manager.set_filters(ws_client, msg.get("filters", {}))
                     await websocket.send_json({"type": "filters_updated", "filters": msg.get("filters", {})})
                 elif msg.get("type") == "subscribe":
-                    # Allow clients to subscribe to specific event types
-                    filters = ws_client.filters or {}
-                    event_types = filters.get("event_types", [])
-                    new_types = msg.get("event_types", [])
-                    filters["event_types"] = list(set(event_types + new_types))
-                    ws_push_manager.set_filters(ws_client, filters)
-                    await websocket.send_json({"type": "subscribed", "event_types": filters["event_types"]})
+                    # Topic subscription — supports "topics" (preferred) or "event_types" (legacy)
+                    new_topics = msg.get("topics") or msg.get("event_types") or []
+                    ws_push_manager.subscribe_topics(ws_client, new_topics)
+                    await websocket.send_json({
+                        "type": "subscribed",
+                        "topics": sorted(ws_client.topics),
+                    })
+                elif msg.get("type") == "unsubscribe":
+                    rm_topics = msg.get("topics") or msg.get("event_types") or []
+                    ws_push_manager.unsubscribe_topics(ws_client, rm_topics)
+                    await websocket.send_json({
+                        "type": "unsubscribed",
+                        "topics": sorted(ws_client.topics),
+                    })
             except json.JSONDecodeError:
                 pass
     except WebSocketDisconnect:

@@ -89,12 +89,18 @@ class HoneypotOrchestrator:
         db: AsyncSession,
         custom_config: Optional[dict] = None,
         client=None,
+        campaign=None,
     ) -> Honeypot:
         """Deploy a new honeypot.
 
         Smart honeypot types (smart_http, smart_api, smart_db) require the
         ``smart_honeypots`` feature which is only available on Pro and
         Enterprise tiers.
+
+        When *campaign* is supplied (a :class:`honey_ai.Campaign` instance)
+        the ``theme`` and ``campaign_id`` are stamped into the honeypot
+        config so smart honeypot handlers can generate theme-aware content
+        and thread breadcrumb UUIDs back to the right campaign.
         """
         # Gate smart honeypots behind feature check
         if honeypot_type in SMART_HONEYPOT_TYPES:
@@ -106,6 +112,12 @@ class HoneypotOrchestrator:
 
         defaults = HONEYPOT_DEFAULTS.get(honeypot_type, HONEYPOT_DEFAULTS["http"])
         config = {**defaults, **(custom_config or {})}
+
+        if campaign is not None:
+            # Stamp campaign metadata so smart honeypots pick it up
+            config.setdefault("theme", getattr(campaign, "theme", None))
+            config.setdefault("campaign_id", getattr(campaign, "id", None))
+            config.setdefault("campaign_name", getattr(campaign, "name", None))
 
         honeypot = Honeypot(
             client_id=client_id,

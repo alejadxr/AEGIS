@@ -219,6 +219,13 @@ class LogWatcher:
         if ip and ip in INTERNAL_IPS:
             return
 
+        # Honey-AI breadcrumb scan — if this log line contains a UUID that
+        # was planted in a deception campaign we raise a CRITICAL incident.
+        try:
+            await self._scan_breadcrumbs(line)
+        except Exception:  # pragma: no cover - defensive, never fail the log loop
+            pass
+
         # Port scan detection: track unique ports per IP
         if ip:
             port_match = PORT_PATTERN.search(line)
@@ -288,6 +295,29 @@ class LogWatcher:
                         description=f"Pattern '{pattern['name']}' detected in log: {line[:200]}",
                     )
                 break
+
+    async def _scan_breadcrumbs(self, line: str) -> None:
+        """Scan a log line for Honey-AI breadcrumb UUIDs.
+
+        A match proves an attacker consumed bait from a deception campaign
+        and is now reusing the stolen value against a real service.  The
+        tracker raises a CRITICAL incident via incident_cb.
+        """
+        # Fast-path: only bother with DB if the line might contain a UUID
+        if "hb" not in line and "-" not in line:
+            return
+        try:
+            from app.services.honey_ai import breadcrumb_tracker
+            from app.database import async_session
+        except Exception:  # pragma: no cover
+            return
+        async with async_session() as db:
+            await breadcrumb_tracker.scan_text(
+                db,
+                text=line,
+                source=f"log_watcher:{line[:200]}",
+                incident_cb=breadcrumb_tracker.raise_breadcrumb_incident,
+            )
 
     async def _create_incident_from_log(
         self,

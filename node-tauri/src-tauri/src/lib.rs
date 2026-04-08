@@ -14,6 +14,18 @@ use tauri::{
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 
+// Task #2: Ransomware protection module
+mod ransomware;
+use ransomware::RansomwareState;
+
+// Task #5: EDR/XDR core
+mod edr;
+use edr::EdrState;
+
+// Task #6: Antivirus engine
+mod antivirus;
+use antivirus::AntivirusState;
+
 // ---------------------------------------------------------------------------
 // Hidden subprocess helper — prevents visible CMD windows on Windows
 // ---------------------------------------------------------------------------
@@ -1742,6 +1754,52 @@ pub fn run() {
                     registry_persistence_loop(state_reg).await;
                 });
             }
+
+            // --- Task #2: Ransomware protection module ---
+            let state_ransom_seed = state.clone();
+            tauri::async_runtime::spawn(async move {
+                // Wait for enrollment to resolve server_url/node_id
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                let (server_url, node_id) = {
+                    let s = state_ransom_seed.lock().await;
+                    (s.config.server_url.clone(), s.config.node_id.clone())
+                };
+                let rstate = Arc::new(Mutex::new(RansomwareState::new(server_url)));
+                {
+                    let mut r = rstate.lock().await;
+                    r.node_id = node_id;
+                }
+                ransomware::start(rstate).await;
+            });
+
+            // --- Task #5: EDR/XDR core ---
+            let state_edr_seed = state.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                let (server_url, node_id) = {
+                    let s = state_edr_seed.lock().await;
+                    (s.config.server_url.clone(), s.config.node_id.clone())
+                };
+                let estate = Arc::new(Mutex::new(EdrState::new(server_url, node_id)));
+                edr::start(estate).await;
+            });
+
+            // --- Task #6: Antivirus engine ---
+            let state_av_seed = state.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(20)).await;
+                let (server_url, node_id) = {
+                    let s = state_av_seed.lock().await;
+                    (s.config.server_url.clone(), s.config.node_id.clone())
+                };
+                match AntivirusState::new(server_url, node_id) {
+                    Ok(av) => {
+                        let av_state = Arc::new(Mutex::new(av));
+                        antivirus::start(av_state).await;
+                    }
+                    Err(e) => log::error!("[av] failed to initialize: {}", e),
+                }
+            });
 
             Ok(())
         })

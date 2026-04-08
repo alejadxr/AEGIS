@@ -183,6 +183,25 @@ export const tauriAgent = {
 };
 
 export const api = {
+  // Generic helpers (used by newer pages: antivirus, edr, ...)
+  get: <T>(endpoint: string) => request<T>(endpoint),
+  post: <T>(endpoint: string, body?: unknown) =>
+    request<T>(endpoint, {
+      method: 'POST',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  put: <T>(endpoint: string, body?: unknown) =>
+    request<T>(endpoint, {
+      method: 'PUT',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  patch: <T>(endpoint: string, body?: unknown) =>
+    request<T>(endpoint, {
+      method: 'PATCH',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  delete: <T>(endpoint: string) => request<T>(endpoint, { method: 'DELETE' }),
+
   // Onboarding
   onboarding: {
     signup: (orgName: string, name: string, email: string, password: string) =>
@@ -734,4 +753,171 @@ export const api = {
     updateConfig: (cfg: { enabled: boolean; check_interval_hours: number; auto_install: boolean; notify_on_available: boolean }) =>
       request('/updates/config', { method: 'PUT', body: JSON.stringify(cfg) }),
   },
+
+  // Configurable Firewall
+  firewall: {
+    list: () =>
+      request<Array<{
+        id: string;
+        client_id: string;
+        name: string;
+        enabled: boolean;
+        yaml_def: string;
+        priority: number;
+        hits: number;
+        last_hit_at: string | null;
+        created_at: string;
+        updated_at: string;
+      }>>('/firewall/rules'),
+    get: (id: string) =>
+      request<{
+        id: string;
+        client_id: string;
+        name: string;
+        enabled: boolean;
+        yaml_def: string;
+        priority: number;
+        hits: number;
+        last_hit_at: string | null;
+        created_at: string;
+        updated_at: string;
+      }>(`/firewall/rules/${id}`),
+    create: (data: { name: string; enabled: boolean; yaml_def: string; priority: number }) =>
+      request<{
+        id: string;
+        client_id: string;
+        name: string;
+        enabled: boolean;
+        yaml_def: string;
+        priority: number;
+        hits: number;
+        last_hit_at: string | null;
+        created_at: string;
+        updated_at: string;
+      }>('/firewall/rules', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, data: { name?: string; enabled?: boolean; yaml_def?: string; priority?: number }) =>
+      request<{
+        id: string;
+        client_id: string;
+        name: string;
+        enabled: boolean;
+        yaml_def: string;
+        priority: number;
+        hits: number;
+        last_hit_at: string | null;
+        created_at: string;
+        updated_at: string;
+      }>(`/firewall/rules/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      request(`/firewall/rules/${id}`, { method: 'DELETE' }),
+    test: (id: string, event: Record<string, unknown>, yamlDef?: string) =>
+      request<{
+        ok: boolean;
+        matched: boolean;
+        structural_match: boolean | null;
+        rate_limit: { count: number; window_seconds: number } | null;
+        action: string | null;
+        rule_name: string | null;
+        error: string | null;
+      }>(`/firewall/rules/${id}/test`, {
+        method: 'POST',
+        body: JSON.stringify({ event, yaml_def: yamlDef }),
+      }),
+    testYaml: (yamlDef: string, event: Record<string, unknown>) =>
+      request<{
+        ok: boolean;
+        matched: boolean;
+        structural_match: boolean | null;
+        rate_limit: { count: number; window_seconds: number } | null;
+        action: string | null;
+        rule_name: string | null;
+        error: string | null;
+      }>('/firewall/test', {
+        method: 'POST',
+        body: JSON.stringify({ yaml_def: yamlDef, event }),
+      }),
+    templates: () =>
+      request<Array<{
+        id: string;
+        name: string;
+        description: string;
+        yaml_def: string;
+      }>>('/firewall/templates'),
+  },
+
+  // Honey-AI Deception at Scale
+  deception: {
+    themes: () =>
+      request<Array<{
+        name: string;
+        label: string;
+        description: string;
+        industry: string;
+        bait_kinds: string[];
+      }>>('/deception/themes'),
+    campaigns: () =>
+      request<Array<DeceptionCampaign>>('/deception/campaigns'),
+    createCampaign: (body: {
+      name: string;
+      theme: string;
+      decoy_count: number;
+      service_mix: { web: number; db: number; files: number; admin: number };
+      rotation_hours?: number;
+    }) =>
+      request<DeceptionCampaign>('/deception/campaigns', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    getCampaign: (id: string) =>
+      request<DeceptionCampaign>(`/deception/campaigns/${id}`),
+    rotateCampaign: (id: string) =>
+      request<DeceptionCampaign>(`/deception/campaigns/${id}/rotate`, {
+        method: 'POST',
+      }),
+    deleteCampaign: (id: string) =>
+      request<void>(`/deception/campaigns/${id}`, { method: 'DELETE' }),
+    breadcrumbHits: (limit = 50) =>
+      request<Array<DeceptionBreadcrumbHit>>(`/deception/breadcrumb-hits?limit=${limit}`),
+    breadcrumbs: (campaignId?: string, limit = 100) => {
+      const qs = new URLSearchParams();
+      if (campaignId) qs.set('campaign_id', campaignId);
+      qs.set('limit', String(limit));
+      return request<Array<DeceptionBreadcrumbHit>>(`/deception/breadcrumbs?${qs.toString()}`);
+    },
+  },
 };
+
+export interface DeceptionCampaign {
+  id: string;
+  name: string;
+  theme: string;
+  decoy_count: number;
+  service_mix: { web: number; db: number; files: number; admin: number };
+  rotation_hours: number;
+  status: string;
+  created_at: string;
+  deployed_at: string | null;
+  last_rotated_at: string | null;
+  stopped_at: string | null;
+  honeypot_count: number;
+  breadcrumb_count: number;
+  error: string | null;
+}
+
+export interface DeceptionBreadcrumbHit {
+  id: string;
+  campaign_id: string;
+  breadcrumb_uuid: string;
+  planted_in: string;
+  bait_kind: string;
+  hit_count: number;
+  last_hit_at: string | null;
+  last_hit_source: string | null;
+  planted_at: string;
+}

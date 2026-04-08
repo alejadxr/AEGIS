@@ -29,7 +29,7 @@ class WSClient:
 
     __slots__ = (
         "websocket", "client_id", "connected_at", "filters",
-        "events_sent", "last_event_at",
+        "topics", "events_sent", "last_event_at",
     )
 
     def __init__(self, websocket: WebSocket, client_id: str = "anonymous"):
@@ -37,6 +37,9 @@ class WSClient:
         self.client_id = client_id
         self.connected_at = datetime.now(timezone.utc).isoformat()
         self.filters: dict = {}  # e.g. {"min_severity": "high", "event_types": [...]}
+        # Topic subscriptions — if empty set, client gets everything (legacy behavior)
+        # If non-empty, client only receives events whose topic matches.
+        self.topics: set[str] = set()
         self.events_sent = 0
         self.last_event_at: Optional[str] = None
 
@@ -80,8 +83,47 @@ class WSPushManager:
         ws_client.filters = filters
         logger.debug(f"WS filters updated for {ws_client.client_id}: {filters}")
 
+    def subscribe_topics(self, ws_client: WSClient, topics: list[str]):
+        """Add topic subscriptions for a client. Topics are additive."""
+        for t in topics:
+            if t:
+                ws_client.topics.add(t)
+        logger.debug(f"WS topics for {ws_client.client_id}: {ws_client.topics}")
+
+    def unsubscribe_topics(self, ws_client: WSClient, topics: list[str]):
+        """Remove topic subscriptions for a client."""
+        for t in topics:
+            ws_client.topics.discard(t)
+
+    def _topic_matches(self, ws_client: WSClient, topic: str) -> bool:
+        """
+        Check if a client is subscribed to a given topic.
+
+        If client has no explicit topic subscriptions, they receive everything
+        (legacy/compat). If they have subscriptions, we require a match —
+        either exact, wildcard "*", or prefix match for "foo.*".
+        """
+        if not ws_client.topics:
+            return True
+        if "*" in ws_client.topics:
+            return True
+        if topic in ws_client.topics:
+            return True
+        # Prefix matching: "incidents.*" matches "incidents.new"
+        for sub in ws_client.topics:
+            if sub.endswith(".*") and topic.startswith(sub[:-2] + "."):
+                return True
+            if sub.endswith("*") and topic.startswith(sub[:-1]):
+                return True
+        return False
+
     def _should_send(self, ws_client: WSClient, event: dict) -> bool:
         """Check if an event passes the client's filters."""
+        # Topic filtering first — cheapest, most common path
+        event_topic = event.get("topic") or event.get("type") or event.get("_event_type", "")
+        if event_topic and not self._topic_matches(ws_client, str(event_topic)):
+            return False
+
         filters = ws_client.filters
         if not filters:
             return True
@@ -95,11 +137,11 @@ class WSPushManager:
             if event_level > min_level:
                 return False
 
-        # Event type filter
+        # Legacy event_types filter — also treat as topic subscription
         allowed_types = filters.get("event_types")
-        if allowed_types:
-            event_type = event.get("type", event.get("_event_type", ""))
-            if event_type not in allowed_types:
+        if allowed_types and not ws_client.topics:
+            # Only enforce legacy filter if the client hasn't migrated to topics
+            if str(event_topic) not in allowed_types:
                 return False
 
         return True
@@ -114,8 +156,10 @@ class WSPushManager:
             return
 
         now = datetime.now(timezone.utc).isoformat()
+        topic = event.get("topic") or event.get("_event_type") or event.get("type", "event")
         message = {
-            "type": event.get("_event_type", event.get("type", "event")),
+            "type": topic,
+            "topic": topic,
             "data": event,
             "timestamp": now,
             "severity": event.get("severity", event.get("incident_severity", "info")),

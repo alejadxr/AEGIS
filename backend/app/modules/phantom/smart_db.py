@@ -200,12 +200,27 @@ def _mysql_lenenc_str(val: bytes) -> bytes:
 class SmartDBHoneypot:
     """MySQL protocol honeypot with fake databases and injection detection."""
 
-    def __init__(self, port: int = 3306):
+    def __init__(
+        self,
+        port: int = 3306,
+        theme: Optional[str] = None,
+        campaign_id: Optional[str] = None,
+    ):
         self.port = port
+        self.theme = theme
+        self.campaign_id = campaign_id
         self._running = False
         self._server: Optional[asyncio.AbstractServer] = None
         self._interaction_queue: Optional[asyncio.Queue] = None
         self._connection_counter = 0
+        # Lazily resolved theme-aware content generator
+        self._content_gen = None
+        if theme:
+            try:
+                from app.services.honey_ai.content_generator import content_generator
+                self._content_gen = content_generator
+            except Exception:
+                self._content_gen = None
 
     async def start(self, interaction_queue: asyncio.Queue):
         """Start the MySQL honeypot."""
@@ -354,6 +369,24 @@ class SmartDBHoneypot:
             table_match = re.search(r"FROM\s+[`]?(\w+)[`]?", query, re.IGNORECASE)
             if table_match:
                 table = table_match.group(1).lower()
+
+                # Theme-aware path — use content_generator for realistic,
+                # campaign-scoped fake rows.
+                if self._content_gen and self.theme:
+                    try:
+                        rows_dicts = self._content_gen.fake_rows(
+                            self.theme, table, count=25,
+                        )
+                        if rows_dicts:
+                            columns = list(rows_dicts[0].keys())
+                            rows_tuples = [
+                                tuple(r.get(c, "") for c in columns)
+                                for r in rows_dicts
+                            ]
+                            return _mysql_result_set(columns, rows_tuples)
+                    except Exception:
+                        pass
+
                 if table in ("users", "accounts"):
                     return _mysql_result_set(
                         ["id", "username", "email", "password_hash", "role", "active"],

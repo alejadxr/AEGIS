@@ -13,8 +13,9 @@ import {
   ArrowRight01Icon,
   Menu01Icon,
   ComputerIcon,
+  FlashIcon,
 } from 'hugeicons-react';
-import { Ghost, GitFork, Atom, FileCheck, FileText } from 'lucide-react';
+import { Ghost, GitFork, Atom, FileCheck, FileText, ShieldCheck, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type IconComponent = React.ComponentType<{ className?: string; size?: number }>;
@@ -31,6 +32,9 @@ const iconMap: Record<string, IconComponent> = {
   Atom: Atom as IconComponent,
   FileCheck: FileCheck as IconComponent,
   FileText: FileText as IconComponent,
+  ShieldCheck: ShieldCheck as IconComponent,
+  FlashIcon: FlashIcon as IconComponent,
+  Sparkles: Sparkles as IconComponent,
 };
 
 const NAV_SECTIONS = [
@@ -38,6 +42,7 @@ const NAV_SECTIONS = [
     label: 'OVERVIEW',
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'DashboardSquare01Icon' },
+      { label: 'Live View', href: '/dashboard/live', icon: 'FlashIcon' },
     ],
   },
   {
@@ -46,6 +51,10 @@ const NAV_SECTIONS = [
       { label: 'Surface', href: '/dashboard/surface', icon: 'Radar01Icon' },
       { label: 'Response', href: '/dashboard/response', icon: 'SecurityCheckIcon' },
       { label: 'Phantom', href: '/dashboard/phantom', icon: 'Ghost' },
+      { label: 'Deception', href: '/dashboard/deception', icon: 'Sparkles' },
+      { label: 'Firewall', href: '/dashboard/firewall', icon: 'ShieldCheck' },
+      { label: 'EDR / XDR', href: '/dashboard/edr', icon: 'GitFork' },
+      { label: 'Antivirus', href: '/dashboard/antivirus', icon: 'ShieldAlert' },
       { label: 'Threats', href: '/dashboard/threats', icon: 'Search01Icon' },
       { label: 'Attack Path', href: '/dashboard/attack-path', icon: 'GitFork' },
       { label: 'Infra', href: '/dashboard/infra', icon: 'ComputerIcon' },

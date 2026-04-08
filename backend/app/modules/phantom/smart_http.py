@@ -251,14 +251,30 @@ ENV_PATHS = {"/.env", "/.env.local", "/.env.production", "/config/.env", "/.env.
 class SmartHTTPHoneypot:
     """AI-driven HTTP honeypot that imitates real web applications."""
 
-    def __init__(self, port: int = 8080, app_type: str = "nextjs"):
+    def __init__(
+        self,
+        port: int = 8080,
+        app_type: str = "nextjs",
+        theme: Optional[str] = None,
+        campaign_id: Optional[str] = None,
+    ):
         self.port = port
         self.app_type = app_type
+        self.theme = theme
+        self.campaign_id = campaign_id
         self._running = False
         self._runner: Optional[web.AppRunner] = None
         self._interaction_queue: Optional[asyncio.Queue] = None
         self._config = APP_CONFIGS.get(app_type, APP_CONFIGS["nextjs"])
         self._breadcrumb_env = _generate_breadcrumb_env(app_type)
+        # Lazily resolved theme-aware content generator
+        self._content_gen = None
+        if theme:
+            try:
+                from app.services.honey_ai.content_generator import content_generator
+                self._content_gen = content_generator
+            except Exception:
+                self._content_gen = None
 
     async def start(self, interaction_queue: asyncio.Queue):
         """Start the smart HTTP honeypot."""
@@ -374,9 +390,17 @@ class SmartHTTPHoneypot:
         """Serve a fake admin/dashboard page."""
         capture["commands"].append(f"Accessed admin panel: {capture.get('path')}")
         self._queue_interaction(capture)
-        html = self._config.get("dashboard_html")
+        html = None
+        # If we have a deception theme, ask the content generator for a
+        # themed dashboard so every decoy looks like it belongs to the
+        # claimed industry.
+        if self._content_gen and self.theme:
+            try:
+                html = self._content_gen.fake_dashboard_html(self.theme)
+            except Exception:
+                html = None
         if not html:
-            html = NEXTJS_DASHBOARD
+            html = self._config.get("dashboard_html") or NEXTJS_DASHBOARD
         return web.Response(text=html, content_type="text/html", headers=self._response_headers())
 
     def _serve_api(self, api_path: str, response_body: str, capture: dict) -> web.Response:
@@ -390,6 +414,22 @@ class SmartHTTPHoneypot:
         """Use AI to generate a plausible response for an unknown path."""
         capture["commands"].append(f"{method} {path} (AI response)")
         self._queue_interaction(capture)
+
+        # When we're running inside a deception campaign, prefer the content
+        # generator — it understands the theme and will fall back to Faker
+        # if no AI key is configured.
+        if self._content_gen and self.theme:
+            try:
+                snippet = await self._content_gen.ai_snippet(
+                    self.theme,
+                    prompt=f"Respond to an attacker probing {method} {path}",
+                    max_chars=800,
+                )
+                if snippet:
+                    ct = "application/json" if snippet.startswith(("{", "[")) else "text/html"
+                    return web.Response(text=snippet, content_type=ct, headers=self._response_headers())
+            except Exception as e:
+                logger.debug(f"[Smart HTTP] themed ai_snippet failed: {e}")
 
         try:
             messages = [{
