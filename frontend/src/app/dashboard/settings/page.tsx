@@ -259,10 +259,13 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [tab, setTab] = useState<'client' | 'models' | 'notifications' | 'scanning' | 'apikeys' | 'guide'>('client');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookFormat, setWebhookFormat] = useState('generic');
   const [emailRecipients, setEmailRecipients] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [activeProvider, setActiveProvider] = useState('openrouter');
 
   // Telegram state
   const [showBotToken, setShowBotToken] = useState(false);
@@ -298,11 +301,15 @@ export default function SettingsPage() {
         ]);
         if (c.status === 'fulfilled') {
           setClient(c.value);
+          setClientName(c.value.name);
           // Load scan intervals from client settings if available
           const settings = c.value.settings as Record<string, unknown> | undefined;
           if (settings?.scan_intervals) {
             const si = settings.scan_intervals as ScanIntervals;
             setScanIntervals({ ...DEFAULT_SCAN_INTERVALS, ...si });
+          }
+          if (settings?.ai_provider) {
+            setActiveProvider(settings.ai_provider as string);
           }
         }
         if (m.status === 'fulfilled') setModels(m.value.map((v) => ({ ...v })));
@@ -383,10 +390,29 @@ export default function SettingsPage() {
 
   /* ── Save handlers ── */
 
+  const flashSaveSuccess = (msg: string) => {
+    setSaveSuccess(msg);
+    setTimeout(() => setSaveSuccess(null), 3000);
+  };
+
   const copyApiKey = () => {
     navigator.clipboard.writeText(client.api_key);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const saveClientName = async () => {
+    if (!clientName.trim() || clientName === client.name) return;
+    setSaving(true);
+    try {
+      const updated = await api.settings.updateClient({ name: clientName.trim() }) as ClientInfo;
+      setClient(updated);
+      flashSaveSuccess('Organization name saved');
+    } catch {
+      // Demo mode
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveNotifications = async () => {
@@ -404,6 +430,7 @@ export default function SettingsPage() {
     try {
       await api.settings.updateNotifications({ ...updated });
       setNotifications(updated);
+      flashSaveSuccess('Notification settings saved');
     } catch {
       // Demo mode -- update local state anyway
       setNotifications(updated);
@@ -416,8 +443,23 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await api.settings.updateModels(models.map((m) => ({ task_type: m.task_type, model: m.model })));
+      flashSaveSuccess('Model routing saved');
     } catch {
       // Demo mode
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const switchProvider = async (provider: string) => {
+    setSaving(true);
+    try {
+      await api.ai.setActive(provider);
+      setActiveProvider(provider);
+      flashSaveSuccess(`Switched to ${provider}`);
+    } catch {
+      // Demo mode
+      setActiveProvider(provider);
     } finally {
       setSaving(false);
     }
@@ -426,9 +468,11 @@ export default function SettingsPage() {
   const saveScanIntervals = async () => {
     setSaving(true);
     try {
-      await api.settings.updateClient({
+      const updated = await api.settings.updateClient({
         settings: { ...((client.settings as Record<string, unknown>) || {}), scan_intervals: scanIntervals },
-      });
+      }) as ClientInfo;
+      setClient(updated);
+      flashSaveSuccess('Scan intervals saved');
     } catch {
       // Demo mode
     } finally {
@@ -499,6 +543,14 @@ export default function SettingsPage() {
         <h1 className="text-[22px] sm:text-[28px] font-bold text-white tracking-tight">Settings</h1>
         <p className="hidden sm:block text-sm text-zinc-500 mt-1">Platform configuration, AI model routing, notifications, and scan management</p>
       </div>
+
+      {/* Save success toast */}
+      {saveSuccess && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-[#22C55E]/15 border border-[#22C55E]/30 text-[#22C55E] text-[13px] font-medium px-4 py-2.5 rounded-xl shadow-lg animate-fade-in">
+          <Check className="w-4 h-4" />
+          {saveSuccess}
+        </div>
+      )}
 
       {/* AI Configuration Assistant */}
       <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden">
@@ -632,16 +684,23 @@ export default function SettingsPage() {
 
       {/* ═══════════════ Client Tab ═══════════════ */}
       {tab === 'client' && (
-        <SectionCard title="Client Information">
+        <SectionCard
+          title="Client Information"
+          headerRight={
+            clientName !== client.name ? (
+              <SaveButton onClick={saveClientName} label="Save Name" />
+            ) : undefined
+          }
+        >
           <div className="p-4 sm:p-6 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Organization Name</label>
                 <input
                   type="text"
-                  value={client.name}
-                  readOnly
-                  className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
                 />
               </div>
               <div>
@@ -670,9 +729,45 @@ export default function SettingsPage() {
       {/* ═══════════════ AI Models Tab ═══════════════ */}
       {tab === 'models' && (
         <div className="space-y-4">
+          {/* Active Provider Card */}
           <SectionCard
-            title="AI Model Routing"
-            description="Configure which AI model handles each task type"
+            title="AI Provider"
+            description="Select the AI provider for all model routing"
+            headerRight={
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#22C55E]/10 border border-[#22C55E]/20 text-[11px] font-medium text-[#22C55E]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+                  Active
+                </span>
+              </div>
+            }
+          >
+            <div className="p-4 sm:p-6">
+              <div className="flex flex-wrap gap-2">
+                {['openrouter', 'inception', 'openai', 'anthropic'].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => switchProvider(p)}
+                    disabled={saving}
+                    className={cn(
+                      'px-4 py-2 rounded-xl text-[13px] font-medium transition-all border',
+                      activeProvider === p
+                        ? 'bg-[#22D3EE]/10 border-[#22D3EE]/30 text-[#22D3EE]'
+                        : 'bg-white/[0.03] border-white/[0.06] text-zinc-400 hover:text-white hover:border-white/[0.12]'
+                    )}
+                  >
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                    {activeProvider === p && <Check className="inline w-3.5 h-3.5 ml-1.5" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* Model Routing Table */}
+          <SectionCard
+            title="Model Routing"
+            description="Assign models per task type. Click the test tube to verify connectivity."
             headerRight={<SaveButton onClick={saveModels} />}
           >
             <div>

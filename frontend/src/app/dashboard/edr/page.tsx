@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { GitBranch, Shield, Zap, Clock } from 'lucide-react';
+import { GitBranch, Shield, Zap, Clock, Monitor } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn, formatDate } from '@/lib/utils';
 import { LoadingState } from '@/components/shared/LoadingState';
@@ -90,19 +90,33 @@ export default function EdrDashboardPage() {
       setLoading(true);
       await loadChains();
 
-      // Fetch enrolled agents and auto-select the first one
+      // Fetch enrolled agents — try /agents (EDR agents) then /nodes as fallback
       try {
-        const nodesData = await api.nodes.list();
-        const raw = (nodesData as { agents?: Array<Record<string, unknown>> })?.agents
-          || (Array.isArray(nodesData) ? nodesData : []);
-        const nodeList = raw.map((n: Record<string, unknown>) => ({
-          id: String(n.agent_id || n.id || ''),
-          hostname: String(n.hostname || ''),
-          status: String(n.status || 'unknown'),
-        }));
+        let nodeList: Array<{ id: string; hostname: string; status: string }> = [];
+        try {
+          const agentsData = await api.get<Array<Record<string, unknown>>>('/agents');
+          const raw = Array.isArray(agentsData) ? agentsData : [];
+          nodeList = raw.map((n) => ({
+            id: String(n.id || ''),
+            hostname: String(n.hostname || ''),
+            status: String(n.status || 'unknown'),
+          }));
+        } catch {
+          // Fallback to nodes API
+          const nodesData = await api.nodes.list();
+          const raw = (nodesData as { agents?: Array<Record<string, unknown>> })?.agents
+            || (Array.isArray(nodesData) ? nodesData : []);
+          nodeList = raw.map((n: Record<string, unknown>) => ({
+            id: String(n.agent_id || n.id || ''),
+            hostname: String(n.hostname || ''),
+            status: String(n.status || 'unknown'),
+          }));
+        }
         setAgents(nodeList);
         if (nodeList.length > 0 && !agentId) {
-          setAgentId(nodeList[0].id);
+          // Prefer the host monitor agent
+          const hostAgent = nodeList.find((a) => a.id === 'aegis-host-monitor');
+          setAgentId(hostAgent ? hostAgent.id : nodeList[0].id);
         }
       } catch (e) {
         console.error('agents list load failed', e);
@@ -150,6 +164,12 @@ export default function EdrDashboardPage() {
             </p>
           </div>
         </div>
+        {agents.some((a) => a.id === 'aegis-host-monitor') && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs font-medium text-emerald-400">Host protected</span>
+          </div>
+        )}
       </header>
 
       {/* Attack chain incidents */}
@@ -223,7 +243,7 @@ export default function EdrDashboardPage() {
               {agents.length === 0 && <option value="">No agents enrolled</option>}
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.hostname || a.id.slice(0, 12)} — {a.status}
+                  {a.id === 'aegis-host-monitor' ? `${a.hostname} (Host Monitor)` : (a.hostname || a.id.slice(0, 12))} — {a.status}
                 </option>
               ))}
             </select>
@@ -272,10 +292,17 @@ export default function EdrDashboardPage() {
         </div>
         {!agentId ? (
           <p className="text-sm text-zinc-500 py-4">
-            No agents enrolled yet. Install the AEGIS Node Agent on an endpoint to see telemetry here.
+            Waiting for host monitor to initialize. Process telemetry will appear shortly.
           </p>
         ) : events.length === 0 ? (
-          <p className="text-sm text-zinc-500 py-4">No events in the last 15 minutes.</p>
+          <div className="flex items-center gap-2 py-4">
+            <Monitor className="w-4 h-4 text-cyan-400 animate-pulse" />
+            <p className="text-sm text-zinc-400">
+              {agentId === 'aegis-host-monitor'
+                ? 'Host monitoring active — collecting process telemetry...'
+                : 'No events in the last 15 minutes.'}
+            </p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs font-mono">
