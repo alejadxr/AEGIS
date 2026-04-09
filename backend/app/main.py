@@ -236,6 +236,54 @@ async def lifespan(app: FastAPI):
         await seed_default_admin(db, demo)
         logger.info("Default admin user seeded (admin@cayde6.local)")
 
+    # Auto-discover localhost services if no assets exist yet
+    # Runs in background so it never blocks startup
+    async def _auto_discover_localhost(client_id: str):
+        try:
+            from sqlalchemy import select as _sel, func as _fn
+            from app.models.asset import Asset
+            from app.services.auto_discovery import auto_discovery
+            from datetime import datetime
+
+            async with async_session() as db:
+                count = await db.scalar(
+                    _sel(_fn.count()).select_from(Asset).where(Asset.client_id == client_id)
+                )
+                if count and count > 0:
+                    logger.info(f"Auto-discovery skipped: {count} assets already exist")
+                    return
+
+            logger.info("Zero assets found — running localhost auto-discovery...")
+            result = await auto_discovery.discover_host("127.0.0.1")
+
+            if result.error:
+                logger.warning(f"Auto-discovery error: {result.error}")
+                return
+
+            registered = 0
+            async with async_session() as db:
+                for host in result.hosts:
+                    for svc in host.services:
+                        asset = Asset(
+                            client_id=client_id,
+                            hostname=svc.hostname,
+                            ip_address=host.ip,
+                            asset_type=svc.asset_type,
+                            ports=[{"port": svc.port, "protocol": svc.protocol, "service": svc.service}],
+                            technologies=svc.technologies,
+                            status="active",
+                            risk_score=float(svc.risk_estimate),
+                            last_scan_at=datetime.utcnow(),
+                        )
+                        db.add(asset)
+                        registered += 1
+                await db.commit()
+            logger.info(f"Auto-discovery complete: registered {registered} assets from localhost")
+        except Exception as e:
+            logger.error(f"Auto-discovery failed (non-fatal): {e}")
+
+    asyncio.create_task(_auto_discover_localhost(demo.id))
+
     # Start event stream (Redis or in-memory)
     await event_stream.start()
     logger.info(f"Event stream started (backend={'redis' if event_stream.is_redis else 'memory'})")

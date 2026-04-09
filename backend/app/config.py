@@ -4,7 +4,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Core
-    AEGIS_ENV: str = "development"
+    AEGIS_ENV: str = "production"
     AEGIS_SECRET_KEY: str = "aegis-dev-secret-key-change-in-production"
     AEGIS_API_PORT: int = 8000
 
