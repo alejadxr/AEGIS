@@ -15,7 +15,7 @@ import {
   ComputerIcon,
   FlashIcon,
 } from 'hugeicons-react';
-import { Ghost, GitFork, Atom, FileCheck, FileText, ShieldCheck, Sparkles } from 'lucide-react';
+import { Ghost, GitFork, Atom, FileCheck, FileText, ShieldCheck, Sparkles, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type IconComponent = React.ComponentType<{ className?: string; size?: number }>;
@@ -35,6 +35,7 @@ const iconMap: Record<string, IconComponent> = {
   ShieldCheck: ShieldCheck as IconComponent,
   FlashIcon: FlashIcon as IconComponent,
   Sparkles: Sparkles as IconComponent,
+  BookOpen: BookOpen as IconComponent,
 };
 
 const NAV_SECTIONS = [
@@ -43,6 +44,7 @@ const NAV_SECTIONS = [
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'DashboardSquare01Icon' },
       { label: 'Live View', href: '/dashboard/live', icon: 'FlashIcon' },
+      { label: 'Guide', href: '/dashboard/guide', icon: 'BookOpen' },
     ],
   },
   {
