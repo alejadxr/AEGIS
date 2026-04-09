@@ -35,6 +35,7 @@ from app.modules.phantom.processor import interaction_processor
 from app.models.action import Action
 from app.services.log_watcher import log_watcher
 from app.services.scheduled_scanner import scheduled_scanner
+from app.services.host_monitor import host_monitor
 
 from app.api import auth, dashboard, surface, response, phantom, threats, correlation, admin
 from app.api import feeds, reports, ai_providers as ai_providers_router
@@ -455,6 +456,13 @@ async def lifespan(app: FastAPI):
     scheduled_scanner.start()
     logger.info('Scheduled scanner started')
 
+    # Start host self-monitor (EDR telemetry via psutil — no external agent needed)
+    try:
+        await host_monitor.start()
+        logger.info('Host monitor started (EDR self-protection active)')
+    except Exception as e:
+        logger.error(f'Failed to start host monitor: {e}')
+
     # Start auto-updater (background GitHub release checker)
     try:
         from app.services.auto_updater import auto_updater
@@ -470,6 +478,7 @@ async def lifespan(app: FastAPI):
         await auto_updater.stop()
     except Exception:
         pass
+    await host_monitor.stop()
     scheduled_scanner.stop()
     await log_watcher.stop()
     await behavioral_engine.stop()

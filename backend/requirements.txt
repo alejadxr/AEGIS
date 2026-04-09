@@ -15,7 +15,7 @@ websockets==14.1
 redis[hiredis]>=5.0.0
 scikit-learn>=1.5.0
 numpy>=1.26.0
-psutil>=5.9.0
+psutil>=6.0.0
 
 # Honeypots & network
 paramiko>=3.4.0
