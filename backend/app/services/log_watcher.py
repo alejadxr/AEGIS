@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress as _ipaddress
 import logging
 import os
 import re
@@ -8,6 +9,24 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 logger = logging.getLogger("aegis.log_watcher")
+
+# Private/internal IP ranges that should NEVER trigger alerts
+# Includes RFC1918 + CGNAT/Tailscale (100.64.0.0/10)
+_SAFE_NETWORKS = [
+    _ipaddress.ip_network("10.0.0.0/8"),
+    _ipaddress.ip_network("172.16.0.0/12"),
+    _ipaddress.ip_network("192.168.0.0/16"),
+    _ipaddress.ip_network("100.64.0.0/10"),   # CGNAT / Tailscale
+]
+
+
+def _is_private_ip(ip: str) -> bool:
+    """Check if an IP is in any private/Tailscale range."""
+    try:
+        addr = _ipaddress.ip_address(ip)
+        return addr.is_loopback or addr.is_private or any(addr in net for net in _SAFE_NETWORKS)
+    except (ValueError, TypeError):
+        return False
 
 PATTERNS = [
     {
@@ -28,7 +47,8 @@ PATTERNS = [
     },
     {
         "name": "auth_failure", "severity": "medium", "threat_type": "brute_force",
-        "regex": re.compile(r'"(?:GET|POST|PUT|DELETE)\s+\S+\s+HTTP/[\d.]+"\s+(?:401|403)'),
+        # Only match 401 Unauthorized — NOT 403 (which is normal for tier-gated features)
+        "regex": re.compile(r'"(?:GET|POST|PUT|DELETE)\s+\S+\s+HTTP/[\d.]+"\s+401\b'),
     },
     {
         "name": "server_error", "severity": "low", "threat_type": "error_spike",
@@ -73,9 +93,9 @@ def _is_internal_line(line: str) -> bool:
     for marker in INTERNAL_SOURCE_MARKERS:
         if marker in line:
             return True
-    # Lines that carry only an internal IP (no external actor)
+    # Lines that carry only an internal/private/Tailscale IP (no external actor)
     ip = _extract_ip(line)
-    if ip and ip in INTERNAL_IPS:
+    if ip and (ip in INTERNAL_IPS or _is_private_ip(ip)):
         return True
     # Empty / placeholder lines (dashes only after stripping log metadata)
     stripped = re.sub(r'^\S+\s+\S+\s+', '', line).strip()
@@ -128,10 +148,14 @@ class LogWatcher:
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
         self._running = False
-        self._rate_tracker = RateTracker(window_seconds=60, threshold=100)
+        self._rate_tracker = RateTracker(window_seconds=60, threshold=500)
         self._brute_force_tracker: dict = defaultdict(deque)
         self._port_scan_tracker = PortScanTracker(window_seconds=60, threshold=10)
         self._recent_alerts: deque = deque(maxlen=500)
+        # Incident deduplication: track (ip, threat_type) → last_created timestamp
+        # Don't create another incident for the same IP+type within 5 minutes
+        self._incident_cooldown: dict[str, datetime] = {}
+        self._COOLDOWN_SECONDS = 300  # 5 minutes between incidents for same IP+type
 
     async def start(self):
         if self._running:
@@ -226,8 +250,8 @@ class LogWatcher:
 
         ip = _extract_ip(line)
 
-        # Never flag internal IPs even if they slipped past _is_internal_line
-        if ip and ip in INTERNAL_IPS:
+        # Never flag internal/private/Tailscale IPs
+        if ip and (ip in INTERNAL_IPS or _is_private_ip(ip)):
             return
 
         # Honey-AI breadcrumb scan — if this log line contains a UUID that
@@ -255,8 +279,12 @@ class LogWatcher:
                             description=f"Port scan detected: >10 unique ports probed by {ip} in 60s",
                         )
 
-        # Brute force detection: track 401 responses per IP
-        if ip and (" 401 " in line or "401 Unauthorized" in line):
+        # Skip rate/brute-force tracking for normal dashboard API paths
+        _SAFE_PATHS = ("/dashboard/", "/api/v1/health", "/api/v1/dashboard/", "/ws", "/api/v1/nodes/heartbeat")
+        is_dashboard_request = any(p in line for p in _SAFE_PATHS)
+
+        # Brute force detection: track 401 responses per IP (not 403 tier-gating)
+        if ip and " 401 " in line and not is_dashboard_request:
             now = datetime.utcnow()
             cutoff = now - timedelta(seconds=60)
             q = self._brute_force_tracker[ip]
@@ -276,7 +304,7 @@ class LogWatcher:
                         description=f"Brute force detected: {len(q)} failed auth attempts from {ip} in 60s",
                     )
 
-        if ip and self._rate_tracker.record(ip):
+        if ip and not is_dashboard_request and self._rate_tracker.record(ip):
             alert_key = f"rate:{ip}"
             if alert_key not in self._recent_alerts:
                 self._recent_alerts.append(alert_key)
@@ -291,8 +319,8 @@ class LogWatcher:
 
         for pattern in PATTERNS:
             if pattern["regex"].search(line):
-                # Extra guard: skip auth_failure (403) from internal IPs
-                if pattern["name"] == "auth_failure" and ip and ip in INTERNAL_IPS:
+                # Extra guard: skip auth_failure from internal/private IPs
+                if pattern["name"] == "auth_failure" and ip and (ip in INTERNAL_IPS or _is_private_ip(ip)):
                     return
                 alert_key = f"{pattern['name']}:{line[:80]}"
                 if alert_key not in self._recent_alerts:
@@ -343,6 +371,20 @@ class LogWatcher:
         if not source_ip or source_ip in ('None', 'null', 'unknown', ''):
             logger.debug(f'Skipping incident without source IP: {pattern_name}')
             return
+
+        # Skip private/Tailscale/internal IPs — these are NEVER attackers
+        if _is_private_ip(source_ip) or source_ip in INTERNAL_IPS:
+            logger.debug(f'Skipping incident for internal IP {source_ip}: {pattern_name}')
+            return
+
+        # Incident deduplication: don't spam incidents for the same IP + threat type
+        cooldown_key = f"{source_ip}:{threat_type}"
+        now = datetime.utcnow()
+        last_created = self._incident_cooldown.get(cooldown_key)
+        if last_created and (now - last_created).total_seconds() < self._COOLDOWN_SECONDS:
+            logger.debug(f'Incident cooldown active for {cooldown_key}, skipping')
+            return
+        self._incident_cooldown[cooldown_key] = now
         try:
             from app.database import async_session
             from app.models.client import Client
