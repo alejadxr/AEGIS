@@ -172,7 +172,7 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
         {!collapsed && (
           <div className="px-5 py-4 border-t border-white/[0.06]">
             <p className="text-[11px] text-zinc-600 font-medium">AEGIS Defense</p>
-            <p className="text-[10px] text-zinc-700 font-mono">v1.0.0</p>
+            <p className="text-[10px] text-zinc-700 font-mono">v1.2.0</p>
           </div>
         )}
 

@@ -27,7 +27,7 @@ logger = logging.getLogger("aegis.auto_updater")
 
 GITHUB_REPO = "alejadxr/AEGIS"
 GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "1.1.0"
+CURRENT_VERSION = "1.2.0"
 
 # Path to the AEGIS install directory (where docker-compose.yml lives)
 INSTALL_DIR = os.environ.get("AEGIS_INSTALL_DIR", "/app")
