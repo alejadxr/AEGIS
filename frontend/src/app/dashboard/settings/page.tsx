@@ -1037,9 +1037,26 @@ export default function SettingsPage() {
 
       {tab === 'guide' && (
         <SectionCard title="AEGIS Feature Guide" description="Everything AEGIS can do for you. Click a module to navigate.">
+          {/* Restart Guide Tour button */}
+          <div className="mb-4 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-between">
+            <div>
+              <p className="text-[13px] font-medium text-white">Interactive Feature Tour</p>
+              <p className="text-[11px] text-zinc-500 mt-0.5">Walk through all AEGIS modules step by step</p>
+            </div>
+            <button
+              onClick={() => {
+                localStorage.removeItem('aegis_guide_seen');
+                window.location.href = '/dashboard';
+              }}
+              className="flex items-center gap-2 text-[12px] font-medium px-4 py-2 rounded-xl bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/20 hover:bg-[#22D3EE]/20 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Restart Feature Guide
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {[
-              { icon: Activity, name: 'Live Dashboard', desc: 'Real-time SOC view with 10 WebSocket-powered widgets. Attack feed, threat map, logs stream, node heartbeats — never needs refresh.', href: '/dashboard/live', color: '#22D3EE', free: true },
+              { icon: Activity, name: 'Dashboard', desc: 'Real-time SOC view with live attack feed, threat map, events/sec, top attackers, log stream, node heartbeats — all WebSocket-powered.', href: '/dashboard', color: '#22D3EE', free: true },
               { icon: Globe, name: 'Surface (ASM)', desc: 'Attack surface management. AI-powered asset discovery via nmap, vulnerability scanning with Nuclei, SBOM analysis, risk scoring, and scheduled scans.', href: '/dashboard/surface', color: '#34D399', free: true },
               { icon: Zap, name: 'Response (SOAR)', desc: 'Autonomous incident response. 18μs fast path, 10 playbooks, AI triage with MITRE ATT&CK mapping. All actions auto-approved by default — override per guardrail.', href: '/dashboard/response', color: '#F87171', free: true },
               { icon: Bug, name: 'Phantom (Deception)', desc: 'SSH + HTTP honeypots with breadcrumb traps. Attacker steals fake credentials → tries on real API → CRITICAL alert + auto-block.', href: '/dashboard/phantom', color: '#F97316', free: true },

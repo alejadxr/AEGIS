@@ -78,6 +78,14 @@ function riskColor(score: number): string {
   return 'text-[#22C55E]';
 }
 
+/** Strip fake "www.X.X.X.X" or "mail.X.X.X.X" hostname prefixes */
+function cleanHostname(hostname: string): string {
+  const fakePattern = /^(www|mail)\.(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/;
+  const match = hostname.match(fakePattern);
+  if (match) return match[2]; // return just the IP
+  return hostname;
+}
+
 function buildSeverityDist(vulns: VulnRow[]) {
   const counts: Record<string, number> = { Critical: 0, High: 0, Medium: 0, Low: 0 };
   vulns.forEach((v) => {
@@ -162,7 +170,7 @@ export default function SurfacePage() {
             const Icon = typeIcons[row.asset_type] || Server;
             return <Icon className="w-3.5 h-3.5 text-zinc-500" />;
           })()}
-          <span className="font-mono text-[#22D3EE] text-[13px]">{row.hostname}</span>
+          <span className="font-mono text-[#22D3EE] text-[13px]">{cleanHostname(row.hostname)}</span>
         </div>
       ),
     },
@@ -181,6 +189,9 @@ export default function SurfacePage() {
     {
       key: 'risk_score', label: 'Risk Score', sortable: true,
       render: (row: AssetRow) => {
+        if (!row.risk_score || row.risk_score === 0) {
+          return <span className="text-zinc-600 text-[13px] font-mono">{'\u2014'} Not scanned</span>;
+        }
         const pct = Math.round((row.risk_score / 10) * 100);
         const barColor = row.risk_score >= 8 ? 'bg-[#EF4444]' : row.risk_score >= 5 ? 'bg-[#F97316]' : 'bg-[#22C55E]';
         return (
