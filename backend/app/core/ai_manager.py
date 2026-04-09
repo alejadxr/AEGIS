@@ -15,6 +15,7 @@ from app.core.ai_providers import (
     AnthropicProvider,
     OpenAIProvider,
     OllamaProvider,
+    InceptionProvider,
     create_provider,
     PROVIDER_CLASSES,
 )
@@ -27,11 +28,11 @@ class AIManager:
 
     def __init__(self):
         self.providers: dict[str, AIProvider] = {}
-        self.active_provider: str = "openrouter"
+        self.active_provider: str = "inception"
         # task_type -> provider name override  (e.g. {"code_analysis": "anthropic"})
         self.task_routing: dict[str, str] = {}
         # ordered fallback chain of provider names
-        self.fallback_chain: list[str] = ["openrouter", "openai", "anthropic", "ollama"]
+        self.fallback_chain: list[str] = ["inception", "openrouter", "openai", "anthropic", "ollama"]
 
     # ------------------------------------------------------------------
     # Registration
@@ -205,13 +206,20 @@ ai_manager = AIManager()
 def init_default_providers(
     openrouter_api_key: str = "",
     openrouter_base_url: str = "https://openrouter.ai/api/v1",
+    inception_api_key: str = "",
+    inception_base_url: str = "https://api.inceptionlabs.ai/v1",
 ) -> AIManager:
     """Register the default set of providers using env-level keys.
 
     Called once during app startup.  Client-specific keys are resolved
     at request time from client.settings.
     """
-    # OpenRouter (primary -- env key)
+    # Inception Labs Mercury-2 (primary -- diffusion LLM, structured outputs)
+    ai_manager.register_provider(
+        "inception",
+        InceptionProvider(api_key=inception_api_key, base_url=inception_base_url),
+    )
+    # OpenRouter (fallback -- 500+ models via single key)
     ai_manager.register_provider(
         "openrouter",
         OpenRouterProvider(api_key=openrouter_api_key, base_url=openrouter_base_url),
@@ -222,6 +230,12 @@ def init_default_providers(
     ai_manager.register_provider("openai", OpenAIProvider())
     # Ollama (local, no key needed)
     ai_manager.register_provider("ollama", OllamaProvider())
+
+    # Set active provider: prefer Inception if key available, else OpenRouter
+    if inception_api_key:
+        ai_manager.set_active_provider("inception")
+    elif openrouter_api_key:
+        ai_manager.set_active_provider("openrouter")
 
     logger.info(
         f"AI Manager initialized with {len(ai_manager.providers)} providers. "

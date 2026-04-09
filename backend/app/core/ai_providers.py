@@ -445,6 +445,144 @@ class OllamaProvider(AIProvider):
 
 
 # ---------------------------------------------------------------------------
+# Inception Labs (Mercury-2 diffusion LLM)
+# ---------------------------------------------------------------------------
+
+class InceptionProvider(AIProvider):
+    """Inception Labs Mercury-2 — diffusion-based LLM.
+
+    Mercury-2 is a diffusion language model that generates text in parallel
+    (not token-by-token like autoregressive models). This makes it potentially
+    faster for short, structured responses like security triage.
+
+    Special features:
+    - reasoning_effort: "instant" | "low" | "medium" | "high"
+      "instant" = fastest (best for triage), "high" = deepest reasoning
+    - Structured outputs via response_format with JSON schema enforcement
+    - Streaming with optional diffusing=true to see refinement process
+    - Free tier: 10M tokens
+    """
+
+    KNOWN_MODELS = [
+        {"id": "mercury-2", "name": "Mercury-2 (Diffusion LLM)"},
+    ]
+
+    # Map AEGIS task types to Mercury reasoning effort levels
+    TASK_REASONING: dict[str, str] = {
+        "triage": "instant",        # Fastest — sub-second decisions
+        "quick_decision": "instant",
+        "classification": "medium",
+        "risk_scoring": "medium",
+        "healing": "medium",
+        "investigation": "high",    # Deepest reasoning
+        "code_analysis": "high",
+        "report": "high",
+        "decoy_content": "medium",
+        "red_team": "high",
+        "counter_attack": "high",
+        "payload_analysis": "high",
+    }
+
+    def __init__(self, api_key: str = "", base_url: str = "https://api.inceptionlabs.ai/v1"):
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=120.0)
+        return self._client
+
+    async def close(self):
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
+    def get_name(self) -> str:
+        return "inception"
+
+    async def chat(
+        self,
+        messages: list[dict],
+        model: str | None = None,
+        temperature: float = 0.75,
+        max_tokens: int = 8192,
+        task_type: str = "triage",
+        **kwargs,
+    ) -> dict:
+        if not self.api_key:
+            return {
+                "content": '{"note": "Inception Labs API key not configured."}',
+                "tokens_used": 0,
+                "cost_usd": 0.0,
+                "latency_ms": 0,
+            }
+
+        model = model or "mercury-2"
+        reasoning = self.TASK_REASONING.get(task_type, "medium")
+        client = await self._get_client()
+        start = time.time()
+
+        payload: dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "reasoning_effort": reasoning,
+        }
+
+        # For triage/classification tasks, enforce structured JSON output
+        if task_type in ("triage", "classification", "risk_scoring", "quick_decision"):
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "SecurityAnalysis",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+                            "threat_type": {"type": "string"},
+                            "mitre_technique": {"type": "string"},
+                            "mitre_tactic": {"type": "string"},
+                            "summary": {"type": "string"},
+                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                        },
+                        "required": ["severity", "threat_type", "summary", "confidence"],
+                    },
+                },
+            }
+
+        resp = await client.post(
+            f"{self.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        latency_ms = int((time.time() - start) * 1000)
+
+        if resp.status_code != 200:
+            raise Exception(f"Inception returned {resp.status_code}: {resp.text[:200]}")
+
+        data = resp.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        usage = data.get("usage", {})
+
+        return {
+            "content": content,
+            "tokens_used": usage.get("total_tokens", 0),
+            "cost_usd": 0.0,
+            "latency_ms": latency_ms,
+            "reasoning_effort": reasoning,
+            "reasoning_tokens": usage.get("reasoning_tokens", 0),
+        }
+
+    async def get_models(self) -> list[dict]:
+        return list(self.KNOWN_MODELS)
+
+
+# ---------------------------------------------------------------------------
 # Provider factory
 # ---------------------------------------------------------------------------
 
@@ -453,6 +591,7 @@ PROVIDER_CLASSES: dict[str, type[AIProvider]] = {
     "anthropic": AnthropicProvider,
     "openai": OpenAIProvider,
     "ollama": OllamaProvider,
+    "inception": InceptionProvider,
 }
 
 
