@@ -239,14 +239,16 @@ async def lifespan(app: FastAPI):
         await seed_default_admin(db, demo)
         logger.info("Default admin user seeded (admin@cayde6.local)")
 
-        # Prefer a non-demo client for asset ownership; fall back to demo
-        _pri = await db.execute(
-            _startup_sel(Client).where(Client.slug != "demo").limit(1)
-        )
-        primary_client = _pri.scalar_one_or_none() or demo
-        logger.info(f"Primary client for auto-discovery: slug='{primary_client.slug}'")
+        # Get ALL clients for auto-discovery — each client gets their own assets
+        _all_clients = await db.execute(_startup_sel(Client))
+        all_clients = list(_all_clients.scalars().all())
+        # Filter out demo if there are real clients
+        real_clients = [c for c in all_clients if c.slug != "demo"]
+        discovery_clients = real_clients if real_clients else all_clients
+        logger.info(f"Auto-discovery targets: {[c.slug for c in discovery_clients]}")
 
     # Auto-discover localhost services on every startup.
+    # Each client gets their own copy of discovered assets.
     # Uses upsert logic: updates existing assets, creates new ones.
     # Runs in background so it never blocks startup.
     async def _auto_discover_localhost(client_id: str):
@@ -327,7 +329,9 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Auto-discovery failed (non-fatal): {e}")
 
-    asyncio.create_task(_auto_discover_localhost(primary_client.id))
+    # Run auto-discovery for each client
+    for _client in discovery_clients:
+        asyncio.create_task(_auto_discover_localhost(_client.id))
 
     # Start event stream (Redis or in-memory)
     await event_stream.start()
