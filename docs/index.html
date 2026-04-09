@@ -1969,99 +1969,199 @@ footer {
 
 @media (max-width: 768px) {
   .wrap, .wrap-narrow {
-    padding: 0 24px;
+    padding: 0 20px;
   }
 
-  nav { padding: 0 20px; }
+  nav { padding: 0 16px; }
 
   .nav-links a:not(.nav-gh) {
     display: none;
   }
 
+  /* ── Hero mobile ── */
   .hero {
     min-height: auto;
-    padding: 120px 0 80px;
+    padding: 100px 0 60px;
   }
 
   .hero h1 {
-    font-size: 38px;
+    font-size: 34px;
     letter-spacing: -1.5px;
+    line-height: 1.1;
+  }
+
+  .hero-desc {
+    font-size: 15px;
+    line-height: 1.65;
   }
 
   .hero-visual {
-    height: 280px;
+    height: 220px;
   }
 
   .geo-container {
-    width: 260px;
-    height: 280px;
+    width: 220px;
+    height: 220px;
   }
 
-  .geo-shield {
-    width: 160px;
-    height: 185px;
-  }
-
-  .geo-shield-inner {
-    width: 124px;
-    height: 143px;
-  }
-
-  .geo-ring { width: 230px; height: 230px; }
-  .geo-ring-2 { width: 205px; height: 205px; }
-  .geo-ring-3 { width: 265px; height: 265px; }
-  .geo-scanline { width: 160px; }
-  .geo-scanline-v { height: 140px; }
-  .geo-radar { width: 160px; height: 185px; }
+  .geo-shield { width: 130px; height: 150px; }
+  .geo-shield-inner { width: 100px; height: 115px; }
+  .geo-ring { width: 190px; height: 190px; }
+  .geo-ring-2 { width: 165px; height: 165px; }
+  .geo-ring-3 { width: 215px; height: 215px; }
+  .geo-scanline { width: 130px; }
+  .geo-scanline-v { height: 110px; }
+  .geo-radar { width: 130px; height: 150px; }
   .geo-corner { display: none; }
   .geo-node { display: none; }
+  .geo-center-val { font-size: 24px; letter-spacing: 4px; }
+  .geo-center-label { font-size: 7px; margin-top: 8px; }
+  .geo-center-status { font-size: 7px; margin-top: 10px; }
 
+  /* ── Hero actions ── */
+  .hero-actions {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .hero-actions .btn-primary,
+  .hero-actions .btn-ghost {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .hero-install {
+    display: flex;
+    justify-content: center;
+  }
+
+  .install-cmd {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    width: 100%;
+  }
+
+  .install-cmd .cmd-prefix { display: none; }
+
+  .install-cmd .cmd-text {
+    font-size: 10px;
+    width: 100%;
+    order: 3;
+    text-align: center;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  /* ── Stats bar mobile ── */
   .hero-stats .wrap {
     flex-wrap: wrap;
     height: auto;
-    padding: 16px 24px;
-    gap: 4px;
+    padding: 12px 16px;
+    gap: 0;
     justify-content: center;
   }
 
   .stat-item {
     border-right: none;
-    padding: 4px 16px;
+    padding: 6px 14px;
+    font-size: 11px;
+    flex: 0 0 50%;
+    justify-content: center;
   }
 
+  .stat-val { font-size: 12px; }
+
+  /* ── Features ── */
   .features-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .feat-card {
+    padding: 24px;
   }
 
   .section-pad {
-    padding: 100px 0;
+    padding: 80px 0;
   }
 
   .section-title {
-    font-size: 32px;
+    font-size: 28px;
     letter-spacing: -1px;
+    line-height: 1.15;
   }
 
+  .section-subtitle {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ── Scorecard ── */
+  .score-big {
+    font-size: 80px;
+    letter-spacing: -4px;
+  }
+
+  .attack-grid {
+    gap: 6px;
+  }
+
+  .attack-badge {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+
+  /* ── Speed comparison ── */
   .speed-header-row,
   .speed-row {
-    grid-template-columns: 100px 1fr 80px;
+    grid-template-columns: 80px 1fr 60px;
+    gap: 10px;
+  }
+
+  .speed-name { font-size: 12px; }
+  .speed-val { font-size: 12px; }
+
+  /* ── Pricing mobile ── */
+  .price-grid,
+  .price-grid-2col {
+    grid-template-columns: 1fr !important;
+    max-width: 100% !important;
     gap: 16px;
   }
 
-  .speed-name { font-size: 13px; }
-
-  .install-cmd {
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px 16px;
+  .price-card {
+    padding: 28px 24px 24px;
   }
 
-  .install-cmd .cmd-text {
-    font-size: 11px;
-    width: 100%;
-    order: 3;
+  .price-amount {
+    font-size: 48px;
   }
 
+  .price-desc {
+    font-size: 13px;
+  }
+
+  .price-features li {
+    font-size: 13px;
+    padding: 5px 0;
+  }
+
+  /* ── FAQ mobile ── */
+  .faq-item summary {
+    padding: 16px 18px;
+    font-size: 14px;
+  }
+
+  .faq-item p {
+    padding: 0 18px 16px;
+    font-size: 13px;
+  }
+
+  /* ── Footer ── */
   .footer-inner {
     flex-direction: column;
     gap: 20px;
@@ -2073,40 +2173,90 @@ footer {
     gap: 16px;
   }
 
-  .score-big {
-    font-size: 100px;
-    letter-spacing: -4px;
+  .footer-links {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .section-divider {
+    margin: 0 20px;
   }
 }
 
 @media (max-width: 480px) {
+  .wrap, .wrap-narrow {
+    padding: 0 16px;
+  }
+
+  .hero {
+    padding: 90px 0 50px;
+  }
+
   .hero h1 {
-    font-size: 32px;
+    font-size: 28px;
     letter-spacing: -1px;
+    line-height: 1.1;
   }
 
   .hero-badge {
-    font-size: 10px;
+    font-size: 9px;
     letter-spacing: 1.5px;
+    padding: 4px 10px;
   }
 
   .hero-desc {
-    font-size: 15px;
+    font-size: 14px;
   }
 
+  .hero-visual {
+    height: 180px;
+  }
+
+  .geo-container { width: 180px; height: 180px; }
+  .geo-shield { width: 105px; height: 120px; }
+  .geo-shield-inner { width: 80px; height: 92px; }
+  .geo-ring { width: 155px; height: 155px; }
+  .geo-ring-2 { width: 135px; height: 135px; }
+  .geo-ring-3 { width: 175px; height: 175px; }
+  .geo-scanline { width: 105px; }
+  .geo-scanline-v { height: 90px; }
+  .geo-radar { width: 105px; height: 120px; }
+  .geo-center-val { font-size: 20px; letter-spacing: 3px; }
+  .geo-center-label { font-size: 6px; }
+  .geo-center-status { font-size: 6px; }
+
   .score-big {
-    font-size: 80px;
+    font-size: 64px;
     letter-spacing: -3px;
   }
 
+  .section-pad {
+    padding: 64px 0;
+  }
+
   .section-title {
-    font-size: 28px;
+    font-size: 24px;
     letter-spacing: -0.8px;
   }
 
   .price-amount {
-    font-size: 44px;
+    font-size: 40px;
   }
+
+  .stat-item {
+    flex: 0 0 50%;
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  .speed-header-row,
+  .speed-row {
+    grid-template-columns: 70px 1fr 50px;
+    gap: 8px;
+  }
+
+  .speed-name { font-size: 11px; }
+  .speed-val { font-size: 11px; }
 }
 </style>
 </head>

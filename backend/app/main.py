@@ -496,7 +496,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -597,7 +597,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.0.0",
+        "version": "1.2.0",
         "environment": settings.AEGIS_ENV,
     }
 
@@ -607,7 +607,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.0.0",
+        "version": "1.2.0",
     }
 
 
