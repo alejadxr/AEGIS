@@ -1,527 +1,358 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Activity, Shield, Globe, Zap, Bug, Fingerprint, Flame, Radar,
-  Bot, Sparkles, BookOpen, ArrowRight, Monitor, Server, Lock,
-  FileText, Settings, ChevronRight, ShieldCheck,
-  Cpu, Database, Wifi, Search, BarChart3, AlertTriangle,
-  Network, Crown, Terminal, HardDrive, Layers, Radio,
+  Activity, Globe, Zap, Bug, Fingerprint, Flame,
+  Bot, ArrowRight, ArrowLeft,
+  ShieldCheck, ChevronRight, BookOpen, Crown, Layers,
+  X, Check, AlertTriangle,
 } from 'lucide-react';
 
-/* ─── Types ─── */
-interface ModuleCard {
+/* ─── Tour Steps ─── */
+interface TourStep {
   icon: typeof Activity;
-  name: string;
-  tagline: string;
-  description: string;
-  features: string[];
-  href: string;
   color: string;
-  free: boolean;
-  category: 'core' | 'endpoint' | 'intelligence' | 'enterprise';
+  title: string;
+  subtitle: string;
+  description: string;
+  highlights: string[];
+  tip: string;
+  action: { label: string; href: string };
 }
 
-interface QuickAction {
-  icon: typeof Activity;
-  label: string;
-  description: string;
-  href: string;
-  color: string;
-}
-
-/* ─── Data ─── */
-const MODULES: ModuleCard[] = [
-  // CORE DEFENSE
+const STEPS: TourStep[] = [
+  {
+    icon: BookOpen,
+    color: '#22D3EE',
+    title: 'Welcome to AEGIS',
+    subtitle: 'Your autonomous cybersecurity platform',
+    description: 'AEGIS detects, analyzes, and neutralizes cyber threats without human intervention. From the moment you deploy it, 5 detection layers work simultaneously to protect your infrastructure.',
+    highlights: [
+      'Everything runs autonomously — zero human approval needed',
+      '18-microsecond detection in the first layer',
+      '11/11 verified attack detection score',
+      'Self-hosted: your data never leaves your servers',
+    ],
+    tip: 'AEGIS works out of the box. The AI features activate when you add an OpenRouter or Ollama API key in Settings.',
+    action: { label: 'Continue the tour', href: '' },
+  },
+  {
+    icon: Layers,
+    color: '#22D3EE',
+    title: 'The 5-Layer Pipeline',
+    subtitle: 'How AEGIS catches everything',
+    description: 'Every request to your server passes through 5 detection layers. Each layer catches what the previous one missed. The fast path resolves known threats in <300ms without even calling the AI.',
+    highlights: [
+      'L1: Attack Detector — regex + URL decode on every request (18μs)',
+      'L2: Log Watcher — monitors PM2/syslog for security patterns in real-time',
+      'L3: Sigma Correlation — 122 rules + 5 chain rules detect multi-step attacks',
+      'L4: AI Triage — classifies unknown threats + maps to MITRE ATT&CK',
+      'L5: Auto-Response — executes playbooks + blocks IPs autonomously',
+    ],
+    tip: 'The fast path (L1→L3→Playbook) resolves in <300ms without AI. Only complex/unknown threats trigger the full AI triage (2-5s).',
+    action: { label: 'See it live', href: '/dashboard/live' },
+  },
   {
     icon: Activity,
-    name: 'Live Dashboard',
-    tagline: 'Real-time SOC command center',
-    description: 'CrowdStrike Falcon-style dense view with 10 WebSocket-powered widgets. Every incident, every blocked IP, every honeypot interaction appears instantly — no refresh needed.',
-    features: [
-      'Live attack feed with slide-in animations',
-      'Global threat map with pulsing attacker dots',
-      'Events/sec rolling line chart (60s window)',
-      'Top 10 attackers, targets, and attack types',
-      'Raw log stream with color-coded severity',
-      'Node heartbeat grid (green/red per agent)',
-      'Counters: events/sec, blocked/min, AI decisions/min',
-    ],
-    href: '/dashboard/live',
     color: '#22D3EE',
-    free: true,
-    category: 'core',
+    title: 'Live Dashboard',
+    subtitle: 'Real-time SOC command center',
+    description: 'The Live Dashboard is your main screen. It uses WebSocket streaming to push every event to your browser instantly — no polling, no refresh needed. Every attack, every blocked IP, every honeypot interaction appears the moment it happens.',
+    highlights: [
+      'Live attack feed — new incidents slide in with severity colors',
+      'Global threat map — pulsing dots show attacker locations',
+      'Events/sec chart — 60-second rolling line chart',
+      'Top 10 attackers, targets, and attack types (updates every 2s)',
+      'Raw log stream — scrolling terminal with color-coded levels',
+      'Node heartbeat grid — green/red dots for every endpoint agent',
+    ],
+    tip: 'Open this page and keep it on a second monitor. When you get attacked, you will see it instantly.',
+    action: { label: 'Open Live Dashboard', href: '/dashboard/live' },
   },
   {
     icon: Globe,
-    name: 'Surface (ASM)',
-    tagline: 'Attack surface management',
-    description: 'Discover everything exposed on your network. AI-powered nmap scans find services, Nuclei checks for vulnerabilities, and the risk scorer tells you what to fix first.',
-    features: [
-      'Auto-discovery: nmap scans 150+ ports + AI enrichment',
-      'Vulnerability scanning via Nuclei templates',
-      'AI risk scoring per asset (0-100)',
-      'SBOM analysis for dependency tracking (Enterprise)',
-      'Scheduled scans: full (2h), quick (30m), discovery (1h)',
-      'Hardening checks with remediation steps',
-    ],
-    href: '/dashboard/surface',
     color: '#34D399',
-    free: true,
-    category: 'core',
+    title: 'Surface — Attack Surface Management',
+    subtitle: 'Discover everything exposed on your network',
+    description: 'Surface finds every service running on your infrastructure. It uses nmap to scan 150+ ports, then passes results through AI for intelligent identification. You will see exactly what is exposed and how risky it is.',
+    highlights: [
+      'Auto-discovery with AI enrichment (identifies Next.js, PostgreSQL, etc.)',
+      'Vulnerability scanning via Nuclei templates',
+      'AI risk score per asset (0-100) with color coding',
+      'Scheduled scans: full every 2 hours, quick every 30 minutes',
+      'Hardening checks with step-by-step remediation',
+    ],
+    tip: 'Start here. Put your server IP in the scan field and let AEGIS discover what you are running. The AI will tell you what it found.',
+    action: { label: 'Scan your network', href: '/dashboard/surface' },
   },
   {
     icon: Zap,
-    name: 'Response (SOAR)',
-    tagline: 'Autonomous incident response',
-    description: 'When AEGIS detects a threat, it acts autonomously. The fast path resolves known patterns in <300ms without AI. Complex threats get full AI triage with MITRE ATT&CK mapping in 2-5 seconds.',
-    features: [
-      '18-microsecond detection in Layer 1 middleware',
-      '10 deterministic playbooks (<50ms each)',
-      'AI triage: classify → decide → execute → verify → audit',
-      'MITRE ATT&CK technique mapping on every incident',
-      'Fully autonomous — all actions auto-approved by default',
-      'Override any action to require manual approval in Settings',
-      'Full audit trail: model used, reasoning, confidence, cost',
-    ],
-    href: '/dashboard/response',
     color: '#F87171',
-    free: true,
-    category: 'core',
+    title: 'Response — Autonomous Incident Response',
+    subtitle: 'AEGIS acts. You review.',
+    description: 'When a threat is detected, AEGIS does not wait for you. It classifies the threat, decides the response, executes it, verifies it worked, and logs everything — all in seconds. Every AI decision includes reasoning, confidence score, and token cost.',
+    highlights: [
+      '10 deterministic playbooks execute in <50ms each',
+      'AI triage: classify → decide → execute → verify → audit',
+      'MITRE ATT&CK technique mapped to every incident',
+      'Full audit trail: model used, reasoning, confidence, cost',
+      'All actions auto-approved — override per action in Settings if needed',
+    ],
+    tip: 'By default, everything is autonomous (auto_approve). If you need human review for destructive actions like kill_process or isolate_host, change those guardrails in Settings.',
+    action: { label: 'View incidents', href: '/dashboard/response' },
   },
   {
     icon: Bug,
-    name: 'Phantom (Deception)',
-    tagline: 'Honeypot traps for attackers',
-    description: 'Deploy fake SSH servers and web apps that look real. When an attacker connects, AEGIS captures their credentials, commands, and tools — then profiles them with AI.',
-    features: [
-      'SSH honeypot on port 2222 (fake Ubuntu banner)',
-      'HTTP honeypot on port 8888 (rotating WordPress/Jenkins/phpMyAdmin)',
-      'Breadcrumb traps: fake .env files with trap API keys',
-      'Breadcrumb alert chain: attacker steals fake creds → tries on real API → CRITICAL incident + auto-block',
-      'Template rotation every 4 hours (anti-fingerprint)',
-      'Attacker profiling with MITRE ATT&CK TTPs and geolocation',
-    ],
-    href: '/dashboard/phantom',
     color: '#F97316',
-    free: true,
-    category: 'core',
-  },
-  {
-    icon: Shield,
-    name: 'Threats (TIP)',
-    tagline: 'Threat intelligence platform',
-    description: 'Aggregate threat data from 5 feeds, correlate with your detections, and share anonymized IOCs with the AEGIS community. Track coordinated attack campaigns across phases.',
-    features: [
-      '5 feeds: AbuseIPDB, AlienVault OTX, Emerging Threats, Tor Exit Nodes, Feodo Tracker',
-      'STIX 2.1 export for sharing with other platforms',
-      'Community Intel Cloud hub (opt-in, anonymized)',
-      'Campaign tracking: recon → exploit → persist → exfil → lateral',
-      'IOC database with confidence scoring',
-      '122 Sigma correlation rules + 5 chain detection rules',
+    title: 'Phantom — Honeypot Deception',
+    subtitle: 'Trap attackers with fake services',
+    description: 'AEGIS deploys fake SSH servers and web applications that look real. When an attacker connects, it captures their credentials, commands, and tools. The killer feature: breadcrumb traps — fake .env files with trap API keys. When the attacker tries those keys on your real API, AEGIS instantly knows.',
+    highlights: [
+      'SSH honeypot on port 2222 — captures credentials and commands',
+      'HTTP honeypot on port 8888 — rotates WordPress/Jenkins/phpMyAdmin',
+      'Breadcrumb .env files with trap credentials',
+      'Attacker profiling: tools, techniques, geolocation, MITRE mapping',
+      'Template rotation every 4 hours to avoid fingerprinting',
     ],
-    href: '/dashboard/threats',
-    color: '#FBBF24',
-    free: true,
-    category: 'intelligence',
+    tip: 'The breadcrumb chain is the most powerful detection: attacker finds fake creds in honeypot → tries on real API → CRITICAL incident + auto-block. No one else does this.',
+    action: { label: 'View honeypots', href: '/dashboard/phantom' },
   },
-  {
-    icon: ShieldCheck,
-    name: 'Configurable Firewall',
-    tagline: 'YAML rule engine with UI editor',
-    description: 'Define custom detection rules in YAML or via the visual editor. Rate limiting, CIDR matching, user-agent regex — all with hot reload. Rules apply in <1 second without restart.',
-    features: [
-      'YAML DSL: source_ip, port, protocol, user_agent, rate_limit',
-      'Actions: block_ip, allow (short-circuit), alert, quarantine_host',
-      'Priority-based evaluation (highest wins)',
-      'Stateful rate limiting per source IP',
-      'Rule tester: test rules against synthetic events',
-      '6 default templates (SSH brute force, port scan, scanner block, etc.)',
-      'Hot reload: create a rule → applies in <1s, no restart',
-    ],
-    href: '/dashboard/firewall',
-    color: '#10B981',
-    free: true,
-    category: 'core',
-  },
-
-  // ENDPOINT PROTECTION
   {
     icon: Flame,
-    name: 'Ransomware Protection',
-    tagline: 'Detect + kill + rollback in <500ms',
-    description: 'Canary files planted across user directories detect encryption attempts. When triggered, AEGIS kills the process tree instantly and restores affected files from shadow copies — all in under half a second.',
-    features: [
+    color: '#EF4444',
+    title: 'Ransomware Protection',
+    subtitle: 'Detect, kill, and rollback in <500ms',
+    description: 'The Rust node agent plants 10 hidden canary files across your user directories. If ransomware tries to encrypt them, AEGIS kills the entire process tree instantly and restores the affected files from shadow copies — all before the ransomware can finish.',
+    highlights: [
       '10 hidden canary files in Documents/Desktop/Downloads',
-      'Shannon entropy spike detection (threshold >7.5 bits)',
-      'Mass file extension change detection (>20 in 5 seconds)',
-      'VSS shadow copy deletion monitoring (Windows)',
-      'Process tree kill via TerminateProcess / SIGKILL',
-      'Auto-rollback: VSS (Windows), Btrfs/LVM (Linux), userspace ring buffer (ext4/xfs)',
+      'Shannon entropy detection: >7.5 bits = encryption suspected',
+      'Mass file extension change tracking (>20 in 5 seconds)',
+      'Process tree killed via TerminateProcess / SIGKILL',
+      'Auto-rollback: VSS (Windows), Btrfs/LVM (Linux)',
       'Complete forensic chain uploaded as CRITICAL incident',
     ],
-    href: '/dashboard/response',
-    color: '#EF4444',
-    free: true,
-    category: 'endpoint',
+    tip: 'This runs on the endpoint agent, not the server. Install the AEGIS Node Agent on every machine you want to protect.',
+    action: { label: 'View response', href: '/dashboard/response' },
   },
   {
     icon: Fingerprint,
-    name: 'EDR/XDR Core',
-    tagline: 'Endpoint detection and response',
-    description: 'Kernel-level visibility into every process, network connection, file write, and registry change. Reconstruct attack chains and detect living-off-the-land techniques that bypass traditional AV.',
-    features: [
-      'ETW telemetry (Windows): Kernel-Process, Network, File, Registry, AMSI',
-      'eBPF telemetry (Linux): process exec, connect, openat, unlink',
-      'Process tree reconstruction (full ancestor + descendant chain)',
-      '6 MITRE attack chain rules: macro malware, phishing payload, credential dump, LOTL download, rundll32 abuse',
-      'Tiered: works without admin (polling) → better with admin (ETW/eBPF)',
-      'Gzip-compressed 1-second batch uploads, 16K event ring buffer',
-    ],
-    href: '/dashboard/edr',
     color: '#A78BFA',
-    free: true,
-    category: 'endpoint',
+    title: 'EDR/XDR Core',
+    subtitle: 'See everything. Miss nothing.',
+    description: 'Enterprise endpoint detection using kernel-level telemetry. On Windows, AEGIS reads ETW (Event Tracing for Windows) for every process, network connection, and file write. On Linux, it uses eBPF programs. The backend reconstructs the full process tree so you can trace any attack chain.',
+    highlights: [
+      'ETW: Kernel-Process, Network, File, Registry, AMSI (Windows)',
+      'eBPF: process exec, connect, openat, unlink (Linux)',
+      'Process tree with ancestors + descendants for any process',
+      '6 MITRE attack chain rules (macro malware, LOTL, credential dump)',
+      'Tiered: works without admin (polling), better with admin (ETW/eBPF)',
+    ],
+    tip: 'Open the EDR page, enter a host and PID to see the full process tree. You can trace cmd.exe → powershell.exe → curl.exe chains in real time.',
+    action: { label: 'Open EDR', href: '/dashboard/edr' },
   },
   {
-    icon: Radar,
-    name: 'Antivirus Engine',
-    tagline: 'YARA + ClamAV + hash reputation',
-    description: 'Signature-based detection as a complementary layer under behavioral analysis. On-access scanning catches known malware on file write. Daily scheduled scans cover the full filesystem.',
-    features: [
-      'YARA rules scanning (on-access + scheduled)',
-      'ClamAV integration via clamscan CLI (optional)',
-      'SHA256 hash reputation cache (sled embedded DB, >95% hit rate)',
-      'Encrypted quarantine: infected files XOR-obfuscated in ~/.aegis/quarantine/',
-      'Daily auto-update from YARA-Forge community + MalwareBazaar hashes',
-      'EICAR test detection built-in (works without external rules)',
-      'Release from quarantine via dashboard',
+    icon: ShieldCheck,
+    color: '#10B981',
+    title: 'Configurable Firewall',
+    subtitle: 'Your rules. Hot reload.',
+    description: 'Define custom detection rules in YAML or via the visual editor. Block SSH brute force, port scans, known scanner user-agents — or create your own logic. Rules apply in <1 second without restarting anything.',
+    highlights: [
+      'YAML DSL with CIDR matching, port, protocol, user-agent regex, rate limiting',
+      'Actions: block_ip, allow (short-circuit), alert, quarantine_host',
+      'Priority system: highest priority rule wins',
+      'Rule tester: test against synthetic events before deploying',
+      '6 built-in templates ready to use',
+      'Hot reload: create → save → active in <1s',
     ],
-    href: '/dashboard/antivirus',
-    color: '#06B6D4',
-    free: true,
-    category: 'endpoint',
-  },
-
-  // ENTERPRISE / INTELLIGENCE
-  {
-    icon: Sparkles,
-    name: 'Quantum Analytics',
-    tagline: 'Post-quantum + entropy analysis',
-    description: 'Detect encrypted C2 traffic without decrypting it using Renyi entropy analysis. Assess your cryptographic posture against quantum computing threats with the Grover calculator.',
-    features: [
-      'Renyi entropy analysis (detects Cobalt Strike, Metasploit, Sliver beacons)',
-      'Grover algorithm calculator (quantum brute-force time estimator)',
-      'Post-quantum readiness score (0-100) — free tier gets basic score',
-      'Adversarial ML poisoning detection (Enterprise)',
-      'Steganography detection via file entropy deviation',
-      'Crypto migration recommendations per asset',
-    ],
-    href: '/dashboard/quantum',
-    color: '#A78BFA',
-    free: false,
-    category: 'enterprise',
+    tip: 'Start with the templates. Click "Use Template" to clone a pre-built rule like "Block SSH brute force" and customize it.',
+    action: { label: 'Create rules', href: '/dashboard/firewall' },
   },
   {
     icon: Bot,
-    name: 'Honey-AI Deception',
-    tagline: 'AI-generated fake infrastructure at scale',
-    description: 'The killer differentiator. Deploy 50+ fake services that look real — web apps, REST APIs, MySQL databases — all with AI-generated content. When an attacker interacts with any of them, a breadcrumb UUID triggers a CRITICAL alert.',
-    features: [
-      'Deception campaigns: deploy 50+ fake services in <30s',
-      '4 industry themes: fintech, healthcare, ecommerce, devops',
-      'AI-generated responses (LLM) with Faker fallback',
-      'Smart HTTP honeypot: imitates Next.js/WordPress/Laravel',
-      'Smart API honeypot: /api/users, /api/config with fake data',
-      'Smart DB honeypot: MySQL wire protocol with fake schemas',
-      'Breadcrumb UUID tracking: stolen data reused → CRITICAL alert',
-      'Auto-rotation every 6 hours (anti-fingerprint)',
-    ],
-    href: '/dashboard/deception',
     color: '#F97316',
-    free: false,
-    category: 'enterprise',
+    title: 'Honey-AI — Deception at Scale',
+    subtitle: 'The killer differentiator',
+    description: 'Deploy 50+ fake services that look real — fake web apps, REST APIs, and MySQL databases, all with AI-generated content. Every fake asset embeds a tracking UUID. When an attacker steals data from a fake service and tries to use it on a real one, AEGIS links the two events and raises a CRITICAL alert.',
+    highlights: [
+      'Deploy entire deception campaigns with one click',
+      '4 industry themes: fintech, healthcare, ecommerce, devops',
+      'AI generates realistic responses (LLM with Faker fallback)',
+      'Smart HTTP: imitates Next.js/WordPress/Laravel',
+      'Smart API: fake /api/users with plausible data',
+      'Smart DB: MySQL wire protocol with fake schemas',
+      'Breadcrumb UUID tracking across all fake assets',
+    ],
+    tip: 'This is what makes AEGIS unique. No other platform generates entire fake infrastructures to waste attackers\' time and reveal their methods.',
+    action: { label: 'Build a campaign', href: '/dashboard/deception' },
   },
   {
-    icon: FileText,
-    name: 'Compliance Dashboard',
-    tagline: 'ISO 27001 / NIS2 / SOC 2 mapping',
-    description: 'See how your AEGIS deployment maps to major compliance frameworks. Identify gaps and track your coverage score as you enable more modules.',
-    features: [
-      'ISO 27001 Annex A control mapping',
-      'NIS2 directive compliance tracking',
-      'SOC 2 Trust Services Criteria assessment',
-      'Coverage percentage per framework',
-      'Gap analysis with remediation suggestions',
+    icon: Crown,
+    color: '#FBBF24',
+    title: 'You are ready.',
+    subtitle: 'AEGIS is protecting you now.',
+    description: 'Everything is autonomous. AEGIS is already watching your infrastructure, correlating events, profiling attackers, and executing response actions. Open the Live Dashboard to see it in action.',
+    highlights: [
+      'Open the Live Dashboard and watch threats arrive in real time',
+      'Run a network scan in Surface to discover your assets',
+      'Deploy honeypots in Phantom to trap the next attacker',
+      'Create firewall rules to block known bad patterns',
+      'Install the Node Agent on endpoints for ransomware + EDR protection',
+      'Check Settings → Feature Guide for a quick reference of all modules',
     ],
-    href: '/dashboard/compliance',
-    color: '#8B5CF6',
-    free: false,
-    category: 'enterprise',
+    tip: 'Bookmark the Live Dashboard. That is your home now.',
+    action: { label: 'Go to Dashboard', href: '/dashboard' },
   },
-];
-
-const QUICK_ACTIONS: QuickAction[] = [
-  { icon: Search, label: 'Scan your network', description: 'Discover all services running on your infrastructure', href: '/dashboard/surface', color: '#34D399' },
-  { icon: Bug, label: 'Deploy honeypots', description: 'Set up SSH + HTTP traps to catch attackers', href: '/dashboard/phantom', color: '#F97316' },
-  { icon: ShieldCheck, label: 'Create firewall rules', description: 'Block brute force, port scans, and scanners', href: '/dashboard/firewall', color: '#10B981' },
-  { icon: Activity, label: 'Open Live View', description: 'Watch threats in real-time as they happen', href: '/dashboard/live', color: '#22D3EE' },
-  { icon: Monitor, label: 'Enroll endpoints', description: 'Install the Rust agent on your servers', href: '/dashboard/infra', color: '#A78BFA' },
-  { icon: Settings, label: 'Configure AI', description: 'Set up OpenRouter, Ollama, or OpenAI provider', href: '/dashboard/settings', color: '#FBBF24' },
-];
-
-const CATEGORIES: { id: string; label: string; description: string }[] = [
-  { id: 'core', label: 'Core Defense', description: 'Detection, response, and monitoring — included in the free tier.' },
-  { id: 'endpoint', label: 'Endpoint Protection', description: 'Ransomware, EDR, and antivirus — runs on the Rust node agent.' },
-  { id: 'intelligence', label: 'Threat Intelligence', description: 'Feeds, correlation, and community sharing.' },
-  { id: 'enterprise', label: 'Enterprise Modules', description: 'Advanced features for companies. Custom pricing.' },
 ];
 
 /* ─── Page ─── */
 export default function GuidePage() {
   const router = useRouter();
+  const [step, setStep] = useState(0);
+  const current = STEPS[step];
+  const isLast = step === STEPS.length - 1;
+  const isFirst = step === 0;
+  const progress = ((step + 1) / STEPS.length) * 100;
 
   return (
-    <div className="space-y-8 max-w-[1200px] mx-auto">
-      {/* Hero */}
-      <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-br from-[#22D3EE]/[0.04] to-transparent p-8">
-        <div className="flex items-start gap-4 mb-6">
-          <div className="w-12 h-12 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 flex items-center justify-center shrink-0">
-            <BookOpen className="w-6 h-6 text-[#22D3EE]" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-white mb-2">Welcome to AEGIS</h1>
-            <p className="text-sm text-zinc-400 leading-relaxed max-w-2xl">
-              AEGIS is an autonomous cybersecurity defense platform. It detects, analyzes, and neutralizes threats
-              without human intervention — from the moment you deploy it. This guide explains every module and
-              helps you get the most out of your installation.
-            </p>
-          </div>
-        </div>
+    <div className="min-h-[80vh] flex flex-col items-center justify-center max-w-3xl mx-auto px-4">
 
-        {/* Key stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { val: '18μs', label: 'Detection speed', icon: Zap },
-            { val: '11/11', label: 'Attack detection', icon: Shield },
-            { val: '122', label: 'Sigma rules', icon: Layers },
-            { val: '170+', label: 'API endpoints', icon: Server },
-          ].map(s => (
-            <div key={s.label} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-center">
-              <s.icon className="w-4 h-4 text-[#22D3EE] mx-auto mb-1" />
-              <div className="text-lg font-bold text-white font-mono">{s.val}</div>
-              <div className="text-[10px] text-zinc-500 uppercase tracking-wider">{s.label}</div>
-            </div>
-          ))}
+      {/* Progress bar */}
+      <div className="w-full mb-8">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[11px] font-mono text-zinc-500">
+            Step {step + 1} of {STEPS.length}
+          </span>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors flex items-center gap-1"
+          >
+            Skip tour <X className="w-3 h-3" />
+          </button>
         </div>
-      </div>
-
-      {/* How it works */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <Layers className="w-5 h-5 text-[#22D3EE]" />
-          How AEGIS Protects You
-        </h2>
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-            {[
-              { step: 'L1', name: 'Attack Detector', desc: 'Regex + URL decode on every request', time: '18μs', color: '#22D3EE' },
-              { step: 'L2', name: 'Log Watcher', desc: 'PM2/syslog pattern matching', time: 'real-time', color: '#34D399' },
-              { step: 'L3', name: 'Sigma Correlation', desc: '122 rules + chain detection', time: '<100ms', color: '#FBBF24' },
-              { step: 'L4', name: 'AI Triage', desc: 'Classify + MITRE ATT&CK map', time: '2-5s', color: '#A78BFA' },
-              { step: 'L5', name: 'Auto-Response', desc: 'Playbooks + autonomous execution', time: '<50ms', color: '#F87171' },
-            ].map((l, i) => (
-              <div key={l.step} className="relative">
-                <div className="rounded-xl border border-white/[0.06] p-3 text-center h-full">
-                  <div className="text-xs font-bold font-mono mb-1" style={{ color: l.color }}>{l.step}</div>
-                  <div className="text-[12px] font-medium text-white mb-1">{l.name}</div>
-                  <div className="text-[10px] text-zinc-500 mb-2">{l.desc}</div>
-                  <div className="text-[10px] font-mono" style={{ color: l.color }}>{l.time}</div>
-                </div>
-                {i < 4 && (
-                  <ChevronRight className="hidden sm:block absolute -right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-700" />
-                )}
-              </div>
-            ))}
-          </div>
+        <div className="w-full h-1 rounded-full bg-white/[0.06] overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500 ease-out"
+            style={{ width: `${progress}%`, background: current.color }}
+          />
         </div>
-      </div>
-
-      {/* Quick actions */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <Radio className="w-5 h-5 text-[#34D399]" />
-          Quick Start
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {QUICK_ACTIONS.map(a => (
+        {/* Step dots */}
+        <div className="flex items-center justify-center gap-1.5 mt-3">
+          {STEPS.map((s, i) => (
             <button
-              key={a.label}
-              onClick={() => router.push(a.href)}
-              className="flex items-center gap-3 p-4 rounded-xl border border-white/[0.06] hover:border-white/[0.12] bg-white/[0.02] hover:bg-white/[0.04] transition-all text-left group"
-            >
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: `${a.color}15`, border: `1px solid ${a.color}30` }}
-              >
-                <a.icon className="w-5 h-5" style={{ color: a.color }} />
-              </div>
-              <div>
-                <div className="text-[13px] font-medium text-white group-hover:text-[#22D3EE] transition-colors">{a.label}</div>
-                <div className="text-[11px] text-zinc-500">{a.description}</div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 ml-auto shrink-0 transition-colors" />
-            </button>
+              key={i}
+              onClick={() => setStep(i)}
+              className="transition-all duration-200"
+              style={{
+                width: i === step ? 20 : 6,
+                height: 6,
+                borderRadius: 3,
+                background: i === step ? current.color : i < step ? `${current.color}60` : 'rgba(255,255,255,0.08)',
+              }}
+            />
           ))}
         </div>
       </div>
 
-      {/* Modules by category */}
-      {CATEGORIES.map(cat => {
-        const mods = MODULES.filter(m => m.category === cat.id);
-        if (mods.length === 0) return null;
+      {/* Card */}
+      <div className="w-full rounded-2xl border border-white/[0.08] bg-[#111114] overflow-hidden">
 
-        return (
-          <div key={cat.id}>
-            <h2 className="text-lg font-semibold text-white mb-1 flex items-center gap-2">
-              {cat.id === 'enterprise' ? <Crown className="w-5 h-5 text-[#F97316]" /> : <Shield className="w-5 h-5 text-[#22D3EE]" />}
-              {cat.label}
-            </h2>
-            <p className="text-[12px] text-zinc-500 mb-4">{cat.description}</p>
-
-            <div className="space-y-3">
-              {mods.map(m => (
-                <div
-                  key={m.name}
-                  className="rounded-2xl border border-white/[0.06] hover:border-white/[0.10] bg-white/[0.02] hover:bg-white/[0.03] transition-all overflow-hidden"
-                >
-                  <div className="p-5">
-                    <div className="flex items-start gap-4">
-                      <div
-                        className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ background: `${m.color}12`, border: `1px solid ${m.color}25` }}
-                      >
-                        <m.icon className="w-5 h-5" style={{ color: m.color }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-[15px] font-semibold text-white">{m.name}</h3>
-                          {!m.free && (
-                            <span className="text-[9px] font-bold text-[#F97316] bg-[#F97316]/10 border border-[#F97316]/20 px-2 py-0.5 rounded-full">ENTERPRISE</span>
-                          )}
-                          <span className="text-[10px] text-zinc-600 ml-auto font-mono">{m.tagline}</span>
-                        </div>
-                        <p className="text-[12px] text-zinc-400 leading-relaxed mb-3">{m.description}</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                          {m.features.map(f => (
-                            <div key={f} className="flex items-start gap-2 text-[11px] text-zinc-500">
-                              <span className="text-[10px] mt-0.5" style={{ color: m.color }}>&#10003;</span>
-                              <span>{f}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="border-t border-white/[0.04] px-5 py-3">
-                    <button
-                      onClick={() => router.push(m.href)}
-                      className="text-[12px] font-medium flex items-center gap-1.5 transition-colors hover:gap-2.5"
-                      style={{ color: m.color }}
-                    >
-                      Open {m.name} <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+        {/* Icon + Title header */}
+        <div className="p-8 pb-0">
+          <div className="flex items-center gap-4 mb-6">
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0"
+              style={{ background: `${current.color}12`, border: `1px solid ${current.color}25` }}
+            >
+              <current.icon className="w-7 h-7" style={{ color: current.color }} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">{current.title}</h1>
+              <p className="text-sm text-zinc-500 mt-0.5">{current.subtitle}</p>
             </div>
           </div>
-        );
-      })}
 
-      {/* Architecture overview */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <Terminal className="w-5 h-5 text-zinc-400" />
-          Under the Hood
-        </h2>
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { icon: Server, label: 'Backend', val: 'FastAPI + Python 3.12', sub: '27 routers, 170+ endpoints' },
-              { icon: Monitor, label: 'Frontend', val: 'Next.js 14 + Tailwind', sub: '21 dashboard pages' },
-              { icon: Database, label: 'Database', val: 'PostgreSQL 16 + Redis 7', sub: '18 models, async' },
-              { icon: HardDrive, label: 'Agent', val: 'Rust + Tauri v2', sub: 'Windows + Linux EDR' },
-              { icon: Cpu, label: 'AI', val: '13 model routes', sub: 'OpenRouter / Ollama / OpenAI' },
-              { icon: Lock, label: 'Auth', val: 'JWT + API Key + RBAC', sub: 'admin / analyst / viewer' },
-              { icon: Wifi, label: 'Real-time', val: 'WebSocket streaming', sub: 'Topic-based pub/sub' },
-              { icon: BarChart3, label: 'ML', val: 'Isolation Forest', sub: 'Behavioral anomaly detection' },
-            ].map(item => (
-              <div key={item.label} className="rounded-xl border border-white/[0.06] p-3">
-                <item.icon className="w-4 h-4 text-zinc-500 mb-2" />
-                <div className="text-[11px] text-zinc-400 uppercase tracking-wider mb-0.5">{item.label}</div>
-                <div className="text-[12px] font-medium text-white">{item.val}</div>
-                <div className="text-[10px] text-zinc-600">{item.sub}</div>
+          {/* Description */}
+          <p className="text-[14px] text-zinc-300 leading-relaxed mb-6">
+            {current.description}
+          </p>
+        </div>
+
+        {/* Highlights */}
+        <div className="px-8 pb-6">
+          <div className="space-y-2">
+            {current.highlights.map((h, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 text-[13px] text-zinc-400 bg-white/[0.02] rounded-lg px-4 py-2.5 border border-white/[0.04]"
+              >
+                <Check className="w-4 h-4 shrink-0 mt-0.5" style={{ color: current.color }} />
+                <span>{h}</span>
               </div>
             ))}
           </div>
         </div>
-      </div>
 
-      {/* Guardrails */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5 text-[#FBBF24]" />
-          Autonomous Guardrails
-        </h2>
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-          <p className="text-[13px] text-zinc-400 mb-4">
-            AEGIS runs fully autonomous by default — every response action (block IP, kill process, isolate host, counter-attack)
-            executes automatically without human approval. Every action is logged with AI reasoning, confidence score, and cost.
-          </p>
-          <p className="text-[13px] text-zinc-400 mb-4">
-            If you need human-in-the-loop for specific actions, go to{' '}
-            <button onClick={() => router.push('/dashboard/settings')} className="text-[#22D3EE] hover:underline">Settings</button>{' '}
-            and override any guardrail to <code className="text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded text-white">require_approval</code> or{' '}
-            <code className="text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded text-white">never_auto</code>.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {['block_ip', 'isolate_host', 'kill_process', 'quarantine_file', 'counter_attack', 'recon_attacker', 'deception', 'report_abuse'].map(a => (
-              <div key={a} className="flex items-center gap-2 text-[11px] text-zinc-500 bg-white/[0.02] rounded-lg px-3 py-2 border border-white/[0.04]">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#34D399]" />
-                {a}
-              </div>
-            ))}
+        {/* Tip */}
+        <div className="mx-8 mb-6 rounded-xl border border-[#FBBF24]/15 bg-[#FBBF24]/[0.04] p-4">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-[#FBBF24] shrink-0 mt-0.5" />
+            <div>
+              <span className="text-[11px] font-semibold text-[#FBBF24] uppercase tracking-wider">Pro tip</span>
+              <p className="text-[12px] text-zinc-400 mt-1 leading-relaxed">{current.tip}</p>
+            </div>
           </div>
-          <p className="text-[10px] text-zinc-600 mt-3">All actions shown above are auto_approve by default. Green dot = autonomous.</p>
+        </div>
+
+        {/* Navigation */}
+        <div className="border-t border-white/[0.06] px-8 py-5 flex items-center justify-between">
+          <button
+            onClick={() => setStep(s => Math.max(0, s - 1))}
+            disabled={isFirst}
+            className="flex items-center gap-2 text-[13px] text-zinc-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </button>
+
+          <div className="flex items-center gap-3">
+            {/* Action button (opens the module) */}
+            {current.action.href && !isLast && (
+              <button
+                onClick={() => router.push(current.action.href)}
+                className="text-[12px] font-medium px-4 py-2 rounded-xl border transition-colors"
+                style={{
+                  color: current.color,
+                  borderColor: `${current.color}30`,
+                  background: `${current.color}08`,
+                }}
+              >
+                {current.action.label} <ArrowRight className="w-3 h-3 inline ml-1" />
+              </button>
+            )}
+
+            {/* Next / Finish */}
+            <button
+              onClick={() => {
+                if (isLast) {
+                  router.push(current.action.href || '/dashboard');
+                } else {
+                  setStep(s => s + 1);
+                }
+              }}
+              className="flex items-center gap-2 text-[13px] font-semibold text-[#09090B] px-5 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-[0.98]"
+              style={{ background: current.color }}
+            >
+              {isLast ? 'Go to Dashboard' : 'Next'}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Need help */}
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 text-center">
-        <Network className="w-8 h-8 text-[#22D3EE] mx-auto mb-3" />
-        <h3 className="text-[15px] font-semibold text-white mb-2">Need help?</h3>
-        <p className="text-[12px] text-zinc-500 mb-4 max-w-md mx-auto">
-          Check the README on GitHub for detailed installation, configuration, and API documentation.
-          For Enterprise inquiries, contact us.
-        </p>
-        <div className="flex items-center justify-center gap-3">
-          <a
-            href="https://github.com/diego1128256-cmd/AEGIS"
-            target="_blank"
-            rel="noopener"
-            className="text-[12px] font-medium text-[#22D3EE] bg-[#22D3EE]/10 hover:bg-[#22D3EE]/20 px-4 py-2 rounded-xl transition-colors"
-          >
-            GitHub Repository
-          </a>
-          <a
-            href="mailto:alejandxr@icloud.com?subject=AEGIS%20Enterprise%20Inquiry"
-            className="text-[12px] font-medium text-zinc-400 bg-white/[0.04] hover:bg-white/[0.08] px-4 py-2 rounded-xl transition-colors"
-          >
-            Contact Sales
-          </a>
-        </div>
-      </div>
+      {/* Keyboard hint */}
+      <p className="text-[10px] text-zinc-700 mt-4">
+        Use <kbd className="px-1.5 py-0.5 bg-white/[0.04] rounded text-zinc-500 text-[10px]">←</kbd> <kbd className="px-1.5 py-0.5 bg-white/[0.04] rounded text-zinc-500 text-[10px]">→</kbd> arrow keys to navigate
+      </p>
     </div>
   );
 }
