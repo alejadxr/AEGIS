@@ -720,65 +720,66 @@ class ScheduledScanner:
             return
 
         async with async_session() as db:
-            # Prefer a non-demo client; fall back to any client
-            result = await db.execute(
-                select(Client).where(Client.slug != "demo").limit(1)
-            )
-            client = result.scalar_one_or_none()
-            if not client:
-                result = await db.execute(select(Client).limit(1))
-                client = result.scalar_one_or_none()
-            if not client:
-                logger.info("Auto-discovery: no client found")
+            # Get ALL clients (each gets their own assets)
+            all_result = await db.execute(select(Client))
+            all_clients = list(all_result.scalars().all())
+            # Skip demo if real clients exist
+            real_clients = [c for c in all_clients if c.slug != "demo"]
+            clients = real_clients if real_clients else all_clients
+            if not clients:
+                logger.info("Auto-discovery: no clients found")
                 return
 
-            assets_result = await db.execute(
-                select(Asset).where(Asset.client_id == client.id)
-            )
-            registered_assets = assets_result.scalars().all()
-            registered_ports = set()
-            for a in registered_assets:
-                for p in (a.ports or []):
-                    if isinstance(p, dict):
-                        registered_ports.add(p.get("port"))
-
-            new_ports = discovered_ports - registered_ports
-            if new_ports:
-                logger.warning(
-                    f"Auto-discovery: found {len(new_ports)} unknown ports: {new_ports}"
+            # Run discovery for each client
+            for client in clients:
+                assets_result = await db.execute(
+                    select(Asset).where(Asset.client_id == client.id)
                 )
-                port_list = [p for p in nmap_results["ports"] if p["port"] in new_ports]
-                new_asset = Asset(
-                    client_id=client.id,
-                    hostname=AUTO_DISCOVER_TARGET,
-                    ip_address=AUTO_DISCOVER_TARGET,
-                    asset_type="server",
-                    ports=port_list,
-                    technologies=[],
-                    status="active",
-                    risk_score=0.0,
-                    last_scan_at=datetime.utcnow(),
-                )
-                db.add(new_asset)
-                db.add(AuditLog(
-                    client_id=client.id,
-                    action="auto_discovery_alert",
-                    input_summary=(
-                        f"Unknown services on {AUTO_DISCOVER_TARGET}: "
-                        f"ports {sorted(new_ports)}"
-                    ),
-                    decision="auto_registered",
-                ))
-                await db.commit()
+                registered_assets = assets_result.scalars().all()
+                registered_ports = set()
+                for a in registered_assets:
+                    for p in (a.ports or []):
+                        if isinstance(p, dict):
+                            registered_ports.add(p.get("port"))
 
-                await event_bus.publish("scan_completed", {
-                    "type": "auto_discovery",
-                    "target": AUTO_DISCOVER_TARGET,
-                    "new_ports": sorted(new_ports),
-                    "message": f"Unknown services detected: {sorted(new_ports)}",
-                })
-            else:
-                logger.info("Auto-discovery: no new unknown services found")
+                new_ports = discovered_ports - registered_ports
+                if new_ports:
+                    logger.warning(
+                        f"Auto-discovery [{client.slug}]: found {len(new_ports)} unknown ports: {new_ports}"
+                    )
+                    port_list = [p for p in nmap_results["ports"] if p["port"] in new_ports]
+                    new_asset = Asset(
+                        client_id=client.id,
+                        hostname=AUTO_DISCOVER_TARGET,
+                        ip_address=AUTO_DISCOVER_TARGET,
+                        asset_type="server",
+                        ports=port_list,
+                        technologies=[],
+                        status="active",
+                        risk_score=0.0,
+                        last_scan_at=datetime.utcnow(),
+                    )
+                    db.add(new_asset)
+                    db.add(AuditLog(
+                        client_id=client.id,
+                        action="auto_discovery_alert",
+                        input_summary=(
+                            f"Unknown services on {AUTO_DISCOVER_TARGET}: "
+                            f"ports {sorted(new_ports)}"
+                        ),
+                        decision="auto_registered",
+                    ))
+                    await db.commit()
+
+                    await event_bus.publish("scan_completed", {
+                        "type": "auto_discovery",
+                        "client_id": client.id,
+                        "target": AUTO_DISCOVER_TARGET,
+                        "new_ports": sorted(new_ports),
+                        "message": f"Unknown services detected: {sorted(new_ports)}",
+                    })
+                else:
+                    logger.info(f"Auto-discovery [{client.slug}]: no new unknown services")
 
     def _run_nmap_discovery(self, target: str) -> dict:
         """Quick nmap discovery scan for auto-discovery."""
