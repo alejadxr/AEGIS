@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -182,7 +182,7 @@ async def get_live_metrics(
       - Rolling counters (open incidents, hits, blocks, decisions)
     """
     client = auth.client
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff = datetime.utcnow() - timedelta(hours=24)
 
     # Top 10 attacker IPs
     attackers_result = await db.execute(
@@ -287,7 +287,7 @@ async def get_live_metrics(
         honeypot_hits_24h=int(honeypot_hits_24h),
         blocked_actions_24h=int(blocked_actions_24h),
         ai_decisions_24h=int(ai_decisions_24h),
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=datetime.utcnow().isoformat(),
     )
 
 
