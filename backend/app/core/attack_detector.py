@@ -63,7 +63,7 @@ _SAFE_NETWORKS = [
 
 def _is_safe_ip(ip: str) -> bool:
     """Check if an IP is in SAFE_IPS set or in a private/Tailscale range."""
-    if _is_safe_ip(ip):
+    if ip in SAFE_IPS:
         return True
     try:
         addr = _ipaddress.ip_address(ip)
@@ -328,6 +328,14 @@ async def _block_ip(ip: str, reason: str):
 
     # Share to MongoDB (fire-and-forget)
     asyncio.ensure_future(_share_to_mongo(ip, reason))
+
+    # Post-block investigation: AI verifies if block is a false positive (fire-and-forget)
+    # Block first (safety), investigate second (2-5s AI call)
+    try:
+        from app.services.ip_investigator import ip_investigator
+        asyncio.ensure_future(ip_investigator.investigate_blocked_ip(ip, reason))
+    except Exception as e:
+        logger.debug(f"[AttackDetector] IP investigation skipped: {e}")
 
 
 async def _create_block_incident(ip: str, reason: str):
