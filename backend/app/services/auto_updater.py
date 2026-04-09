@@ -25,7 +25,7 @@ import httpx
 
 logger = logging.getLogger("aegis.auto_updater")
 
-GITHUB_REPO = "diego1128256-cmd/AEGIS"
+GITHUB_REPO = "alejadxr/AEGIS"
 GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 CURRENT_VERSION = "1.1.0"
 
