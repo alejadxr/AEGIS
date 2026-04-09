@@ -18,7 +18,7 @@ import {
    ────────────────────────────────────────────── */
 
 type AuthMethod = 'register' | 'apikey';
-type AIProvider = 'openrouter' | 'anthropic' | 'openai' | 'ollama' | 'skip';
+type AIProvider = string;
 type AssetMode = 'auto' | 'manual';
 
 interface DiscoveredAsset {
@@ -110,7 +110,19 @@ const SMART_HONEYPOT_TYPES: HoneypotType[] = [
   { id: 'db-mimic', name: 'DB Mimic', description: 'AI-powered database that serves fake but realistic data', port: 3307, icon: Bug, premium: true },
 ];
 
-const AI_PROVIDERS: { id: AIProvider; label: string; description: string; icon: typeof Cpu }[] = [
+// Provider icon mapping (fallback to Cpu for unknown providers)
+const PROVIDER_ICONS: Record<string, typeof Cpu> = {
+  inception: Zap,
+  openrouter: Globe,
+  anthropic: Cpu,
+  openai: Cpu,
+  ollama: Server,
+  skip: ChevronRight,
+};
+
+// Static fallback in case API is unreachable during setup
+const FALLBACK_PROVIDERS: { id: AIProvider; label: string; description: string; icon: typeof Cpu }[] = [
+  { id: 'inception', label: 'Inception (Mercury-2)', description: 'Diffusion LLM — fast, free 10M tokens', icon: Zap },
   { id: 'openrouter', label: 'OpenRouter', description: 'Access 100+ models via one API key', icon: Globe },
   { id: 'anthropic', label: 'Anthropic', description: 'Claude models directly', icon: Cpu },
   { id: 'openai', label: 'OpenAI', description: 'GPT-4, GPT-3.5 and more', icon: Cpu },
@@ -173,6 +185,9 @@ export default function SetupWizard() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // Dynamic AI providers — fetched from API, with fallback
+  const [aiProviders, setAiProviders] = useState(FALLBACK_PROVIDERS);
+
   const [state, setState] = useState<SetupState>({
     authMethod: 'register',
     orgName: '',
@@ -181,7 +196,7 @@ export default function SetupWizard() {
     password: '',
     apiKey: '',
     loginMode: false,
-    aiProvider: 'openrouter',
+    aiProvider: 'inception',
     aiProviderKey: '',
     ollamaUrl: 'http://localhost:11434',
     assetMode: 'auto',
@@ -200,6 +215,28 @@ export default function SetupWizard() {
 
   useEffect(() => {
     setTimeout(() => setMounted(true), 50);
+
+    // Fetch available AI providers from API
+    const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    fetch(`${BASE}/ai/providers`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped = data.map((p: { name: string; display_name?: string; active?: boolean }) => ({
+            id: p.name,
+            label: p.display_name || p.name.charAt(0).toUpperCase() + p.name.slice(1),
+            description: p.active ? 'Currently active' : 'Available',
+            icon: PROVIDER_ICONS[p.name] || Cpu,
+          }));
+          // Add skip option at the end
+          mapped.push({ id: 'skip', label: 'Skip for now', description: 'Configure AI later', icon: ChevronRight });
+          setAiProviders(mapped);
+          // Auto-select the active provider
+          const active = data.find((p: { active?: boolean }) => p.active);
+          if (active) update({ aiProvider: active.name });
+        }
+      })
+      .catch(() => { /* Use fallback providers */ });
   }, []);
 
   useEffect(() => {
@@ -809,7 +846,7 @@ export default function SetupWizard() {
               </div>
 
               <div className="space-y-2">
-                {AI_PROVIDERS.map(p => {
+                {aiProviders.map(p => {
                   const Icon = p.icon;
                   return (
                     <button
