@@ -56,6 +56,7 @@ export default function EdrDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [agentId, setAgentId] = useState<string>('');
   const [pidQuery, setPidQuery] = useState<string>('');
+  const [agents, setAgents] = useState<Array<{ id: string; hostname: string; status: string }>>([]);
 
   const loadChains = useCallback(async () => {
     try {
@@ -83,14 +84,35 @@ export default function EdrDashboardPage() {
     [],
   );
 
+  // Auto-load agents list and select the first one
   useEffect(() => {
     (async () => {
       setLoading(true);
       await loadChains();
+
+      // Fetch enrolled agents and auto-select the first one
+      try {
+        const nodesData = await api.nodes.list();
+        const raw = (nodesData as { agents?: Array<Record<string, unknown>> })?.agents
+          || (Array.isArray(nodesData) ? nodesData : []);
+        const nodeList = raw.map((n: Record<string, unknown>) => ({
+          id: String(n.agent_id || n.id || ''),
+          hostname: String(n.hostname || ''),
+          status: String(n.status || 'unknown'),
+        }));
+        setAgents(nodeList);
+        if (nodeList.length > 0 && !agentId) {
+          setAgentId(nodeList[0].id);
+        }
+      } catch (e) {
+        console.error('agents list load failed', e);
+      }
+
       setLoading(false);
     })();
-  }, [loadChains]);
+  }, [loadChains]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-load recent events when agent changes (poll every 5s)
   useEffect(() => {
     if (agentId) {
       loadRecent(agentId);
@@ -192,14 +214,19 @@ export default function EdrDashboardPage() {
         </div>
         <div className="flex flex-wrap items-end gap-3 mb-4">
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">Agent ID</label>
-            <input
-              type="text"
+            <label className="block text-xs text-zinc-500 mb-1">Agent</label>
+            <select
               value={agentId}
               onChange={(e) => setAgentId(e.target.value)}
-              placeholder="uuid-of-agent"
               className="bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-1.5 text-sm text-zinc-100 w-80 font-mono"
-            />
+            >
+              {agents.length === 0 && <option value="">No agents enrolled</option>}
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.hostname || a.id.slice(0, 12)} — {a.status}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs text-zinc-500 mb-1">PID</label>
@@ -245,7 +272,7 @@ export default function EdrDashboardPage() {
         </div>
         {!agentId ? (
           <p className="text-sm text-zinc-500 py-4">
-            Select an agent above to stream its live telemetry.
+            No agents enrolled yet. Install the AEGIS Node Agent on an endpoint to see telemetry here.
           </p>
         ) : events.length === 0 ? (
           <p className="text-sm text-zinc-500 py-4">No events in the last 15 minutes.</p>
