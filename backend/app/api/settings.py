@@ -1,3 +1,6 @@
+import time
+import logging
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +12,8 @@ from app.core.auth import AuthContext, require_admin, require_viewer
 from app.core.audit import log_audit
 from app.core.openrouter import MODEL_ROUTING, MODEL_DESCRIPTIONS, MODEL_ORDER
 from app.models.client import Client
+
+logger = logging.getLogger("aegis.settings")
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -36,26 +41,49 @@ class ModelRoutingItem(BaseModel):
 
 class NotificationConfig(BaseModel):
     webhook_url: str
+    webhook_format: str = "generic"
     email_enabled: bool
     email_recipients: list[str]
     notify_on_critical: bool
     notify_on_high: bool
     notify_on_actions: bool
+    notify_on_scan_completed: bool = False
     channels: list[str]
+    telegram_enabled: bool = False
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    telegram_connected: bool = False
 
 
 class NotificationUpdate(BaseModel):
     webhook_url: str | None = None
+    webhook_format: str | None = None
     email_enabled: bool | None = None
     email_recipients: list[str] | None = None
     notify_on_critical: bool | None = None
     notify_on_high: bool | None = None
     notify_on_actions: bool | None = None
+    notify_on_scan_completed: bool | None = None
     channels: list[str] | None = None
+    telegram_enabled: bool | None = None
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+
+
+class ModelTestRequest(BaseModel):
+    task_type: str
+    model: str
+
+
+class ModelTestResponse(BaseModel):
+    success: bool
+    response: str
+    latency_ms: int
+
+
+class NotificationTestRequest(BaseModel):
+    test: bool = True
+    channel: str = "webhook"
 
 
 # --- Routes ---
@@ -170,14 +198,18 @@ async def get_notifications(auth: AuthContext = Depends(require_admin)):
     settings = auth.client.settings or {}
     return NotificationConfig(
         webhook_url=settings.get("webhook_url", ""),
+        webhook_format=settings.get("webhook_format", "generic"),
         email_enabled=settings.get("email_enabled", False),
         email_recipients=settings.get("email_recipients", []),
         notify_on_critical=settings.get("notify_on_critical", True),
         notify_on_high=settings.get("notify_on_high", True),
         notify_on_actions=settings.get("notify_on_actions", True),
+        notify_on_scan_completed=settings.get("notify_on_scan_completed", False),
         channels=settings.get("notification_channels", ["webhook"]),
+        telegram_enabled=settings.get("telegram_enabled", False),
         telegram_bot_token=settings.get("telegram_bot_token"),
         telegram_chat_id=settings.get("telegram_chat_id"),
+        telegram_connected=settings.get("telegram_connected", False),
     )
 
 
@@ -192,6 +224,8 @@ async def update_notifications(
     current_settings = dict(client.settings or {})
     if body.webhook_url is not None:
         current_settings["webhook_url"] = body.webhook_url
+    if body.webhook_format is not None:
+        current_settings["webhook_format"] = body.webhook_format
     if body.email_enabled is not None:
         current_settings["email_enabled"] = body.email_enabled
     if body.email_recipients is not None:
@@ -202,8 +236,12 @@ async def update_notifications(
         current_settings["notify_on_high"] = body.notify_on_high
     if body.notify_on_actions is not None:
         current_settings["notify_on_actions"] = body.notify_on_actions
+    if body.notify_on_scan_completed is not None:
+        current_settings["notify_on_scan_completed"] = body.notify_on_scan_completed
     if body.channels is not None:
         current_settings["notification_channels"] = body.channels
+    if body.telegram_enabled is not None:
+        current_settings["telegram_enabled"] = body.telegram_enabled
     if body.telegram_bot_token is not None:
         current_settings["telegram_bot_token"] = body.telegram_bot_token
     if body.telegram_chat_id is not None:
@@ -214,15 +252,101 @@ async def update_notifications(
 
     return NotificationConfig(
         webhook_url=current_settings.get("webhook_url", ""),
+        webhook_format=current_settings.get("webhook_format", "generic"),
         email_enabled=current_settings.get("email_enabled", False),
         email_recipients=current_settings.get("email_recipients", []),
         notify_on_critical=current_settings.get("notify_on_critical", True),
         notify_on_high=current_settings.get("notify_on_high", True),
         notify_on_actions=current_settings.get("notify_on_actions", True),
+        notify_on_scan_completed=current_settings.get("notify_on_scan_completed", False),
         channels=current_settings.get("notification_channels", ["webhook"]),
+        telegram_enabled=current_settings.get("telegram_enabled", False),
         telegram_bot_token=current_settings.get("telegram_bot_token"),
         telegram_chat_id=current_settings.get("telegram_chat_id"),
+        telegram_connected=current_settings.get("telegram_connected", False),
     )
+
+
+# --- Model Test ---
+
+@router.post("/models/test", response_model=ModelTestResponse)
+async def test_model(
+    body: ModelTestRequest,
+    auth: AuthContext = Depends(require_admin),
+):
+    """Send a test query to verify a model is reachable."""
+    from app.core.openrouter import OpenRouterClient
+
+    client = OpenRouterClient()
+    test_messages = [
+        {"role": "user", "content": "Respond with exactly: OK. Do not add anything else."}
+    ]
+    start = time.monotonic()
+    try:
+        result = await client.query(
+            messages=test_messages,
+            task_type=body.task_type,
+            temperature=0.0,
+            max_tokens=32,
+            client_settings={"model_routing": {body.task_type: body.model}},
+        )
+        latency = int((time.monotonic() - start) * 1000)
+        content = result.get("content", result.get("response", ""))
+        if isinstance(content, str) and len(content) > 0:
+            return ModelTestResponse(success=True, response=content[:200], latency_ms=latency)
+        return ModelTestResponse(success=False, response="Empty response from model", latency_ms=latency)
+    except Exception as e:
+        latency = int((time.monotonic() - start) * 1000)
+        logger.warning(f"Model test failed for {body.model}: {e}")
+        return ModelTestResponse(success=False, response=str(e)[:200], latency_ms=latency)
+
+
+# --- Notification Test ---
+
+@router.post("/notifications", response_model=dict)
+async def test_notification(
+    body: NotificationTestRequest,
+    auth: AuthContext = Depends(require_admin),
+):
+    """Send a test notification to verify channel connectivity."""
+    settings = auth.client.settings or {}
+
+    if body.channel == "telegram":
+        bot_token = settings.get("telegram_bot_token", "")
+        chat_id = settings.get("telegram_chat_id", "")
+        if not bot_token or not chat_id:
+            return {"success": False, "message": "Telegram bot token and chat ID are required"}
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                resp = await http.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={"chat_id": chat_id, "text": "AEGIS test notification - connection verified!", "parse_mode": "HTML"},
+                )
+                if resp.status_code == 200:
+                    return {"success": True, "message": "Test message sent to Telegram"}
+                return {"success": False, "message": f"Telegram API error: {resp.status_code}"}
+        except Exception as e:
+            return {"success": False, "message": f"Connection failed: {str(e)[:100]}"}
+
+    elif body.channel == "webhook":
+        webhook_url = settings.get("webhook_url", "")
+        if not webhook_url:
+            return {"success": False, "message": "No webhook URL configured"}
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                resp = await http.post(
+                    webhook_url,
+                    json={"text": "AEGIS test notification", "content": "AEGIS test notification - connection verified!"},
+                )
+                if 200 <= resp.status_code < 300:
+                    return {"success": True, "message": "Webhook test delivered"}
+                return {"success": False, "message": f"Webhook returned HTTP {resp.status_code}"}
+        except Exception as e:
+            return {"success": False, "message": f"Connection failed: {str(e)[:100]}"}
+
+    return {"success": False, "message": f"Unknown channel: {body.channel}"}
 
 
 # --- Intel Sharing Toggle ---

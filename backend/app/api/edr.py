@@ -30,6 +30,7 @@ from app.models.endpoint_agent import (
 from app.models.incident import Incident
 from app.services.process_tree import build_process_tree
 from app.services.attack_chain_detector import evaluate_event
+from app.services.host_monitor import host_monitor, AGENT_ID as HOST_MONITOR_AGENT_ID
 
 logger = logging.getLogger("aegis.edr")
 router = APIRouter(prefix="/edr", tags=["edr"])
@@ -265,6 +266,24 @@ async def list_chain_matches(
         }
         for r in rows
     ]
+
+
+@router.get("/host-monitor/status")
+async def host_monitor_status(
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(require_analyst),
+):
+    """Check if the built-in host monitor is running and return its agent info."""
+    agent = await db.get(EndpointAgent, HOST_MONITOR_AGENT_ID)
+    return {
+        "running": host_monitor._running,
+        "agent_id": HOST_MONITOR_AGENT_ID,
+        "registered": agent is not None,
+        "hostname": agent.hostname if agent else None,
+        "status": agent.status.value if agent else None,
+        "last_heartbeat": agent.last_heartbeat.isoformat() if agent and agent.last_heartbeat else None,
+        "known_pids": len(host_monitor._known_pids),
+    }
 
 
 @router.get("/events/recent")
