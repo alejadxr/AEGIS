@@ -481,3 +481,106 @@ body {
 [data-theme="light"] .hover\:border-white\/\[0\.14\]:hover {
   border-color: rgba(15, 23, 42, 0.18) !important;
 }
+
+/* ── Dark zinc backgrounds → light equivalents ── */
+[data-theme="light"] .bg-zinc-900 {
+  background-color: #F4F4F5 !important; /* zinc-100 */
+}
+
+[data-theme="light"] .bg-zinc-950 {
+  background-color: #FAFAFA !important; /* zinc-50 */
+}
+
+[data-theme="light"] .bg-zinc-800 {
+  background-color: #E4E4E7 !important; /* zinc-200 */
+}
+
+/* ── text-zinc-100 (near-white in dark) → near-black in light ── */
+[data-theme="light"] .text-zinc-100 {
+  color: #18181B !important;
+}
+
+/* ── border-zinc dark → visible in light ── */
+[data-theme="light"] .border-zinc-700 {
+  border-color: #D4D4D8 !important; /* zinc-300 */
+}
+
+[data-theme="light"] .border-zinc-500 {
+  border-color: #A1A1AA !important; /* zinc-400 */
+}
+
+/* ── Accent color backgrounds with alpha — boost opacity in light ── */
+[data-theme="light"] .bg-\[\#22D3EE\]\/10,
+[data-theme="light"] .bg-cyan-500\/10 {
+  background-color: rgba(34, 211, 238, 0.12) !important;
+}
+
+[data-theme="light"] .bg-\[\#F97316\]\/10 {
+  background-color: rgba(249, 115, 22, 0.12) !important;
+}
+
+[data-theme="light"] .bg-\[\#EF4444\]\/10,
+[data-theme="light"] .bg-red-500\/10 {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+
+[data-theme="light"] .bg-\[\#22C55E\]\/10,
+[data-theme="light"] .bg-green-500\/10 {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+
+/* ── Accent borders — boost visibility in light ── */
+[data-theme="light"] .border-\[\#22D3EE\]\/20,
+[data-theme="light"] .border-cyan-500\/30 {
+  border-color: rgba(34, 211, 238, 0.3) !important;
+}
+
+[data-theme="light"] .border-\[\#F97316\]\/20 {
+  border-color: rgba(249, 115, 22, 0.3) !important;
+}
+
+[data-theme="light"] .border-\[\#EF4444\]\/20 {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+/* ── Input/select backgrounds (dark bg-zinc-900 inputs) ── */
+[data-theme="light"] input.bg-zinc-900,
+[data-theme="light"] select.bg-zinc-900,
+[data-theme="light"] textarea.bg-zinc-900 {
+  background-color: #FFFFFF !important;
+  border-color: #D4D4D8 !important;
+  color: #18181B !important;
+}
+
+/* ── hover:bg-white variants for interactive elements ── */
+[data-theme="light"] .hover\:bg-white\/\[0\.04\]:hover {
+  background-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+/* ── Chart/recharts — dark background cards ── */
+[data-theme="light"] .recharts-cartesian-grid-bg {
+  fill: transparent !important;
+}
+
+/* ── Severity badge colors — darken text for readability on light bg ── */
+[data-theme="light"] .text-red-400 { color: #DC2626 !important; }
+[data-theme="light"] .text-orange-400 { color: #EA580C !important; }
+[data-theme="light"] .text-yellow-400 { color: #CA8A04 !important; }
+[data-theme="light"] .text-sky-400 { color: #0284C7 !important; }
+[data-theme="light"] .text-cyan-400 { color: #0891B2 !important; }
+[data-theme="light"] .text-green-400 { color: #16A34A !important; }
+[data-theme="light"] .text-purple-400 { color: #9333EA !important; }
+
+/* ── Sidebar active state ── */
+[data-theme="light"] .border-\[\#22D3EE\] {
+  border-color: #0891B2 !important; /* darker cyan for light bg */
+}
+
+[data-theme="light"] .text-\[\#22D3EE\] {
+  color: #0891B2 !important; /* darker cyan for readability */
+}
+
+/* ── bg-black/70 overlay (Guide tour backdrop) ── */
+[data-theme="light"] .bg-black\/70 {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+}
