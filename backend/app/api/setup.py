@@ -279,15 +279,28 @@ async def register_assets(
     created_assets: list[RegisteredAssetOut] = []
 
     for item in body.assets:
+        # Calculate risk score from ports/services instead of leaving at 0
+        risk = 0.0
+        port_objects: list[dict] = []
+        for p in item.ports:
+            _, friendly = auto_discovery.identify_service(p, "")
+            port_objects.append({"port": p, "service": friendly})
+            port_risk = auto_discovery.estimate_risk(friendly, p, "")
+            if port_risk > risk:
+                risk = port_risk
+
+        # Scale from 0-100 to 0-10 for display
+        risk_score = round(risk / 10.0, 1)
+
         asset = Asset(
             client_id=client.id,
             hostname=item.hostname,
             ip_address=item.ip,
             asset_type=item.asset_type,
-            ports=item.ports,
+            ports=port_objects,
             technologies=item.technologies,
             status="active",
-            risk_score=0.0,
+            risk_score=risk_score,
             last_scan_at=datetime.utcnow(),
         )
         db.add(asset)

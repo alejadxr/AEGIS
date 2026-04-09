@@ -279,17 +279,18 @@ Only return the JSON array, no other text."""
         return asset_type, name
 
     def suggest_hostname(self, ip: str, port: int, service: str) -> str:
-        """Generate a hostname suggestion based on IP, port, and service."""
-        # Use service name as base
+        """Generate a hostname suggestion based on port and service.
+
+        Format: "{service}-{port}" (e.g., "http-8000", "ssh-22").
+        Never prefixes with "www." or "mail." + IP octets.
+        """
         base = service.lower().replace(" ", "-")
         # Strip special chars
         base = re.sub(r"[^a-z0-9\-]", "", base)
         if not base:
-            base = "host"
+            base = "service"
 
-        # Use last octet of IP for uniqueness
-        octet = ip.split(".")[-1] if "." in ip else ip[-4:]
-        return f"{base}-{octet}"
+        return f"{base}-{port}"
 
     def estimate_risk(self, service: str, port: int, version: str) -> int:
         """Estimate risk score (0-100) based on service type and exposure.

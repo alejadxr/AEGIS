@@ -43,8 +43,6 @@ const NAV_SECTIONS = [
     label: 'OVERVIEW',
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'DashboardSquare01Icon' },
-      { label: 'Live View', href: '/dashboard/live', icon: 'FlashIcon' },
-      { label: 'Guide', href: '/dashboard/guide', icon: 'BookOpen' },
     ],
   },
   {
