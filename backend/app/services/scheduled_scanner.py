@@ -387,7 +387,8 @@ class ScheduledScanner:
             critical_vulns=critical_count,
             high_vulns=high_count,
         )
-        asset.risk_score = ai_result["risk_score"]
+        # AI returns 0-100 but DB stores 0-10 scale (frontend expects 0-10)
+        asset.risk_score = round(float(ai_result["risk_score"]) / 10.0, 1)
         asset.last_scan_at = datetime.utcnow()
 
         # Stage 5: Audit log
@@ -751,9 +752,15 @@ class ScheduledScanner:
                         f"Auto-discovery [{client.slug}]: found {len(new_ports)} unknown ports: {new_ports}"
                     )
                     port_list = [p for p in nmap_results["ports"] if p["port"] in new_ports]
+                    # Generate descriptive hostname from the first new port
+                    first_port = port_list[0] if port_list else {}
+                    svc_name = first_port.get("service", "service").lower().replace(" ", "-")
+                    port_num = first_port.get("port", 0)
+                    new_hostname = f"{svc_name}-{port_num}" if port_num else "unknown-service"
+
                     new_asset = Asset(
                         client_id=client.id,
-                        hostname=AUTO_DISCOVER_TARGET,
+                        hostname=new_hostname,
                         ip_address=AUTO_DISCOVER_TARGET,
                         asset_type="server",
                         ports=port_list,
