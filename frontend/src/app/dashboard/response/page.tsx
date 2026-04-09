@@ -146,11 +146,14 @@ export default function ResponsePage() {
         setActions(act.status === 'fulfilled' ? act.value : []);
         if (gr.status === 'fulfilled') {
           const raw = gr.value as Record<string, unknown>;
-          const booleans: Record<string, boolean> = {};
-          for (const [k, v] of Object.entries(raw)) {
-            if (typeof v === 'boolean') booleans[k] = v;
+          // API returns {guardrails: {action: "auto_approve"|"require_approval"|"never_auto"}}
+          const guardrailData = (raw.guardrails || raw) as Record<string, string | boolean>;
+          const parsed: Record<string, boolean> = {};
+          for (const [k, v] of Object.entries(guardrailData)) {
+            if (typeof v === 'boolean') parsed[k] = v;
+            else if (typeof v === 'string') parsed[k] = v === 'auto_approve';
           }
-          setGuardrails(booleans);
+          setGuardrails(parsed);
         }
       } finally {
         setLoading(false);
