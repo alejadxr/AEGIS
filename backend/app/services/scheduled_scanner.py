@@ -316,8 +316,9 @@ class ScheduledScanner:
         nmap_fn = self._run_nmap_quick if quick else self._run_nmap
         nmap_results = await loop.run_in_executor(None, nmap_fn, target)
 
-        if nmap_results.get("ports"):
-            asset.ports = nmap_results["ports"]
+        # NOTE: Do NOT overwrite asset.ports with full nmap results.
+        # Each asset owns its specific port(s) — the scan confirms they're open
+        # but shouldn't dump all server ports into every asset.
 
         # Stage 2: nuclei on web services (full scan only)
         nuclei_vulns = []
