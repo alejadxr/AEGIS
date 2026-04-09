@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { GitBranch, Shield, Zap, Clock, Monitor } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle, GitBranch, Shield, Zap, Clock, Monitor } from 'lucide-react';
 import { api } from '@/lib/api';
+import { subscribeTopic } from '@/lib/ws';
 import { cn, formatDate } from '@/lib/utils';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ProcessTree, ProcessTreeNode } from '@/components/edr/ProcessTree';
@@ -16,7 +17,7 @@ interface ChainMatch {
   source: string;
   mitre_technique: string | null;
   mitre_tactic: string | null;
-  ai_analysis: { rule_id?: string; chain?: string[] } | null;
+  ai_analysis: { rule_id?: string; chain?: string[]; pid?: number } | null;
   detected_at: string | null;
 }
 
@@ -44,6 +45,11 @@ const sevColor: Record<string, string> = {
   info: 'text-zinc-400 border-zinc-500/40 bg-zinc-500/10',
 };
 
+const EVENT_CATEGORIES = ['All', 'Process', 'Network', 'File', 'Suspicious'] as const;
+type EventCategory = (typeof EVENT_CATEGORIES)[number];
+
+const MAX_EVENTS = 200;
+
 export default function EdrDashboardPage() {
   const [chains, setChains] = useState<ChainMatch[]>([]);
   const [events, setEvents] = useState<RecentEvent[]>([]);
@@ -57,6 +63,13 @@ export default function EdrDashboardPage() {
   const [agentId, setAgentId] = useState<string>('');
   const [pidQuery, setPidQuery] = useState<string>('');
   const [agents, setAgents] = useState<Array<{ id: string; hostname: string; status: string }>>([]);
+  const [filterCategory, setFilterCategory] = useState<EventCategory>('All');
+  const [killConfirm, setKillConfirm] = useState<{ pid: number; name: string } | null>(null);
+  const [killingPids, setKillingPids] = useState<Set<number>>(new Set());
+  const [killedPids, setKilledPids] = useState<Set<number>>(new Set());
+  const [containedChains, setContainedChains] = useState<Set<string>>(new Set());
+  const [containingChains, setContainingChains] = useState<Set<string>>(new Set());
+  const eventsRef = useRef<RecentEvent[]>([]);
 
   const loadChains = useCallback(async () => {
     try {
@@ -75,7 +88,9 @@ export default function EdrDashboardPage() {
         const data = await api.get<RecentEvent[]>(
           `/edr/events/recent?agent_id=${encodeURIComponent(aid)}&minutes=15&limit=150`,
         );
-        setEvents(data || []);
+        const list = data || [];
+        eventsRef.current = list;
+        setEvents(list);
       } catch (e) {
         console.error('recent events load failed', e);
         setEvents([]);
@@ -126,14 +141,67 @@ export default function EdrDashboardPage() {
     })();
   }, [loadChains]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-load recent events when agent changes (poll every 5s)
+  // Load initial events via REST, then stream via WebSocket
   useEffect(() => {
-    if (agentId) {
-      loadRecent(agentId);
-      const t = setInterval(() => loadRecent(agentId), 5000);
-      return () => clearInterval(t);
-    }
+    if (!agentId) return;
+
+    // Load initial batch
+    loadRecent(agentId);
+
+    // Subscribe to real-time events via WebSocket
+    const unsub = subscribeTopic('edr.events', (data) => {
+      const ev = data as RecentEvent;
+      if (!ev || !ev.id) return;
+      eventsRef.current = [ev, ...eventsRef.current].slice(0, MAX_EVENTS);
+      setEvents([...eventsRef.current]);
+    });
+
+    return () => unsub();
   }, [agentId, loadRecent]);
+
+  const handleKillProcess = async (pid: number) => {
+    setKillConfirm(null);
+    setKillingPids((prev) => new Set(prev).add(pid));
+    try {
+      await api.post('/edr/kill-process', { pid, agent_id: agentId });
+      setKilledPids((prev) => new Set(prev).add(pid));
+    } catch (e) {
+      console.error('kill process failed', e);
+    } finally {
+      setKillingPids((prev) => {
+        const next = new Set(prev);
+        next.delete(pid);
+        return next;
+      });
+    }
+  };
+
+  const handleContainChain = async (chain: ChainMatch) => {
+    const pid = chain.ai_analysis?.pid;
+    if (!pid) return;
+    setContainingChains((prev) => new Set(prev).add(chain.id));
+    try {
+      await api.post('/edr/kill-process', { pid, agent_id: agentId, contain: true });
+      setContainedChains((prev) => new Set(prev).add(chain.id));
+    } catch (e) {
+      console.error('contain chain failed', e);
+    } finally {
+      setContainingChains((prev) => {
+        const next = new Set(prev);
+        next.delete(chain.id);
+        return next;
+      });
+    }
+  };
+
+  const filteredEvents = events.filter((e) => {
+    if (filterCategory === 'All') return true;
+    if (filterCategory === 'Suspicious') {
+      return e.severity === 'medium' || e.severity === 'high' || e.severity === 'critical';
+    }
+    return e.category?.toLowerCase() === filterCategory.toLowerCase()
+      || e.details?.kind?.toLowerCase().includes(filterCategory.toLowerCase());
+  });
 
   const loadTree = async () => {
     if (!agentId || !pidQuery) return;
@@ -216,10 +284,29 @@ export default function EdrDashboardPage() {
                     </p>
                   )}
                 </div>
-                <time className="text-xs text-zinc-500 shrink-0 flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {c.detected_at ? formatDate(c.detected_at) : '—'}
-                </time>
+                <div className="flex items-center gap-3 shrink-0">
+                  {c.ai_analysis?.pid && (
+                    containedChains.has(c.id) ? (
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Contained
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleContainChain(c)}
+                        disabled={containingChains.has(c.id)}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 text-xs font-medium hover:bg-red-500/25 disabled:opacity-50"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        {containingChains.has(c.id) ? 'Containing...' : 'Kill & Contain'}
+                      </button>
+                    )
+                  )}
+                  <time className="text-xs text-zinc-500 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {c.detected_at ? formatDate(c.detected_at) : '—'}
+                  </time>
+                </div>
               </article>
             ))}
           </div>
@@ -281,20 +368,39 @@ export default function EdrDashboardPage() {
 
       {/* Live event stream */}
       <section className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Zap className="w-5 h-5 text-cyan-400" />
-          <h2 className="text-lg font-semibold text-zinc-100">Recent events</h2>
-          {agentId && (
-            <span className="text-xs text-zinc-500 ml-2">
-              agent {agentId.slice(0, 8)}... · last 15 min
-            </span>
-          )}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-cyan-400" />
+            <h2 className="text-lg font-semibold text-zinc-100">Recent events</h2>
+            {agentId && (
+              <span className="text-xs text-zinc-500 ml-2">
+                agent {agentId.slice(0, 8)}... · live
+              </span>
+            )}
+          </div>
+          {/* Category filter tabs */}
+          <div className="flex items-center gap-1 bg-zinc-900/60 rounded-lg p-0.5 border border-white/[0.04]">
+            {EVENT_CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setFilterCategory(cat)}
+                className={cn(
+                  'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+                  filterCategory === cat
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                    : 'text-zinc-500 hover:text-zinc-300',
+                )}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
         </div>
         {!agentId ? (
           <p className="text-sm text-zinc-500 py-4">
             Waiting for host monitor to initialize. Process telemetry will appear shortly.
           </p>
-        ) : events.length === 0 ? (
+        ) : filteredEvents.length === 0 ? (
           <div className="flex items-center gap-2 py-4">
             <Monitor className="w-4 h-4 text-cyan-400 animate-pulse" />
             <p className="text-sm text-zinc-400">
@@ -311,25 +417,84 @@ export default function EdrDashboardPage() {
                   <th className="text-left py-2 pr-4">Time</th>
                   <th className="text-left py-2 pr-4">Kind</th>
                   <th className="text-left py-2 pr-4">PID</th>
-                  <th className="text-left py-2">Title</th>
+                  <th className="text-left py-2 pr-4">Title</th>
+                  <th className="text-left py-2 w-24">Action</th>
                 </tr>
               </thead>
               <tbody className="text-zinc-300">
-                {events.slice(0, 100).map((e) => (
-                  <tr key={e.id} className="border-b border-white/[0.03]">
-                    <td className="py-1 pr-4">
-                      {new Date(e.timestamp).toLocaleTimeString()}
-                    </td>
-                    <td className="py-1 pr-4 text-cyan-400">{e.details?.kind}</td>
-                    <td className="py-1 pr-4">{e.details?.pid ?? '-'}</td>
-                    <td className="py-1 truncate">{e.title}</td>
-                  </tr>
-                ))}
+                {filteredEvents.slice(0, 100).map((e) => {
+                  const isProcess = e.details?.kind === 'process_start';
+                  const pid = e.details?.pid;
+                  const isKilled = pid !== undefined && killedPids.has(pid);
+                  const isKilling = pid !== undefined && killingPids.has(pid);
+                  return (
+                    <tr key={e.id} className="border-b border-white/[0.03]">
+                      <td className="py-1 pr-4">
+                        {new Date(e.timestamp).toLocaleTimeString()}
+                      </td>
+                      <td className="py-1 pr-4 text-cyan-400">{e.details?.kind}</td>
+                      <td className="py-1 pr-4">{pid ?? '-'}</td>
+                      <td className="py-1 pr-4 truncate max-w-[300px]">{e.title}</td>
+                      <td className="py-1">
+                        {isProcess && pid !== undefined && (
+                          isKilled ? (
+                            <span className="text-emerald-400 text-[10px] flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3" /> Killed
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setKillConfirm({ pid, name: e.details?.process_name || e.title })}
+                              disabled={isKilling}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] font-medium hover:bg-red-500/25 disabled:opacity-50"
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              {isKilling ? '...' : 'Kill'}
+                            </button>
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </section>
+
+      {/* Kill confirmation modal */}
+      {killConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#18181B] border border-white/[0.08] rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <h3 className="text-base font-semibold text-zinc-100">Kill Process</h3>
+            </div>
+            <p className="text-sm text-zinc-400 mb-1">
+              Terminate PID <span className="font-mono text-zinc-200">{killConfirm.pid}</span>?
+            </p>
+            <p className="text-xs text-zinc-500 mb-6 font-mono truncate">
+              {killConfirm.name}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setKillConfirm(null)}
+                className="px-4 py-1.5 rounded-lg border border-white/[0.08] text-zinc-400 text-sm hover:text-zinc-200 hover:border-white/[0.12]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleKillProcess(killConfirm.pid)}
+                className="px-4 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 text-sm font-medium hover:bg-red-500/30"
+              >
+                Kill Process
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
