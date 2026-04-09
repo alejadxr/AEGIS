@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import subprocess
 from datetime import datetime, timedelta
 from typing import Optional
@@ -27,6 +28,8 @@ DEFAULT_QUICK_SCAN_MINUTES = 30
 DEFAULT_DISCOVERY_HOURS = 1
 ALERT_MODE_SCAN_MINUTES = 30      # interval during alert mode
 ALERT_MODE_DURATION_HOURS = 2     # how long alert mode lasts
+
+DEFAULT_UPTIME_CHECK_MINUTES = 5
 
 NMAP_PATH = "/usr/local/bin/nmap"
 NUCLEI_PATH = "nuclei"
@@ -94,6 +97,17 @@ class ScheduledScanner:
             misfire_grace_time=300,
         )
 
+        # Uptime monitoring job (TCP port check)
+        self.scheduler.add_job(
+            self._run_uptime_check,
+            trigger=IntervalTrigger(minutes=DEFAULT_UPTIME_CHECK_MINUTES),
+            id="uptime_check",
+            name="TCP port uptime check for all assets",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=60,
+        )
+
         self.scheduler.start()
         self._running = True
 
@@ -104,7 +118,8 @@ class ScheduledScanner:
         logger.info(
             f"Scheduled scanner started — full scan every {DEFAULT_FULL_SCAN_HOURS}h, "
             f"quick scan every {DEFAULT_QUICK_SCAN_MINUTES}min, "
-            f"discovery every {DEFAULT_DISCOVERY_HOURS}h"
+            f"discovery every {DEFAULT_DISCOVERY_HOURS}h, "
+            f"uptime check every {DEFAULT_UPTIME_CHECK_MINUTES}min"
         )
 
     def stop(self):
@@ -495,7 +510,7 @@ class ScheduledScanner:
         cmd = [
             nuclei_bin,
             "-u", url,
-            "-json",
+            "-jsonl",
             "-silent",
             "-severity", "critical,high,medium",
             "-timeout", "10",
@@ -625,6 +640,69 @@ class ScheduledScanner:
         return round(score, 1)
 
     # ------------------------------------------------------------------ #
+    #  Uptime monitoring                                                   #
+    # ------------------------------------------------------------------ #
+
+    async def _run_uptime_check(self):
+        """Check if each asset's primary port is reachable via TCP connect."""
+        logger.info("Starting uptime check for all assets")
+        async with async_session() as db:
+            result = await db.execute(select(Asset).where(Asset.status == "active"))
+            assets = result.scalars().all()
+
+            if not assets:
+                return
+
+            loop = asyncio.get_event_loop()
+            for asset in assets:
+                ip = asset.ip_address or asset.hostname
+                if not ip:
+                    continue
+                ports = asset.ports or []
+                if not ports:
+                    continue
+                # Check the first (primary) port
+                primary = ports[0] if isinstance(ports[0], dict) else {}
+                port_num = primary.get("port")
+                if not port_num:
+                    continue
+
+                reachable = await loop.run_in_executor(
+                    None, self._tcp_check, ip, port_num
+                )
+                if not reachable and asset.status == "active":
+                    asset.status = "inactive"
+                    db.add(AuditLog(
+                        client_id=asset.client_id,
+                        action="uptime_alert",
+                        input_summary=f"Service down: {asset.hostname} ({ip}:{port_num})",
+                        decision="status_set_inactive",
+                    ))
+                    await event_bus.publish("alert_processed", {
+                        "client_id": asset.client_id,
+                        "asset_id": asset.id,
+                        "severity": "info",
+                        "incident_title": f"Service down: {asset.hostname}",
+                        "summary": f"TCP connect to {ip}:{port_num} failed — asset marked inactive.",
+                    })
+                    logger.warning(f"Uptime check FAILED: {asset.hostname} ({ip}:{port_num}) — marked inactive")
+                elif reachable and asset.status == "inactive":
+                    asset.status = "active"
+                    logger.info(f"Uptime check RECOVERED: {asset.hostname} ({ip}:{port_num}) — marked active")
+
+            await db.commit()
+        logger.info("Uptime check complete")
+
+    @staticmethod
+    def _tcp_check(host: str, port: int, timeout: float = 5.0) -> bool:
+        """Try a TCP connect; return True if the port is open."""
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except (OSError, socket.timeout):
+            return False
+
+    # ------------------------------------------------------------------ #
     #  Auto-discovery                                                      #
     # ------------------------------------------------------------------ #
 
@@ -642,10 +720,16 @@ class ScheduledScanner:
             return
 
         async with async_session() as db:
-            result = await db.execute(select(Client).where(Client.slug == "demo"))
+            # Prefer a non-demo client; fall back to any client
+            result = await db.execute(
+                select(Client).where(Client.slug != "demo").limit(1)
+            )
             client = result.scalar_one_or_none()
             if not client:
-                logger.info("Auto-discovery: no demo client found")
+                result = await db.execute(select(Client).limit(1))
+                client = result.scalar_one_or_none()
+            if not client:
+                logger.info("Auto-discovery: no client found")
                 return
 
             assets_result = await db.execute(

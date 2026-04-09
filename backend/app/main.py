@@ -34,6 +34,7 @@ from app.modules.phantom.http_honeypot import http_honeypot
 from app.modules.phantom.processor import interaction_processor
 from app.models.action import Action
 from app.services.log_watcher import log_watcher
+from app.services.scheduled_scanner import scheduled_scanner
 
 from app.api import auth, dashboard, surface, response, phantom, threats, correlation, admin
 from app.api import feeds, reports, ai_providers as ai_providers_router
@@ -232,10 +233,18 @@ async def lifespan(app: FastAPI):
 
     # Seed demo client and default admin user
     async with async_session() as db:
+        from sqlalchemy import select as _startup_sel
         demo = await seed_demo_client(db)
         logger.info(f"Demo client ready: slug='{demo.slug}' api_key='{demo.api_key}'")
         await seed_default_admin(db, demo)
         logger.info("Default admin user seeded (admin@cayde6.local)")
+
+        # Prefer a non-demo client for asset ownership; fall back to demo
+        _pri = await db.execute(
+            _startup_sel(Client).where(Client.slug != "demo").limit(1)
+        )
+        primary_client = _pri.scalar_one_or_none() or demo
+        logger.info(f"Primary client for auto-discovery: slug='{primary_client.slug}'")
 
     # Auto-discover localhost services on every startup.
     # Uses upsert logic: updates existing assets, creates new ones.
@@ -312,7 +321,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Auto-discovery failed (non-fatal): {e}")
 
-    asyncio.create_task(_auto_discover_localhost(demo.id))
+    asyncio.create_task(_auto_discover_localhost(primary_client.id))
 
     # Start event stream (Redis or in-memory)
     await event_stream.start()
@@ -432,6 +441,10 @@ async def lifespan(app: FastAPI):
     await log_watcher.start()
     logger.info('Log watcher started')
 
+    # Start scheduled scanner (full scan 2h, quick scan 30min, discovery 1h, uptime 5min)
+    scheduled_scanner.start()
+    logger.info('Scheduled scanner started')
+
     # Start auto-updater (background GitHub release checker)
     try:
         from app.services.auto_updater import auto_updater
@@ -447,6 +460,7 @@ async def lifespan(app: FastAPI):
         await auto_updater.stop()
     except Exception:
         pass
+    scheduled_scanner.stop()
     await log_watcher.stop()
     await behavioral_engine.stop()
     await threat_intel_hub.stop()
