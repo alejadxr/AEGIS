@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     PAYPAL_SECRET: str = ""
     PAYPAL_API_URL: str = "https://api-m.paypal.com"
 
+    # Inception Labs (Mercury-2 diffusion LLM)
+    INCEPTION_API_KEY: str = ""
+    INCEPTION_BASE_URL: str = "https://api.inceptionlabs.ai/v1"
+
     # Community Threat Intel Hub
     AEGIS_MONGODB_URI: str = ""     # Direct MongoDB connection (for self-hosted hubs)
     AEGIS_HUB_URL: str = ""         # HTTP hub URL (connect to another AEGIS instance)
