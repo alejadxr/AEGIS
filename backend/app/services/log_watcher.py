@@ -20,8 +20,19 @@ _SAFE_NETWORKS = [
 ]
 
 
+# Well-known IPs that appear in logs but are NOT attackers
+_KNOWN_SAFE_IPS = frozenset({
+    "8.8.8.8", "8.8.4.4",           # Google DNS
+    "1.1.1.1", "1.0.0.1",           # Cloudflare DNS
+    "9.9.9.9",                       # Quad9 DNS
+    "208.67.222.222", "208.67.220.220",  # OpenDNS
+})
+
+
 def _is_private_ip(ip: str) -> bool:
-    """Check if an IP is in any private/Tailscale range."""
+    """Check if an IP is internal, private, Tailscale, or a known safe IP."""
+    if ip in _KNOWN_SAFE_IPS:
+        return True
     try:
         addr = _ipaddress.ip_address(ip)
         return addr.is_loopback or addr.is_private or any(addr in net for net in _SAFE_NETWORKS)

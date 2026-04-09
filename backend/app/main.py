@@ -291,9 +291,15 @@ async def lifespan(app: FastAPI):
                         port_data = [{"port": svc.port, "protocol": svc.protocol, "service": svc.service}]
                         risk = round(float(svc.risk_estimate) / 10.0, 1)
 
+                        # Generate a descriptive hostname (never "localhost" or raw IP)
+                        good_hostname = svc.hostname
+                        if not good_hostname or good_hostname in ("localhost", "127.0.0.1", "::1", ""):
+                            good_hostname = f"{svc.service.lower().replace(' ', '-')}-{svc.port}"
+
                         if matched_asset:
-                            # Update existing asset with fresh scan data
-                            matched_asset.hostname = svc.hostname
+                            # Update existing asset — keep user-set hostname if it's better
+                            if matched_asset.hostname in ("localhost", "127.0.0.1", "") or not matched_asset.hostname:
+                                matched_asset.hostname = good_hostname
                             matched_asset.asset_type = svc.asset_type
                             matched_asset.ports = port_data
                             matched_asset.technologies = svc.technologies
@@ -304,7 +310,7 @@ async def lifespan(app: FastAPI):
                             # Create new asset
                             asset = Asset(
                                 client_id=client_id,
-                                hostname=svc.hostname,
+                                hostname=good_hostname,
                                 ip_address=host.ip,
                                 asset_type=svc.asset_type,
                                 ports=port_data,
