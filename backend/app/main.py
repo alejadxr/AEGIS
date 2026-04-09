@@ -33,6 +33,7 @@ from app.modules.phantom.ssh_honeypot import ssh_honeypot
 from app.modules.phantom.http_honeypot import http_honeypot
 from app.modules.phantom.processor import interaction_processor
 from app.models.action import Action
+from app.services.log_watcher import log_watcher
 
 from app.api import auth, dashboard, surface, response, phantom, threats, correlation, admin
 from app.api import feeds, reports, ai_providers as ai_providers_router
@@ -236,49 +237,78 @@ async def lifespan(app: FastAPI):
         await seed_default_admin(db, demo)
         logger.info("Default admin user seeded (admin@cayde6.local)")
 
-    # Auto-discover localhost services if no assets exist yet
-    # Runs in background so it never blocks startup
+    # Auto-discover localhost services on every startup.
+    # Uses upsert logic: updates existing assets, creates new ones.
+    # Runs in background so it never blocks startup.
     async def _auto_discover_localhost(client_id: str):
         try:
-            from sqlalchemy import select as _sel, func as _fn
+            from sqlalchemy import select as _sel
             from app.models.asset import Asset
             from app.services.auto_discovery import auto_discovery
             from datetime import datetime
 
-            async with async_session() as db:
-                count = await db.scalar(
-                    _sel(_fn.count()).select_from(Asset).where(Asset.client_id == client_id)
-                )
-                if count and count > 0:
-                    logger.info(f"Auto-discovery skipped: {count} assets already exist")
-                    return
-
-            logger.info("Zero assets found — running localhost auto-discovery...")
+            logger.info("Running localhost auto-discovery (upsert mode)...")
             result = await auto_discovery.discover_host("127.0.0.1")
 
             if result.error:
                 logger.warning(f"Auto-discovery error: {result.error}")
                 return
 
-            registered = 0
+            created = 0
+            updated = 0
             async with async_session() as db:
+                # Load all existing assets for this client+IP for matching
+                existing_result = await db.execute(
+                    _sel(Asset).where(
+                        Asset.client_id == client_id,
+                        Asset.ip_address == "127.0.0.1",
+                    )
+                )
+                existing_assets = list(existing_result.scalars().all())
+
                 for host in result.hosts:
                     for svc in host.services:
-                        asset = Asset(
-                            client_id=client_id,
-                            hostname=svc.hostname,
-                            ip_address=host.ip,
-                            asset_type=svc.asset_type,
-                            ports=[{"port": svc.port, "protocol": svc.protocol, "service": svc.service}],
-                            technologies=svc.technologies,
-                            status="active",
-                            risk_score=float(svc.risk_estimate),
-                            last_scan_at=datetime.utcnow(),
-                        )
-                        db.add(asset)
-                        registered += 1
+                        # Match: find existing asset with same IP that has this port
+                        matched_asset = None
+                        for asset in existing_assets:
+                            asset_ports = asset.ports or []
+                            for p in asset_ports:
+                                if isinstance(p, dict) and p.get("port") == svc.port:
+                                    matched_asset = asset
+                                    break
+                            if matched_asset:
+                                break
+
+                        port_data = [{"port": svc.port, "protocol": svc.protocol, "service": svc.service}]
+                        risk = round(float(svc.risk_estimate) / 10.0, 1)
+
+                        if matched_asset:
+                            # Update existing asset with fresh scan data
+                            matched_asset.hostname = svc.hostname
+                            matched_asset.asset_type = svc.asset_type
+                            matched_asset.ports = port_data
+                            matched_asset.technologies = svc.technologies
+                            matched_asset.risk_score = risk
+                            matched_asset.last_scan_at = datetime.utcnow()
+                            updated += 1
+                        else:
+                            # Create new asset
+                            asset = Asset(
+                                client_id=client_id,
+                                hostname=svc.hostname,
+                                ip_address=host.ip,
+                                asset_type=svc.asset_type,
+                                ports=port_data,
+                                technologies=svc.technologies,
+                                status="active",
+                                risk_score=risk,
+                                last_scan_at=datetime.utcnow(),
+                            )
+                            db.add(asset)
+                            created += 1
+
                 await db.commit()
-            logger.info(f"Auto-discovery complete: registered {registered} assets from localhost")
+            logger.info(f"Auto-discovery complete: {created} created, {updated} updated")
         except Exception as e:
             logger.error(f"Auto-discovery failed (non-fatal): {e}")
 
@@ -310,6 +340,7 @@ async def lifespan(app: FastAPI):
     event_bus.subscribe("action_requires_approval", notify_action_requires_approval)
     event_bus.subscribe("action_auto_approved", handle_auto_approved_action)
     event_bus.subscribe("action_auto_approved", ws_event_handler)
+    event_bus.subscribe("log_line", ws_event_handler)
     logger.info("Event bus started with WebSocket forwarding + auto-execution wired")
 
     # Start counter-attack engine (active defense)
@@ -395,6 +426,10 @@ async def lifespan(app: FastAPI):
     await interaction_processor.start(honeypot_queue)
     logger.info('Honeypot interaction processor started')
 
+    # Start log watcher (tails PM2 logs for security patterns + feeds Raw Log Stream)
+    await log_watcher.start()
+    logger.info('Log watcher started')
+
     # Start auto-updater (background GitHub release checker)
     try:
         from app.services.auto_updater import auto_updater
@@ -410,6 +445,7 @@ async def lifespan(app: FastAPI):
         await auto_updater.stop()
     except Exception:
         pass
+    await log_watcher.stop()
     await behavioral_engine.stop()
     await threat_intel_hub.stop()
     await close_mongo()
