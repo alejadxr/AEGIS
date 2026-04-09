@@ -178,12 +178,18 @@ export default function SurfacePage() {
     { key: 'asset_type', label: 'Type', sortable: true, render: (row: AssetRow) => <span className="capitalize text-zinc-400 text-[13px]">{row.asset_type}</span> },
     {
       key: 'ports', label: 'Ports', render: (row: AssetRow) => {
-        const formatted = row.ports.map((p) =>
+        // Safely parse ports — may be string, array, or null
+        let portsList = row.ports;
+        if (typeof portsList === 'string') {
+          try { portsList = JSON.parse(portsList); } catch { portsList = []; }
+        }
+        if (!Array.isArray(portsList)) portsList = [];
+        const formatted = portsList.map((p: number | PortEntry) =>
           typeof p === 'object' && p !== null
-            ? p.service ? `${p.port} (${p.service})` : String(p.port)
+            ? (p as PortEntry).service ? `${(p as PortEntry).port} (${(p as PortEntry).service})` : String((p as PortEntry).port)
             : String(p)
         ).join(', ');
-        return <span className="font-mono text-[11px] text-zinc-500">{formatted || '-'}</span>;
+        return <span className="font-mono text-[11px] text-zinc-500">{formatted || '—'}</span>;
       }
     },
     {
