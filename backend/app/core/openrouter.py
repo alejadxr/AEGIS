@@ -13,7 +13,7 @@ logger = logging.getLogger("aegis.openrouter")
 #
 # | Model                                    | Context  | Best For              | Latency  |
 # |------------------------------------------|----------|-----------------------|----------|
-# | stepfun/step-3.5-flash:free              | 256K     | Fast decisions        | ~1-2s    |
+# | arcee-ai/trinity-mini:free              | 256K     | Fast decisions        | ~1-2s    |
 # | arcee-ai/trinity-mini:free               | 131K     | Quick triage          | ~1-2s    |
 # | arcee-ai/trinity-large-preview:free      | 131K     | Risk scoring, analysis| ~2-3s    |
 # | minimax/minimax-m2.5:free                | 197K     | Content generation    | ~2-3s    |
@@ -21,13 +21,13 @@ logger = logging.getLogger("aegis.openrouter")
 # | cognitivecomputations/dolphin-mistral-24b-venice-edition:free | Uncensored | Red team, exploit analysis | ~2-3s |
 
 MODEL_ROUTING = {
-    "triage": "stepfun/step-3.5-flash:free",                   # Fastest — sub-second decisions
+    "triage": "arcee-ai/trinity-mini:free",                   # Fastest — sub-second decisions
     "classification": "arcee-ai/trinity-large-preview:free",    # Good analysis, 131K context
     "investigation": "nvidia/nemotron-3-super-120b-a12b:free",  # Deepest reasoning, 262K context
     "code_analysis": "nvidia/nemotron-3-super-120b-a12b:free",  # 120B params for code understanding
     "report": "minimax/minimax-m2.5:free",                      # Best for long-form content, 197K
     "decoy_content": "minimax/minimax-m2.5:free",               # Creative content for honeypots
-    "quick_decision": "stepfun/step-3.5-flash:free",            # Sub-second, 256K context
+    "quick_decision": "arcee-ai/trinity-mini:free",            # Sub-second, 256K context
     "risk_scoring": "arcee-ai/trinity-large-preview:free",      # Analytical scoring
     "healing": "arcee-ai/trinity-large-preview:free",           # Remediation analysis
     "red_team": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",  # Uncensored — exploit analysis, attack simulation
@@ -70,7 +70,7 @@ MODEL_ORDER = [
 
 FALLBACK_CHAIN = [
     "arcee-ai/trinity-mini:free",
-    "stepfun/step-3.5-flash:free",
+    "arcee-ai/trinity-mini:free",
     "minimax/minimax-m2.5:free",
     "arcee-ai/trinity-large-preview:free",
     "nvidia/nemotron-3-super-120b-a12b:free",

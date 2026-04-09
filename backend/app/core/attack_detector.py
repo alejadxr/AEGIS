@@ -41,7 +41,7 @@ _BLOCKED_BODY = b'{"detail":"blocked"}'
 _BLOCKED_MEDIA = "application/json"
 
 # IPs that must NEVER be blocked — configured via AEGIS_SAFE_IPS env var
-# Auto-detect the host's own IPs so the honeypot never blocks the server itself
+# Auto-detect the host's own IPs + Tailscale/private ranges
 _safe_ips_str = os.getenv("AEGIS_SAFE_IPS", "127.0.0.1,::1,localhost")
 _auto_ips: set[str] = set()
 try:
@@ -51,6 +51,25 @@ try:
 except Exception:
     pass
 SAFE_IPS = frozenset(ip.strip() for ip in _safe_ips_str.split(",") if ip.strip()) | _auto_ips
+
+# Private/internal IP ranges that should never be blocked (RFC1918 + CGNAT + Tailscale)
+import ipaddress as _ipaddress
+_SAFE_NETWORKS = [
+    _ipaddress.ip_network("10.0.0.0/8"),
+    _ipaddress.ip_network("172.16.0.0/12"),
+    _ipaddress.ip_network("192.168.0.0/16"),
+    _ipaddress.ip_network("100.64.0.0/10"),   # CGNAT / Tailscale range
+]
+
+def _is_safe_ip(ip: str) -> bool:
+    """Check if an IP is in SAFE_IPS set or in a private/Tailscale range."""
+    if _is_safe_ip(ip):
+        return True
+    try:
+        addr = _ipaddress.ip_address(ip)
+        return any(addr in net for net in _SAFE_NETWORKS)
+    except (ValueError, TypeError):
+        return False
 
 # ---------------------------------------------------------------------------
 # FAST-PATH: paths that skip ALL detection (internal/health endpoints)
@@ -277,7 +296,7 @@ def _blocked_response() -> Response:
 
 async def _block_ip(ip: str, reason: str):
     """Block an IP: add to memory set, append to file, notify external firewall."""
-    if ip in SAFE_IPS:
+    if _is_safe_ip(ip):
         logger.warning(f"[AttackDetector] Refusing to block safe IP {ip}")
         return
 
@@ -446,7 +465,7 @@ class AttackDetectorMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip safe IPs entirely
-        if ip in SAFE_IPS:
+        if _is_safe_ip(ip):
             return await call_next(request)
 
         # ---- OPTIMIZATION 5: Scanner UA via frozenset (no regex) ----
