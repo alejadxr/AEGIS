@@ -429,6 +429,7 @@ class ScheduledScanner:
         cmd = [
             nmap_bin, "-sV", "-sC", "-T4",
             "--top-ports", "1000",
+            "--exclude-ports", "2222,8888",
             "--open",
             "-oG", "-",
             target,
@@ -452,6 +453,7 @@ class ScheduledScanner:
         cmd = [
             nmap_bin, "-T4",
             "--top-ports", "100",
+            "--exclude-ports", "2222,8888",
             "--open",
             "-oG", "-",
             target,
@@ -784,7 +786,7 @@ class ScheduledScanner:
     def _run_nmap_discovery(self, target: str) -> dict:
         """Quick nmap discovery scan for auto-discovery."""
         nmap_bin = NMAP_PATH if os.path.isfile(NMAP_PATH) else (shutil.which("nmap") or "nmap")
-        cmd = [nmap_bin, "-sT", "--top-ports", "2000", "--open", "-oG", "-", target]
+        cmd = [nmap_bin, "-sT", "--top-ports", "2000", "--exclude-ports", "2222,8888", "--open", "-oG", "-", target]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             return {"ports": self._parse_nmap_greppable(result.stdout)}
