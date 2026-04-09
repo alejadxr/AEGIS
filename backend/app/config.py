@@ -42,8 +42,9 @@ class Settings(BaseSettings):
     PAYPAL_SECRET: str = ""
     PAYPAL_API_URL: str = "https://api-m.paypal.com"
 
-    # MongoDB Atlas (threat intel hub)
-    AEGIS_MONGODB_URI: str = ""
+    # Community Threat Intel Hub
+    AEGIS_MONGODB_URI: str = ""     # Direct MongoDB connection (for self-hosted hubs)
+    AEGIS_HUB_URL: str = ""         # HTTP hub URL (connect to another AEGIS instance)
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
