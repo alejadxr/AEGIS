@@ -5,7 +5,8 @@ import { Settings01Icon, Radar01Icon, Bug01Icon } from 'hugeicons-react';
 import {
   Key, Bell, Cpu, Save, RefreshCw, Eye, EyeOff, Copy, Check,
   Sparkles, ArrowUp, Shield, BellRing, Send, Globe,
-  Zap, ChevronDown, TestTube,
+  Zap, ChevronDown, TestTube, BookOpen, ExternalLink,
+  Activity, Bug, Fingerprint, Flame, Radar, Bot,
 } from 'lucide-react';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { api } from '@/lib/api';
@@ -258,7 +259,7 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<'client' | 'models' | 'notifications' | 'scanning' | 'apikeys'>('client');
+  const [tab, setTab] = useState<'client' | 'models' | 'notifications' | 'scanning' | 'apikeys' | 'guide'>('client');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookFormat, setWebhookFormat] = useState('generic');
   const [emailRecipients, setEmailRecipients] = useState('');
@@ -613,6 +614,7 @@ export default function SettingsPage() {
           { id: 'notifications' as const, label: 'Notifications', icon: Bell },
           { id: 'scanning' as const, label: 'Scanning', icon: Radar01Icon },
           { id: 'apikeys' as const, label: 'API Keys', icon: Key },
+          { id: 'guide' as const, label: 'Feature Guide', icon: BookOpen },
         ].map((t) => (
           <button
             key={t.id}
@@ -1029,6 +1031,48 @@ export default function SettingsPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </SectionCard>
+      )}
+
+      {tab === 'guide' && (
+        <SectionCard title="AEGIS Feature Guide" description="Everything AEGIS can do for you. Click a module to navigate.">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[
+              { icon: Activity, name: 'Live Dashboard', desc: 'Real-time SOC view with 10 WebSocket-powered widgets. Attack feed, threat map, logs stream, node heartbeats — never needs refresh.', href: '/dashboard/live', color: '#22D3EE', free: true },
+              { icon: Globe, name: 'Surface (ASM)', desc: 'Attack surface management. AI-powered asset discovery via nmap, vulnerability scanning with Nuclei, SBOM analysis, risk scoring, and scheduled scans.', href: '/dashboard/surface', color: '#34D399', free: true },
+              { icon: Zap, name: 'Response (SOAR)', desc: 'Autonomous incident response. 18μs fast path, 10 playbooks, AI triage with MITRE ATT&CK mapping. All actions auto-approved by default — override per guardrail.', href: '/dashboard/response', color: '#F87171', free: true },
+              { icon: Bug, name: 'Phantom (Deception)', desc: 'SSH + HTTP honeypots with breadcrumb traps. Attacker steals fake credentials → tries on real API → CRITICAL alert + auto-block.', href: '/dashboard/phantom', color: '#F97316', free: true },
+              { icon: Shield, name: 'Threats (TIP)', desc: '5 threat feeds, STIX 2.1 export, Intel Cloud hub for sharing IOCs across AEGIS instances. Campaign tracking detects coordinated multi-phase attacks.', href: '/dashboard/threats', color: '#FBBF24', free: true },
+              { icon: Fingerprint, name: 'EDR/XDR Core', desc: 'Endpoint detection and response. ETW (Windows) + eBPF (Linux) telemetry, process tree reconstruction, 6 MITRE attack chain detection rules.', href: '/dashboard/edr', color: '#A78BFA', free: true },
+              { icon: Flame, name: 'Ransomware Protection', desc: 'Canary files + entropy detection + process kill in <500ms. Auto-rollback via VSS (Windows) or Btrfs/LVM snapshots (Linux).', href: '/dashboard/response', color: '#EF4444', free: true },
+              { icon: Radar, name: 'Antivirus Engine', desc: 'YARA + ClamAV signature scanning, hash reputation cache, encrypted quarantine. On-access + daily scheduled scans. Auto-updates from YARA-Forge.', href: '/dashboard/antivirus', color: '#06B6D4', free: true },
+              { icon: Shield, name: 'Configurable Firewall', desc: 'YAML rule engine with rate limiting, CIDR matching, UA regex. 6 default templates. Hot reload in <1s. Test rules with synthetic events.', href: '/dashboard/firewall', color: '#10B981', free: true },
+              { icon: Sparkles, name: 'Quantum Analytics', desc: 'Renyi entropy for C2 beacon detection, Grover calculator for post-quantum crypto assessment, adversarial ML poisoning detection.', href: '/dashboard/quantum', color: '#A78BFA', free: false },
+              { icon: Bot, name: 'Honey-AI Deception', desc: 'Deploy 50+ fake services with AI-generated content. 4 industry themes (fintech, healthcare, ecommerce, devops). Breadcrumb UUID tracking.', href: '/dashboard/deception', color: '#F97316', free: false },
+              { icon: Shield, name: 'Counter-Attack AI', desc: 'Analyze attackers with uncensored AI model. Recon, intel lookup, deception, abuse reporting, tarpit. Fully autonomous.', href: '/dashboard/response', color: '#EF4444', free: true },
+            ].map((m) => (
+              <button
+                key={m.name}
+                onClick={() => window.location.href = m.href}
+                className="flex items-start gap-3 p-4 rounded-xl border border-white/[0.06] hover:border-white/[0.12] bg-white/[0.02] hover:bg-white/[0.04] transition-all text-left group"
+              >
+                <div
+                  className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ background: `${m.color}15`, border: `1px solid ${m.color}30` }}
+                >
+                  <m.icon className="w-4 h-4" style={{ color: m.color }} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[13px] font-medium text-white group-hover:text-[#22D3EE] transition-colors">{m.name}</span>
+                    {!m.free && <span className="text-[9px] font-bold text-[#F97316] bg-[#F97316]/10 px-1.5 py-0.5 rounded">ENTERPRISE</span>}
+                  </div>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">{m.desc}</p>
+                </div>
+                <ExternalLink className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-400 shrink-0 mt-1 transition-colors" />
+              </button>
+            ))}
           </div>
         </SectionCard>
       )}
