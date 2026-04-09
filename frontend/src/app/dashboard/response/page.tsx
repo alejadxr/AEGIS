@@ -486,7 +486,7 @@ export default function ResponsePage() {
                   <div>
                     <p className="text-[13px] font-medium text-white capitalize">{key.replace(/^auto_/, '').replace(/_/g, ' ')}</p>
                     <p className="text-[12px] text-zinc-500 mt-0.5">
-                      {enabled ? 'Executed automatically by AI engine' : 'Requires manual approval before execution'}
+                      {enabled ? 'Autonomous — executes immediately (Sigma rules + playbooks, no AI required)' : 'Manual — requires admin approval before execution'}
                     </p>
                   </div>
                   <button
