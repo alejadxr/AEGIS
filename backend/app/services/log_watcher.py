@@ -209,6 +209,17 @@ class LogWatcher:
                 pass
 
     async def _process_line(self, line: str):
+        # Publish every log line to event_bus for the Raw Log Stream widget
+        try:
+            from app.core.events import event_bus
+            await event_bus.publish("log_line", {
+                "_event_type": "log_line",
+                "line": line[:1000],
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass  # Never let stream publishing break log processing
+
         # Skip lines from our own internal scanner / infrastructure
         if _is_internal_line(line):
             return
