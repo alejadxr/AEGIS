@@ -26,7 +26,7 @@ class NucleiScanner:
             logger.info("nuclei not available, returning simulated results")
             return self._simulated_results(target)
 
-        cmd = [self.nuclei_path, "-u", target, "-json", "-silent"]
+        cmd = [self.nuclei_path, "-u", target, "-jsonl", "-silent"]
 
         if templates:
             for t in templates:
