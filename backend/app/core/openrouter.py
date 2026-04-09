@@ -8,32 +8,33 @@ from app.config import settings
 
 logger = logging.getLogger("aegis.openrouter")
 
-# Free models available on OpenRouter (as of 2026-03)
-# Organized by latency and context window for optimal task routing
+# Free models available on OpenRouter (as of 2026-04)
+# Organized by capability tier and context window for optimal task routing
 #
-# | Model                                    | Context  | Best For              | Latency  |
-# |------------------------------------------|----------|-----------------------|----------|
-# | arcee-ai/trinity-mini:free              | 256K     | Fast decisions        | ~1-2s    |
-# | arcee-ai/trinity-mini:free               | 131K     | Quick triage          | ~1-2s    |
-# | arcee-ai/trinity-large-preview:free      | 131K     | Risk scoring, analysis| ~2-3s    |
-# | minimax/minimax-m2.5:free                | 197K     | Content generation    | ~2-3s    |
-# | nvidia/nemotron-3-super-120b-a12b:free   | 262K     | Deep reasoning, reports| ~3-5s   |
-# | cognitivecomputations/dolphin-mistral-24b-venice-edition:free | Uncensored | Red team, exploit analysis | ~2-3s |
+# | Model                                    | Params   | Context  | Best For                    |
+# |------------------------------------------|----------|----------|-----------------------------|
+# | google/gemma-4-26b-a4b-it:free           | 26B A4B  | 262K     | Fast triage, quick decisions|
+# | meta-llama/llama-3.3-70b-instruct:free   | 70B      | 65K      | Classification, analysis    |
+# | qwen/qwen3-coder:free                    | 480B A35B| 262K     | Code analysis, investigation|
+# | openai/gpt-oss-120b:free                 | 120B     | 131K     | Reports, long-form content  |
+# | nousresearch/hermes-3-llama-3.1-405b:free| 405B     | 131K     | Deep reasoning, risk scoring|
+# | cognitivecomputations/dolphin-mistral-24b-venice-edition:free | 24B | 32K | Uncensored red team |
+# | google/gemma-4-31b-it:free               | 31B      | 262K     | General fallback            |
 
 MODEL_ROUTING = {
-    "triage": "arcee-ai/trinity-mini:free",                   # Fastest — sub-second decisions
-    "classification": "arcee-ai/trinity-large-preview:free",    # Good analysis, 131K context
-    "investigation": "nvidia/nemotron-3-super-120b-a12b:free",  # Deepest reasoning, 262K context
-    "code_analysis": "nvidia/nemotron-3-super-120b-a12b:free",  # 120B params for code understanding
-    "report": "minimax/minimax-m2.5:free",                      # Best for long-form content, 197K
-    "decoy_content": "minimax/minimax-m2.5:free",               # Creative content for honeypots
-    "quick_decision": "arcee-ai/trinity-mini:free",            # Sub-second, 256K context
-    "risk_scoring": "arcee-ai/trinity-large-preview:free",      # Analytical scoring
-    "healing": "arcee-ai/trinity-large-preview:free",           # Remediation analysis
+    "triage": "google/gemma-4-26b-a4b-it:free",                # MoE A4B — fast inference, 262K context
+    "classification": "meta-llama/llama-3.3-70b-instruct:free", # 70B dense — strong analytical reasoning
+    "investigation": "qwen/qwen3-coder:free",                   # 480B A35B — deepest reasoning, 262K context
+    "code_analysis": "qwen/qwen3-coder:free",                   # Code-specialized, massive MoE
+    "report": "openai/gpt-oss-120b:free",                       # 120B — excellent long-form generation
+    "decoy_content": "openai/gpt-oss-120b:free",                # Creative content for honeypots
+    "quick_decision": "google/gemma-4-26b-a4b-it:free",         # MoE A4B — sub-second decisions, 262K
+    "risk_scoring": "nousresearch/hermes-3-llama-3.1-405b:free", # 405B — thorough analytical scoring
+    "healing": "meta-llama/llama-3.3-70b-instruct:free",        # 70B dense — clear remediation advice
     "red_team": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",  # Uncensored — exploit analysis, attack simulation
     "counter_attack": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",  # Uncensored — mitigation, counter-measures
     "payload_analysis": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",  # Uncensored — analyze malicious payloads without refusal
-    "fallback": "arcee-ai/trinity-mini:free",                   # Lightweight fallback, fast
+    "fallback": "google/gemma-4-31b-it:free",                   # 31B dense, 262K context — reliable fallback
 }
 
 MODEL_DESCRIPTIONS = {
@@ -69,11 +70,11 @@ MODEL_ORDER = [
 ]
 
 FALLBACK_CHAIN = [
-    "arcee-ai/trinity-mini:free",
-    "arcee-ai/trinity-mini:free",
-    "minimax/minimax-m2.5:free",
-    "arcee-ai/trinity-large-preview:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
+    "google/gemma-4-31b-it:free",                   # Primary fallback — 31B dense, 262K, reliable
+    "google/gemma-4-26b-a4b-it:free",                # Fast MoE fallback
+    "meta-llama/llama-3.3-70b-instruct:free",        # 70B dense fallback
+    "openai/gpt-oss-120b:free",                      # 120B fallback
+    "nousresearch/hermes-3-llama-3.1-405b:free",     # 405B heavy fallback
 ]
 
 SYSTEM_PROMPTS = {
