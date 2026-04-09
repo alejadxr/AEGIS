@@ -52,7 +52,7 @@ Built for security teams, DevOps engineers, and homelabs that need enterprise-gr
 **Prerequisites:** Docker and Docker Compose.
 
 ```bash
-git clone https://github.com/diego1128256-cmd/AEGIS.git
+git clone https://github.com/alejadxr/AEGIS.git
 cd aegis
 
 # Configure
