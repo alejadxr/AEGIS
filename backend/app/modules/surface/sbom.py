@@ -365,7 +365,7 @@ class SBOMScanner:
             "serialNumber": f"urn:uuid:{uuid.uuid4()}",
             "version": 1,
             "metadata": {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "tools": [
                     {
                         "vendor": "AEGIS",
@@ -418,7 +418,7 @@ class SBOMScanner:
 
             self._latest_results = {
                 "scan_id": str(uuid.uuid4()),
-                "scanned_at": datetime.now(timezone.utc).isoformat(),
+                "scanned_at": datetime.utcnow().isoformat(),
                 "total_packages": len(packages),
                 "packages_with_cves": sum(1 for p in packages if p.get("cves")),
                 "total_cves": len(all_cves),
@@ -428,7 +428,7 @@ class SBOMScanner:
                 "sbom": sbom,
             }
             self._latest_cves = all_cves
-            self._last_scan_at = datetime.now(timezone.utc).isoformat()
+            self._last_scan_at = datetime.utcnow().isoformat()
 
             logger.info(
                 "SBOM scan complete: %d packages, %d CVEs (%d critical, %d high)",

@@ -104,7 +104,7 @@ class DNSThreat:
         self.details = details
         self.source_ip = source_ip
         self.query_type = query_type
-        self.timestamp = datetime.now(timezone.utc)
+        self.timestamp = datetime.utcnow()
         self.id = f"dns-{int(time.time() * 1000)}-{hash(domain) % 10000:04d}"
 
     def to_dict(self) -> dict:
@@ -188,7 +188,7 @@ class DNSMonitor:
 
         self._interface = interface
         self._running = True
-        self._stats["started_at"] = datetime.now(timezone.utc).isoformat()
+        self._stats["started_at"] = datetime.utcnow().isoformat()
 
         # Try to load known malicious domains from threat_intel
         await self._load_threat_intel()
@@ -376,7 +376,7 @@ class DNSMonitor:
 
         # Update stats
         self._stats["total_queries"] += 1
-        self._stats["last_query_at"] = datetime.now(timezone.utc).isoformat()
+        self._stats["last_query_at"] = datetime.utcnow().isoformat()
         self._seen_domains.add(domain)
         self._stats["unique_domains"] = len(self._seen_domains)
 

@@ -311,7 +311,7 @@ class PlaybookEngine:
                     result = {
                         "action": "forensic_snapshot",
                         "status": "queued",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                         "source_ip": source_ip,
                     }
 
@@ -342,7 +342,7 @@ class PlaybookEngine:
             "source_ip": source_ip,
             "actions": results,
             "elapsed_ms": round(elapsed_ms, 2),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
         # Publish to event bus
@@ -404,7 +404,7 @@ class PlaybookEngine:
                 "source_ip": event.get("source_ip"),
                 "severity": event.get("severity", "high"),
                 "template": action.get("template", "generic_playbook"),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
             }
             success = await notifier.send_webhook(webhook_url, payload)
             return {

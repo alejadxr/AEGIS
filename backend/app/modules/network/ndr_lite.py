@@ -88,7 +88,7 @@ class NetworkAnomaly:
         self.details = details
         self.process_name = process_name
         self.process_pid = process_pid
-        self.timestamp = datetime.now(timezone.utc)
+        self.timestamp = datetime.utcnow()
         self.id = f"ndr-{int(time.time() * 1000)}-{hash(anomaly_type) % 10000:04d}"
 
     def to_dict(self) -> dict:
@@ -167,7 +167,7 @@ class NDRLite:
 
         self._running = True
         self._baseline_started_at = time.time()
-        self._stats["started_at"] = datetime.now(timezone.utc).isoformat()
+        self._stats["started_at"] = datetime.utcnow().isoformat()
 
         # Load bad IPs from threat_intel
         await self._load_bad_ips()
@@ -235,7 +235,7 @@ class NDRLite:
             return
 
         self._stats["snapshots_taken"] += 1
-        self._stats["last_snapshot_at"] = datetime.now(timezone.utc).isoformat()
+        self._stats["last_snapshot_at"] = datetime.utcnow().isoformat()
 
         # Build structured snapshot
         snapshot = []

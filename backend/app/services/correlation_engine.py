@@ -2174,7 +2174,7 @@ CHAIN_RULES: list[dict] = [
 # ---------------------------------------------------------------------------
 
 def _now_ts() -> float:
-    return datetime.now(timezone.utc).timestamp()
+    return datetime.utcnow().timestamp()
 
 
 def _matches_filter(event: dict, filt: dict) -> bool:
@@ -2242,7 +2242,7 @@ class CorrelationEngine:
             "rules_triggered": 0,
             "chains_triggered": 0,
             "custom_rules": 0,
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.utcnow().isoformat(),
         }
         # Lazily imported to avoid circular dependency at module load time
         self._event_bus = None
@@ -2523,7 +2523,7 @@ class CorrelationEngine:
             "triggering_event": triggering_event,
             "source_ip": triggering_event.get("source_ip"),
             "source": "correlation_engine_chain",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
         logger.critical(
@@ -2568,7 +2568,7 @@ class CorrelationEngine:
             "triggering_event": triggering_event,
             "source_ip": triggering_event.get("source_ip"),
             "source": "correlation_engine",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
         logger.warning(
@@ -2721,7 +2721,7 @@ class CampaignTracker:
                 "source_ip": source_ip,
                 "phases": phases,
                 "source": "campaign_tracker",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
             }
         return None
 

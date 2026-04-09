@@ -35,7 +35,7 @@ class WSClient:
     def __init__(self, websocket: WebSocket, client_id: str = "anonymous"):
         self.websocket = websocket
         self.client_id = client_id
-        self.connected_at = datetime.now(timezone.utc).isoformat()
+        self.connected_at = datetime.utcnow().isoformat()
         self.filters: dict = {}  # e.g. {"min_severity": "high", "event_types": [...]}
         # Topic subscriptions — if empty set, client gets everything (legacy behavior)
         # If non-empty, client only receives events whose topic matches.
@@ -155,7 +155,7 @@ class WSPushManager:
         if not self._clients:
             return
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.utcnow().isoformat()
         topic = event.get("topic") or event.get("_event_type") or event.get("type", "event")
         message = {
             "type": topic,
@@ -192,7 +192,7 @@ class WSPushManager:
                     await client.websocket.send_json({
                         "type": event.get("type", "event"),
                         "data": event,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
                     })
                     client.events_sent += 1
                 except Exception:

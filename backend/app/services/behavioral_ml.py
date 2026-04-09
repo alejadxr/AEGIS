@@ -281,7 +281,7 @@ class BehavioralEngine:
         _, latest = baseline.history[-1]
         result = baseline.evaluate(latest)
         result["asset_id"] = asset_id
-        result["evaluated_at"] = datetime.now(timezone.utc).isoformat()
+        result["evaluated_at"] = datetime.utcnow().isoformat()
         return result
 
     def get_baseline(self, asset_id: str) -> Optional[dict[str, Any]]:
@@ -347,7 +347,7 @@ class BehavioralEngine:
             return
 
         self._running = True
-        self._started_at = datetime.now(timezone.utc).isoformat()
+        self._started_at = datetime.utcnow().isoformat()
 
         # Ensure model directory exists
         Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
@@ -416,7 +416,7 @@ class BehavioralEngine:
 
                 anomaly_record = {
                     "asset_id": asset_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.utcnow().isoformat(),
                     "anomaly_score": result["anomaly_score"],
                     "contributors": contributors,
                     "description": f"Asset {asset_id} showing unusual behavior: {detail}",

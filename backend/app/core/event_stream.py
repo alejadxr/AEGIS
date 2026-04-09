@@ -55,7 +55,7 @@ class _MemoryStream:
         enriched = {
             "event_id": event_id,
             "stream": self.name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
             "published_at_ns": time.monotonic_ns(),
             **data,
         }
@@ -122,7 +122,7 @@ class _RedisStream:
         enriched = {
             "event_id": event_id,
             "stream": self.name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
             "data": json.dumps(data, default=str),
         }
         # Add priority field for consumer ordering
