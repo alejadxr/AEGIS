@@ -225,7 +225,7 @@ export function GuideTour({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="absolute inset-0" onClick={onClose} />
+      <div className="absolute inset-0" />
 
       <div className="relative z-10 w-full max-w-3xl mx-4">
         {/* Progress bar */}
@@ -320,15 +320,19 @@ export function GuideTour({ onClose }: { onClose: () => void }) {
             <div className="flex items-center gap-3">
               {current.action.href && !isLast && (
                 <button
-                  onClick={() => { onClose(); router.push(current.action.href); }}
-                  className="text-[12px] font-medium px-4 py-2 rounded-xl border transition-colors"
+                  onClick={() => {
+                    // Navigate to the module page in the background, then advance the tour
+                    router.push(current.action.href);
+                    setStep(s => s + 1);
+                  }}
+                  className="text-[12px] font-medium px-4 py-2 rounded-xl border transition-colors flex items-center gap-1.5"
                   style={{
                     color: current.color,
                     borderColor: `${current.color}30`,
                     background: `${current.color}08`,
                   }}
                 >
-                  {current.action.label} <ArrowRight className="w-3 h-3 inline ml-1" />
+                  {current.action.label} <ArrowRight className="w-3 h-3" />
                 </button>
               )}
 
@@ -336,7 +340,6 @@ export function GuideTour({ onClose }: { onClose: () => void }) {
                 onClick={() => {
                   if (isLast) {
                     onClose();
-                    router.push(current.action.href || '/dashboard');
                   } else {
                     setStep(s => s + 1);
                   }
@@ -344,7 +347,7 @@ export function GuideTour({ onClose }: { onClose: () => void }) {
                 className="flex items-center gap-2 text-[13px] font-semibold text-[#09090B] px-5 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-[0.98]"
                 style={{ background: current.color }}
               >
-                {isLast ? 'Go to Dashboard' : 'Next'}
+                {isLast ? 'Start Using AEGIS' : 'Next'}
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
