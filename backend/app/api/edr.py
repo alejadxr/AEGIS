@@ -1,11 +1,13 @@
 """
-EDR/XDR API (Task #5).
+EDR/XDR API.
 
 Endpoints:
   POST /edr/events          — agent batch ingestion (gzip-aware)
   GET  /edr/process-tree    — reconstruct ancestors + descendants
   GET  /edr/chains          — list recently matched attack-chain incidents
   GET  /edr/events/recent   — tail of recent EDR events for an agent
+  POST /edr/kill-process    — kill a process by PID (admin only)
+  POST /edr/quarantine-file — quarantine a file with XOR obfuscation (admin only)
 """
 
 from __future__ import annotations
@@ -13,23 +15,27 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+import os
+import shutil
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
+import psutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.core.auth import AuthContext, require_analyst, get_auth_context
+from app.core.auth import AuthContext, require_analyst, require_admin, get_auth_context
 from app.core.events import event_bus
 from app.models.endpoint_agent import (
     AgentEvent, EndpointAgent, EventCategory, EventSeverity,
 )
 from app.models.incident import Incident
 from app.services.process_tree import build_process_tree
-from app.services.attack_chain_detector import evaluate_event
+from app.services.attack_chain_detector import evaluate_event, CMD_PATTERN_RULES
 from app.services.host_monitor import host_monitor, AGENT_ID as HOST_MONITOR_AGENT_ID
 
 logger = logging.getLogger("aegis.edr")
@@ -324,3 +330,157 @@ async def recent_events(
         }
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Response endpoints (admin only)
+# ---------------------------------------------------------------------------
+
+QUARANTINE_DIR = Path.home() / ".aegis" / "quarantine"
+XOR_KEY = 0xAA  # Simple XOR obfuscation to prevent accidental execution
+
+
+class KillProcessRequest(BaseModel):
+    pid: int
+
+
+class QuarantineFileRequest(BaseModel):
+    path: str
+
+
+@router.post("/kill-process")
+async def kill_process(
+    body: KillProcessRequest,
+    auth: AuthContext = Depends(require_admin),
+):
+    """Kill a process by PID. Admin only."""
+    pid = body.pid
+    try:
+        proc = psutil.Process(pid)
+        proc_name = proc.name()
+        proc.kill()
+        logger.warning("EDR kill-process: pid=%d name=%s by user=%s", pid, proc_name, auth.user_id or auth.client_id)
+
+        try:
+            await event_bus.publish_high("edr.event", {
+                "type": "process_killed",
+                "pid": pid,
+                "process_name": proc_name,
+                "killed_by": auth.user_id or auth.client_id,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
+
+        return {"success": True, "pid": pid, "process_name": proc_name}
+    except psutil.NoSuchProcess:
+        raise HTTPException(status_code=404, detail=f"Process {pid} not found")
+    except psutil.AccessDenied:
+        raise HTTPException(status_code=403, detail=f"Access denied killing process {pid}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to kill process: {e}")
+
+
+@router.post("/quarantine-file")
+async def quarantine_file(
+    body: QuarantineFileRequest,
+    auth: AuthContext = Depends(require_admin),
+):
+    """Move a file to quarantine with XOR obfuscation. Admin only."""
+    file_path = Path(body.path)
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {body.path}")
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+
+    # Prevent quarantining AEGIS's own files
+    aegis_dir = Path(__file__).resolve().parent.parent
+    if aegis_dir in file_path.resolve().parents:
+        raise HTTPException(status_code=403, detail="Cannot quarantine AEGIS system files")
+
+    QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    quarantine_name = f"{ts}_{file_path.name}.quarantine"
+    quarantine_path = QUARANTINE_DIR / quarantine_name
+
+    try:
+        # Read, XOR-obfuscate, write to quarantine
+        raw = file_path.read_bytes()
+        obfuscated = bytes(b ^ XOR_KEY for b in raw)
+        quarantine_path.write_bytes(obfuscated)
+
+        # Write metadata sidecar
+        meta_path = quarantine_path.with_suffix(".quarantine.meta")
+        import json as _json
+        meta_path.write_text(_json.dumps({
+            "original_path": str(file_path),
+            "original_size": len(raw),
+            "quarantined_at": datetime.utcnow().isoformat(),
+            "quarantined_by": auth.user_id or auth.client_id,
+            "xor_key": XOR_KEY,
+        }, indent=2))
+
+        # Remove original
+        file_path.unlink()
+
+        logger.warning(
+            "EDR quarantine: %s -> %s by user=%s",
+            body.path, quarantine_path, auth.user_id or auth.client_id,
+        )
+
+        try:
+            await event_bus.publish_high("edr.event", {
+                "type": "file_quarantined",
+                "original_path": body.path,
+                "quarantine_path": str(quarantine_path),
+                "quarantined_by": auth.user_id or auth.client_id,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "original_path": body.path,
+            "quarantine_path": str(quarantine_path),
+            "original_size": len(raw),
+        }
+    except PermissionError:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {body.path}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Quarantine failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Chain rules listing
+# ---------------------------------------------------------------------------
+
+@router.get("/rules")
+async def list_rules(
+    auth: AuthContext = Depends(require_analyst),
+):
+    """List all active chain detection rules (ancestry + cmd_pattern)."""
+    from app.services.attack_chain_detector import RULES as ANCESTRY_RULES
+    rules = []
+
+    for fn in ANCESTRY_RULES:
+        rules.append({
+            "rule_id": fn.__name__,
+            "type": "ancestry_chain",
+            "description": (fn.__doc__ or "").strip() or fn.__name__,
+        })
+
+    for cpr in CMD_PATTERN_RULES:
+        rules.append({
+            "rule_id": cpr.rule_id,
+            "type": "cmd_pattern",
+            "title": cpr.title,
+            "mitre_technique": cpr.mitre_technique,
+            "mitre_tactic": cpr.mitre_tactic,
+            "severity": cpr.severity,
+            "description": cpr.description,
+        })
+
+    return {"total": len(rules), "rules": rules}

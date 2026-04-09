@@ -35,7 +35,7 @@ from app.modules.phantom.processor import interaction_processor
 from app.models.action import Action
 from app.services.log_watcher import log_watcher
 from app.services.scheduled_scanner import scheduled_scanner
-from app.services.host_monitor import host_monitor
+from app.services.host_monitor import host_monitor, AGENT_ID as HOST_MONITOR_AGENT_ID
 
 from app.api import auth, dashboard, surface, response, phantom, threats, correlation, admin
 from app.api import feeds, reports, ai_providers as ai_providers_router
@@ -99,6 +99,10 @@ EVENT_TO_TOPICS: dict[str, tuple[str, ...]] = {
     "scan_completed": ("scans.completed",),
     "node_status": ("nodes.status",),
     "log_line": ("logs.stream",),
+    # EDR events
+    "edr.event": ("edr.events",),
+    "edr.suspicious_process": ("edr.events", "incidents.new"),
+    "edr.process_start": ("edr.events",),
 }
 
 
@@ -168,6 +172,36 @@ async def notify_action_executed(data):
         "target": data.get("target"),
         "message": f"Action '{data.get('action_type')}' executed on '{data.get('target')}'.",
     })
+
+
+async def edr_chain_handler(data):
+    """Feed host-monitor process_start events into the attack chain detector."""
+    if not isinstance(data, dict) or data.get("kind") != "process_start":
+        return
+    try:
+        from app.services.attack_chain_detector import evaluate_event
+        from app.services.process_tree import build_process_tree
+        from app.models.endpoint_agent import EndpointAgent
+
+        agent_id = data.get("agent_id", HOST_MONITOR_AGENT_ID)
+        async with async_session() as db:
+            agent = await db.get(EndpointAgent, agent_id)
+            if not agent:
+                return
+
+            async def ancestry_fetcher(pid: int) -> list[dict]:
+                tree = await build_process_tree(db, agent_id, pid)
+                return tree.get("ancestors", [])
+
+            matches = await evaluate_event(db, agent, data, ancestry_fetcher)
+            if matches:
+                await db.commit()
+                logger.info(
+                    "EDR chain detector: %d matches for pid=%s",
+                    len(matches), data.get("pid"),
+                )
+    except Exception as e:
+        logger.debug("edr_chain_handler error: %s", e)
 
 
 async def handle_auto_approved_action(data):
@@ -361,6 +395,11 @@ async def lifespan(app: FastAPI):
     event_bus.subscribe("action_auto_approved", handle_auto_approved_action)
     event_bus.subscribe("action_auto_approved", ws_event_handler)
     event_bus.subscribe("log_line", ws_event_handler)
+    # EDR event_bus subscriptions
+    event_bus.subscribe("edr.event", ws_event_handler)
+    event_bus.subscribe("edr.suspicious_process", ws_event_handler)
+    event_bus.subscribe("edr.process_start", ws_event_handler)
+    event_bus.subscribe("edr.process_start", edr_chain_handler)
     logger.info("Event bus started with WebSocket forwarding + auto-execution wired")
 
     # Start counter-attack engine (active defense)
