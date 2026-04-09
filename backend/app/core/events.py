@@ -86,7 +86,7 @@ class EventBus:
             if "event_id" not in data:
                 data["event_id"] = str(uuid.uuid4())
             if "timestamp" not in data:
-                data["timestamp"] = datetime.now(timezone.utc).isoformat()
+                data["timestamp"] = datetime.utcnow().isoformat()
             if "priority" not in data:
                 data["priority"] = priority
 

@@ -197,7 +197,7 @@ class CounterAttackEngine:
         analysis["source_ip"] = source_ip
         analysis["model_used"] = ai_result.get("model_used", "unknown")
         analysis["latency_ms"] = ai_result.get("latency_ms", 0)
-        analysis["timestamp"] = datetime.now(timezone.utc).isoformat()
+        analysis["timestamp"] = datetime.utcnow().isoformat()
         analysis["total_time_ms"] = int((time.time() - start_time) * 1000)
 
         # Store analysis
@@ -249,7 +249,7 @@ class CounterAttackEngine:
             return {"success": False, "error": f"Unknown action type: {action_type}"}
 
         logger.info(f"Executing counter-attack: {action_type} against {target_ip}")
-        result = {"action": action_type, "target": target_ip, "timestamp": datetime.now(timezone.utc).isoformat()}
+        result = {"action": action_type, "target": target_ip, "timestamp": datetime.utcnow().isoformat()}
 
         try:
             if action_type == "recon_attacker":

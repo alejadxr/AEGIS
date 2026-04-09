@@ -131,7 +131,7 @@ class AIDecisionEngine:
             "actions_taken": [],
             "incident_created": False,
             "ai_enrichment_queued": False,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
         # Determine threat type from sigma matches
@@ -307,7 +307,7 @@ class AIDecisionEngine:
                     if incident:
                         analysis = incident.ai_analysis or {}
                         analysis["ai_enrichment"] = enrichment
-                        analysis["enriched_at"] = datetime.now(timezone.utc).isoformat()
+                        analysis["enriched_at"] = datetime.utcnow().isoformat()
                         incident.ai_analysis = analysis
                         await db.commit()
                         logger.info(f"AI enrichment applied to incident {incident.id}")

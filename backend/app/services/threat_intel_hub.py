@@ -96,7 +96,7 @@ class ThreatIntelHub:
 
         pulled = await self._pull_iocs_from_collection(collection)
         pushed = await self._push_local_iocs(collection)
-        self._last_sync = datetime.now(timezone.utc)
+        self._last_sync = datetime.utcnow()
         logger.info(f"Sync complete: pulled={pulled}, pushed={pushed}")
 
     async def _pull_iocs_from_collection(self, collection) -> int:
@@ -132,7 +132,7 @@ class ThreatIntelHub:
                 if doc.get("confidence", 0) > existing.confidence:
                     existing.confidence = doc["confidence"]
                 existing.report_count = max(existing.report_count, doc.get("report_count", 1))
-                existing.last_seen = datetime.now(timezone.utc)
+                existing.last_seen = datetime.utcnow()
                 if doc.get("report_count", 1) >= 3:
                     existing.verified = True
             else:
@@ -145,8 +145,8 @@ class ThreatIntelHub:
                     source_hash=doc.get("source_instance", "unknown"),
                     report_count=doc.get("report_count", 1),
                     verified=doc.get("report_count", 1) >= 3,
-                    first_seen=doc.get("first_seen", datetime.now(timezone.utc)),
-                    last_seen=datetime.now(timezone.utc),
+                    first_seen=doc.get("first_seen", datetime.utcnow()),
+                    last_seen=datetime.utcnow(),
                 )
                 session.add(ioc)
 
@@ -175,10 +175,10 @@ class ThreatIntelHub:
                             "confidence": ioc.confidence,
                             "mitre_techniques": ioc.mitre_techniques or [],
                             "source_instance": self.instance_id,
-                            "last_seen": datetime.now(timezone.utc),
+                            "last_seen": datetime.utcnow(),
                         },
                         "$setOnInsert": {
-                            "first_seen": ioc.first_seen or datetime.now(timezone.utc),
+                            "first_seen": ioc.first_seen or datetime.utcnow(),
                             "report_count": 1,
                         },
                     },
@@ -209,8 +209,8 @@ class ThreatIntelHub:
             "mitre_techniques": data.get("mitre_techniques", []),
             "detection_source": data.get("detection_source", "manual"),
             "source_instance": self.instance_id,
-            "first_seen": datetime.now(timezone.utc),
-            "last_seen": datetime.now(timezone.utc),
+            "first_seen": datetime.utcnow(),
+            "last_seen": datetime.utcnow(),
             "report_count": 1,
         }
 
@@ -259,7 +259,7 @@ class ThreatIntelHub:
             return 0
 
         count = 0
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         for ioc in iocs:
             try:
                 await collection.update_one(

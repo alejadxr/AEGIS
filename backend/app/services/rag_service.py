@@ -260,7 +260,7 @@ class RAGService:
                 "chunk_index": idx,
                 "total_chunks": len(chunks),
                 "text": chunk,
-                "ingested_at": datetime.now(timezone.utc).isoformat(),
+                "ingested_at": datetime.utcnow().isoformat(),
             }
             points.append(PointStruct(id=point_id, vector=vector, payload=payload))
 
@@ -271,7 +271,7 @@ class RAGService:
         )
 
         self._stats["documents_ingested"] += 1
-        self._stats["last_ingest_at"] = datetime.now(timezone.utc).isoformat()
+        self._stats["last_ingest_at"] = datetime.utcnow().isoformat()
 
         logger.debug(
             "Ingested doc_type=%s chunks=%d group=%s",
@@ -396,7 +396,7 @@ class RAGService:
         results = response.points
 
         self._stats["queries_served"] += 1
-        self._stats["last_query_at"] = datetime.now(timezone.utc).isoformat()
+        self._stats["last_query_at"] = datetime.utcnow().isoformat()
 
         output = []
         for hit in results:
