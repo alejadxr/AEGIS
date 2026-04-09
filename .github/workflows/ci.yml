@@ -49,7 +49,7 @@ jobs:
 
       - name: Run tests with coverage (SQLite in-memory)
         env:
-          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
           AEGIS_SECRET_KEY: ci-test-secret-key-not-for-production
           AEGIS_ENV: test
           USE_MEMORY_BUS: "true"
