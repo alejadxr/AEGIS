@@ -36,6 +36,15 @@ Built for security teams, DevOps engineers, and homelabs that need enterprise-gr
 
 **Your servers defend themselves while you sleep.**
 
+### What's New in v1.2
+
+- **Live Dashboard** -- CrowdStrike Falcon-style SOC view with 10 WebSocket-powered widgets, never needs refresh
+- **Ransomware Protection** -- Canary files + entropy detection + auto-rollback (VSS/Btrfs/LVM) in <500ms
+- **EDR/XDR Core** -- ETW (Windows) + eBPF (Linux) telemetry, process tree reconstruction, 6 MITRE attack chain rules
+- **Antivirus Engine** -- YARA + ClamAV + hash reputation cache, on-access + scheduled scans, encrypted quarantine
+- **Configurable Firewall** -- YAML rule engine with UI editor, rate limiting, 6 default templates, hot reload
+- **Honey-AI Deception** -- Auto-generate 50+ fake services with AI-generated content. 4 industry themes. Breadcrumb UUID tracking
+
 ---
 
 ## 5-Minute Install
@@ -218,7 +227,7 @@ AI-powered alert triage with autonomous action execution.
 - **Sub-300ms Fast Path** -- Sigma check -> IOC cache -> playbook -> done, no AI round-trip needed
 - **Agentic AI Pipeline** -- triage -> classify -> decide -> execute -> verify -> audit (2-5s for complex threats)
 - **10 Deterministic Playbooks** -- `auto_block_brute_force`, `auto_block_sql_injection`, `auto_respond_c2_beacon`, and 7 more
-- **Guardrail System** -- Three-tier approval: `auto_approve` (IP blocks), `require_approval` (host isolation), `never_auto` (service shutdown)
+- **Guardrail System** -- Fully autonomous by default (all actions `auto_approve`). Users can override any action to `require_approval` or `never_auto` per client in Settings → Guardrails
 - **Dual-layer Blocking** -- Firewall API (real iptables on a network device) + local middleware (403)
 - **Full Audit Trail** -- Model used, reasoning chain, confidence score, token cost for every AI decision
 
@@ -258,6 +267,74 @@ Information-theoretic detection for advanced and evasive threats.
 - **Adversarial ML Detection** -- Identify model poisoning and evasion attempts
 - **Steganography Detection** -- Flag files with entropy distributions that deviate from expected file-type norms
 
+### Live Dashboard -- Real-Time SOC View
+
+CrowdStrike Falcon-style dense dashboard. Never needs manual refresh.
+
+- **WebSocket streaming** -- Events push to dashboard in <200ms via topic-based subscriptions
+- **Live attack feed** -- Incidents slide in with severity-coded animations
+- **Global threat map** -- Pulsing dots for each attacker IP by country
+- **Events/sec chart** -- 60-second rolling line chart
+- **Top 10 tables** -- Attackers, targets, attack types (refresh every 2s)
+- **Raw log stream** -- Terminal-style scrolling log with level color coding
+- **Node heartbeat grid** -- Green/red dots for every enrolled agent
+- **Counters bar** -- events/sec, blocked/min, AI decisions/min, incidents open
+
+### Ransomware Protection
+
+Detect and stop ransomware in <500ms. Auto-rollback encrypted files.
+
+- **Canary files** -- 10 hidden sentinel files planted in Documents/Desktop/Downloads. Any modification = trip wire
+- **Encryption behavior detection** -- Mass file extension changes (>20/5s), Shannon entropy spike (>7.5 bits), VSS deletion attempts
+- **Instant kill** -- Process tree terminated via `TerminateProcess` (Windows) / `SIGKILL` (Linux) within milliseconds
+- **Auto-rollback** -- Restore encrypted files from VSS shadow copies (Windows), Btrfs/LVM snapshots (Linux), or userspace ring buffer (ext4/xfs fallback)
+- **Forensic chain** -- Complete process tree, command lines, affected files uploaded to dashboard as CRITICAL incident
+
+### EDR/XDR Core
+
+Enterprise endpoint detection and response. Process trees, attack chain reconstruction, kernel-level visibility.
+
+- **ETW telemetry** (Windows) -- Kernel-Process, Kernel-Network, Kernel-File, Registry, AMSI providers via `ferrisetw`
+- **eBPF telemetry** (Linux) -- `sched_process_exec`, `sys_enter_connect`, `sys_enter_openat`, `security_inode_unlink` via `aya`
+- **Process tree reconstruction** -- Full ancestor/descendant tree for any process at any time
+- **Attack chain detection** -- 6 Sigma chain rules: macro malware, phishing payload, credential dumping, LOTL download, Office child shell, rundll32 abuse
+- **Tiered fallback** -- Tier 1 (no privileges, `sysinfo` polling) → Tier 2 (admin, ETW/eBPF) → Tier 3 (kernel driver, future)
+- **Gzip batching** -- 1-second event batches compressed for upload, 16K event ring buffer
+
+### Antivirus Engine
+
+Signature-based detection complementing behavioral analysis.
+
+- **YARA scanning** -- On-access + scheduled full scans using `yara-rs`
+- **ClamAV bridge** -- Optional integration via `clamscan` CLI
+- **Hash reputation cache** -- `sled` embedded DB for known-good files (>95% cache hit after 1 week)
+- **Quarantine** -- Infected files XOR-obfuscated and moved to `~/.aegis/quarantine/` with metadata sidecar
+- **Signature updates** -- Daily auto-pull from YARA-Forge community rules + MalwareBazaar SHA256 hashes
+- **EICAR detection** -- Built-in for testing, works even without YARA ruleset
+
+### Configurable Firewall
+
+Replace static detection rules with a flexible YAML-based rule engine.
+
+- **YAML DSL** -- Define rules with match conditions (source_ip CIDR, port, protocol, user-agent, rate_limit) and actions (block_ip, allow, alert, quarantine_host)
+- **Priority-based evaluation** -- Higher priority rules win. Allow short-circuits.
+- **Stateful rate limiting** -- Track per-IP request counts with time windows
+- **Hot reload** -- Rules apply in <1s without restart via cache invalidation
+- **Rule tester** -- "What-if" testing against synthetic events from the UI
+- **6 default templates** -- SSH brute force, port scan, scanner UA block, office IP allowlist, malware quarantine, geo-block
+
+### Honey-AI -- Deception Engineering at Scale (Enterprise)
+
+Auto-generate massive fake infrastructure. The killer differentiator.
+
+- **Deception campaigns** -- Deploy 50+ fake services in <30s with a single click
+- **4 industry themes** -- Fintech (banking, payments), Healthcare (patient records), E-commerce (orders, cards), DevOps (API keys, infra configs)
+- **AI-generated content** -- LLM creates realistic responses for fake web apps, APIs, databases. Falls back to Faker if no AI key configured
+- **Breadcrumb tracking** -- Every fake asset embeds a unique UUID marker. If that UUID appears in real service logs → CRITICAL alert linking the two events
+- **Service mix control** -- Sliders for web/db/files/admin ratio per campaign
+- **Auto-rotation** -- Decoys mutate every 6 hours to avoid attacker fingerprinting
+- **Campaign builder UI** -- Step-by-step wizard: Theme → Service Mix → Decoy Count → Deploy
+
 ---
 
 ## Desktop Apps
@@ -272,16 +349,22 @@ Full dashboard in a native desktop window. Connects to your AEGIS server instanc
 
 ### AEGIS Node Agent (Tauri v2 + Rust)
 
-Lightweight EDR agent deployed on monitored endpoints.
+Full EDR agent deployed on monitored endpoints. Windows + Linux.
 
 - **~7MB** installer, runs silently in system tray
+- **Ransomware protection** -- Canary files, entropy detection, process kill, auto-rollback (VSS/Btrfs/LVM)
+- **EDR/XDR telemetry** -- ETW (Windows) / eBPF (Linux) for process, network, file, registry events
+- **Antivirus scanning** -- YARA + ClamAV on-access + scheduled full scans with hash cache
+- **Process tree tracking** -- Full parent-child chains with command line capture
+- **Attack chain detection** -- Sigma rules for LOTL, macro malware, credential dumping
 - **Windows Event Log** monitoring (process creation 4688, failed logon 4625, service install 4697, PowerShell 4104)
 - **Network monitoring** with per-process connection tracking
 - **Registry persistence** detection (Run/RunOnce keys)
 - **Living-off-the-Land** detection (certutil, bitsadmin, `powershell -enc`, mshta, regsvr32)
 - **File Integrity Monitoring** (.ssh directories, System32)
 - **Auto-enrollment** with enrollment codes, 30s heartbeat + exponential backoff
-- **Hourly auto-scan** with event reporting to the AEGIS server
+- **Quarantine** -- Infected files isolated in encrypted quarantine directory
+- **Tiered architecture** -- Works without admin (polling), better with admin (ETW/eBPF), best with kernel driver (future)
 
 ---
 
@@ -348,7 +431,7 @@ All endpoints under `/api/v1/` require authentication via `X-API-Key` header or 
 | Router | Endpoints | Description |
 |--------|-----------|-------------|
 | `auth` | 10 | Register, login, JWT, RBAC (admin/analyst/viewer) |
-| `dashboard` | 4 | Overview stats, timeline, threat map |
+| `dashboard` | 5 | Overview stats, timeline, threat map, live metrics |
 | `surface` | 12 | Scans, assets, vulnerabilities, hardening, SBOM |
 | `response` | 12 | Incidents, actions, guardrails, AI analysis |
 | `phantom` | 8 | Honeypots, interactions, attacker profiles |
@@ -357,17 +440,23 @@ All endpoints under `/api/v1/` require authentication via `X-API-Key` header or 
 | `behavioral` | 6 | ML baselines, anomaly scores, retraining |
 | `network` | 9 | NDR, DNS monitoring, entropy analysis |
 | `quantum` | 14 | Entropy analyzer, Grover calc, adversarial ML |
-| `nodes` | 10 | Endpoint agent enrollment, heartbeat, events, asset reporting |
+| `nodes` | 10 | Endpoint agent enrollment, heartbeat, events |
 | `reports` | 7 | PDF generation, scheduled reports |
-| `settings` | 8 | Client config, scan intervals, notifications, intel sharing |
-| `payments` | 3 | PayPal checkout, tier upgrades, billing status |
+| `settings` | 8 | Client config, scan intervals, notifications |
+| `payments` | 3 | PayPal checkout, tier upgrades |
 | `onboarding` | 1 | Self-serve org creation + admin signup |
 | `admin` | 3 | Blocked IPs management, detection stats |
-| `counter-attack` | 4 | AI attacker analysis, counter-measure execution |
-| `intel-hub` | 4 | MongoDB shared threat intel (share, pull, stats) |
+| `counter-attack` | 4 | AI attacker analysis, counter-measures |
+| `intel-hub` | 4 | MongoDB shared threat intel |
 | `ask` | 1 | Natural language queries to the AI engine |
+| `firewall` | 8 | Configurable rule CRUD, testing, templates |
+| `ransomware` | 2 | Agent ransomware incident events |
+| `edr` | 4 | Process tree, attack chains, event ingestion |
+| `antivirus` | 6 | Signatures, quarantine, hash lookup, scan trigger |
+| `deception` | 7 | Honey-AI campaigns, breadcrumb hits, themes |
+| `updates` | 5 | Auto-update status, check, install, config |
 
-WebSocket endpoint at `/ws` provides real-time event streaming with client-side filtering.
+WebSocket endpoint at `/ws` provides real-time event streaming with topic-based subscriptions and auto-reconnect.
 
 ---
 
@@ -377,27 +466,37 @@ WebSocket endpoint at `/ws` provides real-time event streaming with client-side 
 aegis/
 ├── backend/                    # FastAPI application
 │   ├── app/
-│   │   ├── api/                # 21 API routers (140+ endpoints)
-│   │   ├── core/               # Auth, events, AI, guardrails, attack detector
-│   │   ├── models/             # 14 SQLAlchemy models
+│   │   ├── api/                # 27 API routers (170+ endpoints)
+│   │   ├── core/               # Auth, events, AI, guardrails, attack detector, firewall engine
+│   │   ├── models/             # 18 SQLAlchemy models
 │   │   ├── modules/
 │   │   │   ├── surface/        # ASM: discovery, nuclei, risk scoring, SBOM
 │   │   │   ├── response/       # SOAR: ingestion, analysis, playbooks, responder
-│   │   │   ├── phantom/        # Deception: SSH/HTTP honeypots, profiler, rotation
+│   │   │   ├── phantom/        # Deception: SSH/HTTP/Smart honeypots, profiler, rotation
 │   │   │   ├── network/        # NDR: entropy analysis, DNS monitor
 │   │   │   └── quantum/        # Renyi entropy, Grover calc, adversarial detection
-│   │   └── services/           # 15 background services
+│   │   └── services/           # 20 background services
+│   │       └── honey_ai/       # Deception campaign orchestrator, content generator, breadcrumbs
 │   ├── tests/                  # pytest suite
 │   └── Dockerfile
 ├── frontend/                   # Next.js 14 dashboard
 │   ├── src/
-│   │   ├── app/dashboard/      # 15 pages
-│   │   ├── components/shared/  # Design system components
-│   │   └── lib/                # API client, types, utilities
+│   │   ├── app/dashboard/      # 21 pages (live, firewall, edr, antivirus, deception, ...)
+│   │   ├── components/
+│   │   │   ├── shared/         # Design system components
+│   │   │   ├── live/           # Live dashboard widgets (AttackFeed, Top10, RawLogStream, ...)
+│   │   │   ├── firewall/       # Rule editor, tester
+│   │   │   ├── deception/      # Campaign builder, breadcrumb hits
+│   │   │   └── edr/            # Process tree viewer
+│   │   └── lib/                # API client, WebSocket client, types
 │   └── Dockerfile
 ├── agent-rust/                 # Standalone Rust EDR agent prototype
 ├── desktop-tauri/              # AEGIS Manager desktop app (Tauri v2)
-├── node-tauri/                 # AEGIS Node Agent desktop app (Tauri v2)
+├── node-tauri/                 # AEGIS Node Agent (Tauri v2 + Rust)
+│   └── src-tauri/src/
+│       ├── ransomware/         # Canary, entropy, detector, killer, rollback (Win+Linux)
+│       ├── edr/                # ETW (Win), eBPF (Linux), event buffer, uploader
+│       └── antivirus/          # YARA, ClamAV, hash cache, quarantine
 ├── docker-compose.yml          # One-command full stack deployment
 ├── .env.example                # Configuration template
 └── docs/                       # Architecture and planning documentation
@@ -437,7 +536,10 @@ AEGIS is fully open source under AGPL-3.0. The free tier is production-ready and
 | **Behavioral ML (Isolation Forest)** | ✓ | ✓ |
 | **Shared threat intelligence** | ✓ | ✓ |
 | **Dashboard + RBAC + multi-tenant** | ✓ | ✓ |
-| **Rust endpoint agent** | ✓ | ✓ |
+| **Rust endpoint agent (EDR + AV + ransomware)** | ✓ | ✓ |
+| **Live real-time dashboard (WebSocket)** | ✓ | ✓ |
+| **Configurable firewall (YAML rule engine)** | ✓ | ✓ |
+| **Ransomware protection + auto-rollback** | ✓ | ✓ |
 | **Self-hosted with Docker Compose** | ✓ | ✓ |
 | **Auto-updates from GitHub** | ✓ | ✓ |
 | Nodes | 20 | Unlimited |
@@ -468,7 +570,7 @@ When a high-severity attack is detected, AEGIS can analyze the attacker and reco
 - **Reporting** — Auto-report to AbuseIPDB with evidence
 - **Tarpit** — Throttle attacker connections
 
-All counter-attack actions require admin approval via the guardrails system.
+All counter-attack actions execute autonomously by default. Override to `require_approval` per action in Settings → Guardrails if manual review is needed.
 
 ---
 
@@ -485,14 +587,22 @@ AEGIS instances can share anonymized threat indicators via a central MongoDB hub
 
 ## Roadmap
 
+- [x] ~~Live real-time dashboard (WebSocket streaming)~~
+- [x] ~~Ransomware protection (canary + entropy + auto-rollback)~~
+- [x] ~~EDR/XDR core (ETW/eBPF + process tree + attack chains)~~
+- [x] ~~Antivirus engine (YARA + ClamAV + hash reputation)~~
+- [x] ~~Configurable firewall (YAML rule engine + UI)~~
+- [x] ~~Honey-AI deception at scale (campaign builder + breadcrumbs)~~
+- [x] ~~Linux endpoint agent support~~
+- [x] ~~Auto-updates from GitHub releases~~
 - [ ] Voice alerts (Kokoro TTS — AEGIS speaks during critical incidents)
 - [ ] Import 100+ rules from SigmaHQ community repository
-- [ ] Linux endpoint agent
 - [ ] Kubernetes deployment manifests (Helm chart)
 - [ ] Mobile app (React Native)
 - [ ] Live public demo sandbox
 - [ ] Plugin system for custom detection modules
 - [ ] macOS endpoint agent
+- [ ] SOAR playbook marketplace
 
 ---
 
