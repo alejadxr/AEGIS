@@ -576,12 +576,38 @@ All counter-attack actions execute autonomously by default. Override to `require
 
 ## Shared Threat Intelligence
 
-AEGIS instances can share anonymized threat indicators via a central MongoDB hub:
+Every AEGIS instance can share anonymized threat indicators with the community. When one instance detects an attack, all others learn from it.
 
-- **What's shared**: Hashed IPs, attack patterns, IOCs, MITRE techniques
-- **What's NOT shared**: Hostnames, internal IPs, user data, configurations
-- **Opt-in**: Enabled in setup wizard or Settings → Threat Intelligence
-- **Dual collections**: Your detections (`aegis_threats`) never mix with external feeds (`external_feeds`)
+### How it works
+
+1. Your AEGIS detects an attacker (e.g., IP `45.33.32.1` doing SQL injection)
+2. If sharing is enabled, AEGIS pushes an anonymized IOC to the central hub
+3. Other AEGIS instances pull the community feed every 15 minutes
+4. Now everyone knows `45.33.32.1` is malicious — before they get attacked
+
+### Connection options
+
+| Method | Best for | Config |
+|--------|----------|--------|
+| **HTTP Hub** (recommended) | Most users | Set `AEGIS_HUB_URL` to a hub instance URL |
+| **MongoDB Atlas** | Self-hosted hubs | Set `AEGIS_MONGODB_URI` to your cluster URI |
+| **Standalone** | Air-gapped networks | Leave both empty |
+
+### What's shared vs what's NOT
+
+| Shared | NOT shared |
+|--------|------------|
+| Hashed IPs | Hostnames |
+| Attack patterns | Internal IPs |
+| MITRE techniques | User data |
+| Confidence scores | Configurations |
+| Timestamps | Logs |
+
+### Privacy
+
+- **Opt-in**: Enable in setup wizard or Settings → Threat Intelligence
+- **Anonymized**: IOCs use a one-way `source_hash` derived from your secret key — no one can identify your instance
+- **Dual collections**: Your own detections (`aegis_threats`) never mix with community data (`external_feeds`)
 
 ---
 
