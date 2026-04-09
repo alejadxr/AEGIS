@@ -1,10 +1,26 @@
 import asyncio
+import ipaddress as _ipaddress
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
 
 from aiohttp import web
+
+# Private/internal IP ranges — connections from these are NOT real attacks
+_SAFE_NETS = [
+    _ipaddress.ip_network("10.0.0.0/8"),
+    _ipaddress.ip_network("172.16.0.0/12"),
+    _ipaddress.ip_network("192.168.0.0/16"),
+    _ipaddress.ip_network("100.64.0.0/10"),
+]
+
+def _is_internal(ip: str) -> bool:
+    try:
+        addr = _ipaddress.ip_address(ip)
+        return addr.is_loopback or addr.is_private or any(addr in n for n in _SAFE_NETS)
+    except (ValueError, TypeError):
+        return False
 
 logger = logging.getLogger("aegis.phantom.http_honeypot")
 
@@ -261,6 +277,9 @@ class HTTPHoneypot:
         return request.remote or "unknown"
 
     def _log_interaction(self, source_ip: str, path: str, method: str, headers: dict, extra: dict = None):
+        # Skip internal/private IPs — these are self-scans, uptime checks, not real attacks
+        if _is_internal(source_ip):
+            return
         data = {
             "source_ip": source_ip,
             "source_port": None,
