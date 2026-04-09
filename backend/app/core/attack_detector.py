@@ -13,6 +13,7 @@ import asyncio
 import logging
 import os
 import re
+import socket
 import time
 from collections import defaultdict, deque
 from datetime import datetime
@@ -40,8 +41,16 @@ _BLOCKED_BODY = b'{"detail":"blocked"}'
 _BLOCKED_MEDIA = "application/json"
 
 # IPs that must NEVER be blocked — configured via AEGIS_SAFE_IPS env var
+# Auto-detect the host's own IPs so the honeypot never blocks the server itself
 _safe_ips_str = os.getenv("AEGIS_SAFE_IPS", "127.0.0.1,::1,localhost")
-SAFE_IPS = frozenset(ip.strip() for ip in _safe_ips_str.split(",") if ip.strip())
+_auto_ips: set[str] = set()
+try:
+    hostname = socket.gethostname()
+    for info in socket.getaddrinfo(hostname, None):
+        _auto_ips.add(info[4][0])
+except Exception:
+    pass
+SAFE_IPS = frozenset(ip.strip() for ip in _safe_ips_str.split(",") if ip.strip()) | _auto_ips
 
 # ---------------------------------------------------------------------------
 # FAST-PATH: paths that skip ALL detection (internal/health endpoints)
