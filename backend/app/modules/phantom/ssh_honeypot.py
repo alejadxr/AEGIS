@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress as _ipaddress
 import json as _json
 import logging
 import socket
@@ -8,6 +9,20 @@ from datetime import datetime
 from pathlib import Path
 
 import paramiko
+
+_SAFE_NETS = [
+    _ipaddress.ip_network("10.0.0.0/8"),
+    _ipaddress.ip_network("172.16.0.0/12"),
+    _ipaddress.ip_network("192.168.0.0/16"),
+    _ipaddress.ip_network("100.64.0.0/10"),
+]
+
+def _is_internal(ip: str) -> bool:
+    try:
+        addr = _ipaddress.ip_address(ip)
+        return addr.is_loopback or addr.is_private or any(addr in n for n in _SAFE_NETS)
+    except (ValueError, TypeError):
+        return False
 
 logger = logging.getLogger("aegis.phantom.ssh_honeypot")
 
@@ -156,6 +171,10 @@ def _handle_client(client_sock: socket.socket, client_addr: tuple, host_key: par
         if transport:
             transport.close()
         client_sock.close()
+
+        # Skip internal/private IPs — self-scans and uptime checks are not attacks
+        if _is_internal(client_ip):
+            return
 
         interaction_data = {
             "source_ip": client_ip,
