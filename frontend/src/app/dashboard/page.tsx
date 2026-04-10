@@ -15,6 +15,8 @@ import { MetricsSummaryBar } from '@/components/live/MetricsSummaryBar';
 import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 
 interface Overview {
   total_assets: number;
@@ -74,11 +76,11 @@ async function fetchLiveMetrics(): Promise<LiveMetricsResponse | null> {
 
 function StatusPill({ status }: { status: WSStatus }) {
   const cfg: Record<WSStatus, { label: string; color: string; dot: string }> = {
-    idle: { label: 'IDLE', color: 'text-white/30', dot: 'bg-white/20' },
+    idle: { label: 'IDLE', color: 'text-muted-foreground/50', dot: 'bg-muted-foreground/40' },
     connecting: { label: 'SYNC', color: 'text-[#F59E0B]/70', dot: 'bg-[#F59E0B] animate-pulse' },
     open: { label: 'LIVE', color: 'text-[#22C55E]/70', dot: 'bg-[#22C55E]' },
-    closed: { label: 'OFFLINE', color: 'text-[#EF4444]/70', dot: 'bg-[#EF4444]' },
-    error: { label: 'ERROR', color: 'text-[#EF4444]/70', dot: 'bg-[#EF4444] animate-pulse' },
+    closed: { label: 'OFFLINE', color: 'text-destructive/70', dot: 'bg-destructive' },
+    error: { label: 'ERROR', color: 'text-destructive/70', dot: 'bg-destructive animate-pulse' },
   };
   const c = cfg[status];
   return (
@@ -98,10 +100,10 @@ function SectionHeader({ title, icon: Icon, right }: {
   right?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
       <div className="flex items-center gap-2">
-        {Icon && <Icon className="text-white/20" size={14} />}
-        <span className="text-[12px] font-medium text-white/50">{title}</span>
+        {Icon && <Icon className="text-muted-foreground/50" size={14} />}
+        <span className="text-[12px] font-medium text-muted-foreground">{title}</span>
       </div>
       {right}
     </div>
@@ -200,10 +202,10 @@ export default function DashboardPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[20px] sm:text-[24px] font-semibold text-white tracking-tight">
+          <h1 className="text-[20px] sm:text-[24px] font-semibold text-foreground tracking-tight">
             Security Overview
           </h1>
-          <p className="text-[12px] text-white/30 mt-0.5">
+          <p className="text-[12px] text-muted-foreground/60 mt-0.5">
             Real-time monitoring and threat intelligence
           </p>
         </div>
@@ -224,21 +226,21 @@ export default function DashboardPage() {
           <AttackFeed />
         </div>
 
-        <div className="lg:col-span-2 bg-[var(--c6-surface)] border border-white/[0.04] rounded-xl overflow-hidden">
+        <Card className="lg:col-span-2 rounded-xl py-0 gap-0 shadow-none overflow-hidden">
           <SectionHeader
             title="Global Threat Map"
             icon={Radar01Icon}
             right={threatMap.length > 0 ? (
               <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#22D3EE]" />
-                <span className="text-[10px] text-white/30 font-mono">{threatMap.length} sources</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <span className="text-[10px] text-muted-foreground/60 font-mono">{threatMap.length} sources</span>
               </div>
             ) : undefined}
           />
           <div className="relative h-[280px] sm:h-[340px]">
             <GlobalThreatMap data={threatMap} />
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Events/sec chart — full width */}

@@ -50,14 +50,14 @@ export default function DashboardLayout({
 
   if (!ready) {
     return (
-      <div className="min-h-screen c6-page flex items-center justify-center">
-        <div className="w-4 h-4 border border-white/[0.06] border-t-[#22D3EE] rounded-full animate-spin" />
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <div className="w-4 h-4 border border-border border-t-primary rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen c6-page">
+    <div className="min-h-screen bg-background text-foreground">
       <Sidebar
         onCollapsedChange={handleCollapsedChange}
         mobileOpen={mobileOpen}

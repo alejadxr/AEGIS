@@ -169,12 +169,12 @@ export default function CompliancePage() {
       {/* Header */}
       <div>
         <div className="flex items-center gap-3 mb-1">
-          <div className="w-10 h-10 rounded-xl bg-[#18181B] border border-white/[0.06] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
             <FileCheck className="text-[#22D3EE]" size={20} />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-white tracking-tight">Compliance</h1>
-            <p className="text-sm text-zinc-500 mt-0.5">
+            <h1 className="text-2xl font-semibold text-foreground tracking-tight">Compliance</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
               Security framework mapping and compliance posture
             </p>
           </div>
@@ -194,14 +194,14 @@ export default function CompliancePage() {
               key={fw.shortName}
               onClick={() => setExpandedFramework(expandedFramework === fw.shortName ? null : fw.shortName)}
               className={cn(
-                'bg-[#18181B] border rounded-2xl p-5 text-left transition-all duration-200 hover:border-white/[0.1]',
-                expandedFramework === fw.shortName ? 'border-[#22D3EE]/30 ring-1 ring-[#22D3EE]/10' : 'border-white/[0.06]'
+                'bg-card border rounded-2xl p-5 text-left transition-all duration-200 hover:border-white/[0.1]',
+                expandedFramework === fw.shortName ? 'border-[#22D3EE]/30 ring-1 ring-[#22D3EE]/10' : 'border-border'
               )}
             >
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-[15px] font-semibold text-white">{fw.shortName}</h3>
-                  <p className="text-[11px] text-zinc-500 mt-0.5">{fw.description}</p>
+                  <h3 className="text-[15px] font-semibold text-foreground">{fw.shortName}</h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{fw.description}</p>
                 </div>
                 <div className="relative w-14 h-14 shrink-0">
                   <svg viewBox="0 0 48 48" className="w-full h-full -rotate-90">
@@ -226,15 +226,15 @@ export default function CompliancePage() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5">
                   <CheckCircle size={12} className="text-[#22C55E]" />
-                  <span className="text-data text-[12px] text-zinc-400">{met} met</span>
+                  <span className="text-data text-[12px] text-muted-foreground">{met} met</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <AlertTriangle size={12} className="text-[#F59E0B]" />
-                  <span className="text-data text-[12px] text-zinc-400">{partial} partial</span>
+                  <span className="text-data text-[12px] text-muted-foreground">{partial} partial</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <XCircle size={12} className="text-[#EF4444]" />
-                  <span className="text-data text-[12px] text-zinc-400">{notMet} gaps</span>
+                  <span className="text-data text-[12px] text-muted-foreground">{notMet} gaps</span>
                 </div>
               </div>
               {/* Coverage bar */}
@@ -263,12 +263,12 @@ export default function CompliancePage() {
           : fw.controls.filter(c => c.status === filterStatus);
 
         return (
-          <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-6">
+          <div className="bg-card border border-border rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <ChevronDown size={16} className="text-[#22D3EE]" />
-                <h2 className="text-sm font-semibold text-white">{fw.name} Controls</h2>
-                <span className="text-data text-[11px] text-zinc-600 ml-1">{filtered.length} controls</span>
+                <h2 className="text-sm font-semibold text-foreground">{fw.name} Controls</h2>
+                <span className="text-data text-[11px] text-muted-foreground/60 ml-1">{filtered.length} controls</span>
               </div>
               {/* Filter */}
               <div className="flex items-center gap-1">
@@ -280,7 +280,7 @@ export default function CompliancePage() {
                       'px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors',
                       filterStatus === f
                         ? 'bg-[#22D3EE]/10 text-[#22D3EE]'
-                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]'
+                        : 'text-muted-foreground hover:text-foreground/80 hover:bg-white/[0.03]'
                     )}
                   >
                     {f === 'all' ? 'All' : f === 'not_met' ? 'Gaps' : f.charAt(0).toUpperCase() + f.slice(1)}
@@ -291,9 +291,9 @@ export default function CompliancePage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="border-b border-white/[0.06]">
+                  <tr className="border-b border-border">
                     {['Control ID', 'Control Name', 'AEGIS Module', 'Status', 'Evidence'].map(h => (
-                      <th key={h} className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest pb-3 pr-4 whitespace-nowrap">
+                      <th key={h} className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest pb-3 pr-4 whitespace-nowrap">
                         {h}
                       </th>
                     ))}
@@ -301,17 +301,17 @@ export default function CompliancePage() {
                 </thead>
                 <tbody>
                   {filtered.map(c => (
-                    <tr key={c.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                    <tr key={c.id} className="border-b border-border/30 hover:bg-white/[0.02] transition-colors">
                       <td className="py-3 pr-4">
                         <span className="text-data text-[13px] text-[#22D3EE] font-medium">{c.id}</span>
                       </td>
                       <td className="py-3 pr-4">
-                        <span className="text-[13px] text-white">{c.name}</span>
+                        <span className="text-[13px] text-foreground">{c.name}</span>
                       </td>
                       <td className="py-3 pr-4">
                         <span className={cn(
                           'text-data text-[12px]',
-                          c.module === '-' ? 'text-zinc-600' : 'text-zinc-400'
+                          c.module === '-' ? 'text-muted-foreground/60' : 'text-muted-foreground'
                         )}>
                           {c.module}
                         </span>
@@ -326,7 +326,7 @@ export default function CompliancePage() {
                         </span>
                       </td>
                       <td className="py-3 max-w-[320px]">
-                        <span className="text-[12px] text-zinc-500 leading-relaxed">{c.evidence}</span>
+                        <span className="text-[12px] text-muted-foreground leading-relaxed">{c.evidence}</span>
                       </td>
                     </tr>
                   ))}
@@ -338,23 +338,23 @@ export default function CompliancePage() {
       })()}
 
       {/* Gaps Summary */}
-      <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-6">
+      <div className="bg-card border border-border rounded-2xl p-6">
         <div className="flex items-center gap-2 mb-4">
           <XCircle size={16} className="text-[#EF4444]" />
-          <h2 className="text-sm font-semibold text-white">Coverage Gaps</h2>
-          <span className="text-data text-[11px] text-zinc-600 ml-1">{gaps.length} controls not covered</span>
+          <h2 className="text-sm font-semibold text-foreground">Coverage Gaps</h2>
+          <span className="text-data text-[11px] text-muted-foreground/60 ml-1">{gaps.length} controls not covered</span>
         </div>
         {gaps.length === 0 ? (
           <div className="flex items-center gap-2 py-4">
             <CheckCircle size={16} className="text-[#22C55E]" />
-            <span className="text-sm text-zinc-400">Full coverage across all frameworks</span>
+            <span className="text-sm text-muted-foreground">Full coverage across all frameworks</span>
           </div>
         ) : (
           <div className="space-y-2">
             {gaps.map(gap => (
               <div
                 key={`${gap.framework}-${gap.id}`}
-                className="flex items-start gap-3 p-3 rounded-xl bg-[#09090B] border border-white/[0.04] hover:border-[#EF4444]/10 transition-colors"
+                className="flex items-start gap-3 p-3 rounded-xl bg-background border border-border hover:border-[#EF4444]/10 transition-colors"
               >
                 <div className="shrink-0 mt-0.5">
                   <XCircle size={14} className="text-[#EF4444]" />
@@ -362,11 +362,11 @@ export default function CompliancePage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-data text-[11px] text-[#22D3EE] font-medium">{gap.framework}</span>
-                    <ChevronRight size={10} className="text-zinc-600" />
-                    <span className="text-data text-[12px] text-zinc-300 font-medium">{gap.id}</span>
-                    <span className="text-[12px] text-zinc-400">{gap.name}</span>
+                    <ChevronRight size={10} className="text-muted-foreground/60" />
+                    <span className="text-data text-[12px] text-foreground/80 font-medium">{gap.id}</span>
+                    <span className="text-[12px] text-muted-foreground">{gap.name}</span>
                   </div>
-                  <p className="text-[11px] text-zinc-600">{gap.evidence}</p>
+                  <p className="text-[11px] text-muted-foreground/60">{gap.evidence}</p>
                 </div>
               </div>
             ))}

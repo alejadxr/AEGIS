@@ -96,8 +96,8 @@ export default function AntivirusPage() {
             <ShieldAlert className="w-6 h-6 text-orange-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-zinc-100">Antivirus Engine</h1>
-            <p className="text-sm text-zinc-500">
+            <h1 className="text-2xl font-semibold text-foreground">Antivirus Engine</h1>
+            <p className="text-sm text-muted-foreground">
               YARA + ClamAV + hash reputation signatures
             </p>
           </div>
@@ -114,8 +114,8 @@ export default function AntivirusPage() {
 
       {/* Signature status */}
       {bundle && (
-        <section className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-5">
-          <h2 className="text-lg font-semibold text-zinc-100 mb-3">Signature status</h2>
+        <section className="bg-card border border-border rounded-2xl p-5">
+          <h2 className="text-lg font-semibold text-foreground mb-3">Signature status</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Metric label="Version" value={bundle.version.slice(0, 12)} mono />
             <Metric label="YARA rules" value={`${bundle.yara_rules.length.toLocaleString()} bytes`} />
@@ -129,8 +129,8 @@ export default function AntivirusPage() {
       )}
 
       {/* Hash reputation lookup */}
-      <section className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-5">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-3 flex items-center gap-2">
+      <section className="bg-card border border-border rounded-2xl p-5">
+        <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
           <Search className="w-5 h-5 text-cyan-400" />
           Hash reputation lookup
         </h2>
@@ -140,7 +140,7 @@ export default function AntivirusPage() {
             value={lookupHash}
             onChange={(e) => setLookupHash(e.target.value.toLowerCase().trim())}
             placeholder="paste sha256 (64 hex chars)"
-            className="bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono w-[32rem] max-w-full"
+            className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono w-[32rem] max-w-full"
           />
           <button
             onClick={lookup}
@@ -151,25 +151,25 @@ export default function AntivirusPage() {
           </button>
         </div>
         {lookupResult && (
-          <pre className="mt-3 bg-zinc-950 border border-white/[0.06] rounded-lg p-3 text-xs text-zinc-300 overflow-auto">
+          <pre className="mt-3 bg-background border border-border rounded-lg p-3 text-xs text-foreground/80 overflow-auto">
             {JSON.stringify(lookupResult, null, 2)}
           </pre>
         )}
       </section>
 
       {/* Quarantine list */}
-      <section className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-5">
+      <section className="bg-card border border-border rounded-2xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <FileWarning className="w-5 h-5 text-red-400" />
-          <h2 className="text-lg font-semibold text-zinc-100">Quarantine</h2>
-          <span className="text-xs text-zinc-500 ml-2">{items.length} items</span>
+          <h2 className="text-lg font-semibold text-foreground">Quarantine</h2>
+          <span className="text-xs text-muted-foreground ml-2">{items.length} items</span>
         </div>
         {items.length === 0 ? (
-          <p className="text-sm text-zinc-500 py-4">No quarantined files.</p>
+          <p className="text-sm text-muted-foreground py-4">No quarantined files.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs font-mono">
-              <thead className="text-zinc-500 border-b border-white/[0.06]">
+              <thead className="text-muted-foreground border-b border-border">
                 <tr>
                   <th className="text-left py-2 pr-4">Detected</th>
                   <th className="text-left py-2 pr-4">Path</th>
@@ -179,9 +179,9 @@ export default function AntivirusPage() {
                   <th className="text-right py-2">Actions</th>
                 </tr>
               </thead>
-              <tbody className="text-zinc-300">
+              <tbody className="text-foreground/80">
                 {items.map((it) => (
-                  <tr key={it.id} className="border-b border-white/[0.03]">
+                  <tr key={it.id} className="border-b border-border/30">
                     <td className="py-2 pr-4 whitespace-nowrap">
                       {it.detected_at ? formatDate(it.detected_at) : '—'}
                     </td>
@@ -190,13 +190,13 @@ export default function AntivirusPage() {
                     </td>
                     <td className="py-2 pr-4 text-orange-400">{it.rule ?? '—'}</td>
                     <td className="py-2 pr-4 text-cyan-400">{it.engine}</td>
-                    <td className="py-2 pr-4 text-zinc-500">
+                    <td className="py-2 pr-4 text-muted-foreground">
                       {it.sha256.slice(0, 12)}...
                     </td>
                     <td className="py-2 text-right">
                       <button
                         onClick={() => release(it.id)}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-zinc-800 border border-white/[0.06] text-zinc-300 hover:bg-zinc-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-zinc-800 border border-border text-foreground/80 hover:bg-zinc-700"
                       >
                         <RotateCcw className="w-3 h-3" />
                         Release
@@ -215,11 +215,11 @@ export default function AntivirusPage() {
 
 function Metric({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
   return (
-    <div className="bg-zinc-900/40 border border-white/[0.04] rounded-xl p-3">
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
+    <div className="bg-background/40 border border-border rounded-xl p-3">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div
         className={cn(
-          'text-lg text-zinc-100 mt-1',
+          'text-lg text-foreground mt-1',
           mono && 'font-mono text-sm',
         )}
       >

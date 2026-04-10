@@ -7,6 +7,11 @@ import { subscribeTopic } from '@/lib/ws';
 import { cn, formatDate } from '@/lib/utils';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ProcessTree, ProcessTreeNode } from '@/components/edr/ProcessTree';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
 
 interface ChainMatch {
   id: string;
@@ -42,7 +47,7 @@ const sevDot: Record<string, string> = {
   high: 'bg-[#F97316]',
   medium: 'bg-[#F59E0B]',
   low: 'bg-[#3B82F6]',
-  info: 'bg-[#737373]',
+  info: 'bg-muted-foreground',
 };
 
 const EVENT_CATEGORIES = ['All', 'Process', 'Network', 'File', 'Suspicious'] as const;
@@ -216,27 +221,29 @@ export default function EdrDashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-[22px] sm:text-[28px] font-bold text-[#E5E5E5] tracking-tight">EDR / XDR Core</h1>
-          <p className="text-sm text-[#737373] mt-1 hidden sm:block">Process telemetry, attack chain detection, and live event stream</p>
+          <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight">EDR / XDR Core</h1>
+          <p className="text-sm text-muted-foreground mt-1 hidden sm:block">Process telemetry, attack chain detection, and live event stream</p>
         </div>
         {agents.some((a) => a.id === 'aegis-host-monitor') && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#22C55E]/10 border border-[#22C55E]/20">
+          <Badge variant="outline" className="bg-[#22C55E]/10 border-[#22C55E]/20 text-[#22C55E] gap-1.5 px-3 py-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
-            <span className="text-[11px] font-medium text-[#22C55E]">Host protected</span>
-          </div>
+            Host protected
+          </Badge>
         )}
       </div>
 
       {/* Attack chain incidents */}
-      <div className="bg-[#0A0A0A] border border-white/[0.04] rounded-xl overflow-hidden">
-        <div className="px-4 sm:px-6 py-4 border-b border-white/[0.04] flex items-center gap-2">
-          <Zap className="w-4 h-4 text-[#F97316]" />
-          <span className="text-[13px] font-medium text-[#E5E5E5] uppercase tracking-wider">Attack Chain Matches</span>
-          <span className="text-[11px] text-[#737373] ml-2">{chains.length} recent</span>
-        </div>
-        <div className="p-4 sm:p-6">
+      <Card className="rounded-xl">
+        <CardHeader className="border-b border-border px-4 sm:px-6 py-4">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-[#F97316]" />
+            <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Attack Chain Matches</CardTitle>
+            <span className="text-[11px] text-muted-foreground ml-2">{chains.length} recent</span>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 sm:p-6">
           {chains.length === 0 ? (
-            <p className="text-[13px] text-[#737373] py-4">
+            <p className="text-[13px] text-muted-foreground py-4">
               No chain-rule matches yet. Telemetry will populate this list as agents report process starts.
             </p>
           ) : (
@@ -244,25 +251,25 @@ export default function EdrDashboardPage() {
               {chains.map((c) => (
                 <div
                   key={c.id}
-                  className="border border-white/[0.04] rounded-xl p-4 flex items-start justify-between gap-4 hover:border-white/[0.08] transition-colors"
+                  className="border border-border rounded-xl p-4 flex items-start justify-between gap-4 hover:border-foreground/10 transition-colors"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className={cn('w-2 h-2 rounded-full shrink-0', sevDot[c.severity] ?? sevDot.info)} />
-                      <span className="uppercase text-[10px] font-mono tracking-wider text-[#737373]">
+                      <span className="uppercase text-[10px] font-mono tracking-wider text-muted-foreground">
                         {c.severity}
                       </span>
                       {c.mitre_technique && (
-                        <span className="text-[10px] font-mono bg-white/[0.04] text-[#A855F7] px-2 py-0.5 rounded">
+                        <Badge variant="secondary" className="text-[10px] font-mono text-[#A855F7] px-2 py-0.5">
                           {c.mitre_technique}
-                        </span>
+                        </Badge>
                       )}
                     </div>
-                    <h3 className="text-[13px] font-medium text-[#E5E5E5] mt-1 truncate">
+                    <h3 className="text-[13px] font-medium text-foreground mt-1 truncate">
                       {c.title}
                     </h3>
                     {c.ai_analysis?.chain && (
-                      <p className="text-[11px] font-mono text-[#737373] mt-1 truncate">
+                      <p className="text-[11px] font-mono text-muted-foreground mt-1 truncate">
                         {c.ai_analysis.chain.join(' \u2192 ')}
                       </p>
                     )}
@@ -275,17 +282,19 @@ export default function EdrDashboardPage() {
                           Contained
                         </span>
                       ) : (
-                        <button
+                        <Button
+                          variant="destructive"
+                          size="sm"
                           onClick={() => handleContainChain(c)}
                           disabled={containingChains.has(c.id)}
-                          className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[#EF4444] text-[11px] font-medium border border-white/[0.04] hover:bg-[#EF4444]/10 disabled:opacity-50 transition-colors"
+                          className="gap-1.5 text-[11px]"
                         >
                           <AlertTriangle className="w-3.5 h-3.5" />
                           {containingChains.has(c.id) ? 'Containing...' : 'Kill & Contain'}
-                        </button>
+                        </Button>
                       )
                     )}
-                    <time className="text-[11px] text-[#525252] flex items-center gap-1 font-mono">
+                    <time className="text-[11px] text-muted-foreground/60 flex items-center gap-1 font-mono">
                       <Clock className="w-3 h-3" />
                       {c.detected_at ? formatDate(c.detected_at) : '\u2014'}
                     </time>
@@ -294,23 +303,25 @@ export default function EdrDashboardPage() {
               ))}
             </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Process tree viewer */}
-      <div className="bg-[#0A0A0A] border border-white/[0.04] rounded-xl overflow-hidden">
-        <div className="px-4 sm:px-6 py-4 border-b border-white/[0.04] flex items-center gap-2">
-          <GitBranch className="w-4 h-4 text-[#22D3EE]" />
-          <span className="text-[13px] font-medium text-[#E5E5E5] uppercase tracking-wider">Process Tree</span>
-        </div>
-        <div className="p-4 sm:p-6">
+      <Card className="rounded-xl">
+        <CardHeader className="border-b border-border px-4 sm:px-6 py-4">
+          <div className="flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-[#22D3EE]" />
+            <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Process Tree</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 sm:p-6">
           <div className="flex flex-wrap items-end gap-3 mb-4">
             <div>
-              <label className="block text-[10px] text-[#737373] uppercase tracking-wider font-medium mb-1">Agent</label>
+              <label className="block text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-1">Agent</label>
               <select
                 value={agentId}
                 onChange={(e) => setAgentId(e.target.value)}
-                className="bg-[#09090B] border border-white/[0.04] rounded-lg px-3 py-1.5 text-sm text-[#E5E5E5] w-80 font-mono focus:outline-none focus:border-[#22D3EE]/30"
+                className="bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-foreground w-80 font-mono focus:outline-none focus:border-[#22D3EE]/30"
               >
                 {agents.length === 0 && <option value="">No agents enrolled</option>}
                 {agents.map((a) => (
@@ -321,21 +332,18 @@ export default function EdrDashboardPage() {
               </select>
             </div>
             <div>
-              <label className="block text-[10px] text-[#737373] uppercase tracking-wider font-medium mb-1">PID</label>
-              <input
+              <label className="block text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-1">PID</label>
+              <Input
                 type="text"
                 value={pidQuery}
                 onChange={(e) => setPidQuery(e.target.value)}
                 placeholder="1234"
-                className="bg-[#09090B] border border-white/[0.04] rounded-lg px-3 py-1.5 text-sm text-[#E5E5E5] w-28 font-mono focus:outline-none focus:border-[#22D3EE]/30"
+                className="w-28 font-mono"
               />
             </div>
-            <button
-              onClick={loadTree}
-              className="px-4 py-1.5 rounded-lg text-[#22D3EE] text-[13px] border border-white/[0.04] hover:bg-white/[0.04] transition-colors"
-            >
+            <Button variant="outline" onClick={loadTree} className="text-[#22D3EE]">
               Load tree
-            </button>
+            </Button>
           </div>
 
           {tree ? (
@@ -345,141 +353,139 @@ export default function EdrDashboardPage() {
               descendants={tree.descendants}
             />
           ) : (
-            <p className="text-[13px] text-[#737373] py-4">
+            <p className="text-[13px] text-muted-foreground py-4">
               Enter an agent ID and PID above to reconstruct the process tree.
             </p>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Live event stream */}
-      <div className="bg-[#0A0A0A] border border-white/[0.04] rounded-xl overflow-hidden">
-        <div className="px-4 sm:px-6 py-4 border-b border-white/[0.04] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-[#22D3EE]" />
-            <span className="text-[13px] font-medium text-[#E5E5E5] uppercase tracking-wider">Recent Events</span>
-            {agentId && (
-              <span className="text-[11px] text-[#737373] ml-2 font-mono">
-                agent {agentId.slice(0, 8)}... \u00B7 live
-              </span>
-            )}
+      <Card className="rounded-xl">
+        <CardHeader className="border-b border-border px-4 sm:px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-[#22D3EE]" />
+              <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Recent Events</CardTitle>
+              {agentId && (
+                <span className="text-[11px] text-muted-foreground ml-2 font-mono">
+                  agent {agentId.slice(0, 8)}... · live
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 bg-background rounded-lg p-0.5 border border-border">
+              {EVENT_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setFilterCategory(cat)}
+                  className={cn(
+                    'px-3 py-1 text-[11px] font-medium rounded-md transition-colors',
+                    filterCategory === cat
+                      ? 'bg-[#22D3EE]/10 text-[#22D3EE]'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex items-center gap-1 bg-[#09090B] rounded-lg p-0.5 border border-white/[0.04]">
-            {EVENT_CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setFilterCategory(cat)}
-                className={cn(
-                  'px-3 py-1 text-[11px] font-medium rounded-md transition-colors',
-                  filterCategory === cat
-                    ? 'bg-[#22D3EE]/10 text-[#22D3EE]'
-                    : 'text-[#737373] hover:text-[#E5E5E5]',
-                )}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="p-4 sm:p-6">
+        </CardHeader>
+        <CardContent className="p-4 sm:p-6">
           {!agentId ? (
-            <p className="text-[13px] text-[#737373] py-4">
+            <p className="text-[13px] text-muted-foreground py-4">
               Waiting for host monitor to initialize. Process telemetry will appear shortly.
             </p>
           ) : filteredEvents.length === 0 ? (
             <div className="flex items-center gap-2 py-4">
               <Monitor className="w-4 h-4 text-[#22D3EE] animate-pulse" />
-              <p className="text-[13px] text-[#737373]">
+              <p className="text-[13px] text-muted-foreground">
                 {agentId === 'aegis-host-monitor'
                   ? 'Host monitoring active \u2014 collecting process telemetry...'
                   : 'No events in the last 15 minutes.'}
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px] font-mono">
-                <thead className="text-[#737373] border-b border-white/[0.04]">
-                  <tr>
-                    <th className="text-left py-2 pr-4 font-medium">Time</th>
-                    <th className="text-left py-2 pr-4 font-medium">Kind</th>
-                    <th className="text-left py-2 pr-4 font-medium">PID</th>
-                    <th className="text-left py-2 pr-4 font-medium">Title</th>
-                    <th className="text-left py-2 w-24 font-medium">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[#E5E5E5]">
-                  {filteredEvents.slice(0, 100).map((e) => {
-                    const isProcess = e.details?.kind === 'process_start';
-                    const pid = e.details?.pid;
-                    const isKilled = pid !== undefined && killedPids.has(pid);
-                    const isKilling = pid !== undefined && killingPids.has(pid);
-                    return (
-                      <tr key={e.id} className="border-b border-white/[0.02]">
-                        <td className="py-1.5 pr-4 text-[#737373]">
-                          {new Date(e.timestamp).toLocaleTimeString()}
-                        </td>
-                        <td className="py-1.5 pr-4 text-[#22D3EE]">{e.details?.kind}</td>
-                        <td className="py-1.5 pr-4">{pid ?? '-'}</td>
-                        <td className="py-1.5 pr-4 truncate max-w-[300px]">{e.title}</td>
-                        <td className="py-1.5">
-                          {isProcess && pid !== undefined && (
-                            isKilled ? (
-                              <span className="text-[#22C55E] text-[10px] flex items-center gap-1">
-                                <CheckCircle className="w-3 h-3" /> Killed
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => setKillConfirm({ pid, name: e.details?.process_name || e.title })}
-                                disabled={isKilling}
-                                className="flex items-center gap-1 px-2 py-0.5 rounded text-[#EF4444] text-[10px] font-medium border border-white/[0.04] hover:bg-[#EF4444]/10 disabled:opacity-50 transition-colors"
-                              >
-                                <AlertTriangle className="w-3 h-3" />
-                                {isKilling ? '...' : 'Kill'}
-                              </button>
-                            )
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-[11px] font-mono">Time</TableHead>
+                  <TableHead className="text-[11px] font-mono">Kind</TableHead>
+                  <TableHead className="text-[11px] font-mono">PID</TableHead>
+                  <TableHead className="text-[11px] font-mono">Title</TableHead>
+                  <TableHead className="text-[11px] font-mono w-24">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredEvents.slice(0, 100).map((e) => {
+                  const isProcess = e.details?.kind === 'process_start';
+                  const pid = e.details?.pid;
+                  const isKilled = pid !== undefined && killedPids.has(pid);
+                  const isKilling = pid !== undefined && killingPids.has(pid);
+                  return (
+                    <TableRow key={e.id}>
+                      <TableCell className="text-[11px] font-mono text-muted-foreground">
+                        {new Date(e.timestamp).toLocaleTimeString()}
+                      </TableCell>
+                      <TableCell className="text-[11px] font-mono text-[#22D3EE]">{e.details?.kind}</TableCell>
+                      <TableCell className="text-[11px] font-mono">{pid ?? '-'}</TableCell>
+                      <TableCell className="text-[11px] font-mono truncate max-w-[300px]">{e.title}</TableCell>
+                      <TableCell className="text-[11px]">
+                        {isProcess && pid !== undefined && (
+                          isKilled ? (
+                            <span className="text-[#22C55E] text-[10px] flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3" /> Killed
+                            </span>
+                          ) : (
+                            <Button
+                              variant="destructive"
+                              size="xs"
+                              onClick={() => setKillConfirm({ pid, name: e.details?.process_name || e.title })}
+                              disabled={isKilling}
+                              className="gap-1 text-[10px]"
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              {isKilling ? '...' : 'Kill'}
+                            </Button>
+                          )
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Kill confirmation modal */}
       {killConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#0A0A0A] border border-white/[0.04] rounded-xl p-6 max-w-sm w-full mx-4">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-lg bg-[#EF4444]/10 border border-[#EF4444]/20">
-                <AlertTriangle className="w-5 h-5 text-[#EF4444]" />
+          <Card className="max-w-sm w-full mx-4 rounded-xl">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-lg bg-[#EF4444]/10 border border-[#EF4444]/20">
+                  <AlertTriangle className="w-5 h-5 text-[#EF4444]" />
+                </div>
+                <h3 className="text-[14px] font-medium text-foreground">Kill Process</h3>
               </div>
-              <h3 className="text-[14px] font-medium text-[#E5E5E5]">Kill Process</h3>
-            </div>
-            <p className="text-[13px] text-[#737373] mb-1">
-              Terminate PID <span className="font-mono text-[#E5E5E5]">{killConfirm.pid}</span>?
-            </p>
-            <p className="text-[11px] text-[#525252] mb-6 font-mono truncate">
-              {killConfirm.name}
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setKillConfirm(null)}
-                className="px-4 py-1.5 rounded-lg border border-white/[0.04] text-[#737373] text-[13px] hover:text-[#E5E5E5] hover:border-white/[0.08] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleKillProcess(killConfirm.pid)}
-                className="px-4 py-1.5 rounded-lg text-[#EF4444] text-[13px] font-medium border border-white/[0.04] hover:bg-[#EF4444]/10 transition-colors"
-              >
-                Kill Process
-              </button>
-            </div>
-          </div>
+              <p className="text-[13px] text-muted-foreground mb-1">
+                Terminate PID <span className="font-mono text-foreground">{killConfirm.pid}</span>?
+              </p>
+              <p className="text-[11px] text-muted-foreground/60 mb-6 font-mono truncate">
+                {killConfirm.name}
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button variant="outline" onClick={() => setKillConfirm(null)}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" onClick={() => handleKillProcess(killConfirm.pid)}>
+                  Kill Process
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

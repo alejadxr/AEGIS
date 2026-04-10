@@ -102,7 +102,7 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
       <aside
         className={cn(
           'fixed left-0 top-0 z-40 h-screen flex flex-col transition-all duration-200',
-          'bg-[var(--c6-surface)] border-r border-white/[0.04]',
+          'bg-card border-r border-border',
           collapsed ? 'w-[56px]' : 'w-[220px]',
           'max-md:-translate-x-full max-md:w-[220px]',
           mobileOpen && 'max-md:translate-x-0'
@@ -110,14 +110,14 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
       >
         {/* Logo */}
         <div className={cn(
-          'flex items-center h-14 shrink-0 border-b border-white/[0.04]',
+          'flex items-center h-14 shrink-0 border-b border-border',
           collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
         )}>
-          <div className="w-7 h-7 rounded-lg bg-white/[0.04] flex items-center justify-center shrink-0">
-            <span className="font-mono text-[#22D3EE] font-semibold text-[10px] tracking-wider">A</span>
+          <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
+            <span className="font-mono text-primary font-semibold text-[10px] tracking-wider">A</span>
           </div>
           {!collapsed && (
-            <span className="text-white/90 font-semibold text-[14px] tracking-tight">
+            <span className="text-foreground/90 font-semibold text-[14px] tracking-tight">
               AEGIS
             </span>
           )}
@@ -128,7 +128,7 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
           {NAV_SECTIONS.map((section) => (
             <div key={section.label}>
               {!collapsed && (
-                <p className="text-[9px] font-medium text-white/20 tracking-[0.08em] uppercase px-2.5 mb-1.5">
+                <p className="text-[9px] font-medium text-muted-foreground/50 tracking-[0.08em] uppercase px-2.5 mb-1.5">
                   {section.label}
                 </p>
               )}
@@ -146,18 +146,18 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
                       className={cn(
                         'group relative flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] font-normal transition-all duration-150',
                         isActive
-                          ? 'text-white/90'
-                          : 'text-white/40 hover:text-white/60 hover:bg-white/[0.02]'
+                          ? 'text-foreground/90'
+                          : 'text-muted-foreground hover:text-foreground/60 hover:bg-muted/50'
                       )}
                     >
                       {/* Active indicator — subtle left accent bar */}
                       {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-full bg-[#22D3EE]" />
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-full bg-primary" />
                       )}
                       {Icon && (
                         <Icon className={cn(
                           'shrink-0 transition-colors duration-150',
-                          isActive ? 'text-[#22D3EE]' : 'text-white/25 group-hover:text-white/40'
+                          isActive ? 'text-primary' : 'text-muted-foreground/60 group-hover:text-muted-foreground'
                         )} size={16} />
                       )}
                       {!collapsed && (
@@ -173,16 +173,16 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
 
         {/* Footer with version */}
         {!collapsed && (
-          <div className="px-4 py-3 border-t border-white/[0.04]">
-            <p className="text-[10px] text-white/15 font-mono">v2.0.0</p>
+          <div className="px-4 py-3 border-t border-border">
+            <p className="text-[10px] text-muted-foreground/40 font-mono">v2.0.0</p>
           </div>
         )}
 
         {/* Collapse Toggle — desktop only */}
-        <div className="p-1.5 border-t border-white/[0.04] shrink-0 hidden md:block">
+        <div className="p-1.5 border-t border-border shrink-0 hidden md:block">
           <button
             onClick={handleCollapse}
-            className="w-full flex items-center justify-center py-1.5 rounded-lg text-white/20 hover:text-white/40 hover:bg-white/[0.02] transition-all duration-150"
+            className="w-full flex items-center justify-center py-1.5 rounded-lg text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 transition-all duration-150"
           >
             {collapsed
               ? <ArrowRight01Icon size={14} />
@@ -199,7 +199,7 @@ export function SidebarToggle({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="p-1.5 rounded-lg text-white/40 hover:text-white/60 hover:bg-white/[0.03] transition-all duration-150 md:hidden"
+      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground/60 hover:bg-muted/50 transition-all duration-150 md:hidden"
       aria-label="Open navigation"
     >
       <Menu01Icon size={18} />

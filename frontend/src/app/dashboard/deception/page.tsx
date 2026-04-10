@@ -12,9 +12,9 @@ const STATUS_COLORS: Record<string, string> = {
   running: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
   deploying: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
   rotating: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
-  stopped: 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20',
+  stopped: 'text-muted-foreground bg-zinc-500/10 border-zinc-500/20',
   failed: 'text-red-400 bg-red-500/10 border-red-500/30',
-  pending: 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20',
+  pending: 'text-muted-foreground bg-zinc-500/10 border-zinc-500/20',
 };
 
 export default function DeceptionPage() {
@@ -80,11 +80,11 @@ export default function DeceptionPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-[22px] sm:text-[28px] font-bold text-white tracking-tight flex items-center gap-3">
+          <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight flex items-center gap-3">
             <Sparkles className="w-6 h-6 text-[#F97316]" />
             Honey-AI Deception
           </h1>
-          <p className="text-sm text-zinc-500 mt-1 hidden sm:block">
+          <p className="text-sm text-muted-foreground mt-1 hidden sm:block">
             Auto-generate massive fake infrastructure and track stolen bait
             in real time
           </p>
@@ -123,15 +123,15 @@ export default function DeceptionPage() {
       </div>
 
       {/* Campaign list */}
-      <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden">
-        <div className="px-4 sm:px-6 py-4 border-b border-white/[0.06]">
-          <span className="text-[14px] font-semibold text-white">
+      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="px-4 sm:px-6 py-4 border-b border-border">
+          <span className="text-[14px] font-semibold text-foreground">
             Campaigns
           </span>
         </div>
         {campaigns.length === 0 ? (
           <div className="p-8 text-center">
-            <p className="text-zinc-500 text-[13px]">
+            <p className="text-muted-foreground text-[13px]">
               No campaigns yet. Click{' '}
               <span className="text-[#F97316] font-medium">New Campaign</span>{' '}
               to deploy fake infrastructure.
@@ -146,7 +146,7 @@ export default function DeceptionPage() {
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[14px] font-semibold text-white truncate">
+                    <span className="text-[14px] font-semibold text-foreground truncate">
                       {c.name}
                     </span>
                     <span
@@ -157,33 +157,33 @@ export default function DeceptionPage() {
                     >
                       {c.status}
                     </span>
-                    <span className="text-[11px] text-zinc-500 font-mono">
+                    <span className="text-[11px] text-muted-foreground font-mono">
                       {c.theme}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-4 mt-2 text-[11px] text-zinc-500">
+                  <div className="flex flex-wrap gap-4 mt-2 text-[11px] text-muted-foreground">
                     <span>
                       Decoys:{' '}
-                      <span className="text-white font-mono">
+                      <span className="text-foreground font-mono">
                         {c.honeypot_count}/{c.decoy_count}
                       </span>
                     </span>
                     <span>
                       Breadcrumbs:{' '}
-                      <span className="text-white font-mono">
+                      <span className="text-foreground font-mono">
                         {c.breadcrumb_count}
                       </span>
                     </span>
                     <span>
                       Rotation:{' '}
-                      <span className="text-white font-mono">
+                      <span className="text-foreground font-mono">
                         {c.rotation_hours}h
                       </span>
                     </span>
                     {c.deployed_at && (
                       <span>
                         Deployed:{' '}
-                        <span className="text-white">
+                        <span className="text-foreground">
                           {formatRelativeTime(c.deployed_at)}
                         </span>
                       </span>
@@ -198,7 +198,7 @@ export default function DeceptionPage() {
                     type="button"
                     disabled={pendingAction === c.id || c.status !== 'running'}
                     onClick={() => handleRotate(c.id)}
-                    className="w-8 h-8 rounded-lg border border-white/[0.06] hover:border-white/[0.2] text-zinc-400 hover:text-white flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="w-8 h-8 rounded-lg border border-border hover:border-white/[0.2] text-muted-foreground hover:text-foreground flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
                     title="Rotate"
                   >
                     {pendingAction === c.id ? (
@@ -211,7 +211,7 @@ export default function DeceptionPage() {
                     type="button"
                     disabled={pendingAction === c.id}
                     onClick={() => handleStop(c.id)}
-                    className="w-8 h-8 rounded-lg border border-white/[0.06] hover:border-red-500/40 text-zinc-400 hover:text-red-400 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="w-8 h-8 rounded-lg border border-border hover:border-red-500/40 text-muted-foreground hover:text-red-400 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
                     title="Stop"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -246,14 +246,14 @@ function StatCard({
   tone?: 'default' | 'danger';
 }) {
   return (
-    <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl px-4 py-4">
-      <div className="text-[11px] text-zinc-500 uppercase tracking-wide">
+    <div className="bg-card border border-border rounded-2xl px-4 py-4">
+      <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
         {label}
       </div>
       <div
         className={cn(
           'text-[24px] font-bold mt-1 font-mono',
-          tone === 'danger' && value > 0 ? 'text-red-400' : 'text-white',
+          tone === 'danger' && value > 0 ? 'text-red-400' : 'text-foreground',
         )}
       >
         {value.toLocaleString()}

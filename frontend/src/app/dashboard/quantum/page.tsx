@@ -246,12 +246,12 @@ export default function QuantumPage() {
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <div className="w-10 h-10 rounded-xl bg-[#18181B] border border-white/[0.06] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
               <Atom className="text-[#22D3EE]" size={20} />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold text-white tracking-tight">Quantum Security</h1>
-              <p className="text-sm text-zinc-500 mt-0.5">
+              <h1 className="text-2xl font-semibold text-foreground tracking-tight">Quantum Security</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
                 Post-quantum cryptography assessment and advanced entropy analysis
               </p>
             </div>
@@ -272,8 +272,8 @@ export default function QuantumPage() {
       ) : (
         <>
           {/* Quantum Readiness Score */}
-          <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-zinc-400 tracking-wide uppercase mb-6">Quantum Readiness Score</h2>
+          <div className="bg-card border border-border rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase mb-6">Quantum Readiness Score</h2>
             <div className="flex items-center gap-8">
               <div className="relative w-36 h-36 shrink-0">
                 <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
@@ -292,25 +292,25 @@ export default function QuantumPage() {
                   <span className="text-data text-3xl font-bold" style={{ color: scoreColor(readiness.score) }}>
                     {readiness.score}
                   </span>
-                  <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">Score</span>
+                  <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Score</span>
                 </div>
               </div>
               <div className="space-y-3 flex-1">
-                <p className="text-sm text-zinc-300">
+                <p className="text-sm text-foreground/80">
                   <span className="text-data font-semibold" style={{ color: scoreColor(readiness.score) }}>
                     {readiness.quantum_safe_count}
                   </span>
-                  <span className="text-zinc-500"> of </span>
-                  <span className="text-data font-semibold text-white">{readiness.total_assets}</span>
-                  <span className="text-zinc-500"> algorithms are quantum-safe</span>
+                  <span className="text-muted-foreground"> of </span>
+                  <span className="text-data font-semibold text-foreground">{readiness.total_assets}</span>
+                  <span className="text-muted-foreground"> algorithms are quantum-safe</span>
                 </p>
                 <div className="grid grid-cols-4 gap-3">
                   {(['safe', 'at_risk', 'vulnerable', 'broken'] as const).map(status => {
                     const count = assessments.filter(a => a.status === status).length;
                     return (
-                      <div key={status} className="bg-[#09090B] rounded-xl p-3 border border-white/[0.04]">
-                        <p className="text-data text-lg font-bold text-white">{count}</p>
-                        <p className="text-[10px] text-zinc-500 uppercase tracking-wider mt-0.5">
+                      <div key={status} className="bg-background rounded-xl p-3 border border-border">
+                        <p className="text-data text-lg font-bold text-foreground">{count}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">
                           {status.replace('_', ' ')}
                         </p>
                       </div>
@@ -322,8 +322,8 @@ export default function QuantumPage() {
           </div>
 
           {/* Crypto Vulnerability Timeline */}
-          <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-zinc-400 tracking-wide uppercase mb-6">
+          <div className="bg-card border border-border rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase mb-6">
               Crypto Vulnerability Timeline
             </h2>
             {gatedSections.has('timeline') ? (
@@ -340,7 +340,7 @@ export default function QuantumPage() {
                   return (
                     <span
                       key={year}
-                      className="text-data text-[10px] text-zinc-600"
+                      className="text-data text-[10px] text-muted-foreground/60"
                       style={{ position: 'absolute', left: `calc(140px + ${(i / 5) * 100}% * (1 - 140/100))` }}
                     >
                       {year}
@@ -355,7 +355,7 @@ export default function QuantumPage() {
                   return (
                     <span
                       key={i}
-                      className="absolute text-data text-[10px] text-zinc-600 -translate-x-1/2"
+                      className="absolute text-data text-[10px] text-muted-foreground/60 -translate-x-1/2"
                       style={{ left: `${pct * 100}%` }}
                     >
                       {year}
@@ -370,9 +370,9 @@ export default function QuantumPage() {
                 return (
                   <div key={entry.algorithm} className="flex items-center gap-3 group">
                     <div className="w-[128px] shrink-0 text-right">
-                      <span className="text-data text-[12px] text-zinc-300 font-medium">{entry.algorithm}</span>
+                      <span className="text-data text-[12px] text-foreground/80 font-medium">{entry.algorithm}</span>
                     </div>
-                    <div className="flex-1 h-7 bg-[#09090B] rounded-md relative overflow-hidden border border-white/[0.03]">
+                    <div className="flex-1 h-7 bg-background rounded-md relative overflow-hidden border border-border/30">
                       <div
                         className="h-full rounded-md transition-all duration-700 relative"
                         style={{
@@ -389,7 +389,7 @@ export default function QuantumPage() {
                         />
                       </div>
                       <div className="absolute inset-0 flex items-center justify-end pr-2 pointer-events-none">
-                        <span className="text-data text-[10px] text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-data text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
                           {entry.status === 'safe' ? 'Safe beyond 2050' : `Vulnerable by ${entry.vulnerable_by}`}
                         </span>
                       </div>
@@ -399,7 +399,7 @@ export default function QuantumPage() {
                 );
               })}
               {/* Legend */}
-              <div className="flex items-center gap-6 mt-4 pt-4 border-t border-white/[0.04]">
+              <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border">
                 {[
                   { color: '#22C55E', label: 'Quantum-Safe' },
                   { color: '#F59E0B', label: 'At Risk' },
@@ -408,7 +408,7 @@ export default function QuantumPage() {
                 ].map(l => (
                   <div key={l.label} className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: l.color, opacity: 0.7 }} />
-                    <span className="text-[11px] text-zinc-500">{l.label}</span>
+                    <span className="text-[11px] text-muted-foreground">{l.label}</span>
                   </div>
                 ))}
               </div>
@@ -417,8 +417,8 @@ export default function QuantumPage() {
           </div>
 
           {/* Algorithm Assessment Table */}
-          <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-zinc-400 tracking-wide uppercase mb-4">
+          <div className="bg-card border border-border rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase mb-4">
               Algorithm Assessment
             </h2>
             {gatedSections.has('assessments') ? (
@@ -430,9 +430,9 @@ export default function QuantumPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="border-b border-white/[0.06]">
+                  <tr className="border-b border-border">
                     {['Algorithm', 'Key Bits', 'Type', 'Classical Security', 'Quantum Security', 'Status', 'Recommendation'].map(h => (
-                      <th key={h} className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest pb-3 pr-4 whitespace-nowrap">
+                      <th key={h} className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest pb-3 pr-4 whitespace-nowrap">
                         {h}
                       </th>
                     ))}
@@ -440,12 +440,12 @@ export default function QuantumPage() {
                 </thead>
                 <tbody>
                   {assessments.map(a => (
-                    <tr key={a.algorithm} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                    <tr key={a.algorithm} className="border-b border-border/30 hover:bg-white/[0.02] transition-colors">
                       <td className="py-3 pr-4">
-                        <span className="text-data text-[13px] text-white font-medium">{a.algorithm}</span>
+                        <span className="text-data text-[13px] text-foreground font-medium">{a.algorithm}</span>
                       </td>
                       <td className="py-3 pr-4">
-                        <span className="text-data text-[12px] text-zinc-400">{a.key_bits}</span>
+                        <span className="text-data text-[12px] text-muted-foreground">{a.key_bits}</span>
                       </td>
                       <td className="py-3 pr-4">
                         <span className={cn(
@@ -455,26 +455,26 @@ export default function QuantumPage() {
                             : a.type === 'Symmetric'
                               ? 'bg-[#A78BFA]/10 text-[#A78BFA] border-[#A78BFA]/20'
                               : a.type === 'Hash'
-                                ? 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
+                                ? 'bg-zinc-500/10 text-muted-foreground border-zinc-500/20'
                                 : 'bg-[#F97316]/10 text-[#F97316] border-[#F97316]/20'
                         )}>
                           {a.type}
                         </span>
                       </td>
                       <td className="py-3 pr-4">
-                        <span className="text-data text-[12px] text-zinc-300">{a.classical_security}</span>
+                        <span className="text-data text-[12px] text-foreground/80">{a.classical_security}</span>
                       </td>
                       <td className="py-3 pr-4">
                         <span className={cn(
                           'text-data text-[12px]',
-                          a.quantum_security.includes('~0') ? 'text-[#EF4444]' : 'text-zinc-300'
+                          a.quantum_security.includes('~0') ? 'text-[#EF4444]' : 'text-foreground/80'
                         )}>
                           {a.quantum_security}
                         </span>
                       </td>
                       <td className="py-3 pr-4">{statusBadge(a.status)}</td>
                       <td className="py-3">
-                        <span className="text-[12px] text-zinc-500 leading-relaxed">{a.recommendation}</span>
+                        <span className="text-[12px] text-muted-foreground leading-relaxed">{a.recommendation}</span>
                       </td>
                     </tr>
                   ))}
@@ -486,8 +486,8 @@ export default function QuantumPage() {
 
           {/* Entropy Analysis */}
           {(entropy.length > 0 || gatedSections.has('entropy')) && (
-            <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-6">
-              <h2 className="text-sm font-semibold text-zinc-400 tracking-wide uppercase mb-4">
+            <div className="bg-card border border-border rounded-2xl p-6">
+              <h2 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase mb-4">
                 Entropy Analysis
               </h2>
               {gatedSections.has('entropy') ? (
@@ -498,10 +498,10 @@ export default function QuantumPage() {
               ) : (
               <div className="space-y-4">
                 {entropy.map((result, idx) => (
-                  <div key={idx} className="bg-[#09090B] rounded-xl p-4 border border-white/[0.04]">
+                  <div key={idx} className="bg-background rounded-xl p-4 border border-border">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-data text-[12px] text-zinc-300">{result.source}</span>
+                        <span className="text-data text-[12px] text-foreground/80">{result.source}</span>
                         {result.anomaly_detected && (
                           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#EF4444]/10 text-[#EF4444] text-[10px] font-semibold border border-[#EF4444]/20">
                             <AlertTriangle size={10} />
@@ -509,7 +509,7 @@ export default function QuantumPage() {
                           </span>
                         )}
                       </div>
-                      <span className="text-data text-[10px] text-zinc-600">
+                      <span className="text-data text-[10px] text-muted-foreground/60">
                         {result.timestamp ? new Date(result.timestamp).toLocaleString() : ''}
                       </span>
                     </div>
@@ -518,8 +518,8 @@ export default function QuantumPage() {
                       {result.renyi_orders.map(order => (
                         <div key={order.alpha} className="space-y-1">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-zinc-600">alpha={order.alpha}</span>
-                            <span className="text-data text-[11px] text-zinc-300">{order.entropy.toFixed(4)}</span>
+                            <span className="text-[10px] text-muted-foreground/60">alpha={order.alpha}</span>
+                            <span className="text-data text-[11px] text-foreground/80">{order.entropy.toFixed(4)}</span>
                           </div>
                           <div className="h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
                             <div
@@ -534,9 +534,9 @@ export default function QuantumPage() {
                       ))}
                     </div>
                     {result.confidence !== null && (
-                      <div className="mt-3 pt-3 border-t border-white/[0.04]">
-                        <span className="text-[11px] text-zinc-500">
-                          Detection confidence: <span className="text-data text-zinc-300">{(result.confidence * 100).toFixed(1)}%</span>
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <span className="text-[11px] text-muted-foreground">
+                          Detection confidence: <span className="text-data text-foreground/80">{(result.confidence * 100).toFixed(1)}%</span>
                         </span>
                       </div>
                     )}
@@ -553,10 +553,10 @@ export default function QuantumPage() {
       {showUpgradeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowUpgradeModal(false)} />
-          <div className="relative bg-[#18181B] border border-white/[0.06] rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <div className="relative bg-card border border-border rounded-2xl p-8 max-w-md w-full shadow-2xl">
             <button
               onClick={() => setShowUpgradeModal(false)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors"
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
             >
               <X size={20} />
             </button>
@@ -564,8 +564,8 @@ export default function QuantumPage() {
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 mb-4">
                 <Atom size={28} className="text-[#22D3EE]" />
               </div>
-              <h3 className="text-xl font-bold text-white">Upgrade to Enterprise</h3>
-              <p className="text-sm text-zinc-500 mt-2">
+              <h3 className="text-xl font-bold text-foreground">Upgrade to Enterprise</h3>
+              <p className="text-sm text-muted-foreground mt-2">
                 Unlock the full Quantum Security module with real-time cryptographic assessment of your infrastructure.
               </p>
             </div>
@@ -576,7 +576,7 @@ export default function QuantumPage() {
                 'Advanced Renyi entropy analysis',
                 'AI-powered migration recommendations',
               ].map(f => (
-                <div key={f} className="flex items-center gap-2 text-sm text-zinc-300">
+                <div key={f} className="flex items-center gap-2 text-sm text-foreground/80">
                   <Check size={16} className="text-[#22D3EE] flex-shrink-0" />
                   {f}
                 </div>
@@ -594,7 +594,7 @@ export default function QuantumPage() {
             </button>
             <button
               onClick={() => setShowUpgradeModal(false)}
-              className="w-full mt-2 py-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="w-full mt-2 py-2 text-sm text-muted-foreground hover:text-foreground/80 transition-colors"
             >
               Maybe later
             </button>
@@ -613,8 +613,8 @@ function UpgradeGateBanner({ feature, onUpgrade }: { feature: string; onUpgrade:
       <div className="w-10 h-10 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 flex items-center justify-center mb-3">
         <Lock size={18} className="text-[#22D3EE]" />
       </div>
-      <p className="text-sm font-medium text-white mb-1">Upgrade to unlock full analysis</p>
-      <p className="text-xs text-zinc-500 mb-4">
+      <p className="text-sm font-medium text-foreground mb-1">Upgrade to unlock full analysis</p>
+      <p className="text-xs text-muted-foreground mb-4">
         {feature} requires an Enterprise subscription for live data from your infrastructure.
       </p>
       <button
