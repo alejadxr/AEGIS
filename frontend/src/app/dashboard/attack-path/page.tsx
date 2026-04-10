@@ -408,14 +408,14 @@ export default function AttackPathPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-[22px] sm:text-[28px] font-bold text-white tracking-tight">Attack Path</h1>
-          <p className="hidden sm:block text-sm text-zinc-500 mt-1">
+          <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight">Attack Path</h1>
+          <p className="hidden sm:block text-sm text-muted-foreground mt-1">
             Visualize potential lateral movement paths through your infrastructure
           </p>
         </div>
         <button
           onClick={fetchAssets}
-          className="flex items-center gap-2 bg-white/[0.05] border border-white/[0.06] hover:border-[#22D3EE]/20 text-zinc-300 hover:text-[#22D3EE] px-4 py-2 rounded-xl transition-all text-[13px] font-medium shrink-0"
+          className="flex items-center gap-2 bg-white/[0.05] border border-border hover:border-[#22D3EE]/20 text-foreground/80 hover:text-[#22D3EE] px-4 py-2 rounded-xl transition-all text-[13px] font-medium shrink-0"
         >
           <RefreshCw className="w-4 h-4" />
           Refresh
@@ -430,8 +430,8 @@ export default function AttackPathPage() {
           { label: 'High Risk Paths', value: stats.highPaths, color: '#F97316' },
           { label: 'Max Depth', value: stats.maxDepth, color: '#A855F7' },
         ].map((stat) => (
-          <div key={stat.label} className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-4">
-            <p className="text-[11px] text-zinc-500 font-medium uppercase tracking-wider">{stat.label}</p>
+          <div key={stat.label} className="bg-card border border-border rounded-2xl p-4">
+            <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">{stat.label}</p>
             <p className="text-[24px] font-bold mt-1" style={{ color: stat.color }}>
               {stat.value}
             </p>
@@ -442,10 +442,10 @@ export default function AttackPathPage() {
       {/* Graph Card */}
       <div
         ref={containerRef}
-        className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden relative"
+        className="bg-card border border-border rounded-2xl overflow-hidden relative"
       >
         {assets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
             <p className="text-[14px] font-medium">No assets discovered yet</p>
             <p className="text-[12px] mt-1">Run a surface scan to populate the attack graph</p>
           </div>
@@ -628,38 +628,38 @@ export default function AttackPathPage() {
                 }}
               >
                 <div className="bg-[#09090B] border border-white/[0.08] rounded-xl p-3 shadow-2xl min-w-[220px]">
-                  <p className="text-[13px] font-semibold text-white">{hoveredNode.asset.hostname}</p>
-                  <p className="text-[11px] text-zinc-500 font-mono mt-0.5">{hoveredNode.asset.ip_address}</p>
+                  <p className="text-[13px] font-semibold text-foreground">{hoveredNode.asset.hostname}</p>
+                  <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{hoveredNode.asset.ip_address}</p>
                   <div className="mt-2 space-y-1">
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-zinc-500">Type</span>
-                      <span className="text-zinc-300">{hoveredNode.asset.asset_type}</span>
+                      <span className="text-muted-foreground">Type</span>
+                      <span className="text-foreground/80">{hoveredNode.asset.asset_type}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-zinc-500">Ports</span>
-                      <span className="text-zinc-300 font-mono">{hoveredNode.asset.ports.join(', ') || 'None'}</span>
+                      <span className="text-muted-foreground">Ports</span>
+                      <span className="text-foreground/80 font-mono">{hoveredNode.asset.ports.join(', ') || 'None'}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-zinc-500">Risk Score</span>
+                      <span className="text-muted-foreground">Risk Score</span>
                       <span className="font-mono font-semibold" style={{ color: riskColor(hoveredNode.asset.risk_score) }}>
                         {hoveredNode.asset.risk_score.toFixed(1)}
                       </span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-zinc-500">Status</span>
+                      <span className="text-muted-foreground">Status</span>
                       <span className={cn(
                         'text-[10px] font-medium px-1.5 py-0.5 rounded',
                         hoveredNode.asset.status === 'active'
                           ? 'bg-[#22C55E]/10 text-[#22C55E]'
-                          : 'bg-zinc-800 text-zinc-400'
+                          : 'bg-zinc-800 text-muted-foreground'
                       )}>
                         {hoveredNode.asset.status}
                       </span>
                     </div>
                     {hoveredNode.asset.technologies.length > 0 && (
                       <div className="flex justify-between text-[11px]">
-                        <span className="text-zinc-500">Tech</span>
-                        <span className="text-zinc-300 text-right max-w-[140px] truncate">
+                        <span className="text-muted-foreground">Tech</span>
+                        <span className="text-foreground/80 text-right max-w-[140px] truncate">
                           {hoveredNode.asset.technologies.join(', ')}
                         </span>
                       </div>
@@ -670,7 +670,7 @@ export default function AttackPathPage() {
             )}
 
             {/* Legend */}
-            <div className="absolute bottom-4 left-4 flex items-center gap-4 bg-[#09090B]/80 backdrop-blur-sm border border-white/[0.06] rounded-xl px-4 py-2">
+            <div className="absolute bottom-4 left-4 flex items-center gap-4 bg-[#09090B]/80 backdrop-blur-sm border border-border rounded-xl px-4 py-2">
               {[
                 { label: 'Low', color: '#22C55E' },
                 { label: 'Medium', color: '#EAB308' },
@@ -679,7 +679,7 @@ export default function AttackPathPage() {
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-[10px] text-zinc-400 font-medium">{item.label}</span>
+                  <span className="text-[10px] text-muted-foreground font-medium">{item.label}</span>
                 </div>
               ))}
             </div>
@@ -689,10 +689,10 @@ export default function AttackPathPage() {
 
       {/* Asset Breakdown */}
       {assets.length > 0 && (
-        <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden">
-          <div className="px-4 sm:px-6 py-4 border-b border-white/[0.06]">
-            <h3 className="text-[14px] font-semibold text-white">Path Nodes</h3>
-            <p className="text-[12px] text-zinc-500 mt-0.5">Assets ordered by risk exposure</p>
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 border-b border-border">
+            <h3 className="text-[14px] font-semibold text-foreground">Path Nodes</h3>
+            <p className="text-[12px] text-muted-foreground mt-0.5">Assets ordered by risk exposure</p>
           </div>
           <div className="divide-y divide-white/[0.03]">
             {[...assets]
@@ -706,12 +706,12 @@ export default function AttackPathPage() {
                       style={{ backgroundColor: riskColor(asset.risk_score) }}
                     />
                     <div className="min-w-0">
-                      <p className="text-[13px] text-white font-medium truncate">{asset.hostname}</p>
-                      <p className="text-[11px] text-zinc-500 font-mono">{asset.ip_address}</p>
+                      <p className="text-[13px] text-foreground font-medium truncate">{asset.hostname}</p>
+                      <p className="text-[11px] text-muted-foreground font-mono">{asset.ip_address}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
-                    <span className="text-[11px] text-zinc-500 font-mono hidden sm:block">
+                    <span className="text-[11px] text-muted-foreground font-mono hidden sm:block">
                       {asset.ports.slice(0, 4).join(', ')}
                     </span>
                     <span

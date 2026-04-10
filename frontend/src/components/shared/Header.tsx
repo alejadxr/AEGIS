@@ -13,6 +13,10 @@ import {
 import { SidebarToggle } from './Sidebar';
 import { clearApiKey, clearJwtToken } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
@@ -127,20 +131,20 @@ export function Header({ onMobileMenuToggle }: HeaderProps) {
   }, [showNotifications]);
 
   return (
-    <header className="relative z-50 h-12 bg-[var(--c6-bg)] border-b border-white/[0.04] flex items-center justify-between px-4 md:px-5 shrink-0">
+    <header className="relative z-50 h-12 bg-background border-b border-border flex items-center justify-between px-4 md:px-5 shrink-0">
       {/* Left: Hamburger (mobile) + Search */}
       <div className="flex items-center gap-2.5 flex-1 min-w-0">
         {onMobileMenuToggle && (
           <SidebarToggle onClick={onMobileMenuToggle} />
         )}
         <div className="relative hidden sm:block w-full max-w-[240px]">
-          <Search01Icon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/20" size={14} />
-          <input
+          <Search01Icon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={14} />
+          <Input
             type="text"
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white/[0.03] border border-white/[0.04] rounded-lg px-3 py-1.5 pl-8 text-[13px] text-white/80 placeholder:text-white/20 focus:outline-none focus:border-white/[0.08] transition-colors duration-150"
+            className="h-8 rounded-lg pl-8 text-[13px]"
           />
         </div>
       </div>
@@ -149,41 +153,43 @@ export function Header({ onMobileMenuToggle }: HeaderProps) {
       <div className="flex items-center gap-1 shrink-0">
         {/* Notifications */}
         <div ref={notifRef} className="relative">
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={openNotifications}
-            className="relative p-1.5 rounded-lg text-white/30 hover:text-white/50 hover:bg-white/[0.03] transition-all duration-150"
+            className="relative text-muted-foreground"
           >
             <Notification03Icon size={16} />
             {hasUnread && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[#EF4444] rounded-full" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-destructive rounded-full" />
             )}
-          </button>
+          </Button>
 
           {showNotifications && (
-            <div className="absolute right-0 top-full mt-1.5 w-72 bg-[var(--c6-surface)] border border-white/[0.06] rounded-xl z-[70] animate-fade-in overflow-hidden">
-              <div className="px-3.5 py-2.5 border-b border-white/[0.04] flex items-center justify-between">
-                <span className="text-[12px] font-medium text-white/70">Recent Incidents</span>
+            <div className="absolute right-0 top-full mt-1.5 w-72 bg-card border border-border rounded-xl z-[70] animate-fade-in overflow-hidden">
+              <div className="px-3.5 py-2.5 border-b border-border flex items-center justify-between">
+                <span className="text-[12px] font-medium text-foreground/70">Recent Incidents</span>
                 {incidents.length > 0 && (
-                  <span className="text-[10px] bg-[#EF4444]/10 text-[#EF4444] px-1.5 py-0.5 rounded font-mono">{incidents.length}</span>
+                  <Badge variant="destructive" className="text-[10px] font-mono">{incidents.length}</Badge>
                 )}
               </div>
 
               {notifLoading ? (
-                <div className="px-3.5 py-5 text-center text-[11px] text-white/30">Loading...</div>
+                <div className="px-3.5 py-5 text-center text-[11px] text-muted-foreground">Loading...</div>
               ) : incidents.length === 0 ? (
-                <div className="px-3.5 py-5 text-center text-[11px] text-white/30">No notifications</div>
+                <div className="px-3.5 py-5 text-center text-[11px] text-muted-foreground">No notifications</div>
               ) : (
                 <div>
                   {incidents.map((inc) => (
                     <div
                       key={inc.id}
-                      className="flex items-start gap-2.5 px-3.5 py-2.5 border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors duration-150 cursor-pointer"
+                      className="flex items-start gap-2.5 px-3.5 py-2.5 border-b border-border/50 hover:bg-muted/50 transition-colors duration-150 cursor-pointer"
                       onClick={() => { setShowNotifications(false); router.push('/dashboard/response'); }}
                     >
-                      <span className={cn('mt-1 shrink-0 block w-1.5 h-1.5 rounded-full', severityDotColor[inc.severity] || 'bg-zinc-600')} />
+                      <span className={cn('mt-1 shrink-0 block w-1.5 h-1.5 rounded-full', severityDotColor[inc.severity] || 'bg-muted-foreground')} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] text-white/70 font-medium truncate">{inc.title}</p>
-                        <p className="text-[10px] text-white/25 font-mono mt-0.5">{timeAgo(inc.detected_at)}</p>
+                        <p className="text-[11px] text-foreground/70 font-medium truncate">{inc.title}</p>
+                        <p className="text-[10px] text-muted-foreground/60 font-mono mt-0.5">{timeAgo(inc.detected_at)}</p>
                       </div>
                     </div>
                   ))}
@@ -194,35 +200,39 @@ export function Header({ onMobileMenuToggle }: HeaderProps) {
         </div>
 
         {/* Theme toggle */}
-        <button
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={toggleTheme}
-          className="p-1.5 rounded-lg text-white/30 hover:text-white/50 hover:bg-white/[0.03] transition-all duration-150"
           title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="text-muted-foreground"
         >
           {isDark ? <Sun01Icon size={16} /> : <Moon02Icon size={16} />}
-        </button>
+        </Button>
 
         {/* Divider */}
-        <div className="w-px h-5 bg-white/[0.04] mx-1" />
+        <Separator orientation="vertical" className="h-5 mx-1" />
 
         {/* User */}
         <div className="relative">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-2 px-1.5 py-1 rounded-lg text-white/40 hover:text-white/60 hover:bg-white/[0.03] transition-all duration-150"
+            className="text-muted-foreground gap-2 px-1.5"
           >
-            <div className="w-6 h-6 rounded-md bg-white/[0.04] border border-white/[0.04] flex items-center justify-center">
-              <UserIcon size={12} className="text-white/30" />
+            <div className="w-6 h-6 rounded-md bg-muted border border-border flex items-center justify-center">
+              <UserIcon size={12} className="text-muted-foreground" />
             </div>
             <span className="text-[12px] font-medium hidden sm:block">Operator</span>
-          </button>
+          </Button>
           {showUserMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-              <div className="absolute right-0 top-full mt-1.5 w-44 bg-[var(--c6-surface)] border border-white/[0.06] rounded-xl py-1 z-[70] animate-fade-in">
+              <div className="absolute right-0 top-full mt-1.5 w-44 bg-card border border-border rounded-xl py-1 z-[70] animate-fade-in">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-white/40 hover:text-[#EF4444] hover:bg-white/[0.02] transition-all duration-150"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-muted-foreground hover:text-destructive hover:bg-muted/50 transition-all duration-150"
                 >
                   <Logout01Icon size={14} />
                   Disconnect

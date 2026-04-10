@@ -3,6 +3,9 @@
 import { useState, useMemo } from 'react';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Card } from '@/components/ui/card';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 
 interface Column<T> {
   key: string;
@@ -58,100 +61,99 @@ export function DataTable<T extends Record<string, unknown>>({
 
   if (data.length === 0) {
     return (
-      <div className="c6-card p-12 text-center">
-        <p className="text-zinc-500 text-[13px]">{emptyMessage}</p>
-      </div>
+      <Card className="rounded-xl py-0 gap-0 shadow-none p-12 text-center">
+        <p className="text-muted-foreground text-[13px]">{emptyMessage}</p>
+      </Card>
     );
   }
 
   return (
-    <div className="c6-card overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-white/[0.06]">
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() => col.sortable && handleSort(col.key)}
-                  className={cn(
-                    'px-4 py-3 text-left text-[11px] font-medium text-zinc-500 uppercase tracking-wider',
-                    col.sortable && 'cursor-pointer hover:text-zinc-300 select-none',
-                    col.className
-                  )}
-                >
-                  <div className="flex items-center gap-1">
-                    {col.label}
-                    {col.sortable && sortKey === col.key && (
-                      sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                    )}
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {paginated.map((row, i) => (
-              <tr
-                key={i}
-                onClick={() => onRowClick?.(row)}
+    <Card className="rounded-xl py-0 gap-0 shadow-none overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="border-border">
+            {columns.map((col) => (
+              <TableHead
+                key={col.key}
+                onClick={() => col.sortable && handleSort(col.key)}
                 className={cn(
-                  'border-b border-white/[0.03] transition-colors',
-                  onRowClick && 'cursor-pointer',
-                  'hover:bg-white/[0.02]'
+                  'px-4 py-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider h-auto',
+                  col.sortable && 'cursor-pointer hover:text-foreground select-none',
+                  col.className
                 )}
               >
-                {columns.map((col) => (
-                  <td key={col.key} className={cn('px-4 py-3 text-[13px] text-zinc-300', col.className)}>
-                    {col.render ? col.render(row) : String(row[col.key] ?? '')}
-                  </td>
-                ))}
-              </tr>
+                <div className="flex items-center gap-1">
+                  {col.label}
+                  {col.sortable && sortKey === col.key && (
+                    sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                  )}
+                </div>
+              </TableHead>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {paginated.map((row, i) => (
+            <TableRow
+              key={i}
+              onClick={() => onRowClick?.(row)}
+              className={cn(
+                'border-border/50',
+                onRowClick && 'cursor-pointer'
+              )}
+            >
+              {columns.map((col) => (
+                <TableCell key={col.key} className={cn('px-4 py-3 text-[13px] text-foreground/80', col.className)}>
+                  {col.render ? col.render(row) : String(row[col.key] ?? '')}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-white/[0.06]">
-          <p className="text-[11px] text-zinc-500">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+          <p className="text-[11px] text-muted-foreground">
             Showing {page * pageSize + 1}-{Math.min((page + 1) * pageSize, sorted.length)} of {sorted.length}
           </p>
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setPage(Math.max(0, page - 1))}
               disabled={page === 0}
-              className="p-1 rounded text-zinc-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
             >
               <ChevronLeft className="w-4 h-4" />
-            </button>
+            </Button>
             {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
               const pageNum = totalPages <= 5 ? i : Math.max(0, Math.min(page - 2, totalPages - 5)) + i;
               return (
-                <button
+                <Button
                   key={pageNum}
+                  variant={page === pageNum ? 'outline' : 'ghost'}
+                  size="icon-xs"
                   onClick={() => setPage(pageNum)}
                   className={cn(
-                    'w-7 h-7 rounded text-xs font-medium transition-colors',
-                    page === pageNum
-                      ? 'bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/20'
-                      : 'text-zinc-500 hover:text-white hover:bg-white/[0.05]'
+                    'w-7 h-7 text-xs font-medium',
+                    page === pageNum && 'bg-primary/10 text-primary border-primary/20'
                   )}
                 >
                   {pageNum + 1}
-                </button>
+                </Button>
               );
             })}
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
               disabled={page >= totalPages - 1}
-              className="p-1 rounded text-zinc-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
             >
               <ChevronRight className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
