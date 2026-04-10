@@ -99,7 +99,7 @@ function ServerCard({ system }: { system: SystemInfo }) {
   const { name, ip, role, status, cpu, mem, disk, uptime, services } = system;
 
   return (
-    <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-4 hover:border-white/[0.1] transition-colors group">
+    <div className="bg-card border border-border rounded-2xl p-4 hover:border-white/[0.1] transition-colors group">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
@@ -113,14 +113,14 @@ function ServerCard({ system }: { system: SystemInfo }) {
                   : 'bg-[#EF4444] shadow-[0_0_6px_#EF4444]'
               )}
             />
-            <h3 className="font-mono text-[13px] font-semibold text-white tracking-tight">
+            <h3 className="font-mono text-[13px] font-semibold text-foreground tracking-tight">
               {name}
             </h3>
-            <span className="text-[10px] font-mono text-zinc-600">
+            <span className="text-[10px] font-mono text-muted-foreground/60">
               {ip}
             </span>
           </div>
-          <span className="text-[10px] text-zinc-600">{role}</span>
+          <span className="text-[10px] text-muted-foreground/60">{role}</span>
         </div>
 
         {/* LED Meter Bars */}
@@ -128,8 +128,8 @@ function ServerCard({ system }: { system: SystemInfo }) {
           {/* CPU */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] text-zinc-500 font-medium">CPU</span>
-              <span className="text-[13px] font-bold font-mono text-white tabular-nums">
+              <span className="text-[10px] text-muted-foreground font-medium">CPU</span>
+              <span className="text-[13px] font-bold font-mono text-foreground tabular-nums">
                 {cpu}%
               </span>
             </div>
@@ -138,8 +138,8 @@ function ServerCard({ system }: { system: SystemInfo }) {
           {/* MEM */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] text-zinc-500 font-medium">MEM</span>
-              <span className="text-[13px] font-bold font-mono text-white tabular-nums">
+              <span className="text-[10px] text-muted-foreground font-medium">MEM</span>
+              <span className="text-[13px] font-bold font-mono text-foreground tabular-nums">
                 {mem}%
               </span>
             </div>
@@ -148,17 +148,17 @@ function ServerCard({ system }: { system: SystemInfo }) {
         </div>
 
         {/* Footer */}
-        <div className="mt-3 pt-2 border-t border-white/[0.04] space-y-2">
+        <div className="mt-3 pt-2 border-t border-border space-y-2">
           <div className="flex items-center justify-between text-[10px]">
             <div className="flex items-center gap-3">
-              <span className="text-zinc-600">Disk: <span className="text-zinc-400 font-mono">{disk}%</span></span>
-              <span className="text-zinc-600">Up: <span className="text-zinc-400 font-mono">{uptime}</span></span>
+              <span className="text-muted-foreground/60">Disk: <span className="text-muted-foreground font-mono">{disk}%</span></span>
+              <span className="text-muted-foreground/60">Up: <span className="text-muted-foreground font-mono">{uptime}</span></span>
             </div>
-            <span className="text-zinc-600">{services.length} services</span>
+            <span className="text-muted-foreground/60">{services.length} services</span>
           </div>
           <div className="flex flex-wrap gap-1">
             {services.map((svc) => (
-              <span key={svc} className="text-[9px] font-mono text-zinc-500 bg-white/[0.03] px-1.5 py-0.5 rounded">
+              <span key={svc} className="text-[9px] font-mono text-muted-foreground bg-white/[0.03] px-1.5 py-0.5 rounded">
                 {svc}
               </span>
             ))}
@@ -190,7 +190,7 @@ function StatusBadge({ status }: { status: PM2Process['status'] }) {
 
 function NetworkNode({ system }: { system: SystemInfo }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.03] border border-white/[0.06] rounded-xl hover:bg-white/[0.05] transition-colors">
+    <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.03] border border-border rounded-xl hover:bg-white/[0.05] transition-colors">
       <span
         className={cn(
           'w-2.5 h-2.5 rounded-full shrink-0',
@@ -200,10 +200,10 @@ function NetworkNode({ system }: { system: SystemInfo }) {
         )}
       />
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium text-white truncate">{system.name}</p>
-        <p className="text-[11px] font-mono text-zinc-500">{system.ip}</p>
+        <p className="text-[13px] font-medium text-foreground truncate">{system.name}</p>
+        <p className="text-[11px] font-mono text-muted-foreground">{system.ip}</p>
       </div>
-      <span className="text-[11px] text-zinc-600 font-mono shrink-0">
+      <span className="text-[11px] text-muted-foreground/60 font-mono shrink-0">
         {system.status === 'online' ? 'Connected' : 'Offline'}
       </span>
     </div>
@@ -254,7 +254,7 @@ function NodeCard({ node, onRemove, onSelect }: { node: NodeInfo; onRemove: (id:
 
   return (
     <div
-      className="bg-[#18181B] border border-white/[0.06] rounded-xl p-4 hover:border-white/[0.1] transition-colors cursor-pointer group relative"
+      className="bg-card border border-border rounded-xl p-4 hover:border-white/[0.1] transition-colors cursor-pointer group relative"
       onClick={() => onSelect(node)}
       role="button"
       tabIndex={0}
@@ -263,7 +263,7 @@ function NodeCard({ node, onRemove, onSelect }: { node: NodeInfo; onRemove: (id:
     >
       <button
         onClick={(e) => { e.stopPropagation(); onRemove(node.id); }}
-        className="absolute top-2 right-2 p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
+        className="absolute top-2 right-2 p-1.5 rounded-lg text-muted-foreground/60 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
         aria-label={`Remove node ${node.hostname}`}
       >
         <Trash2 className="w-3.5 h-3.5" />
@@ -280,23 +280,23 @@ function NodeCard({ node, onRemove, onSelect }: { node: NodeInfo; onRemove: (id:
               : 'bg-[#EF4444] shadow-[0_0_6px_#EF4444]'
           )}
         />
-        <h4 className="text-[13px] font-semibold text-white truncate flex-1">{node.hostname}</h4>
+        <h4 className="text-[13px] font-semibold text-foreground truncate flex-1">{node.hostname}</h4>
         <NodeTypeBadge type={node.node_type} />
       </div>
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-[11px]">
-          <span className="text-zinc-500">OS</span>
-          <span className="text-zinc-400 font-mono">{getOsLabel(node.os_info)}</span>
+          <span className="text-muted-foreground">OS</span>
+          <span className="text-muted-foreground font-mono">{getOsLabel(node.os_info)}</span>
         </div>
         {node.ip_address && (
           <div className="flex items-center justify-between text-[11px]">
-            <span className="text-zinc-500">IP</span>
-            <span className="text-zinc-400 font-mono">{node.ip_address}</span>
+            <span className="text-muted-foreground">IP</span>
+            <span className="text-muted-foreground font-mono">{node.ip_address}</span>
           </div>
         )}
         <div className="flex items-center justify-between text-[11px]">
-          <span className="text-zinc-500">Status</span>
+          <span className="text-muted-foreground">Status</span>
           <span className={cn(
             'font-medium capitalize',
             isOnline ? 'text-[#22C55E]' : isStale ? 'text-[#F59E0B]' : 'text-[#EF4444]'
@@ -305,18 +305,18 @@ function NodeCard({ node, onRemove, onSelect }: { node: NodeInfo; onRemove: (id:
           </span>
         </div>
         <div className="flex items-center justify-between text-[11px]">
-          <span className="text-zinc-500">Heartbeat</span>
-          <span className="text-zinc-400 font-mono">{formatHeartbeat(node.last_heartbeat)}</span>
+          <span className="text-muted-foreground">Heartbeat</span>
+          <span className="text-muted-foreground font-mono">{formatHeartbeat(node.last_heartbeat)}</span>
         </div>
       </div>
 
       {/* LED Meter Bars for CPU & MEM */}
       {hasMetrics && (
-        <div className="mt-3 pt-2 border-t border-white/[0.04] grid grid-cols-2 gap-3">
+        <div className="mt-3 pt-2 border-t border-border grid grid-cols-2 gap-3">
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] text-zinc-500 font-medium">CPU</span>
-              <span className="text-[12px] font-bold font-mono text-white tabular-nums">
+              <span className="text-[10px] text-muted-foreground font-medium">CPU</span>
+              <span className="text-[12px] font-bold font-mono text-foreground tabular-nums">
                 {Math.round(node.cpu)}%
               </span>
             </div>
@@ -324,8 +324,8 @@ function NodeCard({ node, onRemove, onSelect }: { node: NodeInfo; onRemove: (id:
           </div>
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] text-zinc-500 font-medium">MEM</span>
-              <span className="text-[12px] font-bold font-mono text-white tabular-nums">
+              <span className="text-[10px] text-muted-foreground font-medium">MEM</span>
+              <span className="text-[12px] font-bold font-mono text-foreground tabular-nums">
                 {Math.round(node.mem)}%
               </span>
             </div>
@@ -334,11 +334,11 @@ function NodeCard({ node, onRemove, onSelect }: { node: NodeInfo; onRemove: (id:
         </div>
       )}
 
-      <div className={cn('pt-2 flex items-center justify-between', hasMetrics ? 'mt-2' : 'mt-3 border-t border-white/[0.04]')}>
-        <span className="text-[9px] font-mono text-zinc-600">v{node.agent_version}</span>
+      <div className={cn('pt-2 flex items-center justify-between', hasMetrics ? 'mt-2' : 'mt-3 border-t border-border')}>
+        <span className="text-[9px] font-mono text-muted-foreground/60">v{node.agent_version}</span>
         {node.disk > 0 && (
-          <span className="text-[9px] font-mono text-zinc-600">
-            Disk: <span className="text-zinc-500">{Math.round(node.disk)}%</span>
+          <span className="text-[9px] font-mono text-muted-foreground/60">
+            Disk: <span className="text-muted-foreground">{Math.round(node.disk)}%</span>
           </span>
         )}
       </div>
@@ -356,9 +356,9 @@ function AddNodeCard({ onClick }: { onClick: () => void }) {
       aria-label="Add new node"
     >
       <div className="w-10 h-10 rounded-xl bg-white/[0.04] group-hover:bg-[#22D3EE]/10 flex items-center justify-center transition-colors">
-        <Plus className="w-5 h-5 text-zinc-500 group-hover:text-[#22D3EE] transition-colors" />
+        <Plus className="w-5 h-5 text-muted-foreground group-hover:text-[#22D3EE] transition-colors" />
       </div>
-      <span className="text-[12px] text-zinc-500 group-hover:text-zinc-400 font-medium transition-colors">
+      <span className="text-[12px] text-muted-foreground group-hover:text-muted-foreground font-medium transition-colors">
         Add Node
       </span>
     </button>
@@ -425,7 +425,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
       {step === 'input' && (
         <div className="space-y-6">
           <div className="space-y-4">
-            <p className="text-[13px] text-zinc-400 leading-relaxed">
+            <p className="text-[13px] text-muted-foreground leading-relaxed">
               Follow these steps to connect a new machine to your AEGIS network:
             </p>
 
@@ -434,7 +434,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                 <span className="text-[11px] font-bold text-[#22D3EE]">1</span>
               </div>
               <div>
-                <p className="text-[13px] text-white font-medium mb-2">
+                <p className="text-[13px] text-foreground font-medium mb-2">
                   Download the AEGIS Node app on the target machine
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -442,7 +442,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                     <a
                       key={os}
                       href="#"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-[11px] text-zinc-400 font-medium hover:bg-white/[0.08] hover:text-white transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-border text-[11px] text-muted-foreground font-medium hover:bg-white/[0.08] hover:text-foreground transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" />
                       {os}
@@ -457,11 +457,11 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                 <span className="text-[11px] font-bold text-[#22D3EE]">2</span>
               </div>
               <div>
-                <p className="text-[13px] text-white font-medium">
+                <p className="text-[13px] text-foreground font-medium">
                   Open the Node app -- it will display an enrollment code
                 </p>
-                <p className="text-[11px] text-zinc-500 mt-0.5">
-                  The code looks like: <span className="font-mono text-zinc-400">C6-AB12-XY34</span>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  The code looks like: <span className="font-mono text-muted-foreground">C6-AB12-XY34</span>
                 </p>
               </div>
             </div>
@@ -471,10 +471,10 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                 <span className="text-[11px] font-bold text-[#22D3EE]">3</span>
               </div>
               <div>
-                <p className="text-[13px] text-white font-medium mb-2">
+                <p className="text-[13px] text-foreground font-medium mb-2">
                   Select node type
                 </p>
-                <div className="flex rounded-xl bg-white/[0.04] border border-white/[0.06] p-1 mb-4">
+                <div className="flex rounded-xl bg-white/[0.04] border border-border p-1 mb-4">
                   {([['server', 'Server', 'Full monitoring: CPU, MEM, Disk, processes, services'] as const, ['workspace', 'Workspace', 'Light monitoring: CPU, MEM, basic info'] as const]).map(([value, label, desc]) => (
                     <button
                       key={value}
@@ -483,14 +483,14 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                         'flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-all',
                         nodeType === value
                           ? 'bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/20'
-                          : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+                          : 'text-muted-foreground hover:text-foreground/80 border border-transparent'
                       )}
                       type="button"
                     >
                       {value === 'server' ? <Server className="w-4 h-4 shrink-0" /> : <Laptop className="w-4 h-4 shrink-0" />}
                       <div className="text-left">
                         <span className="block">{label}</span>
-                        <span className="block text-[9px] text-zinc-600 font-normal">{desc}</span>
+                        <span className="block text-[9px] text-muted-foreground/60 font-normal">{desc}</span>
                       </div>
                     </button>
                   ))}
@@ -503,7 +503,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                 <span className="text-[11px] font-bold text-[#22D3EE]">4</span>
               </div>
               <div>
-                <p className="text-[13px] text-white font-medium mb-3">
+                <p className="text-[13px] text-foreground font-medium mb-3">
                   Paste the enrollment code below
                 </p>
                 <div className="flex gap-2">
@@ -513,7 +513,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                     onChange={(e) => setCode(formatCodeInput(e.target.value))}
                     placeholder="C6-____-____"
                     maxLength={12}
-                    className="flex-1 px-4 py-2.5 rounded-xl c6-input text-[15px] font-mono tracking-wider text-center placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/40"
+                    className="flex-1 px-4 py-2.5 rounded-xl c6-input text-[15px] font-mono tracking-wider text-center placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/40"
                     aria-label="Enrollment code"
                     onKeyDown={(e) => { if (e.key === 'Enter') handleEnroll(); }}
                     autoFocus
@@ -525,7 +525,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                       'px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-colors',
                       code.length >= 12
                         ? 'bg-[#22D3EE] text-black hover:bg-[#22D3EE]/90'
-                        : 'bg-white/[0.06] text-zinc-600 cursor-not-allowed'
+                        : 'bg-white/[0.06] text-muted-foreground/60 cursor-not-allowed'
                     )}
                   >
                     Enroll
@@ -534,7 +534,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
               </div>
             </div>
           </div>
-          <p className="text-[11px] text-zinc-600 text-center">
+          <p className="text-[11px] text-muted-foreground/60 text-center">
             The node will automatically connect and start monitoring after enrollment.
             Codes expire after 15 minutes.
           </p>
@@ -544,7 +544,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
       {step === 'loading' && (
         <div className="flex flex-col items-center justify-center py-12">
           <Loader2 className="w-8 h-8 text-[#22D3EE] animate-spin mb-4" />
-          <p className="text-[13px] text-zinc-400">Enrolling node...</p>
+          <p className="text-[13px] text-muted-foreground">Enrolling node...</p>
         </div>
       )}
 
@@ -554,12 +554,12 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
             <CheckCircle className="w-6 h-6 text-[#22C55E]" />
           </div>
           <div className="text-center">
-            <p className="text-[15px] font-semibold text-white mb-1">Node Enrolled Successfully</p>
-            <p className="text-[13px] text-zinc-400 max-w-sm">{resultMessage}</p>
+            <p className="text-[15px] font-semibold text-foreground mb-1">Node Enrolled Successfully</p>
+            <p className="text-[13px] text-muted-foreground max-w-sm">{resultMessage}</p>
           </div>
           <button
             onClick={handleClose}
-            className="px-5 py-2 rounded-xl bg-white/[0.06] text-[13px] text-zinc-300 font-medium hover:bg-white/[0.1] transition-colors"
+            className="px-5 py-2 rounded-xl bg-white/[0.06] text-[13px] text-foreground/80 font-medium hover:bg-white/[0.1] transition-colors"
           >
             Done
           </button>
@@ -572,12 +572,12 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
             <AlertCircle className="w-6 h-6 text-[#EF4444]" />
           </div>
           <div className="text-center">
-            <p className="text-[15px] font-semibold text-white mb-1">Enrollment Failed</p>
-            <p className="text-[13px] text-zinc-400 max-w-sm">{errorMessage}</p>
+            <p className="text-[15px] font-semibold text-foreground mb-1">Enrollment Failed</p>
+            <p className="text-[13px] text-muted-foreground max-w-sm">{errorMessage}</p>
           </div>
           <button
             onClick={() => { setStep('input'); setErrorMessage(''); }}
-            className="px-5 py-2 rounded-xl bg-white/[0.06] text-[13px] text-zinc-300 font-medium hover:bg-white/[0.1] transition-colors"
+            className="px-5 py-2 rounded-xl bg-white/[0.06] text-[13px] text-foreground/80 font-medium hover:bg-white/[0.1] transition-colors"
           >
             Try Again
           </button>
@@ -591,9 +591,9 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
 
 function InfoItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.04]">
-      <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider mb-1">{label}</p>
-      <p className={cn('text-[13px] text-white truncate', mono && 'font-mono text-[12px]')}>{value}</p>
+    <div className="p-3 rounded-xl bg-white/[0.03] border border-border">
+      <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-1">{label}</p>
+      <p className={cn('text-[13px] text-foreground truncate', mono && 'font-mono text-[12px]')}>{value}</p>
     </div>
   );
 }
@@ -606,7 +606,7 @@ function NodeDetailModal({ node, open, onClose }: { node: NodeInfo | null; open:
   return (
     <Modal open={open} onClose={onClose} title={`Node: ${node.hostname}`} size="md">
       <div className="space-y-4">
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-border">
           <span
             className={cn(
               'w-3 h-3 rounded-full shrink-0',
@@ -618,7 +618,7 @@ function NodeDetailModal({ node, open, onClose }: { node: NodeInfo | null; open:
             )}
           />
           <div>
-            <p className="text-[14px] font-semibold text-white">{node.hostname}</p>
+            <p className="text-[14px] font-semibold text-foreground">{node.hostname}</p>
             <p className={cn(
               'text-[11px] font-medium capitalize',
               isOnline ? 'text-[#22C55E]' : isStale ? 'text-[#F59E0B]' : 'text-[#EF4444]'
@@ -639,10 +639,10 @@ function NodeDetailModal({ node, open, onClose }: { node: NodeInfo | null; open:
 
         {node.tags.length > 0 && (
           <div>
-            <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider mb-2">Tags</p>
+            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-2">Tags</p>
             <div className="flex flex-wrap gap-1.5">
               {node.tags.map((tag) => (
-                <span key={tag} className="text-[10px] font-mono text-zinc-400 bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 rounded-md">
+                <span key={tag} className="text-[10px] font-mono text-muted-foreground bg-white/[0.04] border border-border px-2 py-0.5 rounded-md">
                   {tag}
                 </span>
               ))}
@@ -660,14 +660,14 @@ function ConfirmRemoveModal({ open, onClose, onConfirm, hostname }: { open: bool
   return (
     <Modal open={open} onClose={onClose} title="Remove Node" size="sm">
       <div className="space-y-4">
-        <p className="text-[13px] text-zinc-400">
-          Are you sure you want to remove <span className="text-white font-semibold">{hostname}</span> from
+        <p className="text-[13px] text-muted-foreground">
+          Are you sure you want to remove <span className="text-foreground font-semibold">{hostname}</span> from
           your network? The node will stop reporting and must be re-enrolled to reconnect.
         </p>
         <div className="flex gap-2 justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-white/[0.06] text-[13px] text-zinc-300 font-medium hover:bg-white/[0.1] transition-colors"
+            className="px-4 py-2 rounded-xl bg-white/[0.06] text-[13px] text-foreground/80 font-medium hover:bg-white/[0.1] transition-colors"
           >
             Cancel
           </button>
@@ -814,7 +814,7 @@ export default function InfraPage() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center space-y-3">
           <div className="w-8 h-8 border-2 border-[#22D3EE]/30 border-t-[#22D3EE] rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-zinc-500">Loading infrastructure metrics...</p>
+          <p className="text-sm text-muted-foreground">Loading infrastructure metrics...</p>
         </div>
       </div>
     );
@@ -827,7 +827,7 @@ export default function InfraPage() {
           <div className="w-10 h-10 rounded-xl bg-[#EF4444]/10 flex items-center justify-center mx-auto">
             <span className="text-[#EF4444] text-lg">!</span>
           </div>
-          <p className="text-sm text-zinc-400">{error}</p>
+          <p className="text-sm text-muted-foreground">{error}</p>
           <button
             onClick={() => { setLoading(true); fetchData(); }}
             className="text-xs text-[#22D3EE] hover:underline"
@@ -844,10 +844,10 @@ export default function InfraPage() {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-[22px] sm:text-[28px] font-bold text-white tracking-tight">
+          <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight">
             Infrastructure
           </h1>
-          <p className="text-sm text-zinc-500 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Real-time system monitoring across all nodes
           </p>
         </div>
@@ -857,7 +857,7 @@ export default function InfraPage() {
           ) : (
             <span className="w-1.5 h-1.5 bg-[#22C55E] rounded-full animate-pulse" />
           )}
-          <span className="text-[11px] text-zinc-500 font-mono tabular-nums">
+          <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
             {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
           </span>
         </div>
@@ -865,51 +865,51 @@ export default function InfraPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-4 flex items-center gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#22C55E]/10 flex items-center justify-center">
             <span className="text-[#22C55E] font-mono font-bold text-sm">{onlineCount}</span>
           </div>
           <div>
-            <p className="text-[11px] text-zinc-500 font-medium uppercase tracking-wider">Systems</p>
-            <p className="text-[15px] font-semibold text-white">{onlineCount}/{systems.length}</p>
+            <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Systems</p>
+            <p className="text-[15px] font-semibold text-foreground">{onlineCount}/{systems.length}</p>
           </div>
         </div>
-        <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-4 flex items-center gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#22D3EE]/10 flex items-center justify-center">
             <Monitor size={18} className="text-[#22D3EE]" />
           </div>
           <div>
-            <p className="text-[11px] text-zinc-500 font-medium uppercase tracking-wider">Nodes</p>
-            <p className="text-[15px] font-semibold text-white">{onlineNodes}/{nodes.length}</p>
+            <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Nodes</p>
+            <p className="text-[15px] font-semibold text-foreground">{onlineNodes}/{nodes.length}</p>
           </div>
         </div>
-        <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-4 flex items-center gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#22D3EE]/10 flex items-center justify-center">
             <Activity01Icon size={18} className="text-[#22D3EE]" />
           </div>
           <div>
-            <p className="text-[11px] text-zinc-500 font-medium uppercase tracking-wider">Avg CPU</p>
-            <p className="text-[15px] font-semibold font-mono text-white tabular-nums">{totalCpu}%</p>
+            <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Avg CPU</p>
+            <p className="text-[15px] font-semibold font-mono text-foreground tabular-nums">{totalCpu}%</p>
           </div>
         </div>
-        <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl p-4 flex items-center gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#D946EF]/10 flex items-center justify-center">
             <span className="text-[#D946EF] font-mono font-bold text-xs">RAM</span>
           </div>
           <div>
-            <p className="text-[11px] text-zinc-500 font-medium uppercase tracking-wider">Avg Memory</p>
-            <p className="text-[15px] font-semibold font-mono text-white tabular-nums">{totalMem}%</p>
+            <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Avg Memory</p>
+            <p className="text-[15px] font-semibold font-mono text-foreground tabular-nums">{totalMem}%</p>
           </div>
         </div>
       </div>
 
       {/* ─── Nodes Section ─────────────────────────────────────────────── */}
-      <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-white/[0.06]">
+      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border">
           <div className="flex items-center gap-2.5">
-            <Monitor size={16} className="text-zinc-500" />
-            <span className="text-[14px] font-semibold text-white">Nodes</span>
-            <span className="text-[11px] text-zinc-600 font-mono">
+            <Monitor size={16} className="text-muted-foreground" />
+            <span className="text-[14px] font-semibold text-foreground">Nodes</span>
+            <span className="text-[11px] text-muted-foreground/60 font-mono">
               {nodes.length} enrolled
             </span>
           </div>
@@ -968,18 +968,18 @@ export default function InfraPage() {
 
       {/* PM2 Processes Section — only show when admin tenant has PM2 data */}
       {hasAdminPm2 && (
-        <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-white/[0.06]">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border">
             <div className="flex items-center gap-2.5">
-              <Activity01Icon size={16} className="text-zinc-500" />
-              <span className="text-[14px] font-semibold text-white">
+              <Activity01Icon size={16} className="text-muted-foreground" />
+              <span className="text-[14px] font-semibold text-foreground">
                 PM2 Processes
               </span>
-              <span className="text-[11px] text-zinc-600 font-mono">Mac Pro</span>
+              <span className="text-[11px] text-muted-foreground/60 font-mono">Mac Pro</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-[#22C55E] rounded-full animate-pulse" />
-              <span className="text-[11px] text-zinc-500 font-medium">
+              <span className="text-[11px] text-muted-foreground font-medium">
                 {allProcesses.filter((p) => p.status === 'online').length} running
               </span>
             </div>
@@ -988,13 +988,13 @@ export default function InfraPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-white/[0.04]">
-                  <th className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest px-4 sm:px-6 py-3">Name</th>
-                  <th className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest px-4 py-3">Status</th>
-                  <th className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest px-4 py-3 hidden sm:table-cell">CPU</th>
-                  <th className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest px-4 py-3 hidden sm:table-cell">Memory</th>
-                  <th className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest px-4 py-3 hidden md:table-cell">Uptime</th>
-                  <th className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest px-4 py-3 hidden md:table-cell">Restarts</th>
+                <tr className="border-b border-border">
+                  <th className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-4 sm:px-6 py-3">Name</th>
+                  <th className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-4 py-3">Status</th>
+                  <th className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-4 py-3 hidden sm:table-cell">CPU</th>
+                  <th className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-4 py-3 hidden sm:table-cell">Memory</th>
+                  <th className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-4 py-3 hidden md:table-cell">Uptime</th>
+                  <th className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-4 py-3 hidden md:table-cell">Restarts</th>
                 </tr>
               </thead>
               <tbody>
@@ -1004,24 +1004,24 @@ export default function InfraPage() {
                     className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
                   >
                     <td className="px-4 sm:px-6 py-3">
-                      <span className="text-[13px] font-mono font-medium text-white">{proc.name}</span>
+                      <span className="text-[13px] font-mono font-medium text-foreground">{proc.name}</span>
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={proc.status} />
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
-                      <span className="text-[13px] font-mono text-zinc-400 tabular-nums">{proc.cpu}%</span>
+                      <span className="text-[13px] font-mono text-muted-foreground tabular-nums">{proc.cpu}%</span>
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
-                      <span className="text-[13px] font-mono text-zinc-400">{proc.mem}</span>
+                      <span className="text-[13px] font-mono text-muted-foreground">{proc.mem}</span>
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
-                      <span className="text-[12px] font-mono text-zinc-500">{proc.uptime}</span>
+                      <span className="text-[12px] font-mono text-muted-foreground">{proc.uptime}</span>
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       <span className={cn(
                         'text-[12px] font-mono tabular-nums',
-                        proc.restarts > 0 ? 'text-[#F59E0B]' : 'text-zinc-600'
+                        proc.restarts > 0 ? 'text-[#F59E0B]' : 'text-muted-foreground/60'
                       )}>
                         {proc.restarts}
                       </span>
@@ -1049,15 +1049,15 @@ export default function InfraPage() {
         });
         if (uniqueNodes.length === 0) return null;
         return (
-          <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden">
-            <div className="px-4 sm:px-6 py-4 border-b border-white/[0.06]">
+          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="px-4 sm:px-6 py-4 border-b border-border">
               <div className="flex items-center gap-2.5">
-                <span className="text-[14px] font-semibold text-white">Network Mesh</span>
-                <span className="text-[11px] text-zinc-600 font-mono">
+                <span className="text-[14px] font-semibold text-foreground">Network Mesh</span>
+                <span className="text-[11px] text-muted-foreground/60 font-mono">
                   {uniqueNodes.filter(n => n.status === 'online').length}/{uniqueNodes.length} online
                 </span>
               </div>
-              <p className="text-[12px] text-zinc-500 mt-0.5">
+              <p className="text-[12px] text-muted-foreground mt-0.5">
                 Connected infrastructure and enrolled nodes
               </p>
             </div>
