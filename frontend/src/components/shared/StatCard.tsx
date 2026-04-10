@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpRight01Icon, ArrowDownLeft01Icon } from 'hugeicons-react';
 import { cn, formatNumber } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type IconComponent = React.ComponentType<any>;
@@ -17,13 +18,13 @@ interface StatCardProps {
 
 const colorConfig = {
   accent: {
-    iconText: 'text-[#22D3EE]',
+    iconText: 'text-primary',
   },
   orange: {
     iconText: 'text-[#F97316]',
   },
   danger: {
-    iconText: 'text-[#EF4444]',
+    iconText: 'text-destructive',
   },
   warning: {
     iconText: 'text-[#F59E0B]',
@@ -54,34 +55,36 @@ export function StatCard({ title, value, trend, icon: Icon, color = 'accent' }: 
   }, [value]);
 
   return (
-    <div className="c6-card p-4 sm:p-5 transition-all duration-150 hover:border-white/[0.08]">
-      {/* Label row */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-label">{title}</span>
-        <Icon className={cn(cfg.iconText, 'opacity-40')} size={15} />
-      </div>
-
-      {/* Value */}
-      <p className="text-[28px] sm:text-[32px] font-semibold text-white tracking-tight leading-none font-mono tabular-nums">
-        {formatNumber(displayValue)}
-      </p>
-
-      {/* Trend */}
-      {trend !== 0 && (
-        <div className="flex items-center gap-1 mt-2.5">
-          {isPositive ? (
-            <ArrowUpRight01Icon size={11} className="text-[#22C55E]" />
-          ) : (
-            <ArrowDownLeft01Icon size={11} className="text-[#EF4444]" />
-          )}
-          <span className={cn(
-            'text-[11px] font-mono tabular-nums',
-            isPositive ? 'text-[#22C55E]/70' : 'text-[#EF4444]/70'
-          )}>
-            {Math.abs(trend)}%
-          </span>
+    <Card className="rounded-xl py-0 gap-0 shadow-none transition-all duration-150 hover:border-border/80">
+      <CardContent className="p-4 sm:p-5">
+        {/* Label row */}
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-label">{title}</span>
+          <Icon className={cn(cfg.iconText, 'opacity-40')} size={15} />
         </div>
-      )}
-    </div>
+
+        {/* Value */}
+        <p className="text-[28px] sm:text-[32px] font-semibold text-foreground tracking-tight leading-none font-mono tabular-nums">
+          {formatNumber(displayValue)}
+        </p>
+
+        {/* Trend */}
+        {trend !== 0 && (
+          <div className="flex items-center gap-1 mt-2.5">
+            {isPositive ? (
+              <ArrowUpRight01Icon size={11} className="text-[#22C55E]" />
+            ) : (
+              <ArrowDownLeft01Icon size={11} className="text-destructive" />
+            )}
+            <span className={cn(
+              'text-[11px] font-mono tabular-nums',
+              isPositive ? 'text-[#22C55E]/70' : 'text-destructive/70'
+            )}>
+              {Math.abs(trend)}%
+            </span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

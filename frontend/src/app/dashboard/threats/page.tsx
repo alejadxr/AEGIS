@@ -110,9 +110,9 @@ export default function ThreatsPage() {
         return (
           <div className="flex items-center gap-2">
             <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center', typeColors[row.ioc_type]?.split(' ')[1] || 'bg-zinc-500/10')}>
-              <Icon className={cn('w-3.5 h-3.5', typeColors[row.ioc_type]?.split(' ')[0] || 'text-zinc-500')} />
+              <Icon className={cn('w-3.5 h-3.5', typeColors[row.ioc_type]?.split(' ')[0] || 'text-muted-foreground')} />
             </div>
-            <span className={cn('text-[10px] font-semibold uppercase tracking-wider', typeColors[row.ioc_type]?.split(' ')[0] || 'text-zinc-500')}>
+            <span className={cn('text-[10px] font-semibold uppercase tracking-wider', typeColors[row.ioc_type]?.split(' ')[0] || 'text-muted-foreground')}>
               {row.ioc_type}
             </span>
           </div>
@@ -121,9 +121,9 @@ export default function ThreatsPage() {
     },
     {
       key: 'ioc_value', label: 'Value', sortable: true,
-      render: (row: IOCRow) => <span className="font-mono text-[13px] text-white">{row.ioc_value}</span>,
+      render: (row: IOCRow) => <span className="font-mono text-[13px] text-foreground">{row.ioc_value}</span>,
     },
-    { key: 'threat_type', label: 'Threat Type', sortable: true, render: (row: IOCRow) => <span className="text-[13px] text-zinc-300">{row.threat_type}</span> },
+    { key: 'threat_type', label: 'Threat Type', sortable: true, render: (row: IOCRow) => <span className="text-[13px] text-foreground/80">{row.threat_type}</span> },
     {
       key: 'confidence', label: 'Confidence', sortable: true,
       render: (row: IOCRow) => {
@@ -139,31 +139,31 @@ export default function ThreatsPage() {
                 style={{ width: `${pct}%` }}
               />
             </div>
-            <span className="text-[11px] font-mono text-zinc-400">{pct}%</span>
+            <span className="text-[11px] font-mono text-muted-foreground">{pct}%</span>
           </div>
         );
       },
     },
     {
       key: 'source', label: 'Source', sortable: true,
-      render: (row: IOCRow) => <span className="capitalize text-zinc-400 text-[13px]">{row.source}</span>,
+      render: (row: IOCRow) => <span className="capitalize text-muted-foreground text-[13px]">{row.source}</span>,
     },
     {
       key: 'tags', label: 'Tags',
       render: (row: IOCRow) => (
         <div className="flex flex-wrap gap-1">
           {(row.tags as string[]).slice(0, 3).map((tag) => (
-            <span key={tag} className="text-[10px] bg-white/[0.05] border border-white/[0.06] px-1.5 py-0.5 rounded-md text-zinc-400">{tag}</span>
+            <span key={tag} className="text-[10px] bg-white/[0.05] border border-border px-1.5 py-0.5 rounded-md text-muted-foreground">{tag}</span>
           ))}
           {(row.tags as string[]).length > 3 && (
-            <span className="text-[10px] text-zinc-600">+{(row.tags as string[]).length - 3}</span>
+            <span className="text-[10px] text-muted-foreground/60">+{(row.tags as string[]).length - 3}</span>
           )}
         </div>
       ),
     },
     {
       key: 'last_seen', label: 'Last Seen', sortable: true,
-      render: (row: IOCRow) => <span className="text-zinc-500 text-[11px] font-mono">{formatDate(row.last_seen as string)}</span>,
+      render: (row: IOCRow) => <span className="text-muted-foreground text-[11px] font-mono">{formatDate(row.last_seen as string)}</span>,
     },
   ];
 
@@ -174,13 +174,13 @@ export default function ThreatsPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-[22px] sm:text-[28px] font-bold text-white tracking-tight">Threat Intelligence</h1>
-          <p className="text-sm text-zinc-500 mt-1 hidden sm:block">IOC management, threat feed, and intelligence sharing</p>
+          <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight">Threat Intelligence</h1>
+          <p className="text-sm text-muted-foreground mt-1 hidden sm:block">IOC management, threat feed, and intelligence sharing</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 bg-white/[0.05] hover:bg-white/[0.08] text-zinc-300 border border-white/[0.06] font-medium px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]"
+            className="flex items-center gap-1.5 bg-white/[0.05] hover:bg-white/[0.08] text-foreground/80 border border-border font-medium px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Add IOC</span>
@@ -195,19 +195,19 @@ export default function ThreatsPage() {
       {/* Search Bar */}
       <div className="flex items-center gap-2 sm:gap-3">
         <div className="relative flex-1">
-          <Search01Icon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" />
+          <Search01Icon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="Search IOCs..."
-            className="w-full bg-[#18181B] border border-white/[0.06] rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
+            className="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
           />
         </div>
         <button
           onClick={handleSearch}
-          className="bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.06] px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px] text-zinc-300 shrink-0"
+          className="bg-white/[0.05] hover:bg-white/[0.08] border border-border px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px] text-foreground/80 shrink-0"
         >
           Search
         </button>
@@ -215,12 +215,12 @@ export default function ThreatsPage() {
 
       {/* Type Filters */}
       <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-        <Filter className="w-4 h-4 text-zinc-600 shrink-0" />
+        <Filter className="w-4 h-4 text-muted-foreground/60 shrink-0" />
         <button
           onClick={() => setTypeFilter('all')}
           className={cn(
             'px-2 sm:px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors',
-            typeFilter === 'all' ? 'bg-[#22D3EE]/10 text-[#22D3EE]' : 'text-zinc-500 hover:text-white'
+            typeFilter === 'all' ? 'bg-[#22D3EE]/10 text-[#22D3EE]' : 'text-muted-foreground hover:text-foreground'
           )}
         >
           All ({iocs.length})
@@ -233,7 +233,7 @@ export default function ThreatsPage() {
               onClick={() => setTypeFilter(t.value)}
               className={cn(
                 'px-2 sm:px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors',
-                typeFilter === t.value ? 'bg-[#22D3EE]/10 text-[#22D3EE]' : 'text-zinc-500 hover:text-white'
+                typeFilter === t.value ? 'bg-[#22D3EE]/10 text-[#22D3EE]' : 'text-muted-foreground hover:text-foreground'
               )}
             >
               {t.label} ({count})
@@ -253,11 +253,11 @@ export default function ThreatsPage() {
       <Modal open={showAddModal} onClose={() => setShowAddModal(false)} title="Add Indicator of Compromise">
         <div className="space-y-4">
           <div>
-            <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider block mb-1.5">IOC Type</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">IOC Type</label>
             <select
               value={newIOC.ioc_type}
               onChange={(e) => setNewIOC({ ...newIOC, ioc_type: e.target.value })}
-              className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#22D3EE]/30"
+              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#22D3EE]/30"
             >
               {IOC_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -265,37 +265,37 @@ export default function ThreatsPage() {
             </select>
           </div>
           <div>
-            <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider block mb-1.5">Value</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">Value</label>
             <input
               type="text"
               value={newIOC.ioc_value}
               onChange={(e) => setNewIOC({ ...newIOC, ioc_value: e.target.value })}
               placeholder="e.g., 192.168.1.1 or evil.com"
-              className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
             />
           </div>
           <div>
-            <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider block mb-1.5">Threat Type</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">Threat Type</label>
             <input
               type="text"
               value={newIOC.threat_type}
               onChange={(e) => setNewIOC({ ...newIOC, threat_type: e.target.value })}
               placeholder="e.g., C2 Infrastructure, Malware, Phishing"
-              className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30"
+              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30"
             />
           </div>
           <div>
-            <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider block mb-1.5">Tags (comma-separated)</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">Tags (comma-separated)</label>
             <input
               type="text"
               value={newIOC.tags}
               onChange={(e) => setNewIOC({ ...newIOC, tags: e.target.value })}
               placeholder="apt, cobalt-strike, windows"
-              className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30"
+              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30"
             />
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-[13px] text-zinc-500 hover:text-white transition-colors rounded-xl">
+            <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-[13px] text-muted-foreground hover:text-foreground transition-colors rounded-xl">
               Cancel
             </button>
             <button onClick={handleAdd} className="flex items-center gap-2 bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold px-4 py-2 rounded-xl transition-colors text-[13px]">
