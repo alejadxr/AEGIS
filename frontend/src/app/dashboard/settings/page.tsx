@@ -114,7 +114,7 @@ function formatAIContent(text: string) {
     if (line.includes('**')) {
       const parts = line.split(/\*\*(.*?)\*\*/g);
       processed = parts.map((part, j) =>
-        j % 2 === 1 ? <strong key={j} className="text-white font-semibold">{part}</strong> : part
+        j % 2 === 1 ? <strong key={j} className="text-[#E5E5E5] font-semibold">{part}</strong> : part
       );
     }
 
@@ -159,20 +159,20 @@ function Toggle({ enabled, onChange, label, description }: {
   return (
     <div className="flex items-center justify-between py-3">
       <div className="flex-1 min-w-0 mr-4">
-        <span className="text-[13px] text-zinc-300 block">{label}</span>
-        {description && <span className="text-[11px] text-zinc-600 block mt-0.5">{description}</span>}
+        <span className="text-[13px] text-[#E5E5E5] block">{label}</span>
+        {description && <span className="text-[11px] text-[#525252] block mt-0.5">{description}</span>}
       </div>
       <button
         onClick={onChange}
         aria-label={`Toggle ${label}`}
         className={cn(
           'relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0',
-          enabled ? 'bg-[#22D3EE]' : 'bg-white/[0.08]'
+          enabled ? 'bg-[#22D3EE]' : 'bg-white/[0.06]'
         )}
       >
         <span
           className={cn(
-            'absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 shadow-sm',
+            'absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200',
             enabled && 'translate-x-5'
           )}
         />
@@ -185,10 +185,10 @@ function StatusDot({ connected, label }: { connected: boolean; label: string }) 
   return (
     <div className="flex items-center gap-2">
       <span className={cn(
-        'w-2 h-2 rounded-full shrink-0',
-        connected ? 'bg-[#22C55E] shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-zinc-600'
+        'w-1.5 h-1.5 rounded-full shrink-0',
+        connected ? 'bg-[#22C55E]' : 'bg-[#525252]'
       )} />
-      <span className={cn('text-[11px]', connected ? 'text-[#22C55E]' : 'text-zinc-500')}>
+      <span className={cn('text-[11px]', connected ? 'text-[#22C55E]' : 'text-[#737373]')}>
         {label}
       </span>
     </div>
@@ -202,11 +202,11 @@ function SectionCard({ children, title, description, headerRight }: {
   headerRight?: React.ReactNode;
 }) {
   return (
-    <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden">
-      <div className="px-4 sm:px-6 py-4 border-b border-white/[0.06] flex items-center justify-between gap-3">
+    <div className="bg-[#0A0A0A] border border-white/[0.04] rounded-xl overflow-hidden">
+      <div className="px-4 sm:px-6 py-4 border-b border-white/[0.04] flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-[14px] font-semibold text-white">{title}</h3>
-          {description && <p className="hidden sm:block text-[12px] text-zinc-500 mt-0.5">{description}</p>}
+          <h3 className="text-[13px] font-medium text-[#E5E5E5] uppercase tracking-wider">{title}</h3>
+          {description && <p className="hidden sm:block text-[11px] text-[#737373] mt-0.5">{description}</p>}
         </div>
         {headerRight}
       </div>
@@ -226,7 +226,7 @@ function IntervalSlider({ label, value, min, max, step, onChange }: {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-[13px] text-zinc-300">{label}</label>
+        <label className="text-[13px] text-[#E5E5E5]">{label}</label>
         <span className="text-[13px] font-mono text-[#22D3EE]">{formatMinutes(value)}</span>
       </div>
       <input
@@ -236,9 +236,9 @@ function IntervalSlider({ label, value, min, max, step, onChange }: {
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-1.5 bg-white/[0.06] rounded-full appearance-none cursor-pointer accent-[#22D3EE] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#22D3EE] [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(34,211,238,0.3)] [&::-webkit-slider-thumb]:cursor-pointer"
+        className="w-full h-1.5 bg-white/[0.04] rounded-full appearance-none cursor-pointer accent-[#22D3EE] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#22D3EE] [&::-webkit-slider-thumb]:cursor-pointer"
       />
-      <div className="flex justify-between text-[10px] text-zinc-600">
+      <div className="flex justify-between text-[10px] text-[#525252]">
         <span>{formatMinutes(min)}</span>
         <span>{formatMinutes(max)}</span>
       </div>
@@ -267,7 +267,6 @@ export default function SettingsPage() {
   const [clientName, setClientName] = useState('');
   const [activeProvider, setActiveProvider] = useState('openrouter');
 
-  // Telegram state
   const [showBotToken, setShowBotToken] = useState(false);
   const [telegramBotToken, setTelegramBotToken] = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
@@ -276,15 +275,12 @@ export default function SettingsPage() {
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Webhook test state
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Model test state
   const [testingModel, setTestingModel] = useState<string | null>(null);
   const [modelTestResult, setModelTestResult] = useState<{ task: string; success: boolean; response: string; latency_ms: number } | null>(null);
 
-  // AI Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -302,7 +298,6 @@ export default function SettingsPage() {
         if (c.status === 'fulfilled') {
           setClient(c.value);
           setClientName(c.value.name);
-          // Load scan intervals from client settings if available
           const settings = c.value.settings as Record<string, unknown> | undefined;
           if (settings?.scan_intervals) {
             const si = settings.scan_intervals as ScanIntervals;
@@ -333,12 +328,11 @@ export default function SettingsPage() {
   }, []);
 
 
-  // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, chatLoading]);
 
-  /* ── Chat handlers ── */
+  /* -- Chat handlers -- */
 
   const sendChatMessage = async (message: string) => {
     if (!message.trim() || chatLoading) return;
@@ -388,7 +382,7 @@ export default function SettingsPage() {
     }
   };
 
-  /* ── Save handlers ── */
+  /* -- Save handlers -- */
 
   const flashSaveSuccess = (msg: string) => {
     setSaveSuccess(msg);
@@ -432,7 +426,6 @@ export default function SettingsPage() {
       setNotifications(updated);
       flashSaveSuccess('Notification settings saved');
     } catch {
-      // Demo mode -- update local state anyway
       setNotifications(updated);
     } finally {
       setSaving(false);
@@ -458,7 +451,6 @@ export default function SettingsPage() {
       setActiveProvider(provider);
       flashSaveSuccess(`Switched to ${provider}`);
     } catch {
-      // Demo mode
       setActiveProvider(provider);
     } finally {
       setSaving(false);
@@ -480,7 +472,7 @@ export default function SettingsPage() {
     }
   };
 
-  /* ── Test handlers ── */
+  /* -- Test handlers -- */
 
   const testTelegram = async () => {
     setTestingTelegram(true);
@@ -528,7 +520,7 @@ export default function SettingsPage() {
     <button
       onClick={onClick}
       disabled={saving}
-      className="flex items-center gap-2 bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold px-3 sm:px-4 py-2 rounded-xl transition-colors text-[13px] disabled:opacity-50 shrink-0"
+      className="flex items-center gap-2 text-[#E5E5E5] border border-white/[0.04] hover:bg-white/[0.04] font-medium px-3 sm:px-4 py-2 rounded-xl transition-colors text-[13px] disabled:opacity-50 shrink-0"
     >
       {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
       <span className="hidden sm:inline">{label || 'Save Changes'}</span>
@@ -540,28 +532,28 @@ export default function SettingsPage() {
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div>
-        <h1 className="text-[22px] sm:text-[28px] font-bold text-white tracking-tight">Settings</h1>
-        <p className="hidden sm:block text-sm text-zinc-500 mt-1">Platform configuration, AI model routing, notifications, and scan management</p>
+        <h1 className="text-[22px] sm:text-[28px] font-bold text-[#E5E5E5] tracking-tight">Settings</h1>
+        <p className="hidden sm:block text-sm text-[#737373] mt-1">Platform configuration, AI model routing, notifications, and scan management</p>
       </div>
 
       {/* Save success toast */}
       {saveSuccess && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-[#22C55E]/15 border border-[#22C55E]/30 text-[#22C55E] text-[13px] font-medium px-4 py-2.5 rounded-xl shadow-lg animate-fade-in">
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-[#22C55E]/10 border border-[#22C55E]/20 text-[#22C55E] text-[13px] font-medium px-4 py-2.5 rounded-xl animate-fade-in">
           <Check className="w-4 h-4" />
           {saveSuccess}
         </div>
       )}
 
       {/* AI Configuration Assistant */}
-      <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden">
-        <div className="px-4 sm:px-6 py-4 border-b border-white/[0.06]">
+      <div className="bg-[#0A0A0A] border border-white/[0.04] rounded-xl overflow-hidden">
+        <div className="px-4 sm:px-6 py-4 border-b border-white/[0.04]">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-[#22D3EE]/10 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-[#22D3EE]/10 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-[#22D3EE]" />
             </div>
             <div>
-              <h3 className="text-[14px] font-semibold text-white">AI Configuration Assistant</h3>
-              <p className="text-[12px] text-zinc-500">Configure AEGIS using natural language</p>
+              <h3 className="text-[13px] font-medium text-[#E5E5E5]">AI Configuration Assistant</h3>
+              <p className="text-[11px] text-[#737373]">Configure AEGIS using natural language</p>
             </div>
           </div>
 
@@ -570,7 +562,7 @@ export default function SettingsPage() {
               <button
                 key={action.label}
                 onClick={() => handleQuickAction(action.prompt)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-[12px] text-zinc-400 hover:text-[#22D3EE] hover:border-[#22D3EE]/20 hover:bg-[#22D3EE]/[0.04] transition-all duration-200"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.04] text-[12px] text-[#737373] hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all duration-200"
               >
                 <action.icon className="w-3 h-3" size={12} />
                 {action.label}
@@ -582,11 +574,11 @@ export default function SettingsPage() {
         <div className="max-h-[300px] sm:max-h-[400px] overflow-y-auto p-4 sm:p-6 space-y-4">
           {chatMessages.length === 0 && (
             <div className="text-center py-10">
-              <div className="w-12 h-12 rounded-2xl bg-white/[0.03] flex items-center justify-center mx-auto mb-3">
-                <Sparkles className="w-5 h-5 text-zinc-600" />
+              <div className="w-12 h-12 rounded-xl bg-white/[0.02] flex items-center justify-center mx-auto mb-3">
+                <Sparkles className="w-5 h-5 text-[#525252]" />
               </div>
-              <p className="text-[13px] text-zinc-600">Ask AEGIS to configure your security platform</p>
-              <p className="text-[11px] text-zinc-700 mt-1">Try clicking a quick action above to get started</p>
+              <p className="text-[13px] text-[#525252]">Ask AEGIS to configure your security platform</p>
+              <p className="text-[11px] text-[#525252] mt-1">Try clicking a quick action above to get started</p>
             </div>
           )}
 
@@ -599,8 +591,8 @@ export default function SettingsPage() {
                 className={cn(
                   'max-w-[80%] text-[13px] leading-relaxed',
                   msg.role === 'user'
-                    ? 'bg-[#22D3EE]/10 text-[#22D3EE] rounded-2xl rounded-br-md px-4 py-2'
-                    : 'bg-white/[0.03] text-zinc-300 rounded-2xl rounded-bl-md px-4 py-3'
+                    ? 'bg-[#22D3EE]/10 text-[#22D3EE] rounded-xl rounded-br-md px-4 py-2'
+                    : 'bg-white/[0.02] text-[#737373] rounded-xl rounded-bl-md px-4 py-3'
                 )}
               >
                 {msg.role === 'assistant' ? (
@@ -610,7 +602,7 @@ export default function SettingsPage() {
                 )}
                 <p className={cn(
                   'text-[10px] mt-1.5',
-                  msg.role === 'user' ? 'text-[#22D3EE]/40' : 'text-zinc-600'
+                  msg.role === 'user' ? 'text-[#22D3EE]/40' : 'text-[#525252]'
                 )}>
                   {msg.timestamp}
                 </p>
@@ -620,8 +612,8 @@ export default function SettingsPage() {
 
           {chatLoading && (
             <div className="flex justify-start">
-              <div className="bg-white/[0.03] rounded-2xl rounded-bl-md px-4 py-3">
-                <div className="flex items-center gap-2 text-[13px] text-zinc-500">
+              <div className="bg-white/[0.02] rounded-xl rounded-bl-md px-4 py-3">
+                <div className="flex items-center gap-2 text-[13px] text-[#737373]">
                   <span>AEGIS is thinking</span>
                   <span className="inline-flex gap-0.5">
                     <span className="w-1 h-1 rounded-full bg-[#22D3EE] animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -636,7 +628,7 @@ export default function SettingsPage() {
           <div ref={chatEndRef} />
         </div>
 
-        <div className="px-4 sm:px-6 py-4 border-t border-white/[0.06]">
+        <div className="px-4 sm:px-6 py-4 border-t border-white/[0.04]">
           <div className="flex items-center gap-3">
             <input
               ref={inputRef}
@@ -645,7 +637,7 @@ export default function SettingsPage() {
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={handleChatKeyDown}
               placeholder="Tell AEGIS what to configure..."
-              className="flex-1 bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
+              className="flex-1 bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder:text-[#525252] focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
             />
             <button
               onClick={() => sendChatMessage(chatInput)}
@@ -658,8 +650,8 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Tab Bar */}
-      <div className="flex items-center gap-2 sm:gap-4 border-b border-white/[0.06] overflow-x-auto">
+      {/* Tab Bar -- underline style */}
+      <div className="flex items-center gap-2 sm:gap-4 border-b border-white/[0.04] overflow-x-auto">
         {[
           { id: 'client' as const, label: 'Client', icon: Settings01Icon },
           { id: 'models' as const, label: 'AI Models', icon: Cpu },
@@ -673,7 +665,7 @@ export default function SettingsPage() {
             onClick={() => setTab(t.id)}
             className={cn(
               'pb-3 text-[13px] font-medium border-b-2 transition-colors -mb-px flex items-center gap-2 whitespace-nowrap',
-              tab === t.id ? 'border-[#22D3EE] text-[#22D3EE]' : 'border-transparent text-zinc-500 hover:text-white'
+              tab === t.id ? 'border-[#22D3EE] text-[#22D3EE]' : 'border-transparent text-[#737373] hover:text-[#E5E5E5]'
             )}
           >
             <t.icon className="w-4 h-4" size={16} />
@@ -682,7 +674,7 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      {/* ═══════════════ Client Tab ═══════════════ */}
+      {/* Client Tab */}
       {tab === 'client' && (
         <SectionCard
           title="Client Information"
@@ -695,41 +687,40 @@ export default function SettingsPage() {
           <div className="p-4 sm:p-6 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Organization Name</label>
+                <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Organization Name</label>
                 <input
                   type="text"
                   value={clientName}
                   onChange={(e) => setClientName(e.target.value)}
-                  className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
+                  className="w-full bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
                 />
               </div>
               <div>
-                <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Slug</label>
+                <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Slug</label>
                 <input
                   type="text"
                   value={client.slug}
                   readOnly
-                  className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white font-mono"
+                  className="w-full bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] font-mono"
                 />
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Client ID</label>
+              <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Client ID</label>
               <input
                 type="text"
                 value={client.id}
                 readOnly
-                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-zinc-400 font-mono"
+                className="w-full bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#737373] font-mono"
               />
             </div>
           </div>
         </SectionCard>
       )}
 
-      {/* ═══════════════ AI Models Tab ═══════════════ */}
+      {/* AI Models Tab */}
       {tab === 'models' && (
         <div className="space-y-4">
-          {/* Active Provider Card */}
           <SectionCard
             title="AI Provider"
             description="Select the AI provider for all model routing"
@@ -752,8 +743,8 @@ export default function SettingsPage() {
                     className={cn(
                       'px-4 py-2 rounded-xl text-[13px] font-medium transition-all border',
                       activeProvider === p
-                        ? 'bg-[#22D3EE]/10 border-[#22D3EE]/30 text-[#22D3EE]'
-                        : 'bg-white/[0.03] border-white/[0.06] text-zinc-400 hover:text-white hover:border-white/[0.12]'
+                        ? 'bg-[#22D3EE]/10 border-[#22D3EE]/20 text-[#22D3EE]'
+                        : 'bg-white/[0.02] border-white/[0.04] text-[#737373] hover:text-[#E5E5E5] hover:border-white/[0.08]'
                     )}
                   >
                     {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -764,7 +755,6 @@ export default function SettingsPage() {
             </div>
           </SectionCard>
 
-          {/* Model Routing Table */}
           <SectionCard
             title="Model Routing"
             description="Assign models per task type. Click the test tube to verify connectivity."
@@ -772,10 +762,10 @@ export default function SettingsPage() {
           >
             <div>
               {models.map((model, idx) => (
-                <div key={model.task_type} className={cn('px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4', idx < models.length - 1 && 'border-b border-white/[0.03]')}>
+                <div key={model.task_type} className={cn('px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4', idx < models.length - 1 && 'border-b border-white/[0.02]')}>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-white capitalize">{model.task_type.replace(/_/g, ' ')}</p>
-                    <p className="text-[12px] text-zinc-500">{model.description}</p>
+                    <p className="text-[13px] font-medium text-[#E5E5E5] capitalize">{model.task_type.replace(/_/g, ' ')}</p>
+                    <p className="text-[11px] text-[#737373]">{model.description}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
@@ -786,13 +776,13 @@ export default function SettingsPage() {
                         updated[idx] = { ...updated[idx], model: e.target.value };
                         setModels(updated);
                       }}
-                      className="w-full sm:w-72 bg-[#09090B] border border-white/[0.06] rounded-xl px-3 py-2 text-white text-[11px] font-mono focus:outline-none focus:border-[#22D3EE]/30"
+                      className="w-full sm:w-72 bg-[#09090B] border border-white/[0.04] rounded-xl px-3 py-2 text-[#E5E5E5] text-[11px] font-mono focus:outline-none focus:border-[#22D3EE]/30"
                     />
                     <button
                       onClick={() => testModel(model.task_type, model.model)}
                       disabled={testingModel === model.task_type}
                       title="Test this model"
-                      className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.06] text-zinc-400 hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-colors disabled:opacity-30 shrink-0"
+                      className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.04] text-[#737373] hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-colors disabled:opacity-30 shrink-0"
                     >
                       {testingModel === model.task_type ? (
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -801,7 +791,6 @@ export default function SettingsPage() {
                       )}
                     </button>
                   </div>
-                  {/* Show test result for this model */}
                   {modelTestResult && modelTestResult.task === model.task_type && (
                     <div className={cn(
                       'w-full mt-2 px-3 py-2 rounded-lg text-[11px] font-mono',
@@ -809,7 +798,7 @@ export default function SettingsPage() {
                         ? 'bg-[#22C55E]/10 border border-[#22C55E]/20 text-[#22C55E]'
                         : 'bg-[#EF4444]/10 border border-[#EF4444]/20 text-[#EF4444]'
                     )}>
-                      {modelTestResult.success && <span className="text-zinc-500">Latency: {modelTestResult.latency_ms}ms -- </span>}
+                      {modelTestResult.success && <span className="text-[#737373]">Latency: {modelTestResult.latency_ms}ms -- </span>}
                       {modelTestResult.response.slice(0, 120)}
                     </div>
                   )}
@@ -820,20 +809,17 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ═══════════════ Notifications Tab ═══════════════ */}
+      {/* Notifications Tab */}
       {tab === 'notifications' && (
         <div className="space-y-4">
-          {/* Telegram Section */}
           <SectionCard
             title="Telegram Notifications"
             description="Receive real-time alerts via Telegram bot"
             headerRight={
-              <div className="flex items-center gap-3">
-                <StatusDot
-                  connected={telegramConnected}
-                  label={telegramConnected ? 'Connected' : 'Not configured'}
-                />
-              </div>
+              <StatusDot
+                connected={telegramConnected}
+                label={telegramConnected ? 'Connected' : 'Not configured'}
+              />
             }
           >
             <div className="p-4 sm:p-6 space-y-4">
@@ -847,18 +833,18 @@ export default function SettingsPage() {
               {telegramEnabled && (
                 <>
                   <div>
-                    <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Bot Token</label>
+                    <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Bot Token</label>
                     <div className="relative">
                       <input
                         type={showBotToken ? 'text' : 'password'}
                         value={telegramBotToken}
                         onChange={(e) => setTelegramBotToken(e.target.value)}
                         placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                        className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono pr-12"
+                        className="w-full bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder:text-[#525252] focus:outline-none focus:border-[#22D3EE]/30 font-mono pr-12"
                       />
                       <button
                         onClick={() => setShowBotToken(!showBotToken)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-white transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#737373] hover:text-[#E5E5E5] transition-colors"
                         aria-label={showBotToken ? 'Hide bot token' : 'Show bot token'}
                       >
                         {showBotToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -867,13 +853,13 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Chat ID</label>
+                    <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Chat ID</label>
                     <input
                       type="text"
                       value={telegramChatId}
                       onChange={(e) => setTelegramChatId(e.target.value)}
                       placeholder="-1001234567890"
-                      className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                      className="w-full bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder:text-[#525252] focus:outline-none focus:border-[#22D3EE]/30 font-mono"
                     />
                   </div>
 
@@ -881,7 +867,7 @@ export default function SettingsPage() {
                     <button
                       onClick={testTelegram}
                       disabled={testingTelegram || !telegramBotToken || !telegramChatId}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.05] border border-white/[0.06] text-[13px] text-zinc-300 hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all disabled:opacity-30"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.04] text-[13px] text-[#737373] hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all disabled:opacity-30"
                     >
                       {testingTelegram ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       Send Test Message
@@ -897,8 +883,8 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-3">
-                    <p className="text-[11px] text-zinc-500 leading-relaxed">
-                      <span className="text-zinc-400 font-medium">Setup:</span> Create a bot via{' '}
+                    <p className="text-[11px] text-[#737373] leading-relaxed">
+                      <span className="text-[#E5E5E5] font-medium">Setup:</span> Create a bot via{' '}
                       <span className="text-[#22D3EE]">@BotFather</span> on Telegram, get the token, then send a message to the bot and use{' '}
                       <span className="text-[#22D3EE] font-mono text-[10px]">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</span>{' '}
                       to find your chat_id.
@@ -909,7 +895,6 @@ export default function SettingsPage() {
             </div>
           </SectionCard>
 
-          {/* Webhook Section */}
           <SectionCard
             title="Webhook Integration"
             description="Send alerts to Discord, Slack, or custom endpoints"
@@ -922,29 +907,29 @@ export default function SettingsPage() {
           >
             <div className="p-4 sm:p-6 space-y-4">
               <div>
-                <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Webhook URL</label>
+                <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Webhook URL</label>
                 <input
                   type="url"
                   value={webhookUrl}
                   onChange={(e) => setWebhookUrl(e.target.value)}
                   placeholder="https://hooks.slack.com/services/..."
-                  className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                  className="w-full bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder:text-[#525252] focus:outline-none focus:border-[#22D3EE]/30 font-mono"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Format</label>
+                <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Format</label>
                 <div className="relative">
                   <select
                     value={webhookFormat}
                     onChange={(e) => setWebhookFormat(e.target.value)}
-                    className="w-full sm:w-64 bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#22D3EE]/30 appearance-none cursor-pointer"
+                    className="w-full sm:w-64 bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] focus:outline-none focus:border-[#22D3EE]/30 appearance-none cursor-pointer"
                   >
                     {WEBHOOK_FORMATS.map((f) => (
                       <option key={f.value} value={f.value}>{f.label}</option>
                     ))}
                   </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373] pointer-events-none" />
                 </div>
               </div>
 
@@ -952,7 +937,7 @@ export default function SettingsPage() {
                 <button
                   onClick={testWebhook}
                   disabled={testingWebhook || !webhookUrl}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.05] border border-white/[0.06] text-[13px] text-zinc-300 hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all disabled:opacity-30"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.04] text-[13px] text-[#737373] hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all disabled:opacity-30"
                 >
                   {testingWebhook ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
                   Send Test
@@ -969,7 +954,6 @@ export default function SettingsPage() {
             </div>
           </SectionCard>
 
-          {/* Email Section */}
           <SectionCard title="Email Notifications">
             <div className="p-4 sm:p-6 space-y-4">
               <Toggle
@@ -979,20 +963,19 @@ export default function SettingsPage() {
               />
               {notifications.email_enabled && (
                 <div>
-                  <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Email Recipients (comma-separated)</label>
+                  <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Email Recipients (comma-separated)</label>
                   <input
                     type="text"
                     value={emailRecipients}
                     onChange={(e) => setEmailRecipients(e.target.value)}
                     placeholder="soc@example.com, admin@example.com"
-                    className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30"
+                    className="w-full bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder:text-[#525252] focus:outline-none focus:border-[#22D3EE]/30"
                   />
                 </div>
               )}
             </div>
           </SectionCard>
 
-          {/* Notification Rules */}
           <SectionCard
             title="Notification Rules"
             description="Choose which events trigger notifications across all channels"
@@ -1005,10 +988,10 @@ export default function SettingsPage() {
                 { key: 'notify_on_actions' as const, label: 'Autonomous actions executed', description: 'When AEGIS takes automated response actions', icon: Zap },
                 { key: 'notify_on_scan_completed' as const, label: 'Scan completed', description: 'When a scheduled or manual scan finishes', icon: Radar01Icon },
               ].map((item, index) => (
-                <div key={item.key} className={cn(index < 3 && 'border-b border-white/[0.03]')}>
+                <div key={item.key} className={cn(index < 3 && 'border-b border-white/[0.02]')}>
                   <div className="flex items-center gap-3 py-3">
-                    <div className="w-7 h-7 rounded-lg bg-white/[0.04] flex items-center justify-center shrink-0">
-                      <item.icon className="w-3.5 h-3.5 text-zinc-400" size={14} />
+                    <div className="w-7 h-7 rounded-lg bg-white/[0.03] flex items-center justify-center shrink-0">
+                      <item.icon className="w-3.5 h-3.5 text-[#737373]" size={14} />
                     </div>
                     <Toggle
                       enabled={!!notifications[item.key]}
@@ -1025,7 +1008,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ═══════════════ Scanning Tab ═══════════════ */}
+      {/* Scanning Tab */}
       {tab === 'scanning' && (
         <div className="space-y-4">
           <SectionCard
@@ -1061,7 +1044,7 @@ export default function SettingsPage() {
                 onChange={(v) => setScanIntervals({ ...scanIntervals, discovery_minutes: v })}
               />
 
-              <div className="border-t border-white/[0.06] pt-4">
+              <div className="border-t border-white/[0.04] pt-4">
                 <Toggle
                   enabled={scanIntervals.adaptive_scanning}
                   onChange={() => setScanIntervals({ ...scanIntervals, adaptive_scanning: !scanIntervals.adaptive_scanning })}
@@ -1072,7 +1055,7 @@ export default function SettingsPage() {
 
               {scanIntervals.adaptive_scanning && (
                 <div className="bg-[#22D3EE]/5 border border-[#22D3EE]/10 rounded-xl p-3">
-                  <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  <p className="text-[11px] text-[#737373] leading-relaxed">
                     <span className="text-[#22D3EE] font-medium">Adaptive mode:</span> Scan intervals will automatically adjust based on threat activity. During active incidents, intervals may decrease to as low as 50% of configured values. During quiet periods, intervals may increase up to 200%.
                   </p>
                 </div>
@@ -1082,7 +1065,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ═══════════════ API Keys Tab ═══════════════ */}
+      {/* API Keys Tab */}
       {tab === 'apikeys' && (
         <SectionCard
           title="API Key Management"
@@ -1090,18 +1073,18 @@ export default function SettingsPage() {
         >
           <div className="p-4 sm:p-6 space-y-4">
             <div>
-              <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-wider block mb-1.5">Current API Key</label>
+              <label className="text-[10px] font-medium text-[#525252] uppercase tracking-wider block mb-1.5">Current API Key</label>
               <div className="flex items-center gap-2">
                 <div className="flex-1 relative">
                   <input
                     type={showApiKey ? 'text' : 'password'}
                     value={client.api_key}
                     readOnly
-                    className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white font-mono pr-12"
+                    className="w-full bg-[#09090B] border border-white/[0.04] rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] font-mono pr-12"
                   />
                   <button
                     onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-white transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#737373] hover:text-[#E5E5E5] transition-colors"
                     aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
                   >
                     {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -1109,7 +1092,7 @@ export default function SettingsPage() {
                 </div>
                 <button
                   onClick={copyApiKey}
-                  className="flex items-center gap-1.5 px-3 py-2.5 bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.06] rounded-xl text-zinc-400 hover:text-white transition-colors text-[13px]"
+                  className="flex items-center gap-1.5 px-3 py-2.5 bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.04] rounded-xl text-[#737373] hover:text-[#E5E5E5] transition-colors text-[13px]"
                 >
                   {copied ? <Check className="w-4 h-4 text-[#22C55E]" /> : <Copy className="w-4 h-4" />}
                   {copied ? 'Copied' : 'Copy'}
@@ -1117,11 +1100,11 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-white/[0.06]">
+            <div className="pt-4 border-t border-white/[0.04]">
               <div className="bg-[#EF4444]/5 border border-[#EF4444]/20 rounded-xl p-4">
                 <h4 className="text-[13px] font-medium text-[#EF4444] mb-1">Danger Zone</h4>
-                <p className="text-[12px] text-zinc-500 mb-3">Regenerating your API key will invalidate the current key and disconnect all active sessions.</p>
-                <button className="text-[11px] font-medium text-[#EF4444] bg-[#EF4444]/10 hover:bg-[#EF4444]/20 px-3 py-2 rounded-xl transition-colors">
+                <p className="text-[11px] text-[#737373] mb-3">Regenerating your API key will invalidate the current key and disconnect all active sessions.</p>
+                <button className="text-[11px] font-medium text-[#EF4444] border border-white/[0.04] hover:bg-[#EF4444]/10 px-3 py-2 rounded-xl transition-colors">
                   Regenerate API Key
                 </button>
               </div>
@@ -1132,11 +1115,10 @@ export default function SettingsPage() {
 
       {tab === 'guide' && (
         <SectionCard title="AEGIS Feature Guide" description="Everything AEGIS can do for you. Click a module to navigate.">
-          {/* Restart Guide Tour button */}
-          <div className="mb-4 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-between">
+          <div className="mb-4 p-4 rounded-xl border border-white/[0.04] bg-white/[0.02] flex items-center justify-between">
             <div>
-              <p className="text-[13px] font-medium text-white">Interactive Feature Tour</p>
-              <p className="text-[11px] text-zinc-500 mt-0.5">Walk through all AEGIS modules step by step</p>
+              <p className="text-[13px] font-medium text-[#E5E5E5]">Interactive Feature Tour</p>
+              <p className="text-[11px] text-[#737373] mt-0.5">Walk through all AEGIS modules step by step</p>
             </div>
             <button
               onClick={() => {
@@ -1151,10 +1133,10 @@ export default function SettingsPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {[
-              { icon: Activity, name: 'Dashboard', desc: 'Real-time SOC view with live attack feed, threat map, events/sec, top attackers, log stream, node heartbeats — all WebSocket-powered.', href: '/dashboard', color: '#22D3EE', free: true },
+              { icon: Activity, name: 'Dashboard', desc: 'Real-time SOC view with live attack feed, threat map, events/sec, top attackers, log stream, node heartbeats \u2014 all WebSocket-powered.', href: '/dashboard', color: '#22D3EE', free: true },
               { icon: Globe, name: 'Surface (ASM)', desc: 'Attack surface management. AI-powered asset discovery via nmap, vulnerability scanning with Nuclei, SBOM analysis, risk scoring, and scheduled scans.', href: '/dashboard/surface', color: '#34D399', free: true },
-              { icon: Zap, name: 'Response (SOAR)', desc: 'Autonomous incident response. 18μs fast path, 10 playbooks, AI triage with MITRE ATT&CK mapping. All actions auto-approved by default — override per guardrail.', href: '/dashboard/response', color: '#F87171', free: true },
-              { icon: Bug, name: 'Phantom (Deception)', desc: 'SSH + HTTP honeypots with breadcrumb traps. Attacker steals fake credentials → tries on real API → CRITICAL alert + auto-block.', href: '/dashboard/phantom', color: '#F97316', free: true },
+              { icon: Zap, name: 'Response (SOAR)', desc: 'Autonomous incident response. 18\u03BCs fast path, 10 playbooks, AI triage with MITRE ATT&CK mapping. All actions auto-approved by default \u2014 override per guardrail.', href: '/dashboard/response', color: '#F87171', free: true },
+              { icon: Bug, name: 'Phantom (Deception)', desc: 'SSH + HTTP honeypots with breadcrumb traps. Attacker steals fake credentials \u2192 tries on real API \u2192 CRITICAL alert + auto-block.', href: '/dashboard/phantom', color: '#F97316', free: true },
               { icon: Shield, name: 'Threats (TIP)', desc: '5 threat feeds, STIX 2.1 export, Intel Cloud hub for sharing IOCs across AEGIS instances. Campaign tracking detects coordinated multi-phase attacks.', href: '/dashboard/threats', color: '#FBBF24', free: true },
               { icon: Fingerprint, name: 'EDR/XDR Core', desc: 'Endpoint detection and response. ETW (Windows) + eBPF (Linux) telemetry, process tree reconstruction, 6 MITRE attack chain detection rules.', href: '/dashboard/edr', color: '#A78BFA', free: true },
               { icon: Flame, name: 'Ransomware Protection', desc: 'Canary files + entropy detection + process kill in <500ms. Auto-rollback via VSS (Windows) or Btrfs/LVM snapshots (Linux).', href: '/dashboard/response', color: '#EF4444', free: true },
@@ -1167,22 +1149,22 @@ export default function SettingsPage() {
               <button
                 key={m.name}
                 onClick={() => window.location.href = m.href}
-                className="flex items-start gap-3 p-4 rounded-xl border border-white/[0.06] hover:border-white/[0.12] bg-white/[0.02] hover:bg-white/[0.04] transition-all text-left group"
+                className="flex items-start gap-3 p-4 rounded-xl border border-white/[0.04] hover:border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.03] transition-all text-left group"
               >
                 <div
                   className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: `${m.color}15`, border: `1px solid ${m.color}30` }}
+                  style={{ background: `${m.color}10`, border: `1px solid ${m.color}20` }}
                 >
                   <m.icon className="w-4 h-4" style={{ color: m.color }} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[13px] font-medium text-white group-hover:text-[#22D3EE] transition-colors">{m.name}</span>
+                    <span className="text-[13px] font-medium text-[#E5E5E5] group-hover:text-[#22D3EE] transition-colors">{m.name}</span>
                     {!m.free && <span className="text-[9px] font-bold text-[#F97316] bg-[#F97316]/10 px-1.5 py-0.5 rounded">ENTERPRISE</span>}
                   </div>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed">{m.desc}</p>
+                  <p className="text-[11px] text-[#737373] leading-relaxed">{m.desc}</p>
                 </div>
-                <ExternalLink className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-400 shrink-0 mt-1 transition-colors" />
+                <ExternalLink className="w-3.5 h-3.5 text-[#525252] group-hover:text-[#737373] shrink-0 mt-1 transition-colors" />
               </button>
             ))}
           </div>
