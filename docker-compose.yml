@@ -104,6 +104,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: aegis-api
+    # Share host PID namespace so the EDR host monitor (psutil) can see
+    # all processes on the host, not just container processes.
+    pid: "host"
     ports:
       # API accessible on host port 8000
       - "${AEGIS_API_PORT:-8000}:8000"
