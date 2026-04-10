@@ -25,7 +25,6 @@ export default function DashboardLayout({
       router.push('/');
     } else {
       setReady(true);
-      // Show guide on first login
       if (!localStorage.getItem('aegis_guide_seen')) {
         setShowGuide(true);
       }
@@ -52,7 +51,7 @@ export default function DashboardLayout({
   if (!ready) {
     return (
       <div className="min-h-screen c6-page flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-white/10 border-t-[#22D3EE] rounded-full animate-spin" />
+        <div className="w-4 h-4 border border-white/[0.06] border-t-[#22D3EE] rounded-full animate-spin" />
       </div>
     );
   }
@@ -66,15 +65,13 @@ export default function DashboardLayout({
       />
       <div
         className={cn(
-          'flex flex-col min-h-screen transition-all duration-300',
-          // Mobile: no left padding (sidebar is overlay)
+          'flex flex-col min-h-screen transition-all duration-200',
           'pl-0',
-          // Desktop: shift content based on sidebar collapsed state
-          collapsed ? 'md:pl-[68px]' : 'md:pl-[240px]'
+          collapsed ? 'md:pl-[56px]' : 'md:pl-[220px]'
         )}
       >
         <Header onMobileMenuToggle={toggleMobile} />
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
+        <main className="flex-1 p-4 md:p-5 overflow-auto">
           {children}
         </main>
       </div>

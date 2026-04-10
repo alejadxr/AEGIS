@@ -17,23 +17,18 @@ interface StatCardProps {
 
 const colorConfig = {
   accent: {
-    iconBg: 'bg-[#22D3EE]/10',
     iconText: 'text-[#22D3EE]',
   },
   orange: {
-    iconBg: 'bg-[#F97316]/10',
     iconText: 'text-[#F97316]',
   },
   danger: {
-    iconBg: 'bg-[#EF4444]/10',
     iconText: 'text-[#EF4444]',
   },
   warning: {
-    iconBg: 'bg-[#F59E0B]/10',
     iconText: 'text-[#F59E0B]',
   },
   success: {
-    iconBg: 'bg-[#22C55E]/10',
     iconText: 'text-[#22C55E]',
   },
 };
@@ -43,10 +38,9 @@ export function StatCard({ title, value, trend, icon: Icon, color = 'accent' }: 
   const isPositive = trend >= 0;
   const [displayValue, setDisplayValue] = useState(0);
 
-  // Animated counter
   useEffect(() => {
-    const duration = 800;
-    const steps = 30;
+    const duration = 600;
+    const steps = 24;
     const increment = value / steps;
     let current = 0;
     let step = 0;
@@ -60,30 +54,34 @@ export function StatCard({ title, value, trend, icon: Icon, color = 'accent' }: 
   }, [value]);
 
   return (
-    <div className="group c6-card p-4 sm:p-6 transition-all duration-200 hover:border-white/[0.1] hover:shadow-[var(--c6-shadow)]">
-      {/* Header: Icon + Title */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center', cfg.iconBg)}>
-          <Icon className={cfg.iconText} size={18} />
-        </div>
-        <span className="text-[13px] font-medium text-zinc-500">{title}</span>
+    <div className="c6-card p-4 sm:p-5 transition-all duration-150 hover:border-white/[0.08]">
+      {/* Label row */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-label">{title}</span>
+        <Icon className={cn(cfg.iconText, 'opacity-40')} size={15} />
       </div>
 
-      {/* Value + Trend */}
-      <div className="flex items-end justify-between">
-        <p className="text-[24px] sm:text-[32px] font-bold text-white tracking-tight leading-none tabular-nums font-mono">
-          {formatNumber(displayValue)}
-        </p>
-        <div className={cn(
-          'flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold',
-          isPositive
-            ? 'bg-[#22C55E]/10 text-[#22C55E]'
-            : 'bg-[#EF4444]/10 text-[#EF4444]'
-        )}>
-          {isPositive ? <ArrowUpRight01Icon size={12} /> : <ArrowDownLeft01Icon size={12} />}
-          {Math.abs(trend)}%
+      {/* Value */}
+      <p className="text-[28px] sm:text-[32px] font-semibold text-white tracking-tight leading-none font-mono tabular-nums">
+        {formatNumber(displayValue)}
+      </p>
+
+      {/* Trend */}
+      {trend !== 0 && (
+        <div className="flex items-center gap-1 mt-2.5">
+          {isPositive ? (
+            <ArrowUpRight01Icon size={11} className="text-[#22C55E]" />
+          ) : (
+            <ArrowDownLeft01Icon size={11} className="text-[#EF4444]" />
+          )}
+          <span className={cn(
+            'text-[11px] font-mono tabular-nums',
+            isPositive ? 'text-[#22C55E]/70' : 'text-[#EF4444]/70'
+          )}>
+            {Math.abs(trend)}%
+          </span>
         </div>
-      </div>
+      )}
     </div>
   );
 }

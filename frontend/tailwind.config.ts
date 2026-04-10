@@ -10,11 +10,11 @@ const config: Config = {
     extend: {
       colors: {
         c6: {
-          bg: '#09090B',
-          surface: '#18181B',
-          elevated: '#27272A',
-          border: 'rgba(255, 255, 255, 0.06)',
-          'border-hover': 'rgba(255, 255, 255, 0.1)',
+          bg: '#050505',
+          surface: '#0A0A0A',
+          elevated: '#111111',
+          border: 'rgba(255, 255, 255, 0.04)',
+          'border-hover': 'rgba(255, 255, 255, 0.08)',
         },
         accent: {
           DEFAULT: '#22D3EE',
@@ -30,13 +30,13 @@ const config: Config = {
         mono: ['Azeret Mono', 'monospace'],
       },
       borderRadius: {
-        'card': '16px',
+        'card': '12px',
       },
       animation: {
-        'fade-in': 'fade-in 0.3s ease forwards',
-        'fade-up': 'fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-        'slide-up': 'slide-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-        'slide-right': 'slide-right 0.4s ease forwards',
+        'fade-in': 'fade-in 0.15s ease-out forwards',
+        'fade-up': 'fade-up 0.3s ease-out forwards',
+        'slide-up': 'slide-up 0.3s ease-out forwards',
+        'slide-right': 'slide-right 0.2s ease-out forwards',
         'pulse-subtle': 'pulse-subtle 2s ease-in-out infinite',
       },
       keyframes: {
@@ -45,20 +45,20 @@ const config: Config = {
           '100%': { opacity: '1' },
         },
         'fade-up': {
-          '0%': { opacity: '0', transform: 'translateY(12px)' },
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         'slide-up': {
-          '0%': { opacity: '0', transform: 'translateY(20px)' },
+          '0%': { opacity: '0', transform: 'translateY(12px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         'slide-right': {
-          '0%': { opacity: '0', transform: 'translateX(-16px)' },
+          '0%': { opacity: '0', transform: 'translateX(-8px)' },
           '100%': { opacity: '1', transform: 'translateX(0)' },
         },
         'pulse-subtle': {
           '0%, 100%': { opacity: '1' },
-          '50%': { opacity: '0.5' },
+          '50%': { opacity: '0.4' },
         },
       },
       backgroundImage: {

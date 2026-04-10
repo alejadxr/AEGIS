@@ -166,24 +166,24 @@ export default function FirewallPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-[22px] sm:text-[28px] font-bold text-white tracking-tight">
+          <h1 className="text-[22px] sm:text-[28px] font-bold text-[#E5E5E5] tracking-tight">
             Configurable Firewall
           </h1>
-          <p className="text-sm text-zinc-500 mt-1 hidden sm:block">
-            Rule engine with YAML DSL — block, allow, alert or quarantine based on live traffic
+          <p className="text-sm text-[#737373] mt-1 hidden sm:block">
+            Rule engine with YAML DSL \u2014 block, allow, alert or quarantine based on live traffic
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setTemplatesOpen(true)}
-            className="flex items-center gap-1.5 bg-white/[0.05] hover:bg-white/[0.08] text-zinc-300 border border-white/[0.06] font-medium px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]"
+            className="flex items-center gap-1.5 bg-white/[0.04] hover:bg-white/[0.06] text-[#737373] border border-white/[0.04] font-medium px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]"
           >
             <FileText className="w-4 h-4" />
             <span className="hidden sm:inline">Templates</span>
           </button>
           <button
             onClick={handleCreate}
-            className="flex items-center gap-1.5 bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]"
+            className="flex items-center gap-1.5 bg-white/[0.05] hover:bg-white/[0.08] text-[#E5E5E5] border border-white/[0.04] font-medium px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">New rule</span>
@@ -192,8 +192,8 @@ export default function FirewallPage() {
       </div>
 
       {isDemo && (
-        <div className="bg-[#F97316]/[0.06] border border-[#F97316]/30 text-[#F97316] rounded-xl px-4 py-3 text-[13px]">
-          Running in demo mode — the backend did not respond, so a sample rule is shown. Rules you create will not persist until the API is reachable.
+        <div className="bg-[#F97316]/[0.06] border border-[#F97316]/20 text-[#F97316] rounded-xl px-4 py-3 text-[13px]">
+          Running in demo mode \u2014 the backend did not respond, so a sample rule is shown. Rules you create will not persist until the API is reachable.
         </div>
       )}
 
@@ -206,8 +206,8 @@ export default function FirewallPage() {
       </div>
 
       {/* Rules list */}
-      <div className="c6-card overflow-hidden">
-        <div className="hidden md:grid grid-cols-[1fr_80px_80px_80px_160px_140px] gap-3 px-4 py-3 border-b border-white/[0.06] text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+      <div className="bg-[#0A0A0A] border border-white/[0.04] rounded-xl overflow-hidden">
+        <div className="hidden md:grid grid-cols-[1fr_80px_80px_80px_160px_140px] gap-3 px-4 py-3 border-b border-white/[0.04] text-[10px] font-medium text-[#737373] uppercase tracking-wider">
           <div>Name</div>
           <div className="text-center">Enabled</div>
           <div className="text-center">Priority</div>
@@ -217,7 +217,7 @@ export default function FirewallPage() {
         </div>
 
         {sorted.length === 0 && (
-          <div className="px-4 py-10 text-center text-[13px] text-zinc-500">
+          <div className="px-4 py-10 text-center text-[13px] text-[#737373]">
             No firewall rules yet. Start from a template or create one from scratch.
           </div>
         )}
@@ -225,19 +225,19 @@ export default function FirewallPage() {
         {sorted.map((rule) => (
           <div
             key={rule.id}
-            className="grid grid-cols-1 md:grid-cols-[1fr_80px_80px_80px_160px_140px] gap-3 px-4 py-3 border-b border-white/[0.06] last:border-b-0 hover:bg-white/[0.02] transition-colors items-center"
+            className="grid grid-cols-1 md:grid-cols-[1fr_80px_80px_80px_160px_140px] gap-3 px-4 py-3 border-b border-white/[0.02] last:border-b-0 hover:bg-white/[0.02] transition-colors items-center"
           >
             <div className="min-w-0">
-              <div className="text-[13px] font-medium text-white truncate">{rule.name}</div>
-              <div className="text-[11px] text-zinc-600 font-mono truncate">
-                action: {extractAction(rule.yaml_def) || '—'}
+              <div className="text-[13px] font-medium text-[#E5E5E5] truncate">{rule.name}</div>
+              <div className="text-[11px] text-[#525252] font-mono truncate">
+                action: {extractAction(rule.yaml_def) || '\u2014'}
               </div>
             </div>
             <div className="text-center">
               <button
                 onClick={() => handleToggle(rule)}
                 className={cn(
-                  'w-12 h-6 rounded-full transition-colors relative',
+                  'w-11 h-6 rounded-full transition-colors relative',
                   rule.enabled ? 'bg-[#22C55E]/30' : 'bg-white/[0.06]'
                 )}
                 aria-label={rule.enabled ? 'Disable rule' : 'Enable rule'}
@@ -245,45 +245,45 @@ export default function FirewallPage() {
                 <span
                   className={cn(
                     'absolute top-0.5 w-5 h-5 rounded-full transition-all',
-                    rule.enabled ? 'left-[26px] bg-[#22C55E]' : 'left-0.5 bg-zinc-500'
+                    rule.enabled ? 'left-[22px] bg-[#22C55E]' : 'left-0.5 bg-[#737373]'
                   )}
                 />
               </button>
             </div>
-            <div className="text-center font-mono text-[12px] text-zinc-300">
+            <div className="text-center font-mono text-[12px] text-[#E5E5E5]">
               {rule.priority}
             </div>
-            <div className="text-center font-mono text-[12px] text-zinc-300">
+            <div className="text-center font-mono text-[12px] text-[#E5E5E5]">
               {rule.hits}
             </div>
-            <div className="text-[11px] text-zinc-500 font-mono">
+            <div className="text-[11px] text-[#737373] font-mono">
               {formatDate(rule.updated_at)}
             </div>
             <div className="flex justify-end gap-1">
               <button
                 onClick={() => handleTest(rule)}
-                className="p-2 rounded-lg text-zinc-500 hover:text-[#22D3EE] hover:bg-white/[0.05] transition-colors"
+                className="p-2 rounded-lg text-[#737373] hover:text-[#22D3EE] hover:bg-white/[0.04] transition-colors"
                 title="Test rule"
               >
                 <Beaker className="w-4 h-4" />
               </button>
               <button
                 onClick={() => handleEdit(rule)}
-                className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-white/[0.05] transition-colors"
+                className="p-2 rounded-lg text-[#737373] hover:text-[#E5E5E5] hover:bg-white/[0.04] transition-colors"
                 title="Edit"
               >
                 <Pencil className="w-4 h-4" />
               </button>
               <button
                 onClick={() => handleToggle(rule)}
-                className="p-2 rounded-lg text-zinc-500 hover:text-[#F97316] hover:bg-white/[0.05] transition-colors"
+                className="p-2 rounded-lg text-[#737373] hover:text-[#F97316] hover:bg-white/[0.04] transition-colors"
                 title={rule.enabled ? 'Disable' : 'Enable'}
               >
                 <Power className="w-4 h-4" />
               </button>
               <button
                 onClick={() => handleDelete(rule)}
-                className="p-2 rounded-lg text-zinc-500 hover:text-[#EF4444] hover:bg-white/[0.05] transition-colors"
+                className="p-2 rounded-lg text-[#737373] hover:text-[#EF4444] hover:bg-white/[0.04] transition-colors"
                 title="Delete"
               >
                 <Trash2 className="w-4 h-4" />
@@ -347,17 +347,17 @@ export default function FirewallPage() {
       >
         <div className="space-y-3">
           {templates.length === 0 && (
-            <p className="text-[13px] text-zinc-500">No templates available.</p>
+            <p className="text-[13px] text-[#737373]">No templates available.</p>
           )}
           {templates.map((tpl) => (
             <div
               key={tpl.id}
-              className="bg-[#09090B] border border-white/[0.06] rounded-xl p-4 hover:border-[#22D3EE]/30 transition-colors"
+              className="bg-[#09090B] border border-white/[0.04] rounded-xl p-4 hover:border-[#22D3EE]/20 transition-colors"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="text-[13px] font-semibold text-white">{tpl.name}</h3>
-                  <p className="text-[11px] text-zinc-500 mt-1">{tpl.description}</p>
+                  <h3 className="text-[13px] font-medium text-[#E5E5E5]">{tpl.name}</h3>
+                  <p className="text-[11px] text-[#737373] mt-1">{tpl.description}</p>
                 </div>
                 <button
                   onClick={() => handleCloneTemplate(tpl)}
@@ -366,7 +366,7 @@ export default function FirewallPage() {
                   Use
                 </button>
               </div>
-              <pre className="mt-3 bg-black/40 border border-white/[0.04] rounded-lg p-3 text-[11px] text-zinc-400 font-mono overflow-x-auto">
+              <pre className="mt-3 bg-black/40 border border-white/[0.04] rounded-lg p-3 text-[11px] text-[#737373] font-mono overflow-x-auto">
                 {tpl.yaml_def}
               </pre>
             </div>
@@ -380,15 +380,15 @@ export default function FirewallPage() {
 function StatTile({
   label,
   value,
-  accent = '#E4E4E7',
+  accent = '#E5E5E5',
 }: {
   label: string;
   value: number;
   accent?: string;
 }) {
   return (
-    <div className="c6-card px-4 py-4">
-      <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+    <div className="bg-[#0A0A0A] border border-white/[0.04] rounded-xl px-4 py-4">
+      <div className="text-[10px] font-medium text-[#737373] uppercase tracking-wider">
         {label}
       </div>
       <div

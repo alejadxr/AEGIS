@@ -101,39 +101,38 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
 
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 h-screen flex flex-col transition-all duration-300',
-          'bg-[rgb(var(--c6-surface-rgb)/1)] border-r border-white/[0.06]',
-          // Desktop: collapsed width
-          collapsed ? 'w-[68px]' : 'w-[240px]',
-          // Mobile: hidden by default, slide in as overlay
-          'max-md:-translate-x-full max-md:w-[240px]',
+          'fixed left-0 top-0 z-40 h-screen flex flex-col transition-all duration-200',
+          'bg-[var(--c6-surface)] border-r border-white/[0.04]',
+          collapsed ? 'w-[56px]' : 'w-[220px]',
+          'max-md:-translate-x-full max-md:w-[220px]',
           mobileOpen && 'max-md:translate-x-0'
         )}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-5 h-16 shrink-0">
-          <div className="w-8 h-8 rounded-xl bg-[#18181B] border border-white/[0.06] flex items-center justify-center shrink-0">
-            <span className="font-mono text-[#22D3EE] font-semibold text-xs tracking-wider">C6</span>
+        <div className={cn(
+          'flex items-center h-14 shrink-0 border-b border-white/[0.04]',
+          collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
+        )}>
+          <div className="w-7 h-7 rounded-lg bg-white/[0.04] flex items-center justify-center shrink-0">
+            <span className="font-mono text-[#22D3EE] font-semibold text-[10px] tracking-wider">A</span>
           </div>
           {!collapsed && (
-            <div className="overflow-hidden">
-              <h1 className="text-white font-semibold text-[15px] tracking-tight leading-none">
-                AEGIS
-              </h1>
-            </div>
+            <span className="text-white/90 font-semibold text-[14px] tracking-tight">
+              AEGIS
+            </span>
           )}
         </div>
 
-        {/* Navigation Sections */}
-        <nav className="flex-1 py-2 px-3 overflow-y-auto space-y-6">
+        {/* Navigation */}
+        <nav className="flex-1 py-3 px-2 overflow-y-auto space-y-5">
           {NAV_SECTIONS.map((section) => (
             <div key={section.label}>
               {!collapsed && (
-                <p className="text-[10px] font-semibold text-zinc-600 tracking-widest uppercase px-3 mb-2">
+                <p className="text-[9px] font-medium text-white/20 tracking-[0.08em] uppercase px-2.5 mb-1.5">
                   {section.label}
                 </p>
               )}
-              <div className="space-y-0.5">
+              <div className="space-y-px">
                 {section.items.map((item) => {
                   const Icon = iconMap[item.icon];
                   const isActive = pathname === item.href ||
@@ -145,20 +144,24 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
                       href={item.href}
                       onClick={onMobileClose}
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150',
+                        'group relative flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] font-normal transition-all duration-150',
                         isActive
-                          ? 'bg-[#22D3EE]/[0.08] text-[#22D3EE]'
-                          : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]'
+                          ? 'text-white/90'
+                          : 'text-white/40 hover:text-white/60 hover:bg-white/[0.02]'
                       )}
                     >
+                      {/* Active indicator — subtle left accent bar */}
+                      {isActive && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-full bg-[#22D3EE]" />
+                      )}
                       {Icon && (
                         <Icon className={cn(
-                          'shrink-0',
-                          isActive ? 'text-[#22D3EE]' : 'text-zinc-600'
-                        )} size={18} />
+                          'shrink-0 transition-colors duration-150',
+                          isActive ? 'text-[#22D3EE]' : 'text-white/25 group-hover:text-white/40'
+                        )} size={16} />
                       )}
                       {!collapsed && (
-                        <span>{item.label}</span>
+                        <span className={cn(isActive && 'font-medium')}>{item.label}</span>
                       )}
                     </Link>
                   );
@@ -168,23 +171,22 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
           ))}
         </nav>
 
-        {/* Footer */}
+        {/* Footer with version */}
         {!collapsed && (
-          <div className="px-5 py-4 border-t border-white/[0.06]">
-            <p className="text-[11px] text-zinc-600 font-medium">AEGIS Defense</p>
-            <p className="text-[10px] text-zinc-700 font-mono">v1.2.0</p>
+          <div className="px-4 py-3 border-t border-white/[0.04]">
+            <p className="text-[10px] text-white/15 font-mono">v2.0.0</p>
           </div>
         )}
 
         {/* Collapse Toggle — desktop only */}
-        <div className="p-2 border-t border-white/[0.06] shrink-0 hidden md:block">
+        <div className="p-1.5 border-t border-white/[0.04] shrink-0 hidden md:block">
           <button
             onClick={handleCollapse}
-            className="w-full flex items-center justify-center py-2 rounded-xl text-zinc-600 hover:text-zinc-400 hover:bg-white/[0.03] transition-colors"
+            className="w-full flex items-center justify-center py-1.5 rounded-lg text-white/20 hover:text-white/40 hover:bg-white/[0.02] transition-all duration-150"
           >
             {collapsed
-              ? <ArrowRight01Icon size={16} className="text-zinc-600" />
-              : <ArrowLeft01Icon size={16} className="text-zinc-600" />
+              ? <ArrowRight01Icon size={14} />
+              : <ArrowLeft01Icon size={14} />
             }
           </button>
         </div>
@@ -193,15 +195,14 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
   );
 }
 
-// Hamburger button to export for mobile use in Header
 export function SidebarToggle({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="p-2 rounded-xl text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-colors md:hidden"
+      className="p-1.5 rounded-lg text-white/40 hover:text-white/60 hover:bg-white/[0.03] transition-all duration-150 md:hidden"
       aria-label="Open navigation"
     >
-      <Menu01Icon size={20} />
+      <Menu01Icon size={18} />
     </button>
   );
 }
