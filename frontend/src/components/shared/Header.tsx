@@ -68,7 +68,6 @@ export function Header({ onMobileMenuToggle }: HeaderProps) {
   const [isDark, setIsDark] = useState(true);
   const notifRef = useRef<HTMLDivElement>(null);
 
-  // Initialize theme from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('aegis-theme') as 'dark' | 'light' | null;
     const system = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
@@ -128,65 +127,63 @@ export function Header({ onMobileMenuToggle }: HeaderProps) {
   }, [showNotifications]);
 
   return (
-    <header className="relative z-50 h-14 bg-[rgb(var(--c6-bg-rgb)/0.85)] backdrop-blur-xl border-b border-white/[0.06] flex items-center justify-between px-4 md:px-6 shrink-0">
+    <header className="relative z-50 h-12 bg-[var(--c6-bg)] border-b border-white/[0.04] flex items-center justify-between px-4 md:px-5 shrink-0">
       {/* Left: Hamburger (mobile) + Search */}
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        {/* Mobile hamburger */}
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
         {onMobileMenuToggle && (
           <SidebarToggle onClick={onMobileMenuToggle} />
         )}
-        {/* Search */}
-        <div className="relative hidden sm:block w-full max-w-[280px] md:max-w-xs">
-          <Search01Icon className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
+        <div className="relative hidden sm:block w-full max-w-[240px]">
+          <Search01Icon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/20" size={14} />
           <input
             type="text"
-            placeholder="Search assets, incidents, IOCs..."
+            placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full c6-input rounded-xl px-4 py-2 pl-10 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
+            className="w-full bg-white/[0.03] border border-white/[0.04] rounded-lg px-3 py-1.5 pl-8 text-[13px] text-white/80 placeholder:text-white/20 focus:outline-none focus:border-white/[0.08] transition-colors duration-150"
           />
         </div>
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         {/* Notifications */}
         <div ref={notifRef} className="relative">
           <button
             onClick={openNotifications}
-            className="relative p-2 rounded-xl text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-colors"
+            className="relative p-1.5 rounded-lg text-white/30 hover:text-white/50 hover:bg-white/[0.03] transition-all duration-150"
           >
-            <Notification03Icon size={18} />
+            <Notification03Icon size={16} />
             {hasUnread && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#EF4444] rounded-full border-2 border-[rgb(var(--c6-bg-rgb)/1)]" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[#EF4444] rounded-full" />
             )}
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 top-full mt-2 w-80 bg-[#18181B] border border-white/[0.06] rounded-2xl shadow-2xl shadow-black/50 z-[70] animate-fade-in overflow-hidden">
-              <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
-                <span className="text-[13px] font-semibold text-white">Recent Incidents</span>
+            <div className="absolute right-0 top-full mt-1.5 w-72 bg-[var(--c6-surface)] border border-white/[0.06] rounded-xl z-[70] animate-fade-in overflow-hidden">
+              <div className="px-3.5 py-2.5 border-b border-white/[0.04] flex items-center justify-between">
+                <span className="text-[12px] font-medium text-white/70">Recent Incidents</span>
                 {incidents.length > 0 && (
-                  <span className="text-[11px] bg-[#EF4444]/10 text-[#EF4444] px-1.5 py-0.5 rounded-md font-medium">{incidents.length}</span>
+                  <span className="text-[10px] bg-[#EF4444]/10 text-[#EF4444] px-1.5 py-0.5 rounded font-mono">{incidents.length}</span>
                 )}
               </div>
 
               {notifLoading ? (
-                <div className="px-4 py-6 text-center text-[12px] text-zinc-600">Loading...</div>
+                <div className="px-3.5 py-5 text-center text-[11px] text-white/30">Loading...</div>
               ) : incidents.length === 0 ? (
-                <div className="px-4 py-6 text-center text-[12px] text-zinc-600">No notifications</div>
+                <div className="px-3.5 py-5 text-center text-[11px] text-white/30">No notifications</div>
               ) : (
                 <div>
                   {incidents.map((inc) => (
                     <div
                       key={inc.id}
-                      className="flex items-start gap-3 px-4 py-3 border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors cursor-pointer"
+                      className="flex items-start gap-2.5 px-3.5 py-2.5 border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors duration-150 cursor-pointer"
                       onClick={() => { setShowNotifications(false); router.push('/dashboard/response'); }}
                     >
-                      <span className={cn('mt-1.5 shrink-0 block w-2 h-2 rounded-full', severityDotColor[inc.severity] || 'bg-zinc-600')} />
+                      <span className={cn('mt-1 shrink-0 block w-1.5 h-1.5 rounded-full', severityDotColor[inc.severity] || 'bg-zinc-600')} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[12px] text-zinc-200 font-medium truncate">{inc.title}</p>
-                        <p className="text-[11px] text-zinc-600 font-mono mt-0.5">{timeAgo(inc.detected_at)}</p>
+                        <p className="text-[11px] text-white/70 font-medium truncate">{inc.title}</p>
+                        <p className="text-[10px] text-white/25 font-mono mt-0.5">{timeAgo(inc.detected_at)}</p>
                       </div>
                     </div>
                   ))}
@@ -199,35 +196,35 @@ export function Header({ onMobileMenuToggle }: HeaderProps) {
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
-          className="p-2 rounded-xl text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-colors"
+          className="p-1.5 rounded-lg text-white/30 hover:text-white/50 hover:bg-white/[0.03] transition-all duration-150"
           title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {isDark ? <Sun01Icon size={18} /> : <Moon02Icon size={18} />}
+          {isDark ? <Sun01Icon size={16} /> : <Moon02Icon size={16} />}
         </button>
 
         {/* Divider */}
-        <div className="w-px h-6 bg-white/[0.06] mx-1" />
+        <div className="w-px h-5 bg-white/[0.04] mx-1" />
 
         {/* User */}
         <div className="relative">
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] transition-colors"
+            className="flex items-center gap-2 px-1.5 py-1 rounded-lg text-white/40 hover:text-white/60 hover:bg-white/[0.03] transition-all duration-150"
           >
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#22D3EE]/20 to-[#F97316]/20 border border-white/[0.06] flex items-center justify-center">
-              <UserIcon size={14} className="text-zinc-400" />
+            <div className="w-6 h-6 rounded-md bg-white/[0.04] border border-white/[0.04] flex items-center justify-center">
+              <UserIcon size={12} className="text-white/30" />
             </div>
-            <span className="text-sm font-medium hidden sm:block">Operator</span>
+            <span className="text-[12px] font-medium hidden sm:block">Operator</span>
           </button>
           {showUserMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-              <div className="absolute right-0 top-full mt-2 w-48 bg-[#18181B] border border-white/[0.06] rounded-2xl shadow-2xl shadow-black/50 py-1.5 z-[70] animate-fade-in">
+              <div className="absolute right-0 top-full mt-1.5 w-44 bg-[var(--c6-surface)] border border-white/[0.06] rounded-xl py-1 z-[70] animate-fade-in">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-zinc-400 hover:text-[#EF4444] hover:bg-white/[0.03] transition-colors rounded-xl mx-0"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-white/40 hover:text-[#EF4444] hover:bg-white/[0.02] transition-all duration-150"
                 >
-                  <Logout01Icon size={16} />
+                  <Logout01Icon size={14} />
                   Disconnect
                 </button>
               </div>
