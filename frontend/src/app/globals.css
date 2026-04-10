@@ -367,3 +367,50 @@ body {
 /* -- Overlay -- */
 [data-theme="light"] .bg-black\/60 { background-color: rgba(0, 0, 0, 0.4) !important; }
 [data-theme="light"] .bg-black\/70 { background-color: rgba(0, 0, 0, 0.5) !important; }
+
+/* shadcn/ui theme variables (compatible with Tailwind 3 / Next.js 14) */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 187 72% 55%;
+    --primary-foreground: 0 0% 2%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 187 72% 55%;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 0 0% 2%;
+    --foreground: 0 0% 90%;
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 90%;
+    --popover: 0 0% 4%;
+    --popover-foreground: 0 0% 90%;
+    --primary: 187 72% 55%;
+    --primary-foreground: 0 0% 2%;
+    --secondary: 0 0% 7%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 0 0% 7%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 7%;
+    --accent-foreground: 0 0% 90%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 100% / 4%;
+    --input: 0 0% 100% / 8%;
+    --ring: 187 72% 55%;
+  }
+}
