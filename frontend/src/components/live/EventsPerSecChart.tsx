@@ -20,19 +20,8 @@ interface Point {
 
 const WINDOW_SECONDS = 60;
 
-const tooltipStyle = {
-  backgroundColor: '#0E0E10',
-  border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: '8px',
-  color: '#FAFAFA',
-  fontSize: '11px',
-  fontFamily: 'Azeret Mono, monospace',
-  padding: '6px 10px',
-};
-
 export function EventsPerSecChart() {
   const [points, setPoints] = useState<Point[]>(() => {
-    // Pre-fill with empty window
     const now = Math.floor(Date.now() / 1000);
     return Array.from({ length: WINDOW_SECONDS }, (_, i) => {
       const t = now - (WINDOW_SECONDS - 1 - i);
@@ -46,9 +35,19 @@ export function EventsPerSecChart() {
   });
   const [current, setCurrent] = useState(0);
   const [peak, setPeak] = useState(0);
+  const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    // Accumulate events per second locally (in case backend sends raw events)
+    const check = () => {
+      setIsDark(document.documentElement.getAttribute('data-theme') === 'dark' || document.documentElement.classList.contains('dark'));
+    };
+    check();
+    const obs = new MutationObserver(check);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
     let accum = 0;
 
     const offEvent = subscribeTopic('*', () => {
@@ -87,20 +86,26 @@ export function EventsPerSecChart() {
     };
   }, []);
 
+  const gridColor = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
+  const tickColor = isDark ? '#6B7280' : '#9CA3AF';
+  const tooltipBg = isDark ? '#18181B' : '#FFFFFF';
+  const tooltipBorder = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const tooltipText = isDark ? '#FAFAFA' : '#18181B';
+
   return (
-    <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2.5">
-          <span className="text-[13px] font-semibold text-white tracking-tight">Events / Second</span>
+          <span className="text-[13px] font-semibold text-foreground tracking-tight">Events / Second</span>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex flex-col items-end">
-            <span className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">now</span>
-            <span className="text-[14px] text-[#22D3EE] font-mono tabular-nums leading-none">{current}</span>
+            <span className="text-[9px] text-muted-foreground/60 font-mono uppercase tracking-widest">now</span>
+            <span className="text-[14px] text-primary font-mono tabular-nums leading-none">{current}</span>
           </div>
           <div className="flex flex-col items-end">
-            <span className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">peak</span>
-            <span className="text-[14px] text-zinc-300 font-mono tabular-nums leading-none">{peak}</span>
+            <span className="text-[9px] text-muted-foreground/60 font-mono uppercase tracking-widest">peak</span>
+            <span className="text-[14px] text-muted-foreground font-mono tabular-nums leading-none">{peak}</span>
           </div>
         </div>
       </div>
@@ -113,21 +118,32 @@ export function EventsPerSecChart() {
                 <stop offset="100%" stopColor="#22D3EE" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="rgba(255,255,255,0.03)" vertical={false} />
+            <CartesianGrid stroke={gridColor} vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fill: '#52525B', fontSize: 9, fontFamily: 'Azeret Mono' }}
+              tick={{ fill: tickColor, fontSize: 9, fontFamily: 'Azeret Mono' }}
               axisLine={false}
               tickLine={false}
               interval={9}
             />
             <YAxis
-              tick={{ fill: '#52525B', fontSize: 9, fontFamily: 'Azeret Mono' }}
+              tick={{ fill: tickColor, fontSize: 9, fontFamily: 'Azeret Mono' }}
               axisLine={false}
               tickLine={false}
               width={26}
             />
-            <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: 'rgba(34,211,238,0.2)' }} />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: tooltipBg,
+                border: `1px solid ${tooltipBorder}`,
+                borderRadius: '8px',
+                color: tooltipText,
+                fontSize: '11px',
+                fontFamily: 'Azeret Mono, monospace',
+                padding: '6px 10px',
+              }}
+              cursor={{ stroke: 'rgba(34,211,238,0.2)' }}
+            />
             <Line
               type="monotone"
               dataKey="events"

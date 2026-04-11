@@ -48,7 +48,6 @@ export function MetricsSummaryBar({ external }: Props) {
       counters.current.decisionsWindow += 1;
     });
 
-    // Update eps every second, blocked/min + decisions/min smoothed
     const tick = window.setInterval(() => {
       setM((prev) => ({
         ...prev,
@@ -89,11 +88,11 @@ export function MetricsSummaryBar({ external }: Props) {
   ];
 
   return (
-    <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden flex items-stretch">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden flex items-stretch">
       {cells.map((c, i) => (
         <div
           key={c.label}
-          className={`flex-1 flex flex-col items-center justify-center px-4 py-3 ${i > 0 ? 'border-l border-white/[0.06]' : ''}`}
+          className={`flex-1 flex flex-col items-center justify-center px-4 py-3 ${i > 0 ? 'border-l border-border' : ''}`}
         >
           <span
             className="text-[20px] font-mono tabular-nums leading-none"
@@ -101,7 +100,7 @@ export function MetricsSummaryBar({ external }: Props) {
           >
             {c.value.toLocaleString()}
           </span>
-          <span className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest mt-1.5">
+          <span className="text-[9px] text-muted-foreground/60 font-mono uppercase tracking-widest mt-1.5">
             {c.label}
           </span>
         </div>
