@@ -96,6 +96,10 @@ class ActiveResponder:
     # For safety, they log intent rather than making system changes directly.
 
     async def _block_ip(self, target: str, params: dict) -> dict:
+        if not target:
+            logger.warning("RESPONSE: block_ip called with empty target, skipping")
+            return {"success": False, "action": "block_ip", "target": target, "error": "No target IP"}
+
         logger.warning(f"RESPONSE: Blocking IP {target} — executing real block")
 
         # 1. Block via external firewall (if AEGIS_FIREWALL_URL is configured)

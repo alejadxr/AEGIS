@@ -76,11 +76,11 @@ async function fetchLiveMetrics(): Promise<LiveMetricsResponse | null> {
 
 function StatusPill({ status }: { status: WSStatus }) {
   const cfg: Record<WSStatus, { label: string; color: string; dot: string }> = {
-    idle: { label: 'IDLE', color: 'text-muted-foreground/50', dot: 'bg-muted-foreground/40' },
-    connecting: { label: 'SYNC', color: 'text-[#F59E0B]/70', dot: 'bg-[#F59E0B] animate-pulse' },
-    open: { label: 'LIVE', color: 'text-[#22C55E]/70', dot: 'bg-[#22C55E]' },
-    closed: { label: 'OFFLINE', color: 'text-destructive/70', dot: 'bg-destructive' },
-    error: { label: 'ERROR', color: 'text-destructive/70', dot: 'bg-destructive animate-pulse' },
+    idle: { label: 'IDLE', color: 'text-muted-foreground/60', dot: 'bg-muted-foreground/40' },
+    connecting: { label: 'SYNC', color: 'text-[#F59E0B]', dot: 'bg-[#F59E0B] animate-pulse' },
+    open: { label: 'LIVE', color: 'text-[#22C55E]', dot: 'bg-[#22C55E]' },
+    closed: { label: 'OFFLINE', color: 'text-destructive', dot: 'bg-destructive' },
+    error: { label: 'ERROR', color: 'text-destructive', dot: 'bg-destructive animate-pulse' },
   };
   const c = cfg[status];
   return (

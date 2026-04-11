@@ -44,6 +44,9 @@ class IPBlockerService:
         return ip in self._blocked
 
     def block_ip(self, ip: str) -> dict:
+        if not ip or not isinstance(ip, str):
+            logger.warning(f"block_ip called with invalid IP: {ip!r}, skipping")
+            return {"success": False, "ip": ip, "error": "Invalid IP"}
         already_blocked = ip in self._blocked
         self._blocked.add(ip)
         _save_blocked_ips(self._blocked)

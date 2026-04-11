@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export interface ThreatMapEntry {
   country: string;
@@ -59,7 +59,18 @@ function markerColor(count: number, maxCount: number): string {
 export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
   const [zoom, setZoom] = useState(1);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const [isDark, setIsDark] = useState(false);
   const maxCount = data.length > 0 ? Math.max(...data.map((d) => d.count)) : 1;
+
+  useEffect(() => {
+    const check = () => {
+      setIsDark(document.documentElement.getAttribute('data-theme') === 'dark' || document.documentElement.classList.contains('dark'));
+    };
+    check();
+    const obs = new MutationObserver(check);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+    return () => obs.disconnect();
+  }, []);
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const maps = typeof window !== 'undefined' ? require('react-simple-maps') : null;
@@ -68,7 +79,7 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
   if (!maps || data.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
-        <p className="text-[13px] text-zinc-600 font-mono">No threat data yet</p>
+        <p className="text-[13px] text-muted-foreground/60 font-mono">No threat data yet</p>
       </div>
     );
   }
@@ -77,30 +88,33 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
   const activeRatio = tooltip ? tooltip.entry.count / maxCount : 0;
   const activeSeverity = activeRatio > 0.66 ? 'CRITICAL' : activeRatio > 0.33 ? 'HIGH' : 'LOW';
 
-  const isDark = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') !== 'light';
   const mapLand = isDark ? '#1E1F24' : '#E4E4E7';
   const mapStroke = isDark ? '#27282F' : '#D4D4D8';
   const mapHover = isDark ? '#27282F' : '#D4D4D8';
-  const mapVignette = isDark ? '#18181B' : 'var(--c6-surface, #FFFFFF)';
+  const mapBg = isDark ? '#18181B' : '#FFFFFF';
+  const tooltipBg = isDark ? 'rgba(24,24,27,0.95)' : 'rgba(255,255,255,0.95)';
+  const tooltipText = isDark ? '#FAFAFA' : '#18181B';
+  const tooltipMuted = isDark ? '#A1A1AA' : '#71717A';
+  const tooltipDivider = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
   return (
     <div className="relative w-full h-full select-none overflow-hidden">
       <div className="pointer-events-none absolute inset-0 z-[1]"
         style={{
-          background: `radial-gradient(ellipse at center, transparent 55%, ${mapVignette} 100%)`,
+          background: `radial-gradient(ellipse at center, transparent 55%, ${mapBg} 100%)`,
         }}
       />
       <div className="pointer-events-none absolute inset-y-0 left-0 w-12 z-[1]"
-        style={{ background: `linear-gradient(to right, ${mapVignette}, transparent)` }}
+        style={{ background: `linear-gradient(to right, ${mapBg}, transparent)` }}
       />
       <div className="pointer-events-none absolute inset-y-0 right-0 w-12 z-[1]"
-        style={{ background: `linear-gradient(to left, ${mapVignette}, transparent)` }}
+        style={{ background: `linear-gradient(to left, ${mapBg}, transparent)` }}
       />
 
       <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
         <button
           onClick={() => setZoom((z) => Math.min(z + 0.5, 4))}
-          className="w-7 h-7 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-400 hover:text-zinc-200 text-sm font-semibold flex items-center justify-center transition-all duration-150 font-mono"
+          className="w-7 h-7 rounded-xl bg-muted/50 hover:bg-muted border border-border text-muted-foreground hover:text-foreground text-sm font-semibold flex items-center justify-center transition-all duration-150 font-mono"
           aria-label="Zoom in"
         >
           +
@@ -108,7 +122,7 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
         <button
           onClick={() => setZoom((z) => Math.max(z - 0.5, 1))}
           disabled={zoom <= 1}
-          className="w-7 h-7 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-400 hover:text-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold flex items-center justify-center transition-all duration-150 font-mono"
+          className="w-7 h-7 rounded-xl bg-muted/50 hover:bg-muted border border-border text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold flex items-center justify-center transition-all duration-150 font-mono"
           aria-label="Zoom out"
         >
           −
@@ -127,23 +141,23 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
           <div
             className="rounded-xl px-3 py-2.5 shadow-2xl min-w-[148px] backdrop-blur-sm"
             style={{
-              background: 'rgba(24,24,27,0.95)',
+              background: tooltipBg,
               border: `1px solid ${activeColor}35`,
-              boxShadow: `0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px ${activeColor}10, 0 0 24px ${activeColor}15`,
+              boxShadow: `0 8px 32px rgba(0,0,0,0.15), 0 0 0 1px ${activeColor}10, 0 0 24px ${activeColor}15`,
             }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] leading-none shrink-0 font-mono text-zinc-400">
+              <span className="text-[10px] leading-none shrink-0 font-mono" style={{ color: tooltipMuted }}>
                 {COUNTRY_FLAGS[tooltip.entry.country_code] ?? '--'}
               </span>
-              <span className="text-[12px] font-semibold text-white tracking-tight truncate">
+              <span className="text-[12px] font-semibold tracking-tight truncate" style={{ color: tooltipText }}>
                 {COUNTRY_COORDS[tooltip.entry.country_code]?.label ?? tooltip.entry.country}
               </span>
             </div>
-            <div className="w-full h-px bg-white/[0.06] mb-2" />
+            <div className="w-full h-px mb-2" style={{ background: tooltipDivider }} />
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">events</span>
+                <span className="text-[10px] uppercase tracking-widest font-mono" style={{ color: tooltipMuted }}>events</span>
                 <span className="text-[13px] font-bold tabular-nums" style={{ color: activeColor, fontFamily: 'Azeret Mono, monospace' }}>
                   {tooltip.entry.count.toLocaleString()}
                 </span>
@@ -232,7 +246,7 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
         </maps.ZoomableGroup>
       </maps.ComposableMap>
 
-      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-2.5 py-1.5 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-2.5 py-1.5 rounded-xl bg-muted/40 border border-border">
         {([
           { label: 'Critical', color: '#EF4444' },
           { label: 'High', color: '#F97316' },
@@ -240,7 +254,7 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
         ] as const).map(({ label, color }) => (
           <div key={label} className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}` }} />
-            <span className="text-[10px] text-zinc-500 font-mono tracking-wide">{label}</span>
+            <span className="text-[10px] text-muted-foreground font-mono tracking-wide">{label}</span>
           </div>
         ))}
       </div>
