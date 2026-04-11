@@ -457,6 +457,8 @@ export const api = {
         source: string;
       }>>(`/threats/intel/search?q=${encodeURIComponent(query)}`),
     exportFeed: () => request<Blob>('/threats/feed'),
+    sharingStats: () =>
+      request<{ iocs_shared: number; iocs_received: number; auto_blocked: number }>('/threats/sharing/stats'),
   },
 
   // AI Providers
@@ -670,6 +672,11 @@ export const api = {
       request<{ success: boolean; response: string; latency_ms: number }>('/settings/models/test', {
         method: 'POST',
         body: JSON.stringify({ task_type: taskType, model }),
+      }),
+    updateIntelSharing: (data: { enabled: boolean }) =>
+      request('/settings/intel-sharing', {
+        method: 'PUT',
+        body: JSON.stringify(data),
       }),
   },
 

@@ -21,14 +21,13 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 function statusDot(s: string) {
-  return STATUS_COLOR[s?.toLowerCase()] ?? 'bg-zinc-600';
+  return STATUS_COLOR[s?.toLowerCase()] ?? 'bg-muted-foreground/40';
 }
 
 export function NodeHeartbeatGrid() {
   const [nodes, setNodes] = useState<NodeStatus[]>([]);
 
   useEffect(() => {
-    // Initial load
     api.nodes.list().then((list) => {
       setNodes(
         list.map((n) => ({
@@ -38,9 +37,7 @@ export function NodeHeartbeatGrid() {
           last_heartbeat: n.last_heartbeat,
         }))
       );
-    }).catch(() => {
-      // Fall back to empty — widget shows empty state
-    });
+    }).catch(() => {});
 
     const off = subscribeTopic('nodes.status', (data) => {
       if (!data || typeof data !== 'object') return;
@@ -69,27 +66,27 @@ export function NodeHeartbeatGrid() {
   const online = nodes.filter((n) => n.status === 'online' || n.status === 'active').length;
 
   return (
-    <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0">
-        <span className="text-[13px] font-semibold text-white tracking-tight">Node Heartbeats</span>
-        <span className="text-[11px] text-zinc-400 font-mono tabular-nums">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <span className="text-[13px] font-semibold text-foreground tracking-tight">Node Heartbeats</span>
+        <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
           <span className="text-[#22C55E]">{online}</span>
-          <span className="text-zinc-600"> / {nodes.length}</span>
+          <span className="text-muted-foreground/60"> / {nodes.length}</span>
         </span>
       </div>
       <div className="flex-1 overflow-y-auto p-3">
         {nodes.length === 0 ? (
-          <p className="text-zinc-600 text-[12px] font-mono text-center py-6">No nodes enrolled</p>
+          <p className="text-muted-foreground/60 text-[12px] font-mono text-center py-6">No nodes enrolled</p>
         ) : (
           <div className="grid grid-cols-6 gap-2">
             {nodes.map((n) => (
               <div
                 key={n.id}
                 title={`${n.hostname} — ${n.status}`}
-                className="flex flex-col items-center gap-1 p-1.5 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.1] transition-colors"
+                className="flex flex-col items-center gap-1 p-1.5 rounded-lg bg-muted/30 border border-border hover:border-border/80 transition-colors"
               >
                 <span className={cn('w-2 h-2 rounded-full', statusDot(n.status))} />
-                <span className="text-[9px] text-zinc-500 font-mono truncate max-w-full">
+                <span className="text-[9px] text-muted-foreground font-mono truncate max-w-full">
                   {n.hostname.slice(0, 8)}
                 </span>
               </div>

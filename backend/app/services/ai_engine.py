@@ -166,10 +166,16 @@ class AIDecisionEngine:
                 result["actions_taken"].extend(pb_result.get("actions", []))
                 self._fast_triage_stats["playbook_hits"] += 1
 
-        # Create a lightweight incident record if we took action
-        if result["actions_taken"]:
+        # Build a human-readable title for the incident
+        rule_titles = [m.get("title", m.get("rule_title", "")) for m in sigma_matches]
+        incident_title = f"{severity.upper()}: {', '.join(filter(None, rule_titles)) or threat_type.replace('_', ' ').title()}"
+        result["incident_title"] = incident_title
+        result["incident_severity"] = severity
+        result["source_ip"] = event.get("source_ip")
+
+        # Always create an incident record when we have sigma matches
+        if sigma_matches or result["actions_taken"]:
             result["incident_created"] = True
-            # Fire-and-forget: create full incident in DB async
             asyncio.create_task(
                 self._create_fast_incident(event, threat_type, severity, sigma_matches, result)
             )
@@ -333,12 +339,33 @@ class AIDecisionEngine:
             "incident_id": None,
         }
 
-        # Stage 1: Triage
-        triage = await self._triage(alert_data)
+        # Stage 1: Triage (falls back to defaults if AI unavailable)
+        try:
+            triage = await self._triage(alert_data)
+        except Exception as e:
+            logger.warning(f"Triage failed, using defaults: {e}")
+            triage = {
+                "severity": alert_data.get("severity", "medium"),
+                "threat_type": alert_data.get("threat_type", "unknown"),
+                "mitre_technique": "",
+                "mitre_tactic": "",
+                "summary": alert_data.get("title", alert_data.get("description", "Security alert detected")),
+                "confidence": 0.5,
+            }
         result["classifications"]["triage"] = triage
 
-        # Stage 2: Classify
-        classification = await self._classify(alert_data, triage)
+        # Stage 2: Classify (falls back to defaults if AI unavailable)
+        try:
+            classification = await self._classify(alert_data, triage)
+        except Exception as e:
+            logger.warning(f"Classification failed, using defaults: {e}")
+            classification = {
+                "classification": triage.get("threat_type", "unknown"),
+                "attack_vector": "unknown",
+                "impact": "unknown",
+                "recommended_actions": [],
+                "confidence": 0.5,
+            }
         result["classifications"]["classification"] = classification
 
         # Stage 3: Create incident

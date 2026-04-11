@@ -217,6 +217,9 @@ class OpenRouterClient:
             use_provider = None
             if client_settings:
                 use_provider = client_settings.get("ai_provider")
+            # Fall back to AI Manager's active provider (e.g. "inception")
+            if not use_provider:
+                use_provider = self._ai_manager.active_provider
 
             if use_provider and use_provider != "openrouter":
                 # Non-OpenRouter provider -- let AI Manager handle it fully

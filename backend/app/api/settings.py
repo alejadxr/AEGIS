@@ -379,4 +379,16 @@ async def update_intel_sharing(
     client.settings = current_settings
     flag_modified(client, "settings")
     await db.commit()
+
+    # Start/stop hub sync based on toggle
+    import os, uuid
+    from app.services.hub_sync_client import hub_sync_client
+    from app.config import settings as app_settings
+    hub_url = os.environ.get("AEGIS_HUB_URL", app_settings.AEGIS_HUB_URL)
+    if body.enabled and hub_url and not hub_sync_client._running:
+        node_id = str(uuid.uuid4())[:16]
+        await hub_sync_client.start(hub_url, node_id, client.name or "AEGIS Node")
+    elif not body.enabled and hub_sync_client._running:
+        await hub_sync_client.stop()
+
     return IntelSharingStatus(enabled=body.enabled)

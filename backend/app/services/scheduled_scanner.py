@@ -682,12 +682,13 @@ class ScheduledScanner:
                         input_summary=f"Service down: {asset.hostname} ({ip}:{port_num})",
                         decision="status_set_inactive",
                     ))
-                    await event_bus.publish("alert_processed", {
-                        "client_id": asset.client_id,
-                        "asset_id": asset.id,
-                        "severity": "info",
-                        "incident_title": f"Service down: {asset.hostname}",
-                        "summary": f"TCP connect to {ip}:{port_num} failed — asset marked inactive.",
+                    await event_bus.publish("node_status", {
+                        "_event_type": "node_status",
+                        "id": asset.id,
+                        "hostname": asset.hostname,
+                        "status": "offline",
+                        "last_heartbeat": None,
+                        "message": f"TCP connect to {ip}:{port_num} failed",
                     })
                     logger.warning(f"Uptime check FAILED: {asset.hostname} ({ip}:{port_num}) — marked inactive")
                 elif reachable and asset.status == "inactive":
