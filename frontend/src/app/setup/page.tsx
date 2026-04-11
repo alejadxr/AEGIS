@@ -1571,7 +1571,7 @@ export default function SetupWizard() {
 
         {/* Footer */}
         <p className="text-center text-xs text-zinc-700 mt-8">
-          AEGIS Defense Platform &middot; v0.2.0
+          AEGIS Defense Platform &middot; v1.4.0
         </p>
       </div>
 

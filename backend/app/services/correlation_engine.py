@@ -8,6 +8,7 @@ can open an incident.
 """
 
 import asyncio
+import ipaddress
 import logging
 import re
 import uuid
@@ -17,6 +18,26 @@ from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger("aegis.correlation")
+
+
+def _is_internal_ip(ip: str) -> bool:
+    """True if IP is private, loopback, link-local, or Tailscale (100.64.0.0/10)."""
+    if not ip:
+        return True
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return True
+    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast:
+        return True
+    # Tailscale CGNAT range: 100.64.0.0/10
+    try:
+        ts_net = ipaddress.ip_network("100.64.0.0/10")
+        if addr in ts_net:
+            return True
+    except ValueError:
+        pass
+    return False
 
 # ---------------------------------------------------------------------------
 # Log-line pattern matchers — translate raw PM2 log lines into typed events
@@ -2736,6 +2757,13 @@ class CorrelationEngine:
         # Extract IP and request path from the log line
         ip_match = _IP_RE.search(line)
         source_ip = ip_match.group(1) if ip_match else None
+
+        # Skip internal/private/Tailscale IPs — they are never attackers.
+        # This prevents the dashboard's own traffic (WebSocket, login retries,
+        # API calls from localhost or Tailscale peers) from triggering
+        # brute-force / scanner / auth-failure sigma rules.
+        if source_ip and _is_internal_ip(source_ip):
+            return
         path_match = _PATH_RE.search(line)
         request_path = path_match.group(1) if path_match else ""
         port_match = _PORT_RE.search(line)

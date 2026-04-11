@@ -36,6 +36,24 @@ Built for security teams, DevOps engineers, and homelabs that need enterprise-gr
 
 **Your servers defend themselves while you sleep.**
 
+### What's New in v1.4
+
+- **Threat Sharing Mesh** -- Hub-and-spoke network via `api-aegis.somoswilab.com`. When you enable the opt-in toggle in Settings, your AEGIS node automatically joins the global sharing network: every local detection is pushed to the hub, every shared IOC is pulled and auto-blocked if confidence ≥ 0.8. Mesh-like topology without the P2P complexity.
+- **IOC Validation Layer** -- Prevents network poisoning. Rejects private IPs (10.x, 192.168.x, 172.16.x), loopback, link-local, multicast, reserved, Tailscale CGNAT, and safe-listed DNS (8.8.8.8, 1.1.1.1, 9.9.9.9). Hashes must be valid hex of correct length (MD5/SHA1/SHA256). Domains can't be `localhost` or internal.
+- **Hub Sync Client** -- Background service pulls new IOCs from hub every 60s, high-confidence IPs (≥0.8) are auto-blocked locally via `ip_blocker_service`. Registers the node on startup, reports sync stats.
+- **Auto-Sharer** -- Subscribes to `alert_processed`, `honeypot_interaction`, `correlation_triggered` events. Validates via `ioc_validator`, pushes to hub with 5-minute dedup. Severity → confidence mapping (critical=0.95, high=0.85, medium=0.6, low=0.3).
+- **Correlation Engine Connected** -- 122 Sigma rules and 5 chain rules now receive real events from the log_watcher via a new `_on_log_line` translator that maps raw PM2 logs to typed security events (sql_injection, xss, auth_failure, etc.). Fixed the dead pipeline where rules were loaded but processed 0 events.
+- **Internal IP Filter in Correlation** -- Fixes a critical false-positive loop: dashboard WebSocket auth failures from Tailscale peers (your own browser) were triggering `brute_force_ssh` sigma rules and auto-blocking your admin IP. Correlation engine now skips private, loopback, link-local, and Tailscale (100.64.0.0/10) addresses.
+- **AI Routing via Inception** -- Default LLM is now Mercury-2 (Inception Labs diffusion model) for triage, classification, risk scoring, and enrichment. OpenRouter free models are used only as fallback. No more 429 rate limits bricking the AI engine.
+- **Unified IP Blocker** -- `attack_detector.py` and `ip_blocker.py` now use the same `BLOCKED_IPS_FILE` path. The admin stats API and the request middleware see the same blocked list.
+- **None-target Validation** -- `responder.py` and `ip_blocker.py` both reject `None`, empty, or non-string IP targets. Fixes the crash where a failed AI JSON parse propagated `None` to `block_ip()`.
+- **Opt-in Toggle UI** -- One-click enable/disable in Settings → Threat Sharing tab. Shows connection status, IOCs shared/received/auto-blocked counters, and the hub URL.
+- **Dashboard Theme Tokens** -- All 7 live widgets (AttackFeed, EventsPerSecChart, Top10Table, RawLogStream, NodeHeartbeatGrid, MetricsSummaryBar, GlobalThreatMap) use semantic shadcn tokens (`bg-card`, `text-foreground`, `text-muted-foreground`) instead of hardcoded `bg-[#18181B]` / `text-white` / `text-zinc-*`. Dashboard works correctly in both light and dark mode.
+- **AttackFeed API-backed + Clickable** -- Persists across page reloads by loading incidents from `/response/incidents` on mount. Each incident is a clickable link to `/dashboard/response?incident=<id>`. Shows real titles, source IPs, MITRE techniques, and status.
+- **Timezone Fix** -- `formatRelativeTime` now normalizes backend datetimes without timezone suffix to UTC before parsing, fixing the "just now" bug where all incidents appeared to be created seconds ago due to JS parsing naive datetimes as local time.
+- **Cloudflared Updated** -- Mac Pro tunnel binary bumped from 2025.11.1 → 2026.3.0.
+- **Public Hub Endpoint** -- `api-aegis.somoswilab.com` is now live. 6 public endpoints for remote nodes: `/threats/feed`, `/threats/intel/share`, `/threats/intel/search`, `/threats/nodes/register`, `/threats/nodes`, `/threats/hub/info`. WebSocket at `wss://api-aegis.somoswilab.com/ws` for real-time IOC push.
+
 ### What's New in v1.2
 
 - **Live Dashboard** -- CrowdStrike Falcon-style SOC view with 10 WebSocket-powered widgets, never needs refresh
