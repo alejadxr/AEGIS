@@ -42,8 +42,11 @@ export function formatRelativeTime(dateStr: string | null | undefined): string {
   if (!dateStr) return '—';
   try {
     const now = Date.now();
-    const then = new Date(dateStr).getTime();
-    const diff = now - then;
+    // Backend returns naive UTC datetimes without Z suffix — append it so JS parses as UTC
+    const normalized = dateStr.endsWith('Z') || dateStr.includes('+') ? dateStr : dateStr + 'Z';
+    const then = new Date(normalized).getTime();
+    if (isNaN(then)) return formatDate(dateStr);
+    const diff = Math.max(0, now - then);
     const seconds = Math.floor(diff / 1000);
     if (seconds < 60) return 'just now';
     const minutes = Math.floor(seconds / 60);

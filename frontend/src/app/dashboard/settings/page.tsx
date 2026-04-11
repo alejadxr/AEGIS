@@ -7,6 +7,7 @@ import {
   Sparkles, ArrowUp, Shield, BellRing, Send, Globe,
   Zap, ChevronDown, TestTube, BookOpen, ExternalLink,
   Activity, Bug, Fingerprint, Flame, Radar, Bot,
+  Share2, Wifi, Server, Database,
 } from 'lucide-react';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { api } from '@/lib/api';
@@ -264,6 +265,7 @@ export default function SettingsPage() {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [tab, setTab] = useState<string>('client');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookFormat, setWebhookFormat] = useState('generic');
@@ -278,6 +280,8 @@ export default function SettingsPage() {
   const [telegramConnected, setTelegramConnected] = useState(false);
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [intelSharingEnabled, setIntelSharingEnabled] = useState(false);
 
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -309,6 +313,9 @@ export default function SettingsPage() {
           }
           if (settings?.ai_provider) {
             setActiveProvider(settings.ai_provider as string);
+          }
+          if (settings?.intel_sharing_enabled) {
+            setIntelSharingEnabled(settings.intel_sharing_enabled as boolean);
           }
         }
         if (m.status === 'fulfilled') setModels(m.value.map((v) => ({ ...v })));
@@ -389,8 +396,15 @@ export default function SettingsPage() {
   /* -- Save handlers -- */
 
   const flashSaveSuccess = (msg: string) => {
+    setSaveError(null);
     setSaveSuccess(msg);
     setTimeout(() => setSaveSuccess(null), 3000);
+  };
+
+  const flashSaveError = (msg: string) => {
+    setSaveSuccess(null);
+    setSaveError(msg);
+    setTimeout(() => setSaveError(null), 5000);
   };
 
   const copyApiKey = () => {
@@ -406,8 +420,8 @@ export default function SettingsPage() {
       const updated = await api.settings.updateClient({ name: clientName.trim() }) as ClientInfo;
       setClient(updated);
       flashSaveSuccess('Organization name saved');
-    } catch {
-      // Demo mode
+    } catch (e) {
+      flashSaveError(`Failed to save name: ${e instanceof Error ? e.message : 'Check connection'}`);
     } finally {
       setSaving(false);
     }
@@ -429,8 +443,9 @@ export default function SettingsPage() {
       await api.settings.updateNotifications({ ...updated });
       setNotifications(updated);
       flashSaveSuccess('Notification settings saved');
-    } catch {
+    } catch (e) {
       setNotifications(updated);
+      flashSaveError(`Failed to save notifications: ${e instanceof Error ? e.message : 'Check connection'}`);
     } finally {
       setSaving(false);
     }
@@ -441,8 +456,8 @@ export default function SettingsPage() {
     try {
       await api.settings.updateModels(models.map((m) => ({ task_type: m.task_type, model: m.model })));
       flashSaveSuccess('Model routing saved');
-    } catch {
-      // Demo mode
+    } catch (e) {
+      flashSaveError(`Failed to save models: ${e instanceof Error ? e.message : 'Check connection'}`);
     } finally {
       setSaving(false);
     }
@@ -454,8 +469,22 @@ export default function SettingsPage() {
       await api.ai.setActive(provider);
       setActiveProvider(provider);
       flashSaveSuccess(`Switched to ${provider}`);
-    } catch {
-      setActiveProvider(provider);
+    } catch (e) {
+      flashSaveError(`Failed to switch provider: ${e instanceof Error ? e.message : 'Check connection'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleIntelSharing = async () => {
+    setSaving(true);
+    const newValue = !intelSharingEnabled;
+    try {
+      await api.settings.updateIntelSharing({ enabled: newValue });
+      setIntelSharingEnabled(newValue);
+      flashSaveSuccess(newValue ? 'Threat sharing enabled' : 'Threat sharing disabled');
+    } catch (e) {
+      flashSaveError(`Failed: ${e instanceof Error ? e.message : 'Check connection'}`);
     } finally {
       setSaving(false);
     }
@@ -469,8 +498,8 @@ export default function SettingsPage() {
       }) as ClientInfo;
       setClient(updated);
       flashSaveSuccess('Scan intervals saved');
-    } catch {
-      // Demo mode
+    } catch (e) {
+      flashSaveError(`Failed to save intervals: ${e instanceof Error ? e.message : 'Check connection'}`);
     } finally {
       setSaving(false);
     }
@@ -546,6 +575,13 @@ export default function SettingsPage() {
         <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-[#22C55E]/10 border border-[#22C55E]/20 text-[#22C55E] text-[13px] font-medium px-4 py-2.5 rounded-xl animate-fade-in">
           <Check className="w-4 h-4" />
           {saveSuccess}
+        </div>
+      )}
+      {/* Save error toast */}
+      {saveError && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive text-[13px] font-medium px-4 py-2.5 rounded-xl animate-fade-in">
+          <Shield className="w-4 h-4" />
+          {saveError}
         </div>
       )}
 
@@ -665,6 +701,7 @@ export default function SettingsPage() {
             { id: 'notifications', label: 'Notifications', icon: Bell },
             { id: 'scanning', label: 'Scanning', icon: Radar01Icon },
             { id: 'apikeys', label: 'API Keys', icon: Key },
+            { id: 'sharing', label: 'Threat Sharing', icon: Share2 },
             { id: 'guide', label: 'Feature Guide', icon: BookOpen },
           ].map((t) => (
             <TabsTrigger key={t.id} value={t.id} className="gap-2 whitespace-nowrap">
@@ -1111,6 +1148,219 @@ export default function SettingsPage() {
             </div>
           </div>
         </SectionCard>
+      </TabsContent>
+
+      {/* Threat Sharing Tab */}
+      <TabsContent value="sharing">
+        <div className="space-y-4">
+          <SectionCard
+            title="Threat Intelligence Sharing"
+            description="Join the AEGIS threat sharing network"
+            headerRight={
+              <div className="flex items-center gap-3">
+                <span className={cn(
+                  'text-[11px] font-medium',
+                  intelSharingEnabled ? 'text-[#22C55E]' : 'text-muted-foreground'
+                )}>
+                  {intelSharingEnabled ? 'Active' : 'Disabled'}
+                </span>
+                <button
+                  onClick={toggleIntelSharing}
+                  disabled={saving}
+                  aria-label="Toggle threat intelligence sharing"
+                  className={cn(
+                    'relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0',
+                    intelSharingEnabled ? 'bg-[#22D3EE]' : 'bg-white/[0.06]'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200',
+                      intelSharingEnabled && 'translate-x-5'
+                    )}
+                  />
+                </button>
+              </div>
+            }
+          >
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'IOCs Shared', value: 0, icon: Share2 },
+                  { label: 'IOCs Received', value: 0, icon: Database },
+                  { label: 'Auto-Blocked', value: 0, icon: Shield },
+                ].map((stat) => (
+                  <div key={stat.label} className="flex flex-col items-center gap-2 p-4 rounded-xl bg-white/[0.02] border border-border">
+                    <div className="w-8 h-8 rounded-lg bg-[#22D3EE]/10 flex items-center justify-center">
+                      <stat.icon className="w-4 h-4 text-[#22D3EE]" />
+                    </div>
+                    <span className="text-xl font-semibold text-foreground">{stat.value}</span>
+                    <span className="text-[11px] text-muted-foreground">{stat.label}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+                When enabled, AEGIS will share validated IOCs with the threat sharing network and automatically
+                receive indicators from other nodes. Incoming IOCs are validated before being applied.
+                High-confidence threats are auto-blocked based on your guardrail settings.
+              </p>
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Threat Sharing Hub"
+            description="Share and receive threat intelligence across AEGIS instances in real-time"
+            headerRight={
+              <StatusDot connected={true} label="Hub Online" />
+            }
+          >
+            <div className="p-4 sm:p-6 space-y-5">
+              {/* Hub URL */}
+              <div>
+                <label className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider block mb-1.5">Hub API URL</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value="https://api-aegis.somoswilab.com"
+                      readOnly
+                      className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground font-mono"
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('https://api-aegis.somoswilab.com');
+                      flashSaveSuccess('Hub URL copied');
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2.5 bg-white/[0.04] hover:bg-white/[0.06] border border-border rounded-xl text-muted-foreground hover:text-foreground transition-colors text-[13px]"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* WebSocket URL */}
+              <div>
+                <label className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider block mb-1.5">WebSocket URL (Real-time)</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value="wss://api-aegis.somoswilab.com/ws"
+                      readOnly
+                      className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground font-mono"
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('wss://api-aegis.somoswilab.com/ws');
+                      flashSaveSuccess('WebSocket URL copied');
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2.5 bg-white/[0.04] hover:bg-white/[0.06] border border-border rounded-xl text-muted-foreground hover:text-foreground transition-colors text-[13px]"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* Endpoints grid */}
+              <div>
+                <label className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider block mb-3">Available Endpoints</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    { method: 'GET', path: '/api/v1/threats/feed', desc: 'Download shared IOCs', icon: Database },
+                    { method: 'POST', path: '/api/v1/threats/intel/share', desc: 'Submit new IOCs', icon: Share2 },
+                    { method: 'GET', path: '/api/v1/threats/intel/search?q=', desc: 'Search threat intel', icon: Radar },
+                    { method: 'POST', path: '/api/v1/threats/nodes/register', desc: 'Register a node', icon: Server },
+                    { method: 'GET', path: '/api/v1/threats/nodes', desc: 'List connected nodes', icon: Wifi },
+                    { method: 'GET', path: '/api/v1/threats/hub/info', desc: 'Hub capabilities', icon: Globe },
+                  ].map((ep) => (
+                    <div key={ep.path} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-border">
+                      <div className="w-7 h-7 rounded-lg bg-[#22D3EE]/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <ep.icon className="w-3.5 h-3.5 text-[#22D3EE]" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn(
+                            'text-[9px] font-bold px-1.5 py-0.5 rounded',
+                            ep.method === 'GET' ? 'bg-[#22C55E]/10 text-[#22C55E]' : 'bg-[#F97316]/10 text-[#F97316]'
+                          )}>
+                            {ep.method}
+                          </span>
+                          <span className="text-[11px] font-mono text-muted-foreground truncate">{ep.path}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground/60 mt-0.5">{ep.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* WebSocket Topics */}
+          <SectionCard
+            title="Real-time Topics"
+            description="Subscribe to these WebSocket topics for live threat intelligence"
+          >
+            <div className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  { topic: 'threats.new', desc: 'New IOC shared by any node' },
+                  { topic: 'threats.ioc', desc: 'IOC indicator updates' },
+                  { topic: 'threats.blocked_ip', desc: 'IP blocked across the network' },
+                  { topic: 'threats.pattern_update', desc: 'Attack pattern intelligence' },
+                  { topic: 'nodes.status', desc: 'Node online/offline changes' },
+                  { topic: 'incidents.new', desc: 'New incidents from any node' },
+                ].map((t) => (
+                  <div key={t.topic} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-border">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#22D3EE] shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-[11px] font-mono text-[#22D3EE] block">{t.topic}</span>
+                      <span className="text-[10px] text-muted-foreground/60">{t.desc}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* Connection Guide */}
+          <SectionCard title="Connect a Remote Node">
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="bg-white/[0.02] border border-border rounded-xl p-4">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  <span className="text-foreground font-medium">To connect a remote AEGIS instance:</span> Set the
+                  <span className="text-[#22D3EE] font-mono text-[10px] mx-1">AEGIS_HUB_URL</span>
+                  environment variable in the remote node{"'"}s <span className="font-mono text-[10px]">.env</span> file to
+                  <span className="text-[#22D3EE] font-mono text-[10px] ml-1">https://api-aegis.somoswilab.com</span>.
+                  The node will automatically register and begin sharing threat intelligence.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider block mb-1.5">Example .env configuration</label>
+                <div className="bg-[#09090B] border border-border rounded-xl p-4 font-mono text-[11px] text-muted-foreground leading-relaxed">
+                  <div><span className="text-muted-foreground/40"># Connect to the AEGIS threat sharing hub</span></div>
+                  <div><span className="text-[#22D3EE]">AEGIS_HUB_URL</span>=https://api-aegis.somoswilab.com</div>
+                  <div className="mt-2"><span className="text-muted-foreground/40"># MongoDB Atlas for shared intel storage</span></div>
+                  <div><span className="text-[#22D3EE]">AEGIS_MONGODB_URI</span>=mongodb+srv://...</div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider block mb-1.5">Register via cURL</label>
+                <div className="bg-[#09090B] border border-border rounded-xl p-4 font-mono text-[11px] text-muted-foreground leading-relaxed overflow-x-auto">
+                  <div>curl -X POST https://api-aegis.somoswilab.com/api/v1/threats/nodes/register \</div>
+                  <div className="pl-4">-H &quot;Content-Type: application/json&quot; \</div>
+                  <div className="pl-4">-d {"'{\"node_id\": \"my-node-01\", \"node_name\": \"Office AEGIS\"}'"};</div>
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+        </div>
       </TabsContent>
 
       <TabsContent value="guide">

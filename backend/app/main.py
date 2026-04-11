@@ -103,6 +103,10 @@ EVENT_TO_TOPICS: dict[str, tuple[str, ...]] = {
     "edr.event": ("edr.events",),
     "edr.suspicious_process": ("edr.events", "incidents.new"),
     "edr.process_start": ("edr.events",),
+    # Threat sharing events
+    "threat_shared": ("threats.new", "threats.ioc"),
+    "threat_blocked_ip": ("threats.blocked_ip", "threats.new"),
+    "threat_pattern_update": ("threats.pattern_update",),
 }
 
 
@@ -400,6 +404,10 @@ async def lifespan(app: FastAPI):
     event_bus.subscribe("edr.suspicious_process", ws_event_handler)
     event_bus.subscribe("edr.process_start", ws_event_handler)
     event_bus.subscribe("edr.process_start", edr_chain_handler)
+    # Threat sharing event_bus subscriptions
+    event_bus.subscribe("threat_shared", ws_event_handler)
+    event_bus.subscribe("threat_blocked_ip", ws_event_handler)
+    event_bus.subscribe("threat_pattern_update", ws_event_handler)
     logger.info("Event bus started with WebSocket forwarding + auto-execution wired")
 
     # Start counter-attack engine (active defense)
@@ -454,6 +462,35 @@ async def lifespan(app: FastAPI):
         logger.info("MongoDB threat intel hub started")
     else:
         logger.info("MongoDB not configured - threat intel hub disabled")
+
+    # --- Threat Sharing Hub Sync ---
+    from app.services.hub_sync_client import hub_sync_client
+    from app.services.auto_sharer import auto_sharer
+    import os, uuid
+
+    hub_url = os.environ.get("AEGIS_HUB_URL", settings.AEGIS_HUB_URL)
+    if hub_url:
+        node_id = getattr(threat_intel_hub, 'instance_id', '') or str(uuid.uuid4())[:16]
+        node_name = "AEGIS Node"
+        try:
+            from sqlalchemy import select as _hub_sel
+            async with async_session() as db:
+                result = await db.execute(_hub_sel(Client).limit(1))
+                client = result.scalar_one_or_none()
+                if client:
+                    node_name = client.name or "AEGIS Node"
+        except Exception:
+            pass
+        await hub_sync_client.start(hub_url, node_id, node_name)
+        logger.info(f"Threat sharing: connected to hub {hub_url}")
+    else:
+        logger.info("Threat sharing: hub mode (this IS the hub)")
+
+    # Auto-share detections to hub
+    event_bus.subscribe("alert_processed", auto_sharer.on_alert_processed)
+    event_bus.subscribe("honeypot_interaction", auto_sharer.on_honeypot_interaction)
+    event_bus.subscribe("correlation_triggered", auto_sharer.on_correlation_triggered)
+    logger.info("Auto-sharer subscribed to detection events")
 
     logger.info(f"Cayde-6 ready on port {settings.AEGIS_API_PORT}")
 
@@ -513,6 +550,11 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     try:
+        from app.services.hub_sync_client import hub_sync_client as _hub_client
+        await _hub_client.stop()
+    except Exception:
+        pass
+    try:
         from app.services.auto_updater import auto_updater
         await auto_updater.stop()
     except Exception:
@@ -544,7 +586,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.2.0",
+    version="1.4.0",
     lifespan=lifespan,
 )
 
@@ -645,7 +687,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.2.0",
+        "version": "1.4.0",
         "environment": settings.AEGIS_ENV,
     }
 
@@ -655,7 +697,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.2.0",
+        "version": "1.4.0",
     }
 
 

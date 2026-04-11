@@ -9,6 +9,7 @@ can open an incident.
 
 import asyncio
 import logging
+import re
 import uuid
 from collections import deque, defaultdict
 from copy import deepcopy
@@ -16,6 +17,77 @@ from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger("aegis.correlation")
+
+# ---------------------------------------------------------------------------
+# Log-line pattern matchers — translate raw PM2 log lines into typed events
+# that Sigma rules can evaluate.  Mirrors log_watcher.PATTERNS but produces
+# event dicts instead of incidents.
+# ---------------------------------------------------------------------------
+
+_LOG_PATTERNS = [
+    {
+        "event_type": "sql_injection",
+        "severity": "high",
+        "regex": re.compile(
+            r"(?i)(union\s+select|or\s+1\s*=\s*1|;\s*select|drop\s+table"
+            r"|information_schema|%27|--\s*$|'\s*OR\s*'|UNION\s+SELECT|OR\s+1=1)"
+        ),
+    },
+    {
+        "event_type": "xss",
+        "severity": "medium",
+        "regex": re.compile(
+            r"(?i)(<script|alert\s*\(|onerror\s*=|onload\s*=|javascript:"
+            r"|<img\s+src\s*=\s*x|<svg\s+onload|document\.cookie)"
+        ),
+    },
+    {
+        "event_type": "web_request",
+        "severity": "high",
+        "regex": re.compile(
+            r"(\.\./|\.\.%2[fF]|%2[eE]%2[eE]|%252e%252e|\.\.[\\/]"
+            r"|/etc/passwd|/etc/shadow|/proc/self|/windows/system32|/var/log)"
+        ),
+        "tag": "path_traversal",
+    },
+    {
+        "event_type": "auth_failure",
+        "severity": "medium",
+        "regex": re.compile(r'"(?:GET|POST|PUT|DELETE)\s+\S+\s+HTTP/[\d.]+"\s+401\b'),
+    },
+    {
+        "event_type": "http_request",
+        "severity": "low",
+        "regex": re.compile(
+            r"(?i)(nmap|nikto|sqlmap|masscan|gobuster|dirbuster|wfuzz"
+            r"|nuclei|zgrab|hydra|burpsuite|nmaplowercheck|/sdk|/evox|/HNAP1)"
+        ),
+        "tag": "scanner",
+    },
+    {
+        "event_type": "priv_escalation",
+        "severity": "critical",
+        "regex": re.compile(
+            r"(?i)(;\s*cat\s+/etc|\|\s*whoami|&&\s*id\b|`id`|\$\(id\)"
+            r"|;\s*ls\s|\|\s*cat\s|\bexec\s*\()"
+        ),
+    },
+]
+
+_IP_RE = re.compile(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b")
+_PORT_RE = re.compile(r":(\d{2,5})\b")
+_PATH_RE = re.compile(r'"(?:GET|POST|PUT|DELETE)\s+(\S+)\s+HTTP/')
+
+# EDR kind → correlation event_type mapping
+_EDR_EVENT_MAP = {
+    "fim": "file_modification",
+    "file_created": "file_creation",
+    "file_modified": "file_modification",
+    "file_deleted": "file_modification",
+    "process_start": "process_creation",
+    "process_stop": "process_creation",
+    "network_anomaly": "connection",
+}
 
 # ---------------------------------------------------------------------------
 # Built-in Sigma-style rules  (10+ covering common attack patterns)
@@ -2263,7 +2335,17 @@ class CorrelationEngine:
         event_types = self._collect_subscribed_types()
         for et in event_types:
             self._event_bus.subscribe(et, self._on_event)
-        logger.info(f"Correlation engine subscribed to: {sorted(event_types)}")
+
+        # Subscribe to raw event sources that need translation into typed
+        # events before Sigma rules can evaluate them.
+        self._event_bus.subscribe("log_line", self._on_log_line)
+        self._event_bus.subscribe("edr.event", self._on_edr_event)
+        self._event_bus.subscribe("edr.process_start", self._on_edr_event)
+        self._event_bus.subscribe("honeypot_interaction", self._on_honeypot_event)
+        logger.info(
+            f"Correlation engine subscribed to {len(event_types)} rule types "
+            f"+ log_line, edr.event, edr.process_start, honeypot_interaction"
+        )
 
     async def evaluate(self, event: dict) -> list[dict]:
         """
@@ -2563,6 +2645,8 @@ class CorrelationEngine:
             "rule_id": rule["id"],
             "rule_title": rule["title"],
             "severity": rule["severity"],
+            "incident_title": f"{rule['severity'].upper()}: {rule['title']}",
+            "incident_severity": rule["severity"],
             "mitre": rule.get("mitre", []),
             "description": rule.get("description", ""),
             "triggering_event": triggering_event,
@@ -2585,23 +2669,45 @@ class CorrelationEngine:
         asyncio.create_task(self._create_incident(rule, alert_data))
 
     async def _create_incident(self, rule: dict, alert_data: dict) -> None:
-        """Open a new incident via the AI engine using a fresh DB session."""
+        """Open a new incident — tries AI engine first, falls back to direct DB insert."""
         try:
-            # Import lazily to avoid circular imports at module level
             from app.database import async_session
             from app.services.ai_engine import ai_engine
             from sqlalchemy import select
             from app.models.client import Client
 
             async with async_session() as db:
-                # Use the first available client (demo / default)
                 result = await db.execute(select(Client).limit(1))
                 client = result.scalar_one_or_none()
                 if client is None:
                     logger.error("Correlation engine: no client found, cannot create incident")
                     return
 
-                await ai_engine.process_alert(alert_data, client, db)
+                try:
+                    await ai_engine.process_alert(alert_data, client, db)
+                except Exception as ai_err:
+                    # AI failed (rate limit, network, etc.) — create incident directly
+                    logger.warning(f"AI engine failed, creating incident directly: {ai_err}")
+                    from app.models.incident import Incident
+                    mitre_list = rule.get("mitre", [])
+                    mitre_technique = mitre_list[0].get("technique") if mitre_list else None
+                    mitre_tactic = mitre_list[0].get("tactic") if mitre_list else None
+                    incident = Incident(
+                        client_id=client.id,
+                        title=f"{rule['severity'].upper()}: {rule['title']}",
+                        description=rule.get("description", "") or alert_data.get("description", ""),
+                        severity=rule["severity"],
+                        status="investigating",
+                        source="correlation_engine",
+                        mitre_technique=mitre_technique,
+                        mitre_tactic=mitre_tactic,
+                        source_ip=alert_data.get("source_ip"),
+                        ai_analysis={"rule_id": rule["id"], "ai_fallback": True},
+                        raw_alert=alert_data.get("triggering_event"),
+                    )
+                    db.add(incident)
+                    await db.commit()
+                    logger.info(f"Correlation incident created (no AI): {incident.id}")
 
         except Exception as exc:
             logger.error(f"Correlation engine failed to create incident for rule '{rule['id']}': {exc}")
@@ -2616,6 +2722,78 @@ class CorrelationEngine:
             await self.evaluate(data)
 
     # ------------------------------------------------------------------
+    # Raw-source event translators
+    # ------------------------------------------------------------------
+
+    async def _on_log_line(self, data: dict) -> None:
+        """Translate raw log_line events into typed security events for Sigma rules."""
+        if not isinstance(data, dict):
+            return
+        line = data.get("line", "")
+        if not line:
+            return
+
+        # Extract IP and request path from the log line
+        ip_match = _IP_RE.search(line)
+        source_ip = ip_match.group(1) if ip_match else None
+        path_match = _PATH_RE.search(line)
+        request_path = path_match.group(1) if path_match else ""
+        port_match = _PORT_RE.search(line)
+        target_port = int(port_match.group(1)) if port_match else None
+
+        ts = data.get("timestamp", datetime.utcnow().isoformat())
+
+        for pat in _LOG_PATTERNS:
+            if pat["regex"].search(line):
+                event = {
+                    "event_type": pat["event_type"],
+                    "source_ip": source_ip,
+                    "severity": pat["severity"],
+                    "timestamp": ts,
+                    "log_line": line[:500],
+                    "path": request_path,
+                    "source": "log_watcher",
+                }
+                if target_port:
+                    event["target_port"] = target_port
+                if pat.get("tag"):
+                    event["tag"] = pat["tag"]
+                await self.evaluate(event)
+
+    async def _on_edr_event(self, data: dict) -> None:
+        """Translate EDR events into correlation event types."""
+        if not isinstance(data, dict):
+            return
+        kind = data.get("kind") or data.get("type", "")
+        mapped_type = _EDR_EVENT_MAP.get(kind)
+        if not mapped_type:
+            return
+
+        event = {
+            "event_type": mapped_type,
+            "source_ip": data.get("source_ip", "127.0.0.1"),
+            "severity": data.get("severity", "medium"),
+            "timestamp": data.get("timestamp", datetime.utcnow().isoformat()),
+            "source": "edr",
+            "agent_id": data.get("agent_id"),
+            "pid": data.get("pid"),
+            "path": data.get("path", data.get("exe", "")),
+            "process_name": data.get("name", ""),
+            "cmdline": data.get("cmdline", ""),
+        }
+        await self.evaluate(event)
+
+    async def _on_honeypot_event(self, data: dict) -> None:
+        """Forward honeypot interactions with the correct event_type for chain rules."""
+        if not isinstance(data, dict):
+            return
+        event = {
+            **data,
+            "event_type": "honeypot_interaction",
+        }
+        await self.evaluate(event)
+
+    # ------------------------------------------------------------------
     # Helper: collect all event_types from rules
     # ------------------------------------------------------------------
 
@@ -2625,6 +2803,12 @@ class CorrelationEngine:
             et = rule.get("condition", {}).get("event_type")
             if et:
                 types.add(et)
+        # Also collect event types referenced in chain rule steps
+        for chain in self._chain_rules:
+            for step in chain.get("chain", []):
+                et = step.get("event_type")
+                if et:
+                    types.add(et)
         return types
 
 

@@ -25,13 +25,14 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.core.ip_blocker import BLOCKED_IPS_FILE
+
 logger = logging.getLogger("cayde6.attack_detector")
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-BLOCKED_IPS_FILE = Path.home() / "Cayde-6" / "backend" / "blocked_ips.txt"
 BLOCK_THRESHOLD = 3          # attacks before auto-block
 BLOCK_WINDOW    = 300         # seconds (5 min)
 FIREWALL_URL    = os.getenv("AEGIS_FIREWALL_URL", "")
@@ -296,6 +297,10 @@ def _blocked_response() -> Response:
 
 async def _block_ip(ip: str, reason: str):
     """Block an IP: add to memory set, append to file, notify external firewall."""
+    if not ip or not isinstance(ip, str):
+        logger.warning(f"[AttackDetector] _block_ip called with invalid IP: {ip!r}, skipping")
+        return
+
     if _is_safe_ip(ip):
         logger.warning(f"[AttackDetector] Refusing to block safe IP {ip}")
         return

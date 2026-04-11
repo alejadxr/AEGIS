@@ -19,8 +19,8 @@ const LEVEL_COLOR: Record<string, string> = {
   high: 'text-[#F97316]',
   warn: 'text-[#F59E0B]',
   warning: 'text-[#F59E0B]',
-  info: 'text-[#22D3EE]',
-  debug: 'text-zinc-500',
+  info: 'text-primary',
+  debug: 'text-muted-foreground',
 };
 
 function shortTime(ts?: string): string {
@@ -78,20 +78,20 @@ export function RawLogStream() {
   }, [lines, autoScroll]);
 
   return (
-    <div className="bg-[#0E0E10] border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0 bg-[#18181B]">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
-          <span className="text-[13px] font-semibold text-white tracking-tight">Raw Log Stream</span>
+          <span className="text-[13px] font-semibold text-foreground tracking-tight">Raw Log Stream</span>
         </div>
         <label className="flex items-center gap-1.5 cursor-pointer">
           <input
             type="checkbox"
             checked={autoScroll}
             onChange={(e) => setAutoScroll(e.target.checked)}
-            className="w-3 h-3 accent-[#22D3EE] cursor-pointer"
+            className="w-3 h-3 accent-primary cursor-pointer"
           />
-          <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wide">auto-scroll</span>
+          <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">auto-scroll</span>
         </label>
       </div>
       <div
@@ -99,18 +99,18 @@ export function RawLogStream() {
         className="flex-1 overflow-y-auto font-mono text-[11px] leading-[1.45] p-3 space-y-0.5"
       >
         {lines.length === 0 ? (
-          <p className="text-zinc-700 italic">Waiting for log events…</p>
+          <p className="text-muted-foreground/40 italic">Waiting for log events…</p>
         ) : (
           lines.map((line) => {
-            const color = LEVEL_COLOR[line.level] ?? 'text-zinc-400';
+            const color = LEVEL_COLOR[line.level] ?? 'text-muted-foreground';
             return (
               <div key={line.id} className="flex items-start gap-2">
-                <span className="text-zinc-700 tabular-nums shrink-0">{shortTime(line.ts)}</span>
+                <span className="text-muted-foreground/40 tabular-nums shrink-0">{shortTime(line.ts)}</span>
                 <span className={`${color} font-semibold uppercase shrink-0 w-12`}>{line.level}</span>
                 {line.source && (
-                  <span className="text-zinc-600 shrink-0">[{line.source}]</span>
+                  <span className="text-muted-foreground/60 shrink-0">[{line.source}]</span>
                 )}
-                <span className="text-zinc-300 break-all">{line.message}</span>
+                <span className="text-foreground break-all">{line.message}</span>
               </div>
             );
           })
