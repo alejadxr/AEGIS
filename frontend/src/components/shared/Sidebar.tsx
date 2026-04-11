@@ -174,7 +174,7 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
         {/* Footer with version */}
         {!collapsed && (
           <div className="px-4 py-3 border-t border-border">
-            <p className="text-[10px] text-muted-foreground/40 font-mono">v2.0.0</p>
+            <p className="text-[10px] text-muted-foreground/40 font-mono">v1.4.0</p>
           </div>
         )}
 
