@@ -53,7 +53,7 @@ class HubSyncClient:
                     "node_id": node_id,
                     "node_name": node_name or node_id,
                     "node_url": "",
-                    "version": "1.2.0",
+                    "version": "1.4.0",
                 },
             )
             if resp.status_code == 200:
