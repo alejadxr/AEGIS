@@ -16,10 +16,15 @@ import {
   Bar,
   XAxis,
   YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
 } from 'recharts';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 
 interface IncidentItem {
   id: string;
@@ -45,15 +50,12 @@ interface ActionItem {
   created_at: string;
 }
 
-const tooltipStyle = {
-  backgroundColor: 'hsl(var(--card))',
-  border: '1px solid hsl(var(--border))',
-  borderRadius: '8px',
-  color: 'hsl(var(--foreground))',
-  fontSize: '12px',
-  fontFamily: 'Azeret Mono, monospace',
-  padding: '8px 12px',
-};
+const statusChartConfig = {
+  escalated: { label: 'Escalated', color: '#22C55E' },
+  resolved: { label: 'Resolved', color: '#22D3EE' },
+  in_progress: { label: 'In Progress', color: '#A855F7' },
+  open: { label: 'Open', color: '#52525B' },
+} satisfies ChartConfig;
 
 const severityDotColor: Record<string, string> = {
   critical: 'bg-[#EF4444]',
@@ -264,44 +266,26 @@ export default function ResponsePage() {
                 <p className="text-muted-foreground/50 text-[13px]">No data yet</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ChartContainer config={statusChartConfig} className="h-full w-full aspect-auto">
                 <BarChart data={statusDistData} barCategoryGap={6}>
                   <XAxis
                     dataKey="day"
-                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, fontFamily: 'Azeret Mono' }}
-                    axisLine={{ stroke: 'hsl(var(--border))' }}
+                    tick={{ fontSize: 11, fontFamily: 'Azeret Mono' }}
                     tickLine={false}
                   />
                   <YAxis
-                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, fontFamily: 'Azeret Mono' }}
+                    tick={{ fontSize: 11, fontFamily: 'Azeret Mono' }}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'hsl(var(--muted) / 0.2)' }} />
-                  <Legend
-                    iconType="circle"
-                    iconSize={6}
-                    content={(props) => {
-                      const { payload } = props as { payload?: Array<{ color: string; value: string }> };
-                      if (!payload) return null;
-                      return (
-                        <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-                          {payload.map((entry) => (
-                            <div key={entry.value} className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
-                              <span style={{ fontSize: '11px', fontFamily: 'Azeret Mono', color: 'hsl(var(--muted-foreground))' }}>{entry.value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    }}
-                  />
-                  <Bar dataKey="escalated" name="Escalated" stackId="a" fill="#22C55E" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="resolved" name="Resolved" stackId="a" fill="#22D3EE" />
-                  <Bar dataKey="in_progress" name="In Progress" stackId="a" fill="#A855F7" />
-                  <Bar dataKey="open" name="Open" stackId="a" fill="#52525B" radius={[4, 4, 0, 0]} />
+                  <ChartTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.2 }} content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="escalated" stackId="a" fill="var(--color-escalated)" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="resolved" stackId="a" fill="var(--color-resolved)" />
+                  <Bar dataKey="in_progress" stackId="a" fill="var(--color-in_progress)" />
+                  <Bar dataKey="open" stackId="a" fill="var(--color-open)" radius={[4, 4, 0, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
+              </ChartContainer>
             )}
           </CardContent>
         </Card>

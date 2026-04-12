@@ -29,8 +29,30 @@ _KNOWN_SAFE_IPS = frozenset({
 })
 
 
+# Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
+# IPs in this set bypass the internal-IP filter so that pentest lab machines
+# on Tailscale CGNAT (e.g. Kali at 100.88.0.85) can generate real incidents.
+# Shared semantics with correlation_engine._ATTACKER_IPS — same env var.
+from app.config import settings as _settings
+
+_ATTACKER_IPS: set[str] = {
+    ip.strip()
+    for ip in (_settings.AEGIS_ATTACKER_IPS or "").split(",")
+    if ip.strip()
+}
+if _ATTACKER_IPS:
+    logger.info(f"Attacker allow-list loaded: {sorted(_ATTACKER_IPS)}")
+
+
 def _is_private_ip(ip: str) -> bool:
-    """Check if an IP is internal, private, Tailscale, or a known safe IP."""
+    """Check if an IP is internal, private, Tailscale, or a known safe IP.
+
+    An IP in `AEGIS_ATTACKER_IPS` always returns False — the explicit
+    allow-list wins over the network-range classification.
+    """
+    # Explicit allow-list wins — see correlation_engine._is_internal_ip.
+    if ip in _ATTACKER_IPS:
+        return False
     if ip in _KNOWN_SAFE_IPS:
         return True
     try:
@@ -42,7 +64,17 @@ def _is_private_ip(ip: str) -> bool:
 PATTERNS = [
     {
         "name": "sql_injection", "severity": "high", "threat_type": "sql_injection",
-        "regex": re.compile(r"(?i)(union\s+select|or\s+1\s*=\s*1|;\s*select|drop\s+table|information_schema|%27|--\s*$|'\s*OR\s*'|UNION\s+SELECT|OR\s+1=1)"),
+        # The bare `--\s*$` alternative was removed because it matched any log
+        # line ending in two or more dashes (e.g. Python traceback dividers
+        # like "----------------------------------------" from crashing apps),
+        # producing a self-amplifying false-positive loop. Real SQL comments
+        # always follow a SQL keyword, so we require one before `--`.
+        "regex": re.compile(
+            r"(?i)(union\s+select|or\s+1\s*=\s*1|;\s*select|drop\s+table"
+            r"|information_schema|%27"
+            r"|\b(?:SELECT|FROM|WHERE|OR|AND|UNION|ORDER|GROUP)\s+[^\n]*--\s*$"
+            r"|'\s*OR\s*'|UNION\s+SELECT|OR\s+1=1)"
+        ),
     },
     {
         "name": "xss_attempt", "severity": "medium", "threat_type": "xss",
@@ -82,10 +114,30 @@ if _internal_extra:
     _internal_default.update(ip.strip() for ip in _internal_extra.split(",") if ip.strip())
 INTERNAL_IPS = frozenset(_internal_default)
 
-# Log source prefixes that indicate our own scheduled scanner
+# Substrings that indicate a log line was emitted by AEGIS itself.
+# Without this filter the log_watcher would read its OWN warning output and
+# correlation_engine would read ITS OWN `[CORRELATION]` emissions, producing a
+# self-referential feedback loop: a real (or false-positive) detection is
+# logged → the log line contains the matched payload → log_watcher tails its
+# own stderr → regex matches again → creates another incident → writes another
+# warning → repeat. AEGIS's own SQLAlchemy tracebacks (`MissingGreenlet`,
+# `ExceptionGroup`, etc.) also contain dash dividers and keyword fragments
+# that matched the old SQLi regex. Dropping any line tagged with one of these
+# markers stops the loop at the source.
 INTERNAL_SOURCE_MARKERS = (
     "aegis.scheduled_scanner",
     "aegis.scanner",
+    # AEGIS's own loggers (old and new prefixes)
+    "[aegis.",
+    "[cayde6.",
+    "[cayde6.log_watcher]",
+    "[aegis.log_watcher]",
+    "[aegis.correlation]",
+    "[aegis.ai_engine]",
+    # Python traceback artifacts from AEGIS crashes
+    "sqlalchemy.exc.",
+    "ExceptionGroup:",
+    "greenlet_spawn",
 )
 
 # Tool names used only by the internal scanner - skip lines containing these
@@ -207,8 +259,23 @@ class LogWatcher:
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
 
         pm2_path = shutil.which("pm2", path=env["PATH"]) or "/usr/local/bin/pm2"
-        cmd = [pm2_path, "logs", "--raw", "--lines", "0"]
-        logger.info(f"Starting PM2 log tail: {' '.join(cmd)}")
+
+        # Restrict PM2 tail to AEGIS_MONITORED_APPS (comma-separated). Prior
+        # behavior tailed every app running on the host, which produced
+        # self-referential false positives when unrelated projects (sid,
+        # wilabia-frontend) crashed and emitted Python traceback dividers
+        # that matched the SQLi regex. Empty setting falls back to all apps.
+        from app.config import settings
+        monitored = [
+            a.strip()
+            for a in (settings.AEGIS_MONITORED_APPS or "").split(",")
+            if a.strip()
+        ]
+        cmd = [pm2_path, "logs", "--raw", "--lines", "0", *monitored]
+        logger.info(
+            f"Starting PM2 log tail: {' '.join(cmd)} "
+            f"(apps={monitored or 'ALL'})"
+        )
 
         try:
             proc = await asyncio.create_subprocess_exec(

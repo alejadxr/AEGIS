@@ -50,6 +50,19 @@ class Settings(BaseSettings):
     AEGIS_MONGODB_URI: str = ""     # Direct MongoDB connection (for self-hosted hubs)
     AEGIS_HUB_URL: str = ""         # HTTP hub URL (connect to another AEGIS instance)
 
+    # Log watcher — comma-separated list of PM2 app names to tail.
+    # Prevents AEGIS from monitoring unrelated projects on the same host
+    # (which produced self-referential SQLi false positives from other apps'
+    # traceback dividers). Empty string = tail all apps (legacy behavior).
+    AEGIS_MONITORED_APPS: str = "cayde6-api,cayde6-frontend"
+
+    # Attacker allow-list — comma-separated IPs that bypass the internal-IP
+    # filter even if they would otherwise be classified as private/Tailscale.
+    # Use this for pentest lab machines (Kali boxes) that need to generate
+    # real incidents despite living in Tailscale CGNAT (100.64.0.0/10).
+    # Example: AEGIS_ATTACKER_IPS="100.88.0.85,100.88.0.86"
+    AEGIS_ATTACKER_IPS: str = ""
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

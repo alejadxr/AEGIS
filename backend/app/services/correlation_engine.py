@@ -20,10 +20,35 @@ from typing import Any
 logger = logging.getLogger("aegis.correlation")
 
 
+# Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
+# IPs in this set bypass the internal-IP filter even if they would otherwise
+# match the private/loopback/Tailscale classifier. Intended for pentest lab
+# machines (e.g. Kali on 100.88.0.85) that need to generate real incidents
+# despite living inside the Tailscale CGNAT range.
+from app.config import settings as _settings
+
+_ATTACKER_IPS: set[str] = {
+    ip.strip()
+    for ip in (_settings.AEGIS_ATTACKER_IPS or "").split(",")
+    if ip.strip()
+}
+if _ATTACKER_IPS:
+    logger.info(f"Attacker allow-list loaded: {sorted(_ATTACKER_IPS)}")
+
+
 def _is_internal_ip(ip: str) -> bool:
-    """True if IP is private, loopback, link-local, or Tailscale (100.64.0.0/10)."""
+    """True if IP is private, loopback, link-local, or Tailscale (100.64.0.0/10).
+
+    An IP listed in `AEGIS_ATTACKER_IPS` always returns False — the explicit
+    allow-list wins over the network-range classification so that lab pentest
+    machines on Tailscale CGNAT still generate real incidents.
+    """
     if not ip:
         return True
+    # Explicit allow-list wins — a Kali box on 100.88.0.85 would otherwise
+    # be treated as internal Tailscale traffic and have its attacks silenced.
+    if ip in _ATTACKER_IPS:
+        return False
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
@@ -49,9 +74,15 @@ _LOG_PATTERNS = [
     {
         "event_type": "sql_injection",
         "severity": "high",
+        # See log_watcher.PATTERNS[0] for rationale: the bare `--\s*$`
+        # alternative was removed to stop matching traceback dividers
+        # (40-dash banners and Python ExceptionGroup headers). Real SQL
+        # comments always follow a SQL keyword, so we require one.
         "regex": re.compile(
             r"(?i)(union\s+select|or\s+1\s*=\s*1|;\s*select|drop\s+table"
-            r"|information_schema|%27|--\s*$|'\s*OR\s*'|UNION\s+SELECT|OR\s+1=1)"
+            r"|information_schema|%27"
+            r"|\b(?:SELECT|FROM|WHERE|OR|AND|UNION|ORDER|GROUP)\s+[^\n]*--\s*$"
+            r"|'\s*OR\s*'|UNION\s+SELECT|OR\s+1=1)"
         ),
     },
     {
@@ -2615,6 +2646,19 @@ class CorrelationEngine:
 
     async def _on_chain_triggered(self, chain_rule: dict, triggering_event: dict) -> None:
         """Handle a triggered chain rule — always critical."""
+        # Drop events with no attributable source (null IP) AND events from
+        # internal/private/Tailscale IPs. A correlation rule with no attacker
+        # identity cannot produce an actionable incident, and null-IP events
+        # from self-referential log processing historically grouped together
+        # under `source_ip=None` and caused feedback-loop SQLi chain fires.
+        source_ip = triggering_event.get("source_ip")
+        if not source_ip or _is_internal_ip(source_ip):
+            logger.debug(
+                f"Skipping chain correlation (source_ip={source_ip!r}): "
+                f"rule={chain_rule.get('id', 'chain')}"
+            )
+            return
+
         alert_data = {
             "event_type": "chain_correlation_triggered",
             "chain_id": chain_rule["id"],
@@ -2661,6 +2705,16 @@ class CorrelationEngine:
 
     async def _on_rule_triggered(self, rule: dict, triggering_event: dict) -> None:
         """Publish correlation alert and optionally create an AI incident."""
+        # Drop events with no attributable source (null IP) AND internal IPs.
+        # See _on_chain_triggered for full rationale.
+        source_ip = triggering_event.get("source_ip")
+        if not source_ip or _is_internal_ip(source_ip):
+            logger.debug(
+                f"Skipping correlation (source_ip={source_ip!r}): "
+                f"rule={rule.get('id', 'chain')}"
+            )
+            return
+
         alert_data = {
             "event_type": "correlation_triggered",
             "rule_id": rule["id"],
@@ -2758,11 +2812,12 @@ class CorrelationEngine:
         ip_match = _IP_RE.search(line)
         source_ip = ip_match.group(1) if ip_match else None
 
-        # Skip internal/private/Tailscale IPs — they are never attackers.
-        # This prevents the dashboard's own traffic (WebSocket, login retries,
-        # API calls from localhost or Tailscale peers) from triggering
-        # brute-force / scanner / auth-failure sigma rules.
-        if source_ip and _is_internal_ip(source_ip):
+        # Drop events with no attributable source (null IP) AND internal IPs.
+        # A log line with no extractable IP cannot be an attack we can
+        # attribute to an attacker — previously these leaked through and
+        # grouped under source_ip=None in sigma rules like `sql_injection_chain`,
+        # producing the feedback-loop false positives from traceback dividers.
+        if not source_ip or _is_internal_ip(source_ip):
             return
         path_match = _PATH_RE.search(line)
         request_path = path_match.group(1) if path_match else ""

@@ -19,8 +19,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
-  Tooltip,
   AreaChart,
   Area,
   XAxis,
@@ -28,6 +26,12 @@ import {
   LineChart,
   Line,
 } from 'recharts';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 
 interface PortEntry {
   port: number;
@@ -58,15 +62,20 @@ interface VulnRow {
   [key: string]: unknown;
 }
 
-const tooltipStyle = {
-  backgroundColor: 'hsl(var(--card))',
-  border: '1px solid hsl(var(--border))',
-  borderRadius: '8px',
-  color: 'hsl(var(--foreground))',
-  fontSize: '12px',
-  fontFamily: 'Azeret Mono, monospace',
-  padding: '8px 12px',
-};
+const trendChartConfig = {
+  vulns: { label: 'Vulnerabilities', color: '#EF4444' },
+} satisfies ChartConfig;
+
+const detectionChartConfig = {
+  vulns: { label: 'Detections', color: '#22D3EE' },
+} satisfies ChartConfig;
+
+const severityChartConfig = {
+  Critical: { label: 'Critical', color: '#EF4444' },
+  High: { label: 'High', color: '#F97316' },
+  Medium: { label: 'Medium', color: '#F59E0B' },
+  Low: { label: 'Low', color: '#3B82F6' },
+} satisfies ChartConfig;
 
 const typeIcons: Record<string, typeof Server> = {
   server: Server,
@@ -259,20 +268,20 @@ export default function SurfacePage() {
                 <p className="text-muted-foreground/50 text-[13px]">No vulnerability data yet</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ChartContainer config={trendChartConfig} className="h-full w-full aspect-auto">
                 <AreaChart data={trendData}>
                   <defs>
                     <linearGradient id="vulnGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#EF4444" stopOpacity={0.15} />
-                      <stop offset="100%" stopColor="#EF4444" stopOpacity={0} />
+                      <stop offset="0%" stopColor="var(--color-vulns)" stopOpacity={0.15} />
+                      <stop offset="100%" stopColor="var(--color-vulns)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="date" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, fontFamily: 'Azeret Mono' }} axisLine={{ stroke: 'hsl(var(--border))' }} tickLine={false} />
-                  <YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, fontFamily: 'Azeret Mono' }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: 'hsl(var(--border))' }} />
-                  <Area type="monotone" dataKey="vulns" stroke="#EF4444" fill="url(#vulnGrad)" strokeWidth={1.5} name="Vulnerabilities" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: 'Azeret Mono' }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fontFamily: 'Azeret Mono' }} axisLine={false} tickLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                  <Area type="monotone" dataKey="vulns" stroke="var(--color-vulns)" fill="url(#vulnGrad)" strokeWidth={1.5} />
                 </AreaChart>
-              </ResponsiveContainer>
+              </ChartContainer>
             )}
           </CardContent>
         </Card>
@@ -290,16 +299,16 @@ export default function SurfacePage() {
             ) : (
               <>
                 <div className="w-36 h-36">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ChartContainer config={severityChartConfig} className="h-full w-full aspect-auto">
                     <PieChart>
-                      <Pie data={severityDist} cx="50%" cy="50%" innerRadius={35} outerRadius={60} dataKey="value" stroke="none" paddingAngle={3}>
+                      <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="name" />} />
+                      <Pie data={severityDist} cx="50%" cy="50%" innerRadius={35} outerRadius={60} dataKey="value" nameKey="name" stroke="none" paddingAngle={3}>
                         {severityDist.map((entry, index) => (
                           <Cell key={index} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={tooltipStyle} />
                     </PieChart>
-                  </ResponsiveContainer>
+                  </ChartContainer>
                 </div>
                 <div className="w-full mt-4 space-y-2">
                   {severityDist.map((e) => (
@@ -338,34 +347,29 @@ export default function SurfacePage() {
               <p className="text-muted-foreground/50 text-[13px]">No detection data yet</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ChartContainer config={detectionChartConfig} className="h-full w-full aspect-auto">
               <LineChart data={trendData}>
                 <XAxis
                   dataKey="date"
-                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, fontFamily: 'Azeret Mono' }}
-                  axisLine={{ stroke: 'hsl(var(--border))' }}
+                  tick={{ fontSize: 11, fontFamily: 'Azeret Mono' }}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, fontFamily: 'Azeret Mono' }}
+                  tick={{ fontSize: 11, fontFamily: 'Azeret Mono' }}
                   axisLine={false}
                   tickLine={false}
                 />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  cursor={{ stroke: 'hsl(var(--border))' }}
-                />
+                <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
                 <Line
                   type="monotone"
                   dataKey="vulns"
-                  name="Detections"
-                  stroke="#22D3EE"
+                  stroke="var(--color-vulns)"
                   strokeWidth={1.5}
-                  dot={{ fill: 'hsl(var(--card))', stroke: '#22D3EE', strokeWidth: 2, r: 3 }}
-                  activeDot={{ fill: '#22D3EE', stroke: 'hsl(var(--card))', strokeWidth: 2, r: 4 }}
+                  dot={{ fill: 'var(--card)', stroke: 'var(--color-vulns)', strokeWidth: 2, r: 3 }}
+                  activeDot={{ fill: 'var(--color-vulns)', stroke: 'var(--card)', strokeWidth: 2, r: 4 }}
                 />
               </LineChart>
-            </ResponsiveContainer>
+            </ChartContainer>
           )}
         </CardContent>
       </Card>

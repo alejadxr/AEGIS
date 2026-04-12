@@ -460,10 +460,21 @@ class AIDecisionEngine:
     ) -> Incident:
         threat_type = triage.get("threat_type", "unknown")
         mitre = MITRE_MAPPINGS.get(threat_type, {})
+        # Prefer the caller's explicit title (e.g. log_watcher passes
+        # "MEDIUM: Auth Failure detected") over the AI triage summary. When
+        # OpenRouter returns non-JSON, triage falls back to a default summary
+        # of "Alert received" and the previous code built the incident title
+        # from that fallback — silently overwriting meaningful titles with
+        # "MEDIUM: Alert received" ghosts.
+        caller_title = alert_data.get("title")
+        fallback_title = (
+            f"{triage.get('severity', 'medium').upper()}: "
+            f"{triage.get('summary', 'Security Alert')}"
+        )
         incident = Incident(
             client_id=client.id,
-            title=f"{triage.get('severity', 'medium').upper()}: {triage.get('summary', 'Security Alert')}",
-            description=triage.get("summary", ""),
+            title=caller_title or fallback_title,
+            description=triage.get("summary", "") or alert_data.get("description", ""),
             severity=triage.get("severity", "medium"),
             status="investigating",
             source=alert_data.get("source", "webhook"),

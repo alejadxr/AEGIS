@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.incident import Incident
 from app.models.endpoint_agent import EndpointAgent
+from app.services.correlation_engine import _is_internal_ip
 
 logger = logging.getLogger("aegis.edr.chains")
 
@@ -490,6 +491,14 @@ async def evaluate_event(
                 logger.debug("cmd_pattern rule %s failed: %s", cpr.rule_id, e)
 
     # --- Create incidents for all matches ---
+    # Skip incident creation if the agent's source_ip is internal/Tailscale
+    # — we still return the matches so the caller can log them, but we don't
+    # persist false-positive incidents for localhost activity.
+    source_ip = agent.ip_address
+    if source_ip and _is_internal_ip(source_ip):
+        logger.debug(f"Skipping chain incident from internal IP {source_ip}")
+        return matches
+
     for m in matches:
         incident = Incident(
             client_id=agent.client_id,

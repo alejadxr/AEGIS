@@ -2,14 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import {
-  ResponsiveContainer,
   LineChart,
   Line,
   XAxis,
   YAxis,
-  Tooltip,
   CartesianGrid,
 } from 'recharts';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import { subscribeTopic } from '@/lib/ws';
 
 interface Point {
@@ -19,6 +23,13 @@ interface Point {
 }
 
 const WINDOW_SECONDS = 60;
+
+const chartConfig = {
+  events: {
+    label: 'Events',
+    color: '#22D3EE',
+  },
+} satisfies ChartConfig;
 
 export function EventsPerSecChart() {
   const [points, setPoints] = useState<Point[]>(() => {
@@ -35,17 +46,6 @@ export function EventsPerSecChart() {
   });
   const [current, setCurrent] = useState(0);
   const [peak, setPeak] = useState(0);
-  const [isDark, setIsDark] = useState(false);
-
-  useEffect(() => {
-    const check = () => {
-      setIsDark(document.documentElement.getAttribute('data-theme') === 'dark' || document.documentElement.classList.contains('dark'));
-    };
-    check();
-    const obs = new MutationObserver(check);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
-    return () => obs.disconnect();
-  }, []);
 
   useEffect(() => {
     let accum = 0;
@@ -86,12 +86,6 @@ export function EventsPerSecChart() {
     };
   }, []);
 
-  const gridColor = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
-  const tickColor = isDark ? '#6B7280' : '#9CA3AF';
-  const tooltipBg = isDark ? '#18181B' : '#FFFFFF';
-  const tooltipBorder = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const tooltipText = isDark ? '#FAFAFA' : '#18181B';
-
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
@@ -110,50 +104,36 @@ export function EventsPerSecChart() {
         </div>
       </div>
       <div className="flex-1 p-3">
-        <ResponsiveContainer width="100%" height="100%">
+        <ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
           <LineChart data={points}>
-            <defs>
-              <linearGradient id="lineGradCyan" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#22D3EE" stopOpacity={0.5} />
-                <stop offset="100%" stopColor="#22D3EE" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke={gridColor} vertical={false} />
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fill: tickColor, fontSize: 9, fontFamily: 'Azeret Mono' }}
+              tick={{ fontSize: 9, fontFamily: 'Azeret Mono' }}
               axisLine={false}
               tickLine={false}
               interval={9}
             />
             <YAxis
-              tick={{ fill: tickColor, fontSize: 9, fontFamily: 'Azeret Mono' }}
+              tick={{ fontSize: 9, fontFamily: 'Azeret Mono' }}
               axisLine={false}
               tickLine={false}
               width={26}
             />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: tooltipBg,
-                border: `1px solid ${tooltipBorder}`,
-                borderRadius: '8px',
-                color: tooltipText,
-                fontSize: '11px',
-                fontFamily: 'Azeret Mono, monospace',
-                padding: '6px 10px',
-              }}
+            <ChartTooltip
               cursor={{ stroke: 'rgba(34,211,238,0.2)' }}
+              content={<ChartTooltipContent indicator="line" />}
             />
             <Line
               type="monotone"
               dataKey="events"
-              stroke="#22D3EE"
+              stroke="var(--color-events)"
               strokeWidth={1.5}
               dot={false}
               isAnimationActive={false}
             />
           </LineChart>
-        </ResponsiveContainer>
+        </ChartContainer>
       </div>
     </div>
   );
