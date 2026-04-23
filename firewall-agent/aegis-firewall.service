@@ -1,0 +1,17 @@
+# Install: replace {{AEGIS_USER}} with the Linux user that will run the agent,
+# then copy to /etc/systemd/system/ and `systemctl daemon-reload && systemctl enable --now aegis-firewall`.
+[Unit]
+Description=AEGIS Firewall Agent
+After=network.target
+
+[Service]
+Type=simple
+User={{AEGIS_USER}}
+WorkingDirectory=/opt/aegis-firewall
+ExecStart=/opt/aegis-firewall/venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8765
+Restart=always
+RestartSec=5
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=multi-user.target

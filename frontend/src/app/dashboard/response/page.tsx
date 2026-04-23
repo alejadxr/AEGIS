@@ -36,6 +36,7 @@ interface IncidentItem {
   mitre_technique: string | null;
   mitre_tactic: string | null;
   source_ip: string | null;
+  ai_analysis: Record<string, unknown> | null;
   detected_at: string;
 }
 
@@ -64,7 +65,10 @@ const severityDotColor: Record<string, string> = {
   low: 'bg-[#3B82F6]',
 };
 
-const TACTICS = ['Initial Access', 'Execution', 'Discovery', 'Defense Evasion', 'Lateral Movement'];
+const TACTICS = [
+  'Initial Access', 'Execution', 'Credential Access', 'Discovery',
+  'Privilege Escalation', 'Defense Evasion', 'Lateral Movement', 'Reconnaissance',
+];
 
 function heatmapCellColor(value: number): string {
   if (value === 0) return 'bg-muted/20';
@@ -89,10 +93,19 @@ function buildTacticsHeatmap(incidents: IncidentItem[]): { days: string[]; data:
   const now = Date.now();
   const data: number[][] = TACTICS.map(() => new Array(7).fill(0));
 
+  // Map MITRE ATT&CK tactic IDs to names
+  const TACTIC_ID_MAP: Record<string, string> = {
+    'TA0043': 'Reconnaissance', 'TA0001': 'Initial Access', 'TA0002': 'Execution',
+    'TA0003': 'Persistence', 'TA0004': 'Privilege Escalation', 'TA0005': 'Defense Evasion',
+    'TA0006': 'Credential Access', 'TA0007': 'Discovery', 'TA0008': 'Lateral Movement',
+  };
+
   incidents.forEach((inc) => {
     if (!inc.mitre_tactic) return;
+    // Resolve tactic ID to name if needed
+    const tacticName = TACTIC_ID_MAP[inc.mitre_tactic] || inc.mitre_tactic;
     const tacticIdx = TACTICS.findIndex(
-      (t) => t.toLowerCase() === inc.mitre_tactic!.toLowerCase()
+      (t) => t.toLowerCase() === tacticName.toLowerCase()
     );
     if (tacticIdx === -1) return;
     const diffDays = Math.floor((now - new Date(inc.detected_at).getTime()) / 86400000);
@@ -121,7 +134,7 @@ function buildStatusDistribution(incidents: IncidentItem[]): Array<Record<string
     const dayKey = days[dayIdx];
     const bucket = buckets[dayKey];
     if (!bucket) return;
-    if (inc.status === 'resolved' || inc.status === 'remediated') bucket.resolved += 1;
+    if (inc.status === 'resolved' || inc.status === 'remediated' || inc.status === 'auto_responded') bucket.resolved += 1;
     else if (inc.status === 'investigating' || inc.status === 'contained') bucket.in_progress += 1;
     else if (inc.status === 'escalated') bucket.escalated += 1;
     else bucket.open += 1;
@@ -365,6 +378,45 @@ export default function ResponsePage() {
                           </div>
                         ))}
                       </div>
+                      {/* AI Analysis Details */}
+                      {incident.ai_analysis && (
+                        <div className="mt-4">
+                          <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">AI Analysis</p>
+                          <div className="bg-background border border-border rounded-xl p-4 space-y-2">
+                            {(() => {
+                              const analysis = incident.ai_analysis as Record<string, unknown> | null;
+                              const triage = analysis?.triage as Record<string, string | number | boolean> | undefined;
+                              if (!triage) return <p className="text-[12px] text-muted-foreground">No analysis data</p>;
+                              return (
+                                <>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                                      {`${triage.threat_type || 'unknown'}`}
+                                    </span>
+                                    <span className="text-[9px] text-muted-foreground font-mono">
+                                      confidence: {typeof triage.confidence === 'number' ? `${Math.round(Number(triage.confidence) * 100)}%` : 'N/A'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[12px] text-foreground leading-relaxed">
+                                    {`${triage.summary || incident.description}`}
+                                  </p>
+                                  {triage.mitre_technique && (
+                                    <div className="flex items-center gap-2 mt-2">
+                                      <Badge variant="outline" className="text-[9px] text-[#A855F7] bg-[#A855F7]/10 border-[#A855F7]/20 px-1.5 py-0.5 h-auto font-mono">
+                                        {`${triage.mitre_technique}`}
+                                      </Badge>
+                                      {triage.mitre_tactic && (
+                                        <span className="text-[10px] text-muted-foreground">{`${triage.mitre_tactic}`}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+
                       {actions.filter((a) => a.incident_id === incident.id).length > 0 && (
                         <div className="mt-4">
                           <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">Response Actions</p>

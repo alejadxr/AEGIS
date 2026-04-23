@@ -329,6 +329,7 @@ export const api = {
         mitre_technique: string | null;
         mitre_tactic: string | null;
         source_ip: string | null;
+        ai_analysis: Record<string, unknown> | null;
         detected_at: string;
       }>>('/response/incidents'),
     incident: (id: string) =>

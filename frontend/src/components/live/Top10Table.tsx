@@ -49,18 +49,18 @@ export function Top10Table({
                   className="absolute inset-y-0 left-0 pointer-events-none"
                   style={{
                     width: `${pct}%`,
-                    background: `linear-gradient(to right, ${accent}12, transparent)`,
+                    background: `linear-gradient(to right, ${accent}25, ${accent}08)`,
                   }}
                 />
                 <div className="relative flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-[10px] text-muted-foreground/60 font-mono tabular-nums w-4 shrink-0">
+                    <span className="text-[10px] text-muted-foreground font-mono tabular-nums font-semibold w-4 shrink-0">
                       {String(i + 1).padStart(2, '0')}
                     </span>
                     <div className="flex flex-col min-w-0">
                       <span
                         className={cn(
-                          'text-[12px] text-foreground truncate leading-tight',
+                          'text-[12px] text-foreground font-medium truncate leading-tight',
                           monoLabel && 'font-mono tabular-nums'
                         )}
                       >
@@ -74,7 +74,7 @@ export function Top10Table({
                     </div>
                   </div>
                   <span
-                    className="text-[12px] font-mono tabular-nums shrink-0"
+                    className="text-[12px] font-mono tabular-nums font-semibold shrink-0"
                     style={{ color: accent }}
                   >
                     {row.count.toLocaleString()}
