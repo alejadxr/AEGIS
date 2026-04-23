@@ -220,13 +220,13 @@ export default function DashboardPage() {
         <StatCard title="Honeypot Hits" value={stats.honeypot_interactions} trend={stats.interactions_trend || 0} icon={Ghost} color="orange" />
       </div>
 
-      {/* Attack Feed (60%) + Global Threat Map (40%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
-        <div className="lg:col-span-3 min-h-[380px]">
+      {/* Row 2: Attack Feed + Global Threat Map */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="min-h-[400px]">
           <AttackFeed />
         </div>
 
-        <Card className="lg:col-span-2 rounded-xl py-0 gap-0 shadow-none overflow-hidden">
+        <Card className="rounded-xl py-0 gap-0 shadow-none overflow-hidden">
           <SectionHeader
             title="Global Threat Map"
             icon={Radar01Icon}
@@ -237,20 +237,33 @@ export default function DashboardPage() {
               </div>
             ) : undefined}
           />
-          <div className="relative h-[280px] sm:h-[340px]">
+          <div className="relative h-[360px]">
             <GlobalThreatMap data={threatMap} />
           </div>
         </Card>
       </div>
 
-      {/* Events/sec chart — full width */}
-      <div className="h-52">
-        <EventsPerSecChart />
+      {/* Row 3: Metrics bar (full width compact) */}
+      <MetricsSummaryBar external={externalMetrics} />
+
+      {/* Row 4: Events/sec chart + Node Heartbeats */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+        <div className="lg:col-span-9 h-48">
+          <EventsPerSecChart />
+        </div>
+        <div className="lg:col-span-3 h-48">
+          <NodeHeartbeatGrid />
+        </div>
       </div>
 
-      {/* Top-10 Tables — compact horizontal */}
+      {/* Row 5: Raw Log Stream (full width, tall) */}
+      <div className="h-72">
+        <RawLogStream />
+      </div>
+
+      {/* Row 6: Top-10 Tables */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="h-52">
+        <div className="h-56">
           <Top10Table
             title="Top Attackers"
             rows={metrics?.top_attackers ?? []}
@@ -258,32 +271,19 @@ export default function DashboardPage() {
             monoLabel
           />
         </div>
-        <div className="h-52">
+        <div className="h-56">
           <Top10Table
             title="Top Targets"
             rows={metrics?.top_targets ?? []}
             accent="#F97316"
           />
         </div>
-        <div className="h-52">
+        <div className="h-56">
           <Top10Table
             title="Attack Types"
             rows={metrics?.top_attack_types ?? []}
             accent="#A855F7"
           />
-        </div>
-      </div>
-
-      {/* Raw Logs + Node Heartbeats + Metrics */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-5 h-60">
-          <RawLogStream />
-        </div>
-        <div className="lg:col-span-3 h-60">
-          <NodeHeartbeatGrid />
-        </div>
-        <div className="lg:col-span-4 h-60">
-          <MetricsSummaryBar external={externalMetrics} />
         </div>
       </div>
     </div>

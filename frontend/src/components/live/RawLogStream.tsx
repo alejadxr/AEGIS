@@ -14,13 +14,13 @@ interface LogLine {
 const MAX_LINES = 200;
 
 const LEVEL_COLOR: Record<string, string> = {
-  critical: 'text-[#EF4444]',
-  error: 'text-[#EF4444]',
-  high: 'text-[#F97316]',
-  warn: 'text-[#F59E0B]',
-  warning: 'text-[#F59E0B]',
-  info: 'text-primary',
-  debug: 'text-muted-foreground',
+  critical: 'text-[#FF6B6B] font-bold',
+  error: 'text-[#FF6B6B] font-bold',
+  high: 'text-[#FF9F43] font-bold',
+  warn: 'text-[#FECA57] font-bold',
+  warning: 'text-[#FECA57] font-bold',
+  info: 'text-[#48DBFB] font-semibold',
+  debug: 'text-muted-foreground/70',
 };
 
 function shortTime(ts?: string): string {
@@ -96,7 +96,7 @@ export function RawLogStream() {
       </div>
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto font-mono text-[11px] leading-[1.45] p-3 space-y-0.5"
+        className="flex-1 overflow-y-auto font-mono text-[12px] leading-[1.5] p-3 space-y-0.5 bg-background/90"
       >
         {lines.length === 0 ? (
           <p className="text-muted-foreground/40 italic">Waiting for log events…</p>
@@ -106,7 +106,7 @@ export function RawLogStream() {
             return (
               <div key={line.id} className="flex items-start gap-2">
                 <span className="text-muted-foreground/40 tabular-nums shrink-0">{shortTime(line.ts)}</span>
-                <span className={`${color} font-semibold uppercase shrink-0 w-12`}>{line.level}</span>
+                <span className={`${color} uppercase shrink-0 w-14`}>{line.level}</span>
                 {line.source && (
                   <span className="text-muted-foreground/60 shrink-0">[{line.source}]</span>
                 )}

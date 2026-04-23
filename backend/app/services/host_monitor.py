@@ -40,7 +40,8 @@ from app.models.client import Client
 
 logger = logging.getLogger("aegis.host_monitor")
 
-AGENT_ID = "aegis-host-monitor"
+import socket as _socket
+AGENT_ID = f"aegis-{_socket.gethostname().lower().replace('.local','').replace(' ','-')}"
 INTERVAL_SECONDS = 30
 
 # Processes that are suspicious when seen on a production host

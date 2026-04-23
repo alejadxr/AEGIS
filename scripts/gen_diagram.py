@@ -1,4 +1,5 @@
 """Generate AEGIS complete architecture diagram."""
+import os
 from PIL import Image, ImageDraw, ImageFont
 import math
 
@@ -237,6 +238,6 @@ for cx, cy in [(30, 30), (W - 30, 30), (30, H - 30), (W - 30, H - 30)]:
     draw.line([(cx, cy), (cx + 25 * dx, cy)], fill=bc, width=2)
     draw.line([(cx, cy), (cx, cy + 25 * dy)], fill=bc, width=2)
 
-out = "C:/Users/wilsd/RemoteProjects/Laboratorio/Cayde-6/docs/aegis-architecture.png"
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "aegis-architecture.png")
 img.save(out, "PNG", optimize=True)
 print(f"Done: {out}")

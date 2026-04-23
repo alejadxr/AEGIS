@@ -23,7 +23,7 @@ logger = logging.getLogger("aegis.correlation")
 # Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
 # IPs in this set bypass the internal-IP filter even if they would otherwise
 # match the private/loopback/Tailscale classifier. Intended for pentest lab
-# machines (e.g. Kali on 100.88.0.85) that need to generate real incidents
+# machines (e.g. a pentest box in the CGNAT range) that need to generate real incidents
 # despite living inside the Tailscale CGNAT range.
 from app.config import settings as _settings
 
@@ -45,7 +45,7 @@ def _is_internal_ip(ip: str) -> bool:
     """
     if not ip:
         return True
-    # Explicit allow-list wins — a Kali box on 100.88.0.85 would otherwise
+    # Explicit allow-list wins — a pentest host in CGNAT would otherwise
     # be treated as internal Tailscale traffic and have its attacks silenced.
     if ip in _ATTACKER_IPS:
         return False

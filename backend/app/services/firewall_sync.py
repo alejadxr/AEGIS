@@ -19,7 +19,8 @@ SYNC_INTERVAL_SECONDS = 300  # 5 minutes
 
 
 async def _get_demo_client_id(db: AsyncSession) -> Optional[str]:
-    result = await db.execute(select(Client).where(Client.slug == "demo"))
+    # Get the first (primary) client — works for single-tenant and multi-tenant
+    result = await db.execute(select(Client).limit(1))
     client = result.scalar_one_or_none()
     return client.id if client else None
 
@@ -56,8 +57,8 @@ async def _sync_attackers(db: AsyncSession, client_id: str) -> int:
 
         first_seen_str = atk.get("first_seen")
         last_seen_str = atk.get("last_seen")
-        first_seen = datetime.fromisoformat(first_seen_str) if first_seen_str else datetime.utcnow()
-        last_seen = datetime.fromisoformat(last_seen_str) if last_seen_str else datetime.utcnow()
+        first_seen = datetime.fromisoformat(first_seen_str).replace(tzinfo=None) if first_seen_str else datetime.utcnow()
+        last_seen = datetime.fromisoformat(last_seen_str).replace(tzinfo=None) if last_seen_str else datetime.utcnow()
 
         intel = atk.get("intel") or {}
         geo_data = {
@@ -145,10 +146,22 @@ async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
     if not events:
         return 0
 
+    # Operational events that should NOT create incidents
+    _SKIP_EVENT_TYPES = {"startup", "shutdown", "ip_blocked", "ip_unblocked", "config_reload", "health_check"}
+
     count = 0
     for event in events:
         ip = event.get("ip") or event.get("source_ip")
         event_type = event.get("type") or event.get("event_type", "firewall_alert")
+
+        # Skip operational events — they are not security incidents
+        if event_type in _SKIP_EVENT_TYPES:
+            continue
+
+        # Skip events from safe/internal IPs (own scans, localhost)
+        if ip and ip in ("127.0.0.1", "::1", "localhost", ""):
+            continue
+
         description = event.get("description") or event.get("reason") or f"Firewall detected: {event_type}"
         severity = _threat_level_to_severity(event.get("threat_level") or event.get("severity") or "medium")
 

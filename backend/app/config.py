@@ -58,10 +58,14 @@ class Settings(BaseSettings):
 
     # Attacker allow-list — comma-separated IPs that bypass the internal-IP
     # filter even if they would otherwise be classified as private/Tailscale.
-    # Use this for pentest lab machines (Kali boxes) that need to generate
-    # real incidents despite living in Tailscale CGNAT (100.64.0.0/10).
-    # Example: AEGIS_ATTACKER_IPS="100.88.0.85,100.88.0.86"
+    # Use this for pentest lab machines that need to generate real incidents
+    # despite living in Tailscale CGNAT (100.64.0.0/10).
+    # Example: AEGIS_ATTACKER_IPS="203.0.113.10,203.0.113.11"
     AEGIS_ATTACKER_IPS: str = ""
+
+    # External firewall API URL (e.g. AEGIS Firewall Agent on Raspberry Pi).
+    # When set, AEGIS uses this for real iptables blocking + threat intel.
+    AEGIS_FIREWALL_URL: str = ""
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

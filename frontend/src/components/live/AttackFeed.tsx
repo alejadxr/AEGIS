@@ -129,7 +129,7 @@ export function AttackFeed() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto max-h-[420px]">
         {loading ? (
           <div className="h-full flex items-center justify-center py-8">
             <p className="text-muted-foreground/60 text-[12px] font-mono">Loading incidents…</p>
@@ -139,62 +139,74 @@ export function AttackFeed() {
             <p className="text-muted-foreground/60 text-[12px] font-mono">No incidents detected</p>
           </div>
         ) : (
-          events.map((ev, i) => (
+          events.slice(0, 8).map((ev, i) => (
             <div
               key={ev.id}
               onClick={() => handleClick(ev)}
               className={cn(
-                'flex items-start gap-3 px-4 py-2.5 border-b border-border/50 hover:bg-muted/50 transition-colors cursor-pointer',
+                'flex items-center gap-3 px-4 py-2 border-b border-border/50 hover:bg-muted/60 hover:border-border transition-all duration-150 cursor-pointer',
                 i === 0 && 'animate-[slide-in_0.3s_ease-out]'
               )}
               style={i === 0 ? { animation: 'fade-in 0.3s ease-out' } : undefined}
             >
-              <div className="mt-1 shrink-0">
-                <span className={cn('block w-2 h-2 rounded-full', severityDot[ev.severity] ?? 'bg-muted-foreground/40')} />
+              <div className="shrink-0">
+                <span className={cn('block w-2.5 h-2.5 rounded-full', severityDot[ev.severity] ?? 'bg-muted-foreground/40')} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-[12px] text-foreground font-medium truncate">{ev.title}</p>
-                  <span className="shrink-0 text-[10px] text-muted-foreground/60 font-mono tabular-nums">
-                    {shortTime(ev.detected_at)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mt-1">
+                <p className="text-[12px] text-foreground font-medium truncate leading-tight">{ev.title}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
                   <span
                     className={cn(
-                      'text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border',
+                      'text-[8px] font-semibold uppercase tracking-wider px-1 py-0 rounded border leading-tight',
                       severityBadge[ev.severity] ?? severityBadge.info
                     )}
                   >
                     {ev.severity}
                   </span>
                   {ev.source_ip && (
-                    <span className="text-[10px] text-muted-foreground font-mono tabular-nums">{ev.source_ip}</span>
+                    <span className="text-[9px] text-muted-foreground font-mono tabular-nums">{ev.source_ip}</span>
                   )}
                   {ev.mitre_technique && (
-                    <span className="text-[10px] text-primary font-mono">{ev.mitre_technique}</span>
+                    <span className="text-[9px] text-primary font-mono">{ev.mitre_technique}</span>
                   )}
                   {ev.status && (
                     <span className={cn(
-                      'text-[9px] font-mono uppercase tracking-wider',
+                      'text-[8px] font-mono uppercase tracking-wider',
                       ev.status === 'resolved' ? 'text-[#22C55E]' :
+                      ev.status === 'auto_responded' ? 'text-[#22C55E]' :
                       ev.status === 'investigating' ? 'text-[#F59E0B]' :
                       'text-muted-foreground/60'
                     )}>
-                      {ev.status}
+                      {ev.status === 'auto_responded' ? 'blocked' : ev.status}
                     </span>
                   )}
                 </div>
               </div>
-              <div className="mt-1 shrink-0">
-                <svg className="w-3.5 h-3.5 text-muted-foreground/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
+              <span className="shrink-0 text-[9px] text-muted-foreground/50 font-mono tabular-nums">
+                {shortTime(ev.detected_at)}
+              </span>
+              <svg className="w-3 h-3 text-muted-foreground/30 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
             </div>
           ))
         )}
       </div>
+
+      {/* View all link */}
+      {events.length > 8 && (
+        <div
+          onClick={() => router.push('/dashboard/response')}
+          className="px-4 py-2.5 border-t border-border shrink-0 flex items-center justify-center gap-2 cursor-pointer hover:bg-primary/10 transition-colors"
+        >
+          <span className="text-[12px] text-primary font-semibold tracking-tight">
+            View all {events.length} incidents
+          </span>
+          <svg className="w-3.5 h-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        </div>
+      )}
     </div>
   );
 }

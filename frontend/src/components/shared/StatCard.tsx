@@ -55,7 +55,7 @@ export function StatCard({ title, value, trend, icon: Icon, color = 'accent' }: 
   }, [value]);
 
   return (
-    <Card className="rounded-xl py-0 gap-0 shadow-none transition-all duration-150 hover:border-border/80">
+    <Card className="rounded-xl py-0 gap-0 shadow-none transition-all duration-200 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/20 hover:-translate-y-0.5">
       <CardContent className="p-4 sm:p-5">
         {/* Label row */}
         <div className="flex items-center justify-between mb-3">
@@ -64,7 +64,7 @@ export function StatCard({ title, value, trend, icon: Icon, color = 'accent' }: 
         </div>
 
         {/* Value */}
-        <p className="text-[28px] sm:text-[32px] font-semibold text-foreground tracking-tight leading-none font-mono tabular-nums">
+        <p className="text-[32px] sm:text-[38px] font-bold text-foreground tracking-tight leading-none font-mono tabular-nums">
           {formatNumber(displayValue)}
         </p>
 
@@ -77,10 +77,10 @@ export function StatCard({ title, value, trend, icon: Icon, color = 'accent' }: 
               <ArrowDownLeft01Icon size={11} className="text-destructive" />
             )}
             <span className={cn(
-              'text-[11px] font-mono tabular-nums',
-              isPositive ? 'text-[#22C55E]/70' : 'text-destructive/70'
+              'text-[11px] font-mono font-semibold tabular-nums',
+              isPositive ? 'text-[#22C55E]' : 'text-destructive'
             )}>
-              {Math.abs(trend)}%
+              {isPositive ? '+' : '-'}{Math.abs(trend)}%
             </span>
           </div>
         )}

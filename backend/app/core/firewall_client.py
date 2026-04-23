@@ -1,12 +1,13 @@
 import logging
-import os
 from typing import Optional
 
 import httpx
 
+from app.config import settings
+
 logger = logging.getLogger("aegis.firewall_client")
 
-FIREWALL_API = os.environ.get("AEGIS_FIREWALL_URL", "").rstrip("/")
+FIREWALL_API = (settings.AEGIS_FIREWALL_URL or "").rstrip("/")
 TIMEOUT = 30.0
 
 

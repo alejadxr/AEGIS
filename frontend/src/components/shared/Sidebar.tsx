@@ -128,7 +128,7 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
           {NAV_SECTIONS.map((section) => (
             <div key={section.label}>
               {!collapsed && (
-                <p className="text-[9px] font-medium text-muted-foreground/50 tracking-[0.08em] uppercase px-2.5 mb-1.5">
+                <p className="text-[9px] font-semibold text-muted-foreground/70 tracking-[0.1em] uppercase px-2.5 mb-1.5">
                   {section.label}
                 </p>
               )}
@@ -146,8 +146,8 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
                       className={cn(
                         'group relative flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] font-normal transition-all duration-150',
                         isActive
-                          ? 'text-foreground/90'
-                          : 'text-muted-foreground hover:text-foreground/60 hover:bg-muted/50'
+                          ? 'text-foreground bg-primary/10'
+                          : 'text-muted-foreground hover:text-foreground/80 hover:bg-muted'
                       )}
                     >
                       {/* Active indicator — subtle left accent bar */}

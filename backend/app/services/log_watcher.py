@@ -31,7 +31,7 @@ _KNOWN_SAFE_IPS = frozenset({
 
 # Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
 # IPs in this set bypass the internal-IP filter so that pentest lab machines
-# on Tailscale CGNAT (e.g. Kali at 100.88.0.85) can generate real incidents.
+# on Tailscale CGNAT (e.g. a pentest host in the 100.64.0.0/10 range) can generate real incidents.
 # Shared semantics with correlation_engine._ATTACKER_IPS — same env var.
 from app.config import settings as _settings
 
@@ -248,34 +248,44 @@ class LogWatcher:
                 await asyncio.sleep(10)
 
     async def _tail_pm2_logs(self):
-        # Resolve PM2 with correct PATH (macOS node env)
-        extra_paths = [
-            "/usr/local/bin",
-            "/usr/local/bin",
-            "/usr/local/bin",
-            "/usr/local/bin",
-        ]
+        # Determine log source: PM2 (macOS/Mac Pro) or journalctl (Linux/Pi)
+        extra_paths = ["/usr/local/bin"]
         env = os.environ.copy()
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
 
-        pm2_path = shutil.which("pm2", path=env["PATH"]) or "/usr/local/bin/pm2"
+        pm2_path = shutil.which("pm2", path=env["PATH"])
+        journalctl_path = shutil.which("journalctl")
 
-        # Restrict PM2 tail to AEGIS_MONITORED_APPS (comma-separated). Prior
-        # behavior tailed every app running on the host, which produced
-        # self-referential false positives when unrelated projects (sid,
-        # wilabia-frontend) crashed and emitted Python traceback dividers
-        # that matched the SQLi regex. Empty setting falls back to all apps.
         from app.config import settings
-        monitored = [
-            a.strip()
-            for a in (settings.AEGIS_MONITORED_APPS or "").split(",")
-            if a.strip()
-        ]
-        cmd = [pm2_path, "logs", "--raw", "--lines", "0", *monitored]
-        logger.info(
-            f"Starting PM2 log tail: {' '.join(cmd)} "
-            f"(apps={monitored or 'ALL'})"
-        )
+
+        if pm2_path:
+            # PM2 mode (Mac Pro, servers with Node.js)
+            monitored = [
+                a.strip()
+                for a in (settings.AEGIS_MONITORED_APPS or "").split(",")
+                if a.strip()
+            ]
+            cmd = [pm2_path, "logs", "--raw", "--lines", "0", *monitored]
+            logger.info(
+                f"Starting PM2 log tail: {' '.join(cmd)} "
+                f"(apps={monitored or 'ALL'})"
+            )
+        elif journalctl_path:
+            # Journalctl mode (Pi, Linux servers without PM2)
+            # Monitor sshd, aegis services, and auth logs for attack detection
+            cmd = [
+                journalctl_path, "-f", "--no-pager", "-o", "short",
+                "-u", "sshd",
+                "-u", "aegis-api",
+                "-u", "aegis-firewall",
+                "-u", "nginx",
+                "-u", "apache2",
+            ]
+            logger.info(f"Starting journalctl log tail (no PM2 found): {' '.join(cmd)}")
+        else:
+            logger.error("Neither PM2 nor journalctl found. Log watcher disabled.")
+            self._running = False
+            return
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -285,7 +295,7 @@ class LogWatcher:
                 env=env,
             )
         except FileNotFoundError:
-            logger.error(f"PM2 not found at {pm2_path}. Log watcher disabled.")
+            logger.error(f"Log source command not found. Log watcher disabled.")
             self._running = False
             return
 

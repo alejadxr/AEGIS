@@ -94,12 +94,12 @@ export function EventsPerSecChart() {
         </div>
         <div className="flex items-center gap-4">
           <div className="flex flex-col items-end">
-            <span className="text-[9px] text-muted-foreground/60 font-mono uppercase tracking-widest">now</span>
-            <span className="text-[14px] text-primary font-mono tabular-nums leading-none">{current}</span>
+            <span className="text-[10px] text-muted-foreground font-mono font-semibold uppercase tracking-widest">now</span>
+            <span className="text-[18px] text-primary font-mono font-bold tabular-nums leading-none">{current}</span>
           </div>
           <div className="flex flex-col items-end">
-            <span className="text-[9px] text-muted-foreground/60 font-mono uppercase tracking-widest">peak</span>
-            <span className="text-[14px] text-muted-foreground font-mono tabular-nums leading-none">{peak}</span>
+            <span className="text-[10px] text-muted-foreground font-mono font-semibold uppercase tracking-widest">peak</span>
+            <span className="text-[18px] text-foreground font-mono font-bold tabular-nums leading-none">{peak}</span>
           </div>
         </div>
       </div>

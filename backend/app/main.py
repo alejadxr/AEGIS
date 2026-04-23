@@ -509,6 +509,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to prime firewall engine cache: {e}")
 
+    # Start external firewall sync (conditional on AEGIS_FIREWALL_URL)
+    if settings.AEGIS_FIREWALL_URL:
+        from app.services.firewall_sync import firewall_sync
+        await firewall_sync.start()
+        logger.info(f"Firewall sync started (target: {settings.AEGIS_FIREWALL_URL})")
+    else:
+        logger.info("External firewall sync disabled (AEGIS_FIREWALL_URL not set)")
+
     # Start honeypots (SSH on 2222, HTTP on 8888)
     honeypot_queue = asyncio.Queue()
     try:

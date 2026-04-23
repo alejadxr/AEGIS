@@ -16,11 +16,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-theme="light" suppressHydrationWarning className={cn("font-sans", notoSans.variable)}>
+    <html lang="en" data-theme="light" suppressHydrationWarning className={cn("font-sans light", notoSans.variable)}>
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var s=localStorage.getItem('aegis-theme');var t=s||'light';document.documentElement.setAttribute('data-theme',t);if(t==='dark'){document.documentElement.classList.add('dark')}else{document.documentElement.classList.remove('dark')}}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('aegis-theme')||'light';var d=document.documentElement;d.setAttribute('data-theme',t);if(t==='dark'){d.classList.add('dark');d.classList.remove('light')}else{d.classList.add('light');d.classList.remove('dark')}var o=new MutationObserver(function(ms){ms.forEach(function(m){if(m.attributeName==='data-theme'){var v=d.getAttribute('data-theme');if(v==='dark'){d.classList.add('dark');d.classList.remove('light')}else{d.classList.add('light');d.classList.remove('dark')}}})});o.observe(d,{attributes:true,attributeFilter:['data-theme']})}catch(e){}})();`,
           }}
         />
       </head>
