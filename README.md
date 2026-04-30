@@ -36,6 +36,16 @@ Built for security teams, DevOps engineers, and homelabs that need enterprise-gr
 
 **Your servers defend themselves while you sleep.**
 
+### What's New in v1.5
+
+- **AI-Offline Mode** -- `AEGIS_AI_MODE=offline` bypasses all OpenRouter/AI calls. Ten local fallback paths (triage, classify, risk-score, enrich, decide, verify, chain-evaluate, honeypot-generate, report-summarize, ask-ai) use heuristics and static data to produce valid structured responses. AEGIS now runs fully air-gapped with zero paid API dependency.
+- **Real Firewall Execution** -- `AEGIS_REAL_FW=1` activates system-level IP blocking: pfctl `aegis_block` table on macOS, iptables `AEGIS_BLOCK` chain on Linux. Defense is now three-layer: external firewall agent → FastAPI 403 middleware → system iptables/pfctl. All IPs are validated through `ipaddress.ip_address()` before any subprocess call (injection-safe). Default remains `NoopFirewall` (in-memory) for safe operation without root.
+- **YAML Rule Pack** -- 122 Sigma-style detection rules + 5 chain rules covering 7 MITRE ATT&CK tactics, hot-reloadable without restart. Correlation engine uses an O(1) type index instead of linear scan — ~6× faster evaluation.
+- **Unified Design System** -- All 17 dashboard pages use semantic CSS tokens (`bg-card`, `text-foreground`, status tokens) instead of hardcoded hex. Charts migrated to shadcn/ui `ChartContainer`. Works in light and dark mode with no hacks.
+- **Portable Log Watcher** -- Auto-selects PM2 tailing (macOS) or journalctl (Linux/Pi). `AEGIS_MONITORED_APPS` controls which PM2 apps feed the pipeline. `AEGIS_ATTACKER_IPS` allowlist lets Kali/red-team IPs generate real incidents through the internal-IP filter.
+- **False-Positive Loop Eliminated** -- AEGIS no longer detects its own SQLAlchemy tracebacks as SQL injection. Three-layer fix: monitored-app filter, 11 internal source markers, tightened SQLi regex requiring SQL keyword context.
+- **Portable Firewall Agent** -- `firewall-agent/` is a standalone FastAPI service (port 8765) for managing iptables on a Raspberry Pi or any Linux node via `AEGIS_FIREWALL_URL`. Systemd unit included.
+
 ### What's New in v1.4
 
 - **Threat Sharing Mesh** -- Hub-and-spoke network via `api-aegis.somoswilab.com`. When you enable the opt-in toggle in Settings, your AEGIS node automatically joins the global sharing network: every local detection is pushed to the hub, every shared IOC is pulled and auto-blocked if confidence ≥ 0.8. Mesh-like topology without the P2P complexity.
