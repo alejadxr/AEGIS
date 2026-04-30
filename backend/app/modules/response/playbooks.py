@@ -46,13 +46,16 @@ PLAYBOOK_TEMPLATES = {
         ],
     },
     "ransomware": {
-        "name": "Ransomware Response",
-        "description": "Critical ransomware containment",
+        "name": "Ransomware Containment and Recovery",
+        "description": "Critical ransomware containment — isolate, kill chain, protect snapshots, block C2, notify, postmortem",
         "steps": [
-            {"action": "isolate_host", "description": "Immediately isolate infected hosts"},
-            {"action": "network_segment", "description": "Segment entire affected network"},
-            {"action": "shutdown_service", "description": "Shut down file sharing services"},
-            {"action": "block_ip", "description": "Block all C2 and exfiltration IPs"},
+            {"action": "isolate_host", "description": "Immediately isolate infected hosts from all network segments except AEGIS management VLAN"},
+            {"action": "kill_chain_processes", "description": "Terminate malicious processes matching ransomware LOLBin patterns"},
+            {"action": "deny_shadow_delete", "description": "Block vssadmin.exe, wbadmin.exe, bcdedit.exe from further shadow-copy modifications"},
+            {"action": "trigger_snapshot", "description": "Create emergency volume snapshot before further encryption completes"},
+            {"action": "block_c2_ips", "description": "Push C2 IPs into iptables/pfctl block list and blocked_ips.txt persistence file"},
+            {"action": "notify_admin", "description": "Send CRITICAL alert to all configured admin channels with incident context"},
+            {"action": "write_postmortem", "description": "Generate structured postmortem stub requiring human review before incident closure"},
         ],
     },
     "web_shell": {
@@ -88,6 +91,11 @@ THREAT_TO_PLAYBOOK: dict[str, str] = {
     "c2_communication": "malware",
     "phishing": "data_exfiltration",
     "credential_dumping": "lateral_movement",
+    # Ransomware chain rule triggers
+    "ransomware_chain": "ransomware",
+    "ransomware_canary_modified": "ransomware",
+    "ransomware_extension_mass_change": "ransomware",
+    "ransomware_vss_delete": "ransomware",
 }
 
 
