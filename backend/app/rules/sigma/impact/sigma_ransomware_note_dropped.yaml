@@ -1,0 +1,29 @@
+id: ransomware_note_dropped
+name: Ransom note file artifact created
+description: |
+  Detects creation of a file whose name matches common ransom-note patterns
+  (README_FOR_DECRYPT.txt, HOW_TO_RESTORE, decrypt_instructions, etc.).
+  Ransomware families consistently drop a note after completing encryption;
+  this rule provides a high-confidence post-encryption trip with zero false
+  positives in normal workloads.
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Impact
+techniques:
+- T1486
+data_sources:
+- fim
+condition:
+  event_type: file_create
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: hostname
+customDetails:
+  file_name_regex: '(?i)(readme.*\.(txt|hta|html)|how_to_decrypt|decrypt[_-]?instructions|recover[_-]?files|!!!.*-files-have-been|HOW_TO_RESTORE)'
+entityMappings:
+- type: Host
+  field: hostname
+references:
+- https://attack.mitre.org/techniques/T1486/
