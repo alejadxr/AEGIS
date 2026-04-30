@@ -168,14 +168,15 @@ class IPInvestigator:
             return False
 
     async def _query_ai(self, ip: str, reason: str, evidence: dict) -> dict:
-        """Query AI to analyze the blocked IP evidence."""
-        try:
-            from app.core.openrouter import openrouter_client
+        """Query AI to analyze the blocked IP evidence; fall back to rule-based verdict."""
+        from app.core.openrouter import openrouter_client
+        from app.core.ai_mode import degrade_or_call
 
+        async def _ai_verdict(_ev: dict) -> dict:
             prompt = (
                 "You are a cybersecurity analyst reviewing an auto-blocked IP address. "
                 "Analyze the evidence and determine if this is a legitimate block or a false positive.\n\n"
-                f"Evidence:\n{json.dumps(evidence, indent=2, default=str)}\n\n"
+                f"Evidence:\n{json.dumps(_ev, indent=2, default=str)}\n\n"
                 "Key considerations:\n"
                 "- Private/Tailscale IPs (10.x, 172.16-31.x, 192.168.x, 100.64-127.x) are internal/VPN users\n"
                 "- Scanner detection alone may be a security researcher or monitoring tool\n"
@@ -187,23 +188,29 @@ class IPInvestigator:
                 '"confidence": 0.0-1.0, '
                 '"reasoning": "brief explanation"}'
             )
-
             response = await openrouter_client.query(
                 messages=[{"role": "user", "content": prompt}],
                 task_type="investigation",
             )
+            return self._parse_ai_response(response.get("content", "{}"))
 
-            content = response.get("content", "{}")
-            return self._parse_ai_response(content)
+        def _rule_verdict(_ev: dict) -> dict:
+            # Definitive rule-based verdicts that don't need AI
+            if _ev.get("is_private_range") or _ev.get("is_tailscale"):
+                return {"verdict": "legitimate", "confidence": 0.9, "reasoning": "Private/Tailscale IP — internal traffic."}
+            attack_types = _ev.get("attack_types", [])
+            malicious_payloads = {"sql_injection", "xss", "command_injection", "path_traversal", "rce"}
+            if malicious_payloads & set(attack_types):
+                return {"verdict": "malicious", "confidence": 0.95, "reasoning": f"Confirmed attack payloads: {attack_types}"}
+            if _ev.get("attack_count", 0) > 10:
+                return {"verdict": "malicious", "confidence": 0.8, "reasoning": f"High attack count: {_ev['attack_count']}"}
+            return {"verdict": "suspicious", "confidence": 0.5, "reasoning": "Insufficient evidence — keeping block."}
 
+        try:
+            return await degrade_or_call(_ai_verdict, _rule_verdict, evidence)
         except Exception as e:
-            logger.error(f"[IPInvestigator] AI query failed: {e}")
-            # Default to suspicious on AI failure (keep block)
-            return {
-                "verdict": "suspicious",
-                "confidence": 0.5,
-                "reasoning": f"AI analysis unavailable: {e}",
-            }
+            logger.error(f"[IPInvestigator] investigation failed: {e}")
+            return {"verdict": "suspicious", "confidence": 0.5, "reasoning": f"Analysis unavailable: {e}"}
 
     def _parse_ai_response(self, content: str) -> dict:
         """Parse AI response, extracting JSON verdict."""
