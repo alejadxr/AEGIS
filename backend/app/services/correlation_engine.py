@@ -11,6 +11,7 @@ import asyncio
 import ipaddress
 import logging
 import re
+import time
 import uuid
 from collections import deque, defaultdict
 from copy import deepcopy
@@ -2364,7 +2365,7 @@ class CorrelationEngine:
             _rules_path = Path(__file__).parent.parent / "rules"
             self._rule_pack = load_rules(_rules_path)
             # Flatten rules across all event types into a single list for
-            # the existing eval loop (which iterates self._rules).
+            # CRUD / stats / list_rules compatibility.
             self._rules: list = [r for rules in self._rule_pack.rules.values() for r in rules]
             self._chain_rules: list = list(self._rule_pack.chains)
             # Start hot-reload watcher (no-op if watchdog not installed)
@@ -2382,6 +2383,9 @@ class CorrelationEngine:
             self._chain_rules = deepcopy(CHAIN_RULES)
             self._rule_pack = None
             self._watcher = None
+
+        # O(1) event-type dispatch index — keeps evaluate() off the full rule list.
+        self._rules_by_type: dict[str, list] = self._build_type_index(self._rules)
 
         self._fired: dict[tuple[str, str], float] = {}  # (rule_id, group_key) → last_fired_ts
         self._chain_fired: dict[tuple[str, str], float] = {}  # chain cooldowns
@@ -2437,7 +2441,12 @@ class CorrelationEngine:
         self._stats["events_processed"] += 1
 
         triggered = []
-        for rule in self._rules:
+        # O(1) dispatch: _rules_by_type covers both YAML pack rules and any
+        # custom rules added at runtime via add_rule().
+        _t0 = time.perf_counter_ns()
+        event_type = event.get("event_type", "")
+        candidates = self._rules_by_type.get(event_type, [])
+        for rule in candidates:
             if not rule.get("enabled", True):
                 continue
             if self._check_rule(rule, event, ts):
@@ -2454,6 +2463,12 @@ class CorrelationEngine:
                 ]
 
                 await self._on_rule_triggered(rule, event)
+
+        _eval_ns = time.perf_counter_ns() - _t0
+        logger.debug(
+            f"Rule eval: event_type={event_type!r} candidates={len(candidates)} "
+            f"triggered={len(triggered)} elapsed_us={_eval_ns // 1000}"
+        )
 
         # Evaluate chain rules
         chain_triggered = self._evaluate_chains(event, ts)
@@ -2529,6 +2544,9 @@ class CorrelationEngine:
         new_rule.setdefault("mitre", [])
         new_rule.setdefault("description", "")
         self._rules.append(new_rule)
+        # Keep the O(1) dispatch index in sync.
+        et = new_rule["condition"]["event_type"]
+        self._rules_by_type.setdefault(et, []).append(new_rule)
         self._stats["custom_rules"] += 1
         logger.info(f"Correlation rule added: {new_rule['id']}")
         return deepcopy(new_rule)
@@ -2538,6 +2556,8 @@ class CorrelationEngine:
         self._rules = [r for r in self._rules if r["id"] != rule_id]
         removed = len(self._rules) < before
         if removed:
+            # Rebuild the dispatch index to avoid stale references.
+            self._rules_by_type = self._build_type_index(self._rules)
             logger.info(f"Correlation rule removed: {rule_id}")
         return removed
 
@@ -2561,6 +2581,17 @@ class CorrelationEngine:
     # ------------------------------------------------------------------
     # Internal evaluation logic
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_type_index(rules: list) -> dict[str, list]:
+        """Build event_type → [rule, ...] dict for O(1) dispatch in evaluate()."""
+        index: dict[str, list] = {}
+        for rule in rules:
+            cond = rule.get("condition") or {}
+            et = cond.get("event_type") if hasattr(cond, "get") else None
+            if et:
+                index.setdefault(et, []).append(rule)
+        return index
 
     def _check_rule(self, rule: dict, event: dict, now: float) -> bool:
         cond = rule["condition"]
