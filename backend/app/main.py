@@ -700,20 +700,24 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/health")
 async def health():
+    from app.core.ai_mode import MODE as _ai_mode
     return {
         "status": "healthy",
         "service": "cayde-6",
         "version": "1.5.0",
         "environment": settings.AEGIS_ENV,
+        "ai_mode": _ai_mode.value,
     }
 
 
 @app.get("/api/v1/health")
 async def api_health():
+    from app.core.ai_mode import MODE as _ai_mode
     return {
         "status": "healthy",
         "service": "cayde-6",
         "version": "1.5.0",
+        "ai_mode": _ai_mode.value,
     }
 
 
