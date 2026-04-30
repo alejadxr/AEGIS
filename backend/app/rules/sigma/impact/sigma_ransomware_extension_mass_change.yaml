@@ -1,0 +1,29 @@
+id: ransomware_extension_mass_change
+name: Mass file extension change suggestive of encryption
+description: |
+  Detects a single process renaming more than 50 files to ransomware-associated
+  extensions within 60 seconds. This is the strongest behavioural signal of an
+  active encryption phase — legitimate bulk-rename tools rarely reach this
+  threshold and virtually never target .locked / .crypt / .wcry suffixes.
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Impact
+techniques:
+- T1486
+data_sources:
+- fim
+- edr
+condition:
+  event_type: file_extension_change
+  count_threshold: 50
+  time_window_seconds: 60
+  group_by: process_pid
+customDetails:
+  new_extension_regex: '\.(locked|crypt|encrypted|enc|aes|rsa|pwnd|wcry|wncry|cryptolocker|locky|petya)$'
+entityMappings:
+- type: Host
+  field: hostname
+references:
+- https://attack.mitre.org/techniques/T1486/
