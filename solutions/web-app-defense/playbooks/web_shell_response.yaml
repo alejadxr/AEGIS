@@ -1,0 +1,35 @@
+id: web_shell_response
+name: Web Shell Response
+description: >
+  Detect and respond to web shell deployment on the server.
+  Isolates the web server, removes the shell, and rotates credentials.
+triggers:
+  - sigma_persist_webshell
+steps:
+  - action: quarantine_file
+    description: Move the detected web shell to quarantine directory
+    params:
+      quarantine_path: /var/aegis/quarantine
+  - action: isolate_host
+    description: Network-isolate the compromised web server
+    params:
+      allow_management_access: true
+  - action: revoke_creds
+    description: Rotate all web application service credentials
+    params:
+      include_db_passwords: true
+      include_api_keys: true
+  - action: firewall_rule
+    description: Restrict web server outbound egress to whitelist only
+    params:
+      egress_whitelist:
+        - "443"
+        - "80"
+  - action: alert
+    description: Critical alert — web shell indicates full compromise
+    params:
+      severity: critical
+      notify_channel: security_ops
+      escalate: true
+severity: critical
+auto_execute: false
