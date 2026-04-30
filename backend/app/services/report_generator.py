@@ -37,6 +37,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.openrouter import openrouter_client
+from app.core.ai_mode import degrade_or_call
 from app.models.asset import Asset
 from app.models.client import Client
 from app.models.vulnerability import Vulnerability
@@ -406,22 +407,43 @@ def _truncate(text: str, max_len: int = 80) -> str:
 # ---------------------------------------------------------------------------
 
 async def _get_ai_recommendations(context: dict) -> str:
-    """Ask OpenRouter for prioritized recommendations."""
-    try:
+    """Return prioritized recommendations; AI-assisted when available."""
+
+    async def _ai_recs(_ctx: dict) -> str:
         prompt = (
             "Based on the following security data, provide 5-8 prioritized recommendations "
             "for improving the organization's security posture. Each recommendation should have: "
             "priority (P1-P4), title, and a 1-2 sentence description. Format as plain text, "
             "numbered list.\n\n"
-            f"{json.dumps(context, default=str)}"
+            f"{json.dumps(_ctx, default=str)}"
         )
         response = await openrouter_client.query(
             [{"role": "user", "content": prompt}], "report"
         )
-        return response.get("content", "Recommendations unavailable.")
+        return response.get("content", "")
+
+    def _static_recs(_ctx: dict) -> str:
+        critical = _ctx.get("critical_vulns", 0)
+        open_vulns = _ctx.get("open_vulns", 0)
+        incidents = _ctx.get("active_incidents", 0)
+        recs = []
+        if critical > 0:
+            recs.append(f"P1. Patch {critical} critical vulnerabilities immediately — highest remediation priority.")
+        if open_vulns > 0:
+            recs.append(f"P2. Remediate {open_vulns} open vulnerabilities within 30 days using a risk-based schedule.")
+        if incidents > 0:
+            recs.append(f"P2. Investigate and close {incidents} active incidents — review root cause and apply permanent fixes.")
+        recs.append("P3. Review firewall rules and remove unnecessary inbound access.")
+        recs.append("P3. Enable MFA for all privileged accounts.")
+        recs.append("P4. Schedule quarterly penetration test to validate defensive controls.")
+        recs.append("P4. Review and update incident response playbooks annually.")
+        return "\n".join(f"{i+1}. {r}" for i, r in enumerate(recs))
+
+    try:
+        return await degrade_or_call(_ai_recs, _static_recs, context)
     except Exception as e:
-        logger.warning(f"AI recommendations failed: {e}")
-        return "AI-generated recommendations are currently unavailable."
+        logger.warning(f"Recommendations generation failed: {e}")
+        return "Recommendations unavailable — review vulnerabilities and incidents manually."
 
 
 # ---------------------------------------------------------------------------
@@ -940,16 +962,27 @@ class PDFReportGenerator:
         recommendations = await _get_ai_recommendations(ai_context)
 
         # Get executive narrative
-        try:
+        async def _ai_narrative(_ctx: dict) -> str:
             narrative_resp = await openrouter_client.query(
                 [{"role": "user", "content": (
                     "Write a 3-4 paragraph executive summary for a security report. "
                     "Be concise and professional. Data:\n"
-                    f"{json.dumps(ai_context, default=str)}"
+                    f"{json.dumps(_ctx, default=str)}"
                 )}],
                 "report",
             )
-            narrative = narrative_resp.get("content", "")
+            return narrative_resp.get("content", "")
+
+        def _template_narrative(_ctx: dict) -> str:
+            return (
+                f"During the reporting period, AEGIS monitored {_ctx.get('total_assets', 0)} assets "
+                f"and detected {_ctx.get('total_incidents', 0)} security incidents. "
+                f"Risk level is assessed as {_ctx.get('risk_level', 'moderate')}. "
+                f"Critical vulnerabilities requiring immediate attention: {_ctx.get('critical_vulns', 0)}."
+            )
+
+        try:
+            narrative = await degrade_or_call(_ai_narrative, _template_narrative, ai_context)
         except Exception:
             narrative = ""
 
@@ -1054,17 +1087,42 @@ class PDFReportGenerator:
         )
         actions = list(action_result.scalars().all())
 
-        # Get AI deep analysis
-        try:
-            analysis_resp = await openrouter_client.query(
+        # Get deep analysis (AI-assisted or deterministic)
+        incident_data = {
+            "title": incident.title,
+            "description": incident.description,
+            "severity": incident.severity,
+            "source_ip": incident.source_ip,
+            "mitre_technique": incident.mitre_technique,
+            "mitre_tactic": incident.mitre_tactic,
+            "ai_analysis": incident.ai_analysis,
+        }
+
+        async def _ai_deep_analysis(_data: dict) -> str:
+            resp = await openrouter_client.query(
                 [{"role": "user", "content": (
                     "Provide a detailed incident analysis report covering: root cause, "
                     "attack chain, impact assessment, and remediation steps.\n"
-                    f"Incident: {json.dumps({'title': incident.title, 'description': incident.description, 'severity': incident.severity, 'source_ip': incident.source_ip, 'mitre_technique': incident.mitre_technique, 'mitre_tactic': incident.mitre_tactic, 'ai_analysis': incident.ai_analysis}, default=str)}"
+                    f"Incident: {json.dumps(_data, default=str)}"
                 )}],
                 "investigation",
             )
-            deep_analysis = analysis_resp.get("content", "")
+            return resp.get("content", "")
+
+        def _template_deep_analysis(_data: dict) -> str:
+            technique = _data.get("mitre_technique") or "unknown"
+            tactic = _data.get("mitre_tactic") or "unknown"
+            return (
+                f"**Root Cause:** {_data.get('description', 'No description available.')}\n\n"
+                f"**MITRE ATT&CK:** {tactic} / {technique}\n\n"
+                f"**Source:** {_data.get('source_ip', 'Unknown IP')}\n\n"
+                f"**Severity:** {_data.get('severity', 'unknown').upper()}\n\n"
+                f"**Remediation:** Apply standard remediation procedures for {tactic} attacks. "
+                f"Block the source IP, patch affected systems, and review access controls."
+            )
+
+        try:
+            deep_analysis = await degrade_or_call(_ai_deep_analysis, _template_deep_analysis, incident_data)
         except Exception:
             deep_analysis = ""
 
