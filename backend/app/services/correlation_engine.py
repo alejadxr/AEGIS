@@ -2354,8 +2354,35 @@ class CorrelationEngine:
 
     def __init__(self):
         self._window: deque[tuple[float, dict]] = deque(maxlen=self.MAX_EVENTS)
-        self._rules: list[dict] = deepcopy(BUILT_IN_RULES)
-        self._chain_rules: list[dict] = deepcopy(CHAIN_RULES)
+
+        # Load rules from YAML pack; fall back to in-code lists if the
+        # rules directory doesn't exist yet (e.g. during first-run before
+        # migration is applied).
+        try:
+            from app.services.rules_loader import load_rules, start_watcher
+            from pathlib import Path
+            _rules_path = Path(__file__).parent.parent / "rules"
+            self._rule_pack = load_rules(_rules_path)
+            # Flatten rules across all event types into a single list for
+            # the existing eval loop (which iterates self._rules).
+            self._rules: list = [r for rules in self._rule_pack.rules.values() for r in rules]
+            self._chain_rules: list = list(self._rule_pack.chains)
+            # Start hot-reload watcher (no-op if watchdog not installed)
+            self._watcher = start_watcher(self._rule_pack, _rules_path)
+            logger.info(
+                f"Loaded {len(self._rules)} sigma rules + "
+                f"{len(self._chain_rules)} chain rules from YAML"
+            )
+        except Exception as _load_err:
+            logger.warning(
+                f"YAML rule load failed ({_load_err}); "
+                f"falling back to in-code BUILT_IN_RULES"
+            )
+            self._rules = deepcopy(BUILT_IN_RULES)
+            self._chain_rules = deepcopy(CHAIN_RULES)
+            self._rule_pack = None
+            self._watcher = None
+
         self._fired: dict[tuple[str, str], float] = {}  # (rule_id, group_key) → last_fired_ts
         self._chain_fired: dict[tuple[str, str], float] = {}  # chain cooldowns
         # Track sigma rule firings per group key for chain evaluation
