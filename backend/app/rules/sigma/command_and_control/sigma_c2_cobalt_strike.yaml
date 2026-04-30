@@ -1,0 +1,28 @@
+id: sigma_c2_cobalt_strike
+name: Cobalt Strike C2 Pattern
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- CommandAndControl
+techniques:
+- T1071.001
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 5
+  time_window_seconds: 300
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /pixel
+    - /submit.php
+    - /updates
+    - __utm.gif
+    - /__session
+entityMappings:
+- type: IP
+  field: source_ip
+description: HTTP traffic matching Cobalt Strike malleable C2 profile patterns.

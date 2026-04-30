@@ -1,0 +1,23 @@
+id: sigma_lateral_internal_scan
+name: Internal Network Port Scan
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1046
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 15
+  time_window_seconds: 60
+  group_by: source_ip
+  unique_field: destination_ip
+  filter:
+    target_type: internal
+entityMappings:
+- type: IP
+  field: source_ip
+description: Internal host scanning other internal hosts on multiple ports.

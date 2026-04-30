@@ -1,0 +1,21 @@
+id: xss_attack_chain
+name: XSS Attack Chain
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Execution
+techniques:
+- T1059.007
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: xss
+  count_threshold: 5
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple cross-site scripting attempts from same source.

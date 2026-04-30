@@ -182,6 +182,26 @@ export const tauriAgent = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// AI mode helper — reads ai_mode from /api/v1/health
+// ---------------------------------------------------------------------------
+
+export type AiMode = 'required' | 'optional' | 'disabled';
+
+export async function getAiMode(): Promise<AiMode> {
+  try {
+    const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    const res = await fetch(`${BASE}/health`, { cache: 'no-store' });
+    if (!res.ok) return 'optional';
+    const data = await res.json();
+    const mode = data?.ai_mode;
+    if (mode === 'required' || mode === 'optional' || mode === 'disabled') return mode;
+    return 'optional';
+  } catch {
+    return 'optional';
+  }
+}
+
 export const api = {
   // Generic helpers (used by newer pages: antivirus, edr, ...)
   get: <T>(endpoint: string) => request<T>(endpoint),

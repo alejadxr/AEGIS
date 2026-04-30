@@ -1,0 +1,26 @@
+id: sigma_cloud_iam_enum
+name: Cloud IAM Enumeration
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1087.004
+data_sources:
+- cloud
+condition:
+  event_type: cloud_api
+  count_threshold: 5
+  time_window_seconds: 120
+  group_by: source_ip
+  filter:
+    path_contains:
+    - ListUsers
+    - ListRoles
+    - ListPolicies
+    - GetAccountAuthorizationDetails
+entityMappings:
+- type: IP
+  field: source_ip
+description: Enumeration of IAM users, roles, or policies.

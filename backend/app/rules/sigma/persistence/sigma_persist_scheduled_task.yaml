@@ -1,0 +1,21 @@
+id: sigma_persist_scheduled_task
+name: Scheduled Task Created
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1053.005
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - schtasks
+    - /create
+entityMappings:
+- type: IP
+  field: source_ip
+description: New scheduled task created via schtasks or Task Scheduler.

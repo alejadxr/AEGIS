@@ -1,0 +1,32 @@
+id: web_attack_response
+name: Web Attack Response
+description: >
+  Respond to SQL injection, XSS, and command injection attacks
+  detected against web application endpoints.
+triggers:
+  - sigma_web_sqli_union
+  - sigma_web_xss_reflected
+  - sigma_web_command_injection
+  - sigma_web_path_traversal
+steps:
+  - action: block_ip
+    description: Block attacking source IP at the firewall layer
+    params:
+      duration_seconds: 3600
+      reason: "Web attack detected"
+  - action: firewall_rule
+    description: Add rate limiting rule for the targeted endpoint
+    params:
+      max_requests_per_minute: 10
+  - action: alert
+    description: Send high-severity alert to SIEM/notification channel
+    params:
+      severity: high
+      notify_channel: security_ops
+  - action: capture_request
+    description: Log full request details for forensic analysis
+    params:
+      include_headers: true
+      include_body: true
+severity: high
+auto_execute: true

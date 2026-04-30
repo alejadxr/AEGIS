@@ -1,0 +1,23 @@
+id: sigma_evasion_timestomping
+name: File Timestomping Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1070.006
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - touch -t
+    - touch -d
+    - SetFileTime
+    - timestomp
+entityMappings:
+- type: IP
+  field: source_ip
+description: File timestamps modified to evade forensic analysis.

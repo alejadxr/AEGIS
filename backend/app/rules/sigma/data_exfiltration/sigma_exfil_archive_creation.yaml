@@ -1,0 +1,27 @@
+id: sigma_exfil_archive_creation
+name: Archive Created Before Transfer
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1560.001
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  count_threshold: 2
+  time_window_seconds: 120
+  group_by: source_ip
+  filter:
+    path_contains:
+    - tar
+    - zip
+    - 7z
+    - rar
+    - gzip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Archive file created shortly before outbound network activity.

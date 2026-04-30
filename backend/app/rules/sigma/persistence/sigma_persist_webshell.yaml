@@ -1,0 +1,25 @@
+id: sigma_persist_webshell
+name: Web Shell File Deployed
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1505.003
+data_sources:
+- edr
+condition:
+  event_type: file_creation
+  filter:
+    path_contains:
+    - /var/www/
+    - /public_html/
+    - wwwroot
+    - .php
+    - .jsp
+    - .aspx
+entityMappings:
+- type: IP
+  field: source_ip
+description: Suspicious script file created in web-accessible directory.

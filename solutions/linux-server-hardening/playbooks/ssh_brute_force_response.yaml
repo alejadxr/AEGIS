@@ -1,0 +1,34 @@
+id: ssh_brute_force_response
+name: SSH Brute Force Response
+description: >
+  Automated response to SSH brute force attacks. Blocks source IP,
+  temporarily locks targeted accounts, and enforces rate limiting.
+triggers:
+  - brute_force_ssh
+steps:
+  - action: block_ip
+    description: Block attacking source IP at the firewall layer
+    params:
+      duration_seconds: 7200
+      reason: "SSH brute force detected"
+  - action: disable_account
+    description: Temporarily lock targeted user account
+    params:
+      lock_duration_seconds: 3600
+  - action: revoke_creds
+    description: Force password reset for targeted account
+    params:
+      invalidate_sessions: true
+  - action: firewall_rule
+    description: Add SSH rate limiting — max 3 attempts per minute per IP
+    params:
+      protocol: tcp
+      port: 22
+      max_new_connections_per_minute: 3
+  - action: alert
+    description: Notify on SSH brute force with attacker details
+    params:
+      severity: high
+      notify_channel: security_ops
+severity: high
+auto_execute: true

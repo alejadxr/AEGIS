@@ -1,0 +1,21 @@
+id: sigma_exfil_large_transfer
+name: Large Outbound Data Transfer
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1048
+data_sources:
+- network
+condition:
+  event_type: network
+  filter:
+    direction: outbound
+    bytes_gt: 52428800
+    target_type: external
+entityMappings:
+- type: IP
+  field: source_ip
+description: Unusually large data transfer to external destination.

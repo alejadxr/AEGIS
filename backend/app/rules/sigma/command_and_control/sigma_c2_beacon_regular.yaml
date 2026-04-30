@@ -1,0 +1,23 @@
+id: sigma_c2_beacon_regular
+name: C2 Beacon - Regular Interval
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- CommandAndControl
+techniques:
+- T1071.001
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 10
+  time_window_seconds: 600
+  group_by: destination_ip
+  filter:
+    direction: outbound
+    target_type: external
+entityMappings:
+- type: IP
+  field: source_ip
+description: Outbound connections at regular intervals suggesting C2 beaconing.

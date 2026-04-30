@@ -1,0 +1,23 @@
+id: sigma_evasion_firewall_mod
+name: Firewall Rule Modification
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1562.004
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - netsh advfirewall
+    - iptables -D
+    - iptables -F
+    - ufw disable
+entityMappings:
+- type: IP
+  field: source_ip
+description: Host firewall rules modified to allow unauthorized traffic.

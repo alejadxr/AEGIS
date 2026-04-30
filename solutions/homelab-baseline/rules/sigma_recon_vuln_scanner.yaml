@@ -1,0 +1,28 @@
+id: sigma_recon_vuln_scanner
+name: Vulnerability Scanner Detected
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Reconnaissance
+techniques:
+- T1595.002
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 5
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - Nessus
+    - OpenVAS
+    - Nikto
+    - sqlmap
+    - w3af
+entityMappings:
+- type: IP
+  field: source_ip
+description: Traffic patterns matching known vulnerability scanners (Nessus, OpenVAS).

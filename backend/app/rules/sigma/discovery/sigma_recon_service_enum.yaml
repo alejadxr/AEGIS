@@ -1,0 +1,23 @@
+id: sigma_recon_service_enum
+name: Service Version Enumeration
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1046
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 10
+  time_window_seconds: 120
+  group_by: source_ip
+  unique_field: target_port
+  filter:
+    banner_grab: true
+entityMappings:
+- type: IP
+  field: source_ip
+description: Service banner grabbing from multiple ports.

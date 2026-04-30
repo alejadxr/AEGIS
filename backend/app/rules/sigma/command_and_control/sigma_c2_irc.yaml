@@ -1,0 +1,23 @@
+id: sigma_c2_irc
+name: IRC C2 Traffic Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CommandAndControl
+techniques:
+- T1071.001
+data_sources:
+- network
+condition:
+  event_type: connection
+  filter:
+    destination_port:
+    - 6667
+    - 6668
+    - 6669
+    - 6697
+entityMappings:
+- type: IP
+  field: source_ip
+description: IRC protocol traffic detected suggesting botnet C2 channel.

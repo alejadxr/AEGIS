@@ -1,0 +1,23 @@
+id: sigma_lateral_ssh_tunnel
+name: SSH Tunneling Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1572
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - ssh
+    - -L
+    - -R
+    - -D
+entityMappings:
+- type: IP
+  field: source_ip
+description: SSH connection with port forwarding flags detected.

@@ -1,8 +1,5 @@
-import json
 import logging
 from typing import Optional
-
-from app.core.openrouter import openrouter_client
 
 logger = logging.getLogger("aegis.playbooks")
 
@@ -71,8 +68,31 @@ PLAYBOOK_TEMPLATES = {
 }
 
 
+THREAT_TO_PLAYBOOK: dict[str, str] = {
+    "brute_force": "brute_force",
+    "credential_stuffing": "brute_force",
+    "password_spray": "brute_force",
+    "malware": "malware",
+    "ransomware": "ransomware",
+    "data_exfiltration": "data_exfiltration",
+    "exfiltration": "data_exfiltration",
+    "lateral_movement": "lateral_movement",
+    "web_shell": "web_shell",
+    "rce": "web_shell",
+    "command_injection": "web_shell",
+    "sql_injection": "brute_force",
+    "xss": "brute_force",
+    "port_scan": "brute_force",
+    "scanner": "brute_force",
+    "c2_beacon": "malware",
+    "c2_communication": "malware",
+    "phishing": "data_exfiltration",
+    "credential_dumping": "lateral_movement",
+}
+
+
 class PlaybookEngine:
-    """Dynamic playbook selection and execution using AI."""
+    """Playbook selection and management."""
 
     def get_playbook(self, threat_type: str) -> Optional[dict]:
         """Get a built-in playbook by threat type."""
@@ -86,42 +106,19 @@ class PlaybookEngine:
         ]
 
     async def select_playbook(self, alert_data: dict) -> dict:
-        """Use AI to select the best playbook for an alert."""
-        available = self.list_playbooks()
-        messages = [
-            {
-                "role": "user",
-                "content": (
-                    f"Given this security alert, select the most appropriate response playbook.\n"
-                    f"Alert: {json.dumps(alert_data, default=str)}\n"
-                    f"Available playbooks: {json.dumps(available, default=str)}\n\n"
-                    f"Respond in JSON with keys: selected_playbook_id, confidence, reasoning"
-                ),
-            }
-        ]
-        response = await openrouter_client.query(messages, "quick_decision")
-        content = response.get("content", "{}")
-
-        try:
-            cleaned = content.strip()
-            if cleaned.startswith("```"):
-                lines = cleaned.split("\n")
-                lines = [l for l in lines if not l.strip().startswith("```")]
-                cleaned = "\n".join(lines)
-            result = json.loads(cleaned)
-            selected_id = result.get("selected_playbook_id", "brute_force")
-            playbook = self.get_playbook(selected_id)
-            return {
-                "playbook": playbook or PLAYBOOK_TEMPLATES["brute_force"],
-                "confidence": result.get("confidence", 0.5),
-                "reasoning": result.get("reasoning", ""),
-            }
-        except (json.JSONDecodeError, ValueError):
-            return {
-                "playbook": PLAYBOOK_TEMPLATES["brute_force"],
-                "confidence": 0.3,
-                "reasoning": "Default playbook selected due to analysis unavailability",
-            }
+        """Select the best playbook for an alert using a static threat-type map."""
+        threat_type = (
+            alert_data.get("threat_type")
+            or alert_data.get("classification")
+            or "unknown"
+        )
+        playbook_id = THREAT_TO_PLAYBOOK.get(threat_type, "brute_force")
+        playbook = self.get_playbook(playbook_id) or PLAYBOOK_TEMPLATES["brute_force"]
+        return {
+            "playbook": playbook,
+            "confidence": 0.85,
+            "reasoning": f"Static mapping: {threat_type} → {playbook_id}",
+        }
 
 
 playbook_engine = PlaybookEngine()

@@ -1,0 +1,28 @@
+type: ssh
+port: 2222
+banner: "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5"
+description: >
+  SSH honeypot mimicking a production Ubuntu server. Attracts SSH brute force
+  and credential stuffing attacks, capturing attacker TTY commands.
+fake_users:
+  - username: admin
+    accept_any_password: false
+    delay_ms: 1500
+  - username: root
+    accept_any_password: false
+    delay_ms: 2000
+  - username: ubuntu
+    accept_any_password: false
+    delay_ms: 1200
+breadcrumbs:
+  - "Welcome to Ubuntu 20.04.4 LTS (GNU/Linux 5.4.0-110-generic x86_64)"
+  - "Last login: Mon Apr 14 08:23:11 2025 from 192.168.1.10"
+  - "System information as of Mon Apr 14 08:23:11 UTC 2025"
+capture:
+  credentials: true
+  commands: true
+  session_recording: true
+  client_fingerprint: true
+rate_limit:
+  max_connections_per_ip: 10
+  ban_after_attempts: 20

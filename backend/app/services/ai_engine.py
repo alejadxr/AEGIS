@@ -22,6 +22,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.openrouter import openrouter_client
+from app.core.ai_mode import degrade_or_call, ai_available
 from app.core.guardrails import guardrail_engine
 from app.core.events import event_bus
 from app.models.client import Client
@@ -272,7 +273,12 @@ class AIDecisionEngine:
         """
         Background AI enrichment. Runs after fast triage has already taken action.
         Non-blocking, typically 800-1200ms. Enriches the incident with AI insights.
+        Skipped entirely when AI mode is disabled.
         """
+        if not ai_available():
+            logger.debug("AI enrichment skipped (AI mode disabled)")
+            return
+
         try:
             messages = [
                 {
@@ -413,42 +419,57 @@ class AIDecisionEngine:
         return result
 
     async def _triage(self, alert_data: dict) -> dict:
-        """Quick triage using fast model."""
-        messages = [
-            {
-                "role": "user",
-                "content": f"Triage this security event:\n{json.dumps(alert_data, default=str)}",
-            }
-        ]
-        response = await openrouter_client.query(messages, "triage")
-        return self._parse_json_response(response.get("content", "{}"), {
-            "severity": "medium",
-            "threat_type": "unknown",
+        """Quick triage; uses MITRE heuristics when AI unavailable."""
+        _default = {
+            "severity": alert_data.get("severity", "medium"),
+            "threat_type": alert_data.get("threat_type", "unknown"),
             "mitre_technique": "",
             "mitre_tactic": "",
-            "summary": "Alert received",
+            "summary": alert_data.get("title", "Security alert received"),
             "confidence": 0.5,
-        })
+        }
+
+        async def _ai_triage(_data: dict) -> dict:
+            messages = [{"role": "user", "content": f"Triage this security event:\n{json.dumps(_data, default=str)}"}]
+            response = await openrouter_client.query(messages, "triage")
+            return self._parse_json_response(response.get("content", "{}"), _default)
+
+        def _heuristic_triage(_data: dict) -> dict:
+            threat_type = _data.get("threat_type", "unknown")
+            mitre = MITRE_MAPPINGS.get(threat_type, {})
+            result = dict(_default)
+            result["threat_type"] = threat_type
+            result["mitre_technique"] = mitre.get("technique", "")
+            result["mitre_tactic"] = mitre.get("tactic", "")
+            return result
+
+        return await degrade_or_call(_ai_triage, _heuristic_triage, alert_data)
 
     async def _classify(self, alert_data: dict, triage: dict) -> dict:
-        """Deep classification using analysis model."""
-        messages = [
-            {
-                "role": "user",
-                "content": (
-                    f"Classify this threat in depth.\nAlert: {json.dumps(alert_data, default=str)}\n"
-                    f"Initial triage: {json.dumps(triage, default=str)}"
-                ),
-            }
-        ]
-        response = await openrouter_client.query(messages, "classification")
-        return self._parse_json_response(response.get("content", "{}"), {
+        """Deep classification; returns heuristic result when AI unavailable."""
+        _default = {
             "classification": triage.get("threat_type", "unknown"),
             "attack_vector": "unknown",
             "impact": "unknown",
             "recommended_actions": [],
             "confidence": 0.5,
-        })
+        }
+
+        async def _ai_classify(_data: dict, _triage: dict) -> dict:
+            messages = [{
+                "role": "user",
+                "content": (
+                    f"Classify this threat in depth.\nAlert: {json.dumps(_data, default=str)}\n"
+                    f"Initial triage: {json.dumps(_triage, default=str)}"
+                ),
+            }]
+            response = await openrouter_client.query(messages, "classification")
+            return self._parse_json_response(response.get("content", "{}"), _default)
+
+        def _heuristic_classify(_data: dict, _triage: dict) -> dict:
+            return dict(_default)
+
+        return await degrade_or_call(_ai_classify, _heuristic_classify, alert_data, triage)
 
     async def _create_incident(
         self,
@@ -524,32 +545,39 @@ class AIDecisionEngine:
         await db.commit()
 
     async def analyze_incident(self, incident: Incident, db: AsyncSession) -> dict:
-        """Deep investigation of an existing incident."""
-        messages = [
-            {
+        """Deep investigation of an existing incident; deterministic fallback when AI unavailable."""
+        _default = {
+            "findings": "Deterministic analysis based on incident data",
+            "kill_chain_stage": MITRE_MAPPINGS.get(
+                incident.ai_analysis.get("triage", {}).get("threat_type", ""), {}
+            ).get("tactic", "unknown") if incident.ai_analysis else "unknown",
+            "iocs": [incident.source_ip] if incident.source_ip else [],
+            "timeline": [],
+            "recommendations": ["Block source IP", "Review incident timeline", "Apply standard remediation"],
+            "confidence": 0.5,
+        }
+
+        async def _ai_investigate(_inc: Incident) -> dict:
+            messages = [{
                 "role": "user",
                 "content": (
                     f"Investigate this security incident:\n"
-                    f"Title: {incident.title}\n"
-                    f"Description: {incident.description}\n"
-                    f"Severity: {incident.severity}\n"
-                    f"Source IP: {incident.source_ip}\n"
-                    f"Raw alert: {json.dumps(incident.raw_alert, default=str)}\n"
-                    f"Previous analysis: {json.dumps(incident.ai_analysis, default=str)}"
+                    f"Title: {_inc.title}\n"
+                    f"Description: {_inc.description}\n"
+                    f"Severity: {_inc.severity}\n"
+                    f"Source IP: {_inc.source_ip}\n"
+                    f"Raw alert: {json.dumps(_inc.raw_alert, default=str)}\n"
+                    f"Previous analysis: {json.dumps(_inc.ai_analysis, default=str)}"
                 ),
-            }
-        ]
-        response = await openrouter_client.query(messages, "investigation")
-        analysis = self._parse_json_response(response.get("content", "{}"), {
-            "findings": "Analysis unavailable",
-            "kill_chain_stage": "unknown",
-            "iocs": [],
-            "timeline": [],
-            "recommendations": [],
-            "confidence": 0.5,
-        })
+            }]
+            response = await openrouter_client.query(messages, "investigation")
+            return self._parse_json_response(response.get("content", "{}"), _default)
 
-        # Update incident with new analysis
+        def _heuristic_investigate(_inc: Incident) -> dict:
+            return dict(_default)
+
+        analysis = await degrade_or_call(_ai_investigate, _heuristic_investigate, incident)
+
         current = incident.ai_analysis or {}
         current["investigation"] = analysis
         incident.ai_analysis = current
@@ -558,35 +586,43 @@ class AIDecisionEngine:
         return analysis
 
     async def score_risk(self, context: dict) -> dict:
-        """AI-powered contextual risk scoring."""
-        messages = [
-            {
-                "role": "user",
-                "content": f"Score the risk for:\n{json.dumps(context, default=str)}",
+        """Contextual risk scoring; heuristic fallback when AI unavailable."""
+        _default = {"risk_score": 50.0, "factors": [], "justification": "Default risk score"}
+
+        async def _ai_score(_ctx: dict) -> dict:
+            messages = [{"role": "user", "content": f"Score the risk for:\n{json.dumps(_ctx, default=str)}"}]
+            response = await openrouter_client.query(messages, "risk_scoring")
+            return self._parse_json_response(response.get("content", "{}"), _default)
+
+        def _heuristic_score(_ctx: dict) -> dict:
+            severity = _ctx.get("severity", "medium")
+            score_map = {"critical": 90.0, "high": 70.0, "medium": 50.0, "low": 25.0, "info": 10.0}
+            return {
+                "risk_score": score_map.get(severity, 50.0),
+                "factors": [f"severity={severity}"],
+                "justification": f"Heuristic score based on severity={severity}",
             }
-        ]
-        response = await openrouter_client.query(messages, "risk_scoring")
-        return self._parse_json_response(response.get("content", "{}"), {
-            "risk_score": 50.0,
-            "factors": [],
-            "justification": "Default risk score",
-        })
+
+        return await degrade_or_call(_ai_score, _heuristic_score, context)
 
     async def get_remediation(self, context: dict) -> dict:
-        """Get remediation guidance from healing model."""
-        messages = [
-            {
-                "role": "user",
-                "content": f"Provide remediation for:\n{json.dumps(context, default=str)}",
-            }
-        ]
-        response = await openrouter_client.query(messages, "healing")
-        return self._parse_json_response(response.get("content", "{}"), {
-            "remediation_steps": [],
-            "verification": [],
-            "estimated_effort": "unknown",
-            "priority": "medium",
-        })
+        """Get remediation guidance; static fallback when AI unavailable."""
+        _default = {
+            "remediation_steps": ["Review and patch affected systems", "Update firewall rules", "Rotate credentials"],
+            "verification": ["Re-scan after patching", "Monitor for recurrence"],
+            "estimated_effort": "medium",
+            "priority": "high",
+        }
+
+        async def _ai_remediation(_ctx: dict) -> dict:
+            messages = [{"role": "user", "content": f"Provide remediation for:\n{json.dumps(_ctx, default=str)}"}]
+            response = await openrouter_client.query(messages, "healing")
+            return self._parse_json_response(response.get("content", "{}"), _default)
+
+        def _static_remediation(_ctx: dict) -> dict:
+            return dict(_default)
+
+        return await degrade_or_call(_ai_remediation, _static_remediation, context)
 
     def _parse_json_response(self, content: str, default: dict) -> dict:
         """Parse JSON from AI response, handling markdown code blocks."""
