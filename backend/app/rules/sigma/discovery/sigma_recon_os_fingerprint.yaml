@@ -1,0 +1,26 @@
+id: sigma_recon_os_fingerprint
+name: OS Fingerprinting Detected
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1046
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 10
+  time_window_seconds: 30
+  group_by: source_ip
+  filter:
+    tcp_flags:
+    - SYN
+    - FIN
+    - URG
+    - PSH
+entityMappings:
+- type: IP
+  field: source_ip
+description: TCP/IP stack fingerprinting attempts (nmap -O style).

@@ -1,0 +1,38 @@
+# Vulnerability Scan Report
+
+**Scan Date:** {{ scan_date | default('N/A') }}
+**Target:** {{ target | default('Network Infrastructure') }}
+**Scanner:** {{ scanner | default('AEGIS Surface Module') }}
+
+## Scan Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | {{ critical | default(0) }} |
+| High | {{ high | default(0) }} |
+| Medium | {{ medium | default(0) }} |
+| Low | {{ low | default(0) }} |
+| Informational | {{ info | default(0) }} |
+
+## Findings
+
+{% for vuln in vulnerabilities | default([]) %}
+### {{ loop.index }}. {{ vuln.title }} ({{ vuln.severity | upper }})
+
+- **CVE:** {{ vuln.cve_id | default('N/A') }}
+- **CVSS:** {{ vuln.cvss_score | default('N/A') }}
+- **Asset:** {{ vuln.asset }}
+- **Description:** {{ vuln.description | default('No description.') }}
+- **Remediation:** {{ vuln.remediation | default('Apply vendor patches.') }}
+
+{% else %}
+No vulnerabilities found.
+{% endfor %}
+
+## Recommendations
+
+{% for rec in recommendations | default([]) %}
+{{ loop.index }}. {{ rec }}
+{% else %}
+Apply all critical and high severity patches within 30 days. Review medium severity findings monthly.
+{% endfor %}

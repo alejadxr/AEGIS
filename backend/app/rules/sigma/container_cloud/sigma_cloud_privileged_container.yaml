@@ -1,0 +1,19 @@
+id: sigma_cloud_privileged_container
+name: Privileged Container Launched
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Defense Evasion
+techniques:
+- T1610
+data_sources:
+- container
+condition:
+  event_type: container_start
+  filter:
+    privileged: true
+entityMappings:
+- type: IP
+  field: source_ip
+description: Docker container started with --privileged flag.

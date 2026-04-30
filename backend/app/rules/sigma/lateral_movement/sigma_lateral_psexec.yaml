@@ -1,0 +1,21 @@
+id: sigma_lateral_psexec
+name: PsExec Remote Execution
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1569.002
+data_sources:
+- edr
+condition:
+  event_type: service_install
+  filter:
+    service_name:
+    - PSEXESVC
+    - psexec
+entityMappings:
+- type: IP
+  field: source_ip
+description: PsExec service installation or usage detected on remote host.

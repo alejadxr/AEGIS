@@ -1,0 +1,25 @@
+id: sigma_web_api_abuse
+name: API Endpoint Enumeration
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 50
+  time_window_seconds: 60
+  group_by: source_ip
+  unique_field: path
+  filter:
+    path_contains:
+    - /api/
+entityMappings:
+- type: IP
+  field: source_ip
+description: Rapid requests to multiple API endpoints suggesting enumeration.

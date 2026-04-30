@@ -1,0 +1,22 @@
+id: sigma_auth_kerberos_abuse
+name: Kerberos Ticket Abuse
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1558.003
+data_sources:
+- auth_log
+condition:
+  event_type: kerberos_auth
+  count_threshold: 3
+  time_window_seconds: 120
+  group_by: source_ip
+  filter:
+    encryption_type: RC4
+entityMappings:
+- type: IP
+  field: source_ip
+description: Suspicious Kerberos authentication patterns indicating ticket abuse.

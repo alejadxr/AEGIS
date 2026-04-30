@@ -1,0 +1,24 @@
+id: web-app-defense
+name: Web Application Defense
+version: 1.0.0
+description: >
+  Comprehensive detection and response for web application attacks.
+  Covers SQL injection, XSS, command injection, path traversal, web shell
+  detection, and directory brute-force reconnaissance.
+author: Wilab
+includes:
+  rules:
+    - rules/sigma_web_sqli_union.yaml
+    - rules/sigma_web_xss_reflected.yaml
+    - rules/sigma_web_command_injection.yaml
+    - rules/sigma_web_path_traversal.yaml
+    - rules/sigma_persist_webshell.yaml
+    - rules/sigma_recon_dir_bruteforce.yaml
+  playbooks:
+    - playbooks/web_attack_response.yaml
+    - playbooks/web_shell_response.yaml
+  parsers:
+    - parsers/web_log_parser.json
+  honeypots:
+    - honeypots/http_decoy.yaml
+depends_on: []

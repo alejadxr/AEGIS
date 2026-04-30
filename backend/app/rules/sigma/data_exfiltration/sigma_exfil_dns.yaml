@@ -1,0 +1,22 @@
+id: sigma_exfil_dns
+name: DNS Data Exfiltration
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1048.003
+data_sources:
+- dns
+condition:
+  event_type: dns_query
+  count_threshold: 50
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    query_length_gt: 50
+entityMappings:
+- type: IP
+  field: source_ip
+description: Large or encoded DNS queries suggesting data exfiltration via DNS.

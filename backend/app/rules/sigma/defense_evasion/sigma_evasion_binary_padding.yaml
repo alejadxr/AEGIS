@@ -1,0 +1,23 @@
+id: sigma_evasion_binary_padding
+name: Binary Padding Evasion
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1027.001
+data_sources:
+- edr
+condition:
+  event_type: file_modification
+  filter:
+    size_change_gt: 1048576
+    path_contains:
+    - .exe
+    - .dll
+    - .bin
+entityMappings:
+- type: IP
+  field: source_ip
+description: Executable modified with padding to evade hash-based detection.

@@ -1,0 +1,22 @@
+id: rdp_brute_force
+name: RDP Brute Force Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1110.003
+data_sources:
+- auth_log
+condition:
+  event_type: auth_failure
+  count_threshold: 8
+  time_window_seconds: 180
+  group_by: source_ip
+  filter:
+    service: rdp
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple failed RDP authentication attempts from same IP.

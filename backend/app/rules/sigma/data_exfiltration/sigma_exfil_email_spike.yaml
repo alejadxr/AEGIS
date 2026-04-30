@@ -1,0 +1,22 @@
+id: sigma_exfil_email_spike
+name: Email Attachment Spike
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1048.002
+data_sources:
+- email
+condition:
+  event_type: email_sent
+  count_threshold: 20
+  time_window_seconds: 300
+  group_by: sender
+  filter:
+    has_attachment: true
+entityMappings:
+- type: IP
+  field: source_ip
+description: Unusual volume of email with attachments from single user.

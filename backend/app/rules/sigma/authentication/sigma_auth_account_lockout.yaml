@@ -1,0 +1,20 @@
+id: sigma_auth_account_lockout
+name: Account Lockout Detected
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1110
+data_sources:
+- auth_log
+condition:
+  event_type: auth_failure
+  count_threshold: 10
+  time_window_seconds: 300
+  group_by: username
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple failed authentications leading to account lockout.

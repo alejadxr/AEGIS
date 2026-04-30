@@ -1,0 +1,20 @@
+id: dns_tunneling
+name: Possible DNS Tunneling
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CommandAndControl
+techniques:
+- T1071.004
+data_sources:
+- dns
+condition:
+  event_type: dns_query
+  count_threshold: 100
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Unusually high volume of DNS queries from a single host.

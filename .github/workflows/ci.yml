@@ -17,9 +17,9 @@ jobs:
   lint-backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -29,8 +29,7 @@ jobs:
       - name: Lint
         run: |
           cd backend
-          ruff check app/ --select E,F,W --ignore E501
-        continue-on-error: true
+          ruff check app/ --select E,F,W --ignore E501 --exit-zero
 
   # ------------------------------------------------------------------
   # Frontend build
@@ -38,9 +37,9 @@ jobs:
   build-frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
 
@@ -60,7 +59,7 @@ jobs:
   build-docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Verify compose config
         run: docker compose config --quiet

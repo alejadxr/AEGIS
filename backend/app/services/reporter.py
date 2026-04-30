@@ -7,6 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.openrouter import openrouter_client
+from app.core.ai_mode import degrade_or_call
 from app.models.asset import Asset
 from app.models.vulnerability import Vulnerability
 from app.models.incident import Incident
@@ -72,19 +73,33 @@ class ReportGenerator:
             ),
         }
 
-        # Get AI-generated narrative
-        messages = [
-            {
+        summary = report["summary"]
+        risk_level = report["risk_level"]
+
+        async def _ai_narrative(_summary: dict, _risk: str) -> str:
+            messages = [{
                 "role": "user",
                 "content": (
                     f"Generate a professional executive summary for this security report:\n"
-                    f"{json.dumps(report['summary'], indent=2)}\n"
-                    f"Risk level: {report['risk_level']}"
+                    f"{json.dumps(_summary, indent=2)}\n"
+                    f"Risk level: {_risk}"
                 ),
-            }
-        ]
-        ai_response = await openrouter_client.query(messages, "report")
-        report["narrative"] = ai_response.get("content", "Report generation unavailable.")
+            }]
+            ai_response = await openrouter_client.query(messages, "report")
+            return ai_response.get("content", "")
+
+        def _template_narrative(_summary: dict, _risk: str) -> str:
+            return (
+                f"Security assessment for the reporting period shows a {_risk} risk posture. "
+                f"AEGIS monitored {_summary.get('total_assets', 0)} assets and identified "
+                f"{_summary.get('open_vulnerabilities', 0)} open vulnerabilities "
+                f"({_summary.get('critical_vulnerabilities', 0)} critical). "
+                f"Active incidents: {_summary.get('active_incidents', 0)}. "
+                f"Response actions executed: {_summary.get('total_response_actions', 0)}. "
+                f"Honeypot interactions: {_summary.get('honeypot_interactions', 0)}."
+            )
+
+        report["narrative"] = await degrade_or_call(_ai_narrative, _template_narrative, summary, risk_level)
 
         return report
 

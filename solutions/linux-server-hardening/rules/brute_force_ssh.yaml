@@ -1,0 +1,20 @@
+id: brute_force_ssh
+name: SSH Brute Force Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1110.001
+data_sources:
+- auth_log
+condition:
+  event_type: auth_failure
+  count_threshold: 5
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple failed SSH login attempts from the same source IP.

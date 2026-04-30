@@ -1,0 +1,25 @@
+id: sigma_web_request_smuggling
+name: HTTP Request Smuggling
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 3
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - 'Transfer-Encoding: chunked'
+    - 'Content-Length:'
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects HTTP request smuggling via malformed headers.

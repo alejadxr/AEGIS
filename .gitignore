@@ -68,8 +68,6 @@ reports/
 # Misc
 *.bak
 *.tmp
-backend/tests/
-backend/pytest.ini
 .claude/
 docs/superpowers/
 CLAUDE.md

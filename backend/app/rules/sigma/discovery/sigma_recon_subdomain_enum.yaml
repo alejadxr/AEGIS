@@ -1,0 +1,21 @@
+id: sigma_recon_subdomain_enum
+name: Subdomain Enumeration
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Reconnaissance
+techniques:
+- T1590.002
+data_sources:
+- dns
+condition:
+  event_type: dns_query
+  count_threshold: 50
+  time_window_seconds: 120
+  group_by: source_ip
+  unique_field: query_subdomain
+entityMappings:
+- type: IP
+  field: source_ip
+description: DNS queries for many subdomains of same domain.

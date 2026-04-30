@@ -1,0 +1,25 @@
+id: sigma_privesc_sudo_abuse
+name: Sudo Misconfiguration Exploitation
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1548.003
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  count_threshold: 3
+  time_window_seconds: 60
+  group_by: username
+  filter:
+    path_contains:
+    - sudo
+    - -u root
+    - NOPASSWD
+entityMappings:
+- type: IP
+  field: source_ip
+description: Exploitation of permissive sudo rules to gain root access.

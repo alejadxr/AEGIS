@@ -1,0 +1,27 @@
+id: sigma_web_open_redirect
+name: Open Redirect Attempt
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1189
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 3
+  time_window_seconds: 120
+  group_by: source_ip
+  filter:
+    path_contains:
+    - redirect=http
+    - url=http
+    - next=http
+    - return_to=http
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects open redirect abuse via URL parameters.

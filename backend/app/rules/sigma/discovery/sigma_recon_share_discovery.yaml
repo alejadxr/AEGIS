@@ -1,0 +1,21 @@
+id: sigma_recon_share_discovery
+name: Network Share Discovery
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1135
+data_sources:
+- network
+condition:
+  event_type: smb_access
+  count_threshold: 10
+  time_window_seconds: 120
+  group_by: source_ip
+  unique_field: destination_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Enumeration of network shares across multiple hosts.

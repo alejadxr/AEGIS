@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { api } from '@/lib/api';
+import { api, getAiMode, type AiMode } from '@/lib/api';
 
 interface Message {
   id: string;
@@ -13,6 +13,7 @@ interface Message {
 
 export function AskAI() {
   const [isOpen, setIsOpen] = useState(false);
+  const [aiMode, setAiMode] = useState<AiMode>('optional');
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -25,6 +26,10 @@ export function AskAI() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    getAiMode().then(setAiMode);
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -117,8 +122,11 @@ export function AskAI() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[var(--brand)] animate-pulse" />
+              <div className={`w-2 h-2 rounded-full ${aiMode === 'disabled' ? 'bg-white/30' : 'bg-[var(--brand)] animate-pulse'}`} />
               <span className="text-sm font-medium text-white/90">Ask AEGIS</span>
+              {aiMode === 'disabled' && (
+                <span className="text-[10px] text-white/40 bg-white/[0.06] rounded px-1.5 py-0.5">AI disabled</span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -144,9 +152,18 @@ export function AskAI() {
             </div>
           </div>
 
+          {/* AI Disabled Banner */}
+          {aiMode === 'disabled' && (
+            <div className="mx-4 mt-3 px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-center">
+              <p className="text-[12px] text-white/50">
+                AI mode disabled — switch to <span className="text-white/70 font-medium">optional</span> or <span className="text-white/70 font-medium">required</span> in settings to enable the AI chat panel.
+              </p>
+            </div>
+          )}
+
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-            {messages.map((msg) => (
+            {aiMode !== 'disabled' && messages.map((msg) => (
               <div
                 key={msg.id}
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -189,14 +206,15 @@ export function AskAI() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about security, scans, threats..."
+                placeholder={aiMode === 'disabled' ? 'AI mode disabled' : 'Ask about security, scans, threats...'}
                 rows={1}
-                className="flex-1 bg-transparent text-[13px] text-white/90 placeholder-white/20 resize-none outline-none max-h-[80px] overflow-y-auto"
+                disabled={aiMode === 'disabled'}
+                className="flex-1 bg-transparent text-[13px] text-white/90 placeholder-white/20 resize-none outline-none max-h-[80px] overflow-y-auto disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ minHeight: '20px' }}
               />
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || isLoading}
+                disabled={!input.trim() || isLoading || aiMode === 'disabled'}
                 className="flex-shrink-0 w-7 h-7 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand)] disabled:opacity-30 disabled:hover:bg-[var(--brand)] flex items-center justify-center transition-colors"
               >
                 <svg className="w-3.5 h-3.5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
