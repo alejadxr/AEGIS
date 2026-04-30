@@ -1,0 +1,23 @@
+id: sigma_c2_tor
+name: Tor Network Usage Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CommandAndControl
+techniques:
+- T1090.003
+data_sources:
+- network
+condition:
+  event_type: connection
+  filter:
+    destination_port:
+    - 9001
+    - 9030
+    - 9050
+    - 9051
+entityMappings:
+- type: IP
+  field: source_ip
+description: Connection to known Tor entry/exit nodes.

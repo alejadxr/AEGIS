@@ -1,0 +1,19 @@
+id: sigma_cloud_untrusted_image
+name: Container Image from Untrusted Registry
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Defense Evasion
+techniques:
+- T1610
+data_sources:
+- container
+condition:
+  event_type: container_pull
+  filter:
+    untrusted_registry: true
+entityMappings:
+- type: IP
+  field: source_ip
+description: Docker image pulled from non-approved registry.

@@ -1,0 +1,19 @@
+id: sigma_auth_after_hours
+name: After-Hours Authentication
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1078
+data_sources:
+- auth_log
+condition:
+  event_type: auth_success
+  filter:
+    time_of_day: off_hours
+entityMappings:
+- type: IP
+  field: source_ip
+description: Successful authentication outside normal business hours.

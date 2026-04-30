@@ -1,0 +1,22 @@
+id: sigma_lateral_dcom
+name: DCOM Remote Execution
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1021.003
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    parent_process: mmc.exe
+    path_contains:
+    - excel.exe
+    - powershell.exe
+entityMappings:
+- type: IP
+  field: source_ip
+description: Process creation via DCOM lateral movement technique.

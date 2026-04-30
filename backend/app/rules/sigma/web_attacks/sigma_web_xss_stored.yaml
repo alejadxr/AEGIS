@@ -1,0 +1,28 @@
+id: sigma_web_xss_stored
+name: Stored XSS Attempt
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Execution
+techniques:
+- T1059.007
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    method: POST
+    path_contains:
+    - <script
+    - <img
+    - <svg
+    - onmouseover=
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects stored XSS via POST requests with script payloads.

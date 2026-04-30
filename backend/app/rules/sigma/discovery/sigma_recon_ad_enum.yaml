@@ -1,0 +1,21 @@
+id: sigma_recon_ad_enum
+name: Active Directory Enumeration
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1087.002
+data_sources:
+- network
+- auth_log
+condition:
+  event_type: ldap_query
+  count_threshold: 20
+  time_window_seconds: 120
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: LDAP queries suggesting Active Directory reconnaissance.

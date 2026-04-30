@@ -1,0 +1,22 @@
+id: sigma_persist_login_hook
+name: macOS Login Hook Persistence
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1037.002
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - defaults write
+    - LoginHook
+    - LogoutHook
+entityMappings:
+- type: IP
+  field: source_ip
+description: Login or logout hook configured for persistence on macOS.

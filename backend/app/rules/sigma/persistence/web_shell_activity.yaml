@@ -1,0 +1,27 @@
+id: web_shell_activity
+name: Web Shell Activity Detected
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1505.003
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: http_request
+  count_threshold: 3
+  time_window_seconds: 120
+  group_by: source_ip
+  filter:
+    method: POST
+    path_contains:
+    - .php
+    - .asp
+    - .jsp
+entityMappings:
+- type: IP
+  field: source_ip
+description: Suspicious HTTP requests consistent with web shell usage.

@@ -1,0 +1,24 @@
+id: sigma_c2_reverse_shell
+name: Reverse Shell Connection
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Execution
+techniques:
+- T1059
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - bash -i
+    - nc -e
+    - ncat
+    - /dev/tcp/
+    - mkfifo
+entityMappings:
+- type: IP
+  field: source_ip
+description: Outbound connection from shell process indicating reverse shell.

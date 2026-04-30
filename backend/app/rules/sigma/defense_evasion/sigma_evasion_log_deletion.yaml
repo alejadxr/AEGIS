@@ -1,0 +1,24 @@
+id: sigma_evasion_log_deletion
+name: Security Log Deletion
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1070.001
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - wevtutil
+    - cl Security
+    - rm /var/log
+    - truncate
+    - '> /var/log'
+entityMappings:
+- type: IP
+  field: source_ip
+description: System or security log files deleted or cleared.

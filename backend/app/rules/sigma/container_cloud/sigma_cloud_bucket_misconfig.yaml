@@ -1,0 +1,22 @@
+id: sigma_cloud_bucket_misconfig
+name: Cloud Storage Bucket Public Access
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Collection
+techniques:
+- T1530
+data_sources:
+- cloud
+condition:
+  event_type: cloud_api
+  filter:
+    path_contains:
+    - PutBucketAcl
+    - PutBucketPolicy
+    - public-read
+entityMappings:
+- type: IP
+  field: source_ip
+description: Cloud storage bucket configured with public access.

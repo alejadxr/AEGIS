@@ -1,0 +1,24 @@
+id: sigma_lateral_rdp_pivot
+name: RDP Lateral Pivot
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1021.001
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 3
+  time_window_seconds: 300
+  group_by: source_ip
+  unique_field: destination_ip
+  filter:
+    destination_port: 3389
+    target_type: internal
+entityMappings:
+- type: IP
+  field: source_ip
+description: RDP connection from internal host to multiple internal targets.

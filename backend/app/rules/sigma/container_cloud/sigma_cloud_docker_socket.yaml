@@ -1,0 +1,20 @@
+id: sigma_cloud_docker_socket
+name: Docker Socket Exposed
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1611
+data_sources:
+- container
+condition:
+  event_type: container_start
+  filter:
+    path_contains:
+    - /var/run/docker.sock
+entityMappings:
+- type: IP
+  field: source_ip
+description: Docker socket mounted inside container allowing host access.
