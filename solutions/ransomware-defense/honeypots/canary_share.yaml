@@ -1,0 +1,56 @@
+type: smb_canary
+name: Canary File Share
+description: >
+  SMB share honeypot containing high-fidelity canary files designed to attract
+  ransomware encryption attempts. Any access, modification, or rename of these
+  files fires an immediate critical alert and triggers the ransomware playbook.
+  Files are never legitimately accessed by users or services.
+share:
+  name: FINANCE_ARCHIVE
+  path: /var/aegis/honeypots/canary_share
+  comment: "Finance Department Archives (Read-Only)"
+  guest_access: false
+  smb_version: "2.1"
+canary_files:
+  - name: Q4_2025_Financial_Report.xlsx
+    size_kb: 142
+    mime: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    honeytoken: true
+  - name: Payroll_December_2025.xlsx
+    size_kb: 89
+    mime: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    honeytoken: true
+  - name: contracts_archive_2024.zip
+    size_kb: 512
+    mime: application/zip
+    honeytoken: true
+  - name: backup_credentials.txt
+    size_kb: 2
+    mime: text/plain
+    honeytoken: true
+    content: "FAKE_CREDENTIAL_HONEYTOKEN — This file is a canary. Unauthorized access logged."
+  - name: db_dump_prod_2025-12-01.sql
+    size_kb: 2048
+    mime: text/plain
+    honeytoken: true
+triggers:
+  on_open: alert_low
+  on_write: alert_critical
+  on_rename: alert_critical
+  on_delete: alert_critical
+alert:
+  severity: critical
+  playbook: ransomware
+  auto_isolate: true
+  notify_channels:
+    - email
+    - webhook
+capture:
+  source_ip: true
+  process_name: true
+  user_account: true
+  timestamp: true
+  operation: true
+breadcrumbs:
+  - "\\\\SERVER\\FINANCE_ARCHIVE"
+  - "net use Z: \\\\SERVER\\FINANCE_ARCHIVE"

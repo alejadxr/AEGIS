@@ -1,0 +1,32 @@
+id: ransomware-defense
+name: Ransomware Defense
+version: 1.0.0
+description: >
+  End-to-end ransomware detection and response pack for AEGIS v1.6.
+  Covers canary file monitoring, mass-extension changes, shadow-copy deletion,
+  LOLBin abuse, lateral movement via SMB/WinRM, and RaaS group tracking.
+  Includes an automated 7-step containment playbook and a SMB canary honeypot.
+author: Wilab
+includes:
+  rules:
+    - app/rules/sigma/impact/sigma_ransomware_bcdedit_recovery_disable.yaml
+    - app/rules/sigma/impact/sigma_ransomware_canary_modified.yaml
+    - app/rules/sigma/impact/sigma_ransomware_extension_mass_change.yaml
+    - app/rules/sigma/impact/sigma_ransomware_lolbin_certutil.yaml
+    - app/rules/sigma/impact/sigma_ransomware_lolbin_rundll32.yaml
+    - app/rules/sigma/impact/sigma_ransomware_note_dropped.yaml
+    - app/rules/sigma/impact/sigma_ransomware_rdp_then_encrypt.yaml
+    - app/rules/sigma/impact/sigma_ransomware_shadow_copy_delete.yaml
+    - app/rules/sigma/impact/sigma_ransomware_smb_lateral.yaml
+    - app/rules/sigma/impact/sigma_ransomware_vss_delete.yaml
+    - app/rules/sigma/impact/sigma_ransomware_wbadmin_delete.yaml
+    - app/rules/sigma/impact/sigma_ransomware_winrm_exec.yaml
+  chains:
+    - app/rules/chains/ransomware_chain.yaml
+  playbooks:
+    - playbooks/ransomware_playbook.yaml
+  parsers:
+    - parsers/encrypt_log_parser.json
+  honeypots:
+    - honeypots/canary_share.yaml
+depends_on: []
