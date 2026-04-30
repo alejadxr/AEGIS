@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Akira Decryptor (Avast)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["Akira"],
+    "file_extensions": [".akira", ".reptar"],
+    "ransom_notes": ["akira_readme.txt"]
+  },
+  {
+    "name": "Babuk Decryptor (Cisco Talos)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["Babuk", "Babak", "Babyk"],
+    "file_extensions": [".babuk", ".bkc"],
+    "ransom_notes": ["HELP_RESTORE_YOUR_FILES.TXT", "How To Restore Your Files.txt"]
+  },
+  {
+    "name": "REvil/Sodinokibi Decryptor (Bitdefender)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["REvil", "Sodinokibi", "REvil/Sodinokibi"],
+    "file_extensions": [".revil", ".sodinokibi", ".randomext"],
+    "ransom_notes": ["[random]-readme.txt", "readme.txt"]
+  },
+  {
+    "name": "BlackMatter/DarkSide Decryptor (Bitdefender)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["BlackMatter", "DarkSide"],
+    "file_extensions": [".blackmatter", ".jkwerlo"],
+    "ransom_notes": ["README.TXT", "!!readme!!!.txt"]
+  },
+  {
+    "name": "Avaddon Decryptor (No More Ransom)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["Avaddon"],
+    "file_extensions": [".avdn", ".avaddon"],
+    "ransom_notes": ["[id]-readme.html"]
+  },
+  {
+    "name": "Gandcrab/REvil Decryptor (Bitdefender)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["GandCrab"],
+    "file_extensions": [".gdcb", ".crab", ".krab"],
+    "ransom_notes": ["GDCB-DECRYPT.txt", "CRAB-DECRYPT.txt"]
+  },
+  {
+    "name": "Locky Decryptor (ESET)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["Locky"],
+    "file_extensions": [".locky", ".zepto", ".odin", ".aesir", ".shit", ".thor"],
+    "ransom_notes": ["_Locky_recover_instructions.bmp", "_Locky_recover_instructions.txt"]
+  },
+  {
+    "name": "WannaCry Decryptor (WanaKiwi)",
+    "source_url": "https://github.com/gentilkiwi/wanakiwi",
+    "supported_groups": ["WannaCry", "WCry", "WanaCrypt0r"],
+    "file_extensions": [".wncry", ".wcry", ".wcryt", ".wncrypt"],
+    "ransom_notes": ["@Please_Read_Me@.txt", "@WanaDecryptor@.exe"]
+  },
+  {
+    "name": "Conti Decryptor (leaked keys)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["Conti"],
+    "file_extensions": [".conti"],
+    "ransom_notes": ["CONTI_README.txt", "readme.txt"]
+  },
+  {
+    "name": "LockBit 2.0 / 3.0 partial (Europol)",
+    "source_url": "https://www.nomoreransom.org/en/decryption-tools.html",
+    "supported_groups": ["LockBit", "LockBit 2.0", "LockBit 3.0"],
+    "file_extensions": [".lockbit", ".lb2", ".lb3"],
+    "ransom_notes": ["Restore-My-Files.txt", "!!LockBit_3.0.hta"]
+  }
+]
