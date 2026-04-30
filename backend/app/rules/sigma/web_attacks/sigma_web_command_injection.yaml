@@ -1,0 +1,29 @@
+id: sigma_web_command_injection
+name: OS Command Injection
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Execution
+techniques:
+- T1059
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - ; ls
+    - '| cat'
+    - '&& whoami'
+    - '`id`'
+    - $(id)
+    - ; curl
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects OS command injection patterns in web requests.

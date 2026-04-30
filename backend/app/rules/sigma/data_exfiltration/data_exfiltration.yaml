@@ -1,0 +1,20 @@
+id: data_exfiltration
+name: Possible Data Exfiltration
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1041
+data_sources:
+- network
+condition:
+  event_type: network
+  filter:
+    direction: outbound
+    bytes_gt: 104857600
+entityMappings:
+- type: IP
+  field: source_ip
+description: Large outbound data transfer to external IP.

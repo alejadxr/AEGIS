@@ -1,0 +1,20 @@
+id: sigma_c2_domain_fronting
+name: Domain Fronting Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CommandAndControl
+techniques:
+- T1090.004
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  filter:
+    sni_host_mismatch: true
+entityMappings:
+- type: IP
+  field: source_ip
+description: TLS SNI mismatch with HTTP Host header suggesting domain fronting.

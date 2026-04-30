@@ -1,0 +1,22 @@
+id: lateral_movement
+name: Lateral Movement Detected
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1021
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 10
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    target_type: internal
+entityMappings:
+- type: IP
+  field: source_ip
+description: Internal host accessing multiple internal services rapidly.

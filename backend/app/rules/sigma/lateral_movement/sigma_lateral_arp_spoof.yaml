@@ -1,0 +1,20 @@
+id: sigma_lateral_arp_spoof
+name: ARP Spoofing Detected
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1557.002
+data_sources:
+- network
+condition:
+  event_type: arp_anomaly
+  count_threshold: 5
+  time_window_seconds: 30
+  group_by: source_mac
+entityMappings:
+- type: IP
+  field: source_ip
+description: Gratuitous ARP packets suggesting ARP cache poisoning.

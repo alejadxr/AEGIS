@@ -1,0 +1,22 @@
+id: homelab-baseline
+name: Homelab Baseline
+version: 1.0.0
+description: >
+  Minimal, lightweight detection coverage for self-hosters and homelabs.
+  Focuses on the highest-signal threats: SSH brute force, port scanning,
+  vulnerability scanners, and basic web attacks. Low false-positive tuning.
+author: Wilab
+includes:
+  rules:
+    - rules/brute_force_ssh.yaml
+    - rules/port_scan.yaml
+    - rules/sigma_recon_vuln_scanner.yaml
+    - rules/sigma_web_sqli_blind.yaml
+    - rules/credential_stuffing.yaml
+  playbooks:
+    - playbooks/baseline_threat_response.yaml
+  parsers:
+    - parsers/combined_log_parser.json
+  honeypots:
+    - honeypots/ssh_decoy.yaml
+depends_on: []

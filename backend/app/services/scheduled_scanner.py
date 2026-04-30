@@ -577,9 +577,18 @@ class ScheduledScanner:
         critical_vulns: int,
         high_vulns: int,
     ) -> dict:
-        """Send scan results to OpenRouter and get AI risk score 0-100."""
+        """Return AI risk score 0-100; falls back to heuristic when AI is unavailable."""
         from app.core.openrouter import openrouter_client
+        from app.core.ai_mode import ai_available
         import re
+
+        if not ai_available():
+            return {
+                "risk_score": self._heuristic_risk(critical_vulns, high_vulns, vuln_count, ports),
+                "justification": "Heuristic scoring (AI disabled)",
+                "model_used": "heuristic",
+                "confidence": 0.6,
+            }
 
         port_summary = ", ".join(
             f"{p['port']}/{p.get('protocol', 'tcp')} ({p.get('service', '?')})"

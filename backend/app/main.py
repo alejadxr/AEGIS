@@ -509,6 +509,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to prime firewall engine cache: {e}")
 
+    # Initialize local system firewall (pfctl/iptables if AEGIS_REAL_FW=1, else Noop)
+    try:
+        from app.services import firewall_local as _fw_local
+        _fw_local.get_firewall().setup()
+        logger.info(f"Local firewall setup complete ({type(_fw_local.get_firewall()).__name__})")
+    except Exception as e:
+        logger.error(f"Local firewall setup failed (non-fatal): {e}")
+
     # Start external firewall sync (conditional on AEGIS_FIREWALL_URL)
     if settings.AEGIS_FIREWALL_URL:
         from app.services.firewall_sync import firewall_sync
@@ -594,7 +602,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.4.0",
+    version="1.5.0",
     lifespan=lifespan,
 )
 
@@ -692,20 +700,24 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/health")
 async def health():
+    from app.core.ai_mode import MODE as _ai_mode
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.4.0",
+        "version": "1.5.0",
         "environment": settings.AEGIS_ENV,
+        "ai_mode": _ai_mode.value,
     }
 
 
 @app.get("/api/v1/health")
 async def api_health():
+    from app.core.ai_mode import MODE as _ai_mode
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.4.0",
+        "version": "1.5.0",
+        "ai_mode": _ai_mode.value,
     }
 
 

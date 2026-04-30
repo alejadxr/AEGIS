@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.openrouter import openrouter_client
+from app.core.ai_mode import degrade_or_call
 from app.core.guardrails import guardrail_engine
 from app.core.events import event_bus, PRIORITY_HIGH
 from app.database import async_session
@@ -36,7 +37,18 @@ from app.models.client import Client
 from app.models.incident import Incident
 from app.models.action import Action
 
+import json as _json
+from pathlib import Path as _Path
+
 logger = logging.getLogger("cayde6.counter_attack")
+
+# Static counter-action map (used when AI is disabled/unavailable)
+_COUNTER_ACTIONS_FILE = _Path(__file__).parent.parent / "data" / "counter_actions.json"
+try:
+    with open(_COUNTER_ACTIONS_FILE) as _f:
+        _STATIC_COUNTER_ACTIONS: dict = _json.load(_f)
+except Exception:
+    _STATIC_COUNTER_ACTIONS = {}
 
 
 # Counter-attack action types (all auto-approved — AEGIS is autonomous)
@@ -182,21 +194,29 @@ class CounterAttackEngine:
             f"Respond in JSON format."
         )
 
-        # Call OpenRouter with counter_attack task type (uses dolphin-mistral uncensored)
-        ai_result = await openrouter_client.query(
-            messages=[{"role": "user", "content": prompt}],
-            task_type="counter_attack",
-            temperature=0.4,
-            max_tokens=2048,
-        )
+        async def _ai_analyze(_prompt: str) -> dict:
+            ai_result = await openrouter_client.query(
+                messages=[{"role": "user", "content": _prompt}],
+                task_type="counter_attack",
+                temperature=0.4,
+                max_tokens=2048,
+            )
+            return self._parse_ai_response(ai_result.get("content", ""))
 
-        # Parse AI response
-        content = ai_result.get("content", "")
-        analysis = self._parse_ai_response(content)
+        def _static_analyze(_prompt: str) -> dict:
+            actions = _STATIC_COUNTER_ACTIONS.get(attack_type, _STATIC_COUNTER_ACTIONS.get("scanner", []))
+            return {
+                "analysis": f"Deterministic analysis: {attack_type} from {source_ip}",
+                "threat_level": severity,
+                "recommended_actions": [a["action_type"] for a in actions],
+                "model_used": "deterministic",
+            }
+
+        analysis = await degrade_or_call(_ai_analyze, _static_analyze, prompt)
         analysis["incident_id"] = incident_id
         analysis["source_ip"] = source_ip
-        analysis["model_used"] = ai_result.get("model_used", "unknown")
-        analysis["latency_ms"] = ai_result.get("latency_ms", 0)
+        analysis.setdefault("model_used", "unknown")
+        analysis.setdefault("latency_ms", 0)
         analysis["timestamp"] = datetime.utcnow().isoformat()
         analysis["total_time_ms"] = int((time.time() - start_time) * 1000)
 
@@ -287,26 +307,33 @@ class CounterAttackEngine:
         loop = asyncio.get_event_loop()
         nmap_result = await loop.run_in_executor(None, self._run_nmap, target_ip)
 
-        # AI analysis of scan results
-        ai_result = await openrouter_client.query(
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"Analyze this nmap scan of an attacker at {target_ip}:\n\n"
-                    f"{nmap_result}\n\n"
-                    f"Identify: OS, open services, potential vulnerabilities, "
-                    f"whether this is a proxy/VPN/botnet node. Respond in JSON."
-                ),
-            }],
-            task_type="counter_attack",
-            temperature=0.3,
-            max_tokens=1024,
-        )
+        async def _ai_nmap_analysis(_nmap: str) -> str:
+            ai_result = await openrouter_client.query(
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Analyze this nmap scan of an attacker at {target_ip}:\n\n"
+                        f"{_nmap}\n\n"
+                        f"Identify: OS, open services, potential vulnerabilities, "
+                        f"whether this is a proxy/VPN/botnet node. Respond in JSON."
+                    ),
+                }],
+                task_type="counter_attack",
+                temperature=0.3,
+                max_tokens=1024,
+            )
+            return ai_result.get("content", "")
+
+        def _static_nmap_analysis(_nmap: str) -> str:
+            open_ports = [line for line in _nmap.split("\n") if "/tcp" in line or "/udp" in line]
+            return f"Scan completed. Open ports: {len(open_ports)}. Manual review required."
+
+        ai_analysis = await degrade_or_call(_ai_nmap_analysis, _static_nmap_analysis, nmap_result)
 
         return {
             "nmap_raw": nmap_result,
-            "ai_analysis": ai_result.get("content", ""),
-            "model_used": ai_result.get("model_used", ""),
+            "ai_analysis": ai_analysis,
+            "model_used": "ai" if ai_analysis and "review" not in ai_analysis else "deterministic",
         }
 
     def _run_nmap(self, target_ip: str) -> str:
@@ -372,27 +399,38 @@ class CounterAttackEngine:
 
     async def _deploy_deception(self, target_ip: str) -> dict:
         """Deploy deception measures against the attacker."""
-        # Generate fake credentials/data using AI
-        ai_result = await openrouter_client.query(
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"Generate convincing but fake security data to serve to an attacker at {target_ip}. "
-                    f"Include: fake database credentials, fake API keys, fake internal IPs, "
-                    f"and a fake server configuration. Make it look real enough to waste their time. "
-                    f"Respond in JSON."
-                ),
-            }],
-            task_type="decoy_content",
-            temperature=0.7,
-            max_tokens=1024,
-        )
+        async def _ai_deception(_ip: str) -> str:
+            ai_result = await openrouter_client.query(
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Generate convincing but fake security data to serve to an attacker at {_ip}. "
+                        f"Include: fake database credentials, fake API keys, fake internal IPs, "
+                        f"and a fake server configuration. Make it look real enough to waste their time. "
+                        f"Respond in JSON."
+                    ),
+                }],
+                task_type="decoy_content",
+                temperature=0.7,
+                max_tokens=1024,
+            )
+            return ai_result.get("content", "")[:2000]
+
+        def _static_deception(_ip: str) -> str:
+            return (
+                '{"db_host": "10.0.0.5", "db_user": "admin", "db_pass": "P@ssw0rd123!", '
+                '"api_key": "sk-fake-key-do-not-use-aabbccdd1122", '
+                '"internal_subnet": "192.168.100.0/24", '
+                '"note": "Internal network — authorized access only"}'
+            )
+
+        ai_content = await degrade_or_call(_ai_deception, _static_deception, target_ip)
 
         return {
             "deception_deployed": True,
             "target_ip": target_ip,
             "fake_data_generated": True,
-            "ai_content": ai_result.get("content", "")[:2000],
+            "ai_content": ai_content,
         }
 
     async def _report_abuse(self, target_ip: str, incident_id: str) -> dict:

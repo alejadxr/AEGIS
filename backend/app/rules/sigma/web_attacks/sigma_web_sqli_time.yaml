@@ -1,0 +1,27 @@
+id: sigma_web_sqli_time
+name: Time-Based SQL Injection
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 2
+  time_window_seconds: 120
+  group_by: source_ip
+  filter:
+    path_contains:
+    - SLEEP
+    - pg_sleep
+    - DBMS_PIPE
+    - WAITFOR DELAY
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects time-based blind SQL injection via slow response patterns.

@@ -1,0 +1,22 @@
+id: sigma_persist_cron
+name: Suspicious Cron Job Created
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1053.003
+data_sources:
+- edr
+condition:
+  event_type: file_modification
+  filter:
+    path_contains:
+    - /etc/crontab
+    - /var/spool/cron
+    - /etc/cron.d
+entityMappings:
+- type: IP
+  field: source_ip
+description: New cron job created with potentially malicious command.

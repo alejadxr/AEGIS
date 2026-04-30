@@ -19,6 +19,7 @@ from typing import Optional
 from aiohttp import web
 
 from app.core.openrouter import openrouter_client
+from app.core.ai_mode import degrade_or_call
 
 logger = logging.getLogger("aegis.phantom.smart_http")
 
@@ -431,14 +432,17 @@ class SmartHTTPHoneypot:
             except Exception as e:
                 logger.debug(f"[Smart HTTP] themed ai_snippet failed: {e}")
 
-        try:
+        app_type = self.app_type
+        response_headers = self._response_headers()
+
+        async def _ai_content(_path: str, _method: str, _ua: str) -> str:
             messages = [{
                 "role": "user",
                 "content": (
-                    f"An attacker is probing a {self.app_type} application and requested: "
-                    f"{method} {path}\n"
-                    f"User-Agent: {capture.get('user_agent', 'unknown')}\n\n"
-                    f"Generate a realistic HTML or JSON response that a real {self.app_type} "
+                    f"An attacker is probing a {app_type} application and requested: "
+                    f"{_method} {_path}\n"
+                    f"User-Agent: {_ua}\n\n"
+                    f"Generate a realistic HTML or JSON response that a real {app_type} "
                     f"app would return for this path. Keep it brief (under 500 chars). "
                     f"Include realistic but fake data. No markdown, just raw HTML or JSON."
                 ),
@@ -447,16 +451,29 @@ class SmartHTTPHoneypot:
             content = result.get("content", "").strip()
             if not content:
                 raise ValueError("Empty AI response")
+            return content
 
-            content_type = "application/json" if content.startswith(("{", "[")) else "text/html"
-            return web.Response(text=content, content_type=content_type, headers=self._response_headers())
+        def _template_content(_path: str, _method: str, _ua: str) -> str:
+            if _path.startswith("/api") or "json" in _ua.lower():
+                return f'{{"error": "not_found", "path": "{_path}", "status": 404}}'
+            return (
+                f"<html><body>"
+                f"<h1>404 Not Found</h1>"
+                f"<p>The requested path <code>{_path}</code> was not found on this server.</p>"
+                f"</body></html>"
+            )
+
+        try:
+            ua = capture.get("user_agent", "unknown")
+            content = await degrade_or_call(_ai_content, _template_content, path, method, ua)
+            content_type = "application/json" if content.strip().startswith(("{", "[")) else "text/html"
+            return web.Response(text=content, content_type=content_type, headers=response_headers)
         except Exception as e:
-            logger.debug(f"[Smart HTTP] AI response failed: {e}")
-            # Fallback to 404
+            logger.debug(f"[Smart HTTP] response generation failed: {e}")
             return web.Response(
                 text="<html><body><h1>404 Not Found</h1></body></html>",
                 content_type="text/html", status=404,
-                headers=self._response_headers(),
+                headers=response_headers,
             )
 
     # ------------------------------------------------------------------

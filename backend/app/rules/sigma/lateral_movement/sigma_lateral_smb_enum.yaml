@@ -1,0 +1,21 @@
+id: sigma_lateral_smb_enum
+name: SMB Share Enumeration
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1021.002
+data_sources:
+- network
+condition:
+  event_type: smb_access
+  count_threshold: 5
+  time_window_seconds: 120
+  group_by: source_ip
+  unique_field: share_name
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple SMB share access attempts suggesting network enumeration.

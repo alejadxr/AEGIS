@@ -1,0 +1,38 @@
+# Executive Security Summary
+
+**Organization:** {{ organization | default('N/A') }}
+**Period:** {{ period | default('N/A') }}
+**Risk Level:** {{ risk_level | default('Medium') | upper }}
+
+## Security Posture
+
+Overall security posture is **{{ risk_level | default('moderate') }}**. During this period, {{ total_incidents | default(0) }} security incidents were detected and handled autonomously by AEGIS.
+
+## Critical Findings
+
+{% for finding in critical_findings | default([]) %}
+- {{ finding }}
+{% else %}
+No critical findings requiring immediate board attention.
+{% endfor %}
+
+## Metrics Summary
+
+- **Assets Monitored:** {{ total_assets | default(0) }}
+- **Vulnerabilities Open:** {{ open_vulns | default(0) }} ({{ critical_vulns | default(0) }} critical)
+- **Incidents Resolved:** {{ resolved_incidents | default(0) }}
+- **Mean Time to Respond:** {{ mttr_minutes | default('N/A') }} minutes
+
+## Compliance Status
+
+{{ compliance_summary | default('Compliance assessment pending.') }}
+
+## Investment Priority
+
+{% for item in investment_priorities | default([]) %}
+{{ loop.index }}. {{ item }}
+{% else %}
+1. Patch critical vulnerabilities identified in this report.
+2. Review access controls for high-value assets.
+3. Enhance monitoring coverage for lateral movement detection.
+{% endfor %}

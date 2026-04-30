@@ -1,0 +1,21 @@
+id: sigma_privesc_named_pipe
+name: Named Pipe Impersonation
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1134.001
+data_sources:
+- edr
+condition:
+  event_type: pipe_creation
+  filter:
+    path_contains:
+    - \\.\pipe\
+    - ImpersonateNamedPipeClient
+entityMappings:
+- type: IP
+  field: source_ip
+description: Named pipe created for token impersonation.

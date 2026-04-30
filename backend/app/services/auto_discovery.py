@@ -177,78 +177,117 @@ class AutoDiscovery:
         return result
 
     async def _ai_enrich(self, result: ScanResult) -> ScanResult:
-        """Use AI to analyze nmap results and improve service identification."""
+        """Enrich nmap results with service identification; AI-assisted when available."""
         if not result.hosts:
             return result
 
-        try:
+        from app.core.ai_mode import degrade_or_call
+
+        # Build scan summary for both AI and heuristic paths
+        scan_summary = []
+        for host in result.hosts:
+            host_info = f"Host: {host.ip}"
+            if host.hostname:
+                host_info += f" ({host.hostname})"
+            if host.os_guess:
+                host_info += f" OS: {host.os_guess}"
+            for svc in host.services:
+                host_info += f"\n  Port {svc.port}/{svc.protocol}: {svc.service} {svc.version}"
+            scan_summary.append(host_info)
+
+        async def _ai_analyze(_summary: list) -> list[dict]:
             from app.core.openrouter import openrouter_client
-
-            # Build a summary of what nmap found
-            scan_summary = []
-            for host in result.hosts:
-                host_info = f"Host: {host.ip}"
-                if host.hostname:
-                    host_info += f" ({host.hostname})"
-                if host.os_guess:
-                    host_info += f" OS: {host.os_guess}"
-                for svc in host.services:
-                    host_info += f"\n  Port {svc.port}/{svc.protocol}: {svc.service} {svc.version}"
-                scan_summary.append(host_info)
-
-            prompt = f"""Analyze these nmap scan results from a security platform setup. For each discovered service, provide:
-1. A clear, human-readable service name (e.g., "Sable Website" not "http")
-2. The likely technology (Next.js, FastAPI, PostgreSQL, etc.)
-3. Risk level (0-100) with brief justification
-4. A suggested hostname (short, descriptive)
-
-Scan results:
-{chr(10).join(scan_summary)}
-
-Respond in JSON array format, one object per service:
-[{{"ip": "x.x.x.x", "port": 3006, "service_name": "Web Application", "technology": "Next.js", "risk": 25, "risk_reason": "Standard web app", "hostname": "webapp-3006"}}]
-
-Only return the JSON array, no other text."""
-
+            prompt = (
+                "Analyze these nmap scan results from a security platform setup. "
+                "For each discovered service, provide:\n"
+                "1. A clear, human-readable service name (e.g., \"Sable Website\" not \"http\")\n"
+                "2. The likely technology (Next.js, FastAPI, PostgreSQL, etc.)\n"
+                "3. Risk level (0-100) with brief justification\n"
+                "4. A suggested hostname (short, descriptive)\n\n"
+                f"Scan results:\n{chr(10).join(_summary)}\n\n"
+                "Respond in JSON array format, one object per service:\n"
+                '[{"ip": "x.x.x.x", "port": 3006, "service_name": "Web Application", '
+                '"technology": "Next.js", "risk": 25, "risk_reason": "Standard web app", "hostname": "webapp-3006"}]\n\n'
+                "Only return the JSON array, no other text."
+            )
             ai_result = await openrouter_client.query(
                 messages=[{"role": "user", "content": prompt}],
                 task_type="triage",
                 temperature=0.1,
                 max_tokens=2048,
             )
-
             content = ai_result.get("content", "")
-            # Extract JSON from response
             json_match = re.search(r'\[[\s\S]*\]', content)
             if json_match:
-                ai_services = json.loads(json_match.group())
-                # Build lookup by ip:port
-                ai_lookup: dict[str, dict] = {}
-                for item in ai_services:
-                    key = f"{item.get('ip', '')}:{item.get('port', 0)}"
-                    ai_lookup[key] = item
+                return json.loads(json_match.group())
+            return []
 
-                # Merge AI analysis into scan results
-                for host in result.hosts:
-                    for svc in host.services:
-                        key = f"{host.ip}:{svc.port}"
-                        ai_info = ai_lookup.get(key)
-                        if ai_info:
-                            if ai_info.get("service_name"):
-                                svc.service = ai_info["service_name"]
-                            if ai_info.get("hostname"):
-                                svc.hostname = ai_info["hostname"]
-                            if ai_info.get("risk") is not None:
-                                svc.risk_estimate = int(ai_info["risk"])
-                            tech = ai_info.get("technology", "")
-                            if tech and tech not in svc.technologies:
-                                svc.technologies.insert(0, tech)
+        def _heuristic_analyze(_summary: list) -> list[dict]:
+            # Parse nmap output heuristically without LLM
+            services = []
+            for line in _summary:
+                for part in line.split("\n"):
+                    part = part.strip()
+                    if not part.startswith("Port"):
+                        continue
+                    # "Port 80/tcp: http Apache/2.4"
+                    tokens = part.split()
+                    if len(tokens) < 3:
+                        continue
+                    port_proto = tokens[1].rstrip(":")
+                    port_str, _, _ = port_proto.partition("/")
+                    try:
+                        port = int(port_str)
+                    except ValueError:
+                        continue
+                    svc_raw = tokens[2].lower() if len(tokens) > 2 else "unknown"
+                    ip = ""
+                    for l2 in line.split("\n"):
+                        if l2.startswith("Host:"):
+                            ip = l2.split()[1].split("(")[0]
+                            break
+                    # Map common ports to friendly names
+                    _names = {
+                        22: "SSH", 80: "HTTP Web Server", 443: "HTTPS Web Server",
+                        3306: "MySQL Database", 5432: "PostgreSQL Database",
+                        6379: "Redis Cache", 8000: "API Server", 8080: "Web App",
+                        3000: "Web App (Node)", 3007: "Web App", 5000: "Web App",
+                    }
+                    svc_name = _names.get(port, f"{svc_raw.upper()} Service")
+                    risk = 50 if port not in (22, 443) else 25
+                    services.append({
+                        "ip": ip,
+                        "port": port,
+                        "service_name": svc_name,
+                        "technology": svc_raw,
+                        "risk": risk,
+                        "hostname": f"{svc_raw}-{port}",
+                    })
+            return services
 
-                logger.info(f"AI enriched {len(ai_lookup)} services from scan")
-
+        try:
+            ai_services = await degrade_or_call(_ai_analyze, _heuristic_analyze, scan_summary)
+            ai_lookup: dict[str, dict] = {
+                f"{item.get('ip', '')}:{item.get('port', 0)}": item
+                for item in ai_services
+            }
+            for host in result.hosts:
+                for svc in host.services:
+                    key = f"{host.ip}:{svc.port}"
+                    ai_info = ai_lookup.get(key)
+                    if ai_info:
+                        if ai_info.get("service_name"):
+                            svc.service = ai_info["service_name"]
+                        if ai_info.get("hostname"):
+                            svc.hostname = ai_info["hostname"]
+                        if ai_info.get("risk") is not None:
+                            svc.risk_estimate = int(ai_info["risk"])
+                        tech = ai_info.get("technology", "")
+                        if tech and tech not in svc.technologies:
+                            svc.technologies.insert(0, tech)
+            logger.info(f"Enriched {len(ai_lookup)} services from scan")
         except Exception as exc:
-            # AI enrichment is best-effort — scan still works without it
-            logger.warning(f"AI enrichment failed (scan results unchanged): {exc}")
+            logger.warning(f"Service enrichment failed (scan results unchanged): {exc}")
 
         return result
 
