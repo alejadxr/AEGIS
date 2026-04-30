@@ -1,0 +1,38 @@
+id: privilege_escalation_response
+name: Privilege Escalation Response
+description: >
+  Respond to privilege escalation attempts including sudo abuse, SUID exploitation,
+  rootkit detection, and log tampering.
+triggers:
+  - sigma_privesc_sudo_abuse
+  - sigma_privesc_suid
+  - sigma_evasion_rootkit
+  - sigma_evasion_log_deletion
+  - sigma_persist_cron
+steps:
+  - action: isolate_host
+    description: Network-isolate the compromised host
+    params:
+      allow_management_access: true
+  - action: kill_process
+    description: Terminate the offending process tree
+    params:
+      include_children: true
+  - action: disable_account
+    description: Disable the account used for escalation
+    params:
+      lock_duration_seconds: 0
+      permanent: true
+  - action: revoke_creds
+    description: Rotate all credentials on affected host
+    params:
+      include_ssh_keys: true
+      include_service_accounts: true
+  - action: alert
+    description: Critical escalation alert with full context
+    params:
+      severity: critical
+      notify_channel: security_ops
+      escalate: true
+severity: critical
+auto_execute: false

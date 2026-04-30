@@ -1,0 +1,18 @@
+{
+  "name": "web_log_parser",
+  "description": "Regex patterns for parsing web server access and error logs",
+  "regexes": {
+    "sqli_attempt": "(?i)(union\\s+select|select\\s+.*from|insert\\s+into|drop\\s+table|exec\\s*\\(|xp_cmdshell|information_schema|';\\s*--|\\bor\\s+1=1\\b)",
+    "xss_attempt": "(?i)(<script[^>]*>|javascript:|on\\w+\\s*=|<iframe|<object|<embed|alert\\s*\\(|document\\.cookie)",
+    "path_traversal": "(\\.\\./|\\.\\.\\\\/|%2e%2e%2f|%252e%252e%252f|\\.\\./etc/passwd|/etc/shadow)",
+    "command_injection": "(?i)(;\\s*(ls|cat|wget|curl|bash|sh|nc|netcat|python|perl|ruby)\\b|\\|\\s*(ls|cat|id|whoami)|`[^`]+`)",
+    "web_scanner": "(?i)(nikto|nmap|sqlmap|nuclei|gobuster|dirbuster|wfuzz|masscan|zap|burpsuite|acunetix|nessus)",
+    "web_shell_request": "(?i)(cmd=|command=|exec=|system=|shell=|passthru=|popen=|eval=)\\w+",
+    "dir_bruteforce": "(?i)(GET|POST)\\s+/(admin|wp-admin|phpmyadmin|\.env|\.git|backup|config|secret|api/v\\d)",
+    "common_attack_ua": "(?i)(sqlmap|nikto|masscan|nmap|python-requests/2\\.(?:[01]|[2-9])\\.|curl/7\\.[0-4])",
+    "source_ip": "^(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})",
+    "http_method": "^\\S+\\s+(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE|CONNECT)",
+    "http_status": "\\s(\\d{3})\\s",
+    "request_path": "(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\\s+([^\\s]+)"
+  }
+}

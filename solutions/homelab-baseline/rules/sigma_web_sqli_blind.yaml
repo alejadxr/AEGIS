@@ -1,0 +1,29 @@
+id: sigma_web_sqli_blind
+name: Blind SQL Injection Attempt
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - SLEEP(
+    - BENCHMARK(
+    - WAITFOR
+    - 1=1
+    - 1'='1
+    - OR 1=1
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects blind SQL injection attempts using boolean/time techniques.
