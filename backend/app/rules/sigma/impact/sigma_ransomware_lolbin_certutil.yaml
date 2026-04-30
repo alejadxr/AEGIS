@@ -1,0 +1,38 @@
+id: ransomware_lolbin_certutil
+name: certutil download — ransomware staging LOLBin
+kind: sigma
+description: |
+  Detects certutil being abused as a download utility (`certutil -urlcache`,
+  `-decode`, `-f` flags pointing at remote URLs). This is a hallmark
+  pre-encryption staging step: ransomware operators stage payloads via
+  certutil because it is signed by Microsoft and survives most allowlists.
+severity: high
+enabled: true
+tactics:
+  - CommandAndControl
+  - Defense Evasion
+techniques:
+  - T1105
+  - T1218
+data_sources:
+  - process_creation
+  - edr
+condition:
+  event_type: process_create
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: hostname
+  filter:
+    process_name_regex: '(?i)certutil(\.exe)?$'
+    command_line_regex: '(?i)(-urlcache|-decode|-decodehex|-f\s+http)'
+entityMappings:
+  - type: Host
+    field: hostname
+  - type: Account
+    field: username
+customDetails:
+  command_line: command_line
+  parent_process_path: parent_process_path
+references:
+  - https://attack.mitre.org/techniques/T1105/
+  - https://lolbas-project.github.io/lolbas/Binaries/Certutil/
