@@ -8,9 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.openrouter import openrouter_client
+from app.core.ai_mode import degrade_or_call
 from app.models.honeypot import Honeypot
 
 logger = logging.getLogger("aegis.phantom.rotation")
+
+_TEMPLATE_DETAILS = {
+    "ssh": "SSH honeypot emulating Ubuntu OpenSSH server with password authentication enabled.",
+    "http": "HTTP honeypot serving a fake web application with admin panels and debug endpoints.",
+    "database": "Database honeypot exposing a fake production database with sample tables.",
+    "smtp": "SMTP honeypot accepting connections and logging credential attempts.",
+    "api": "REST API honeypot with fake endpoints returning plausible JSON responses.",
+}
 
 
 class RotationEngine:
@@ -81,20 +90,25 @@ class RotationEngine:
             ]
             new_config["banner"] = random.choice(banners_list)
 
-        # Try to get AI-generated decoy content
-        try:
-            messages = [
-                {
-                    "role": "user",
-                    "content": (
-                        f"Generate a realistic configuration detail for a {honeypot_type} honeypot. "
-                        f"Make it look like a real service that would attract attackers. "
-                        f"Respond with just a brief description or banner text, no JSON needed."
-                    ),
-                }
-            ]
+        # Enrich with AI-generated decoy detail; fall back to template-based description
+        async def _ai_decoy(htype: str) -> str:
+            messages = [{
+                "role": "user",
+                "content": (
+                    f"Generate a realistic configuration detail for a {htype} honeypot. "
+                    f"Make it look like a real service that would attract attackers. "
+                    f"Respond with just a brief description or banner text, no JSON needed."
+                ),
+            }]
             response = await openrouter_client.query(messages, "decoy_content")
-            new_config["ai_decoy_detail"] = response.get("content", "")[:500]
+            return response.get("content", "")[:500]
+
+        def _template_decoy(htype: str) -> str:
+            return _TEMPLATE_DETAILS.get(htype, f"{htype} honeypot — realistic service emulation.")
+
+        try:
+            detail = await degrade_or_call(_ai_decoy, _template_decoy, honeypot_type)
+            new_config["ai_decoy_detail"] = detail
         except Exception:
             pass
 
