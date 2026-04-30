@@ -20,8 +20,9 @@ condition:
   count_threshold: 1
   time_window_seconds: 60
   group_by: hostname
-customDetails:
-  file_name_regex: '(?i)(readme.*\.(txt|hta|html)|how_to_decrypt|decrypt[_-]?instructions|recover[_-]?files|!!!.*-files-have-been|HOW_TO_RESTORE)'
+  filter:
+    file_name_regex: '(?i)(readme.*\.(txt|hta|html)|how_to_decrypt|decrypt[_-]?instructions|recover[_-]?files|!!!.*-files-have-been|HOW_TO_RESTORE)'
+customDetails: {}
 entityMappings:
 - type: Host
   field: hostname
