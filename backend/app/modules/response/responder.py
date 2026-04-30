@@ -10,8 +10,10 @@ from app.core.events import event_bus
 from app.core.ip_blocker import ip_blocker_service
 from app.core.firewall_client import firewall_client
 from app.models.action import Action
+import app.services.firewall_local as firewall_local
 
 logger = logging.getLogger("cayde6.responder")
+fw_logger = logging.getLogger("aegis.responder.fw")
 
 
 class ActiveResponder:
@@ -106,9 +108,20 @@ class ActiveResponder:
         firewall_result = await firewall_client.block_ip(target)
         logger.info(f"Firewall block result for {target}: {firewall_result}")
 
-        # 2. Block locally via ip_blocker_service (blocked_ips.txt + in-memory set)
+        # 2. Block locally via ip_blocker_service (blocked_ips.txt + in-memory set → 403 middleware)
         local_result = ip_blocker_service.block_ip(target)
         logger.info(f"Local block result for {target}: {local_result}")
+
+        # 3. System-level firewall (pfctl / iptables) — gated by AEGIS_REAL_FW=1
+        try:
+            fw_ok = firewall_local.get_firewall().block(target)
+            if fw_ok:
+                fw_logger.info(f"System firewall blocked {target} successfully")
+            else:
+                fw_logger.warning(f"System firewall block returned False for {target} (non-fatal)")
+        except Exception as e:
+            fw_logger.error(f"System firewall block raised for {target}: {e} (non-fatal, continuing)")
+            fw_ok = False
 
         return {
             "success": True,
@@ -116,15 +129,28 @@ class ActiveResponder:
             "target": target,
             "firewall": firewall_result,
             "local": local_result,
+            "system_fw": fw_ok,
         }
 
     async def _unblock_ip(self, target: str, params: dict) -> dict:
         logger.info(f"ROLLBACK: Unblocking IP {target}")
+
+        # System-level unblock — gated by AEGIS_REAL_FW=1
+        try:
+            fw_ok = firewall_local.get_firewall().unblock(target)
+            if fw_ok:
+                fw_logger.info(f"System firewall unblocked {target} successfully")
+            else:
+                fw_logger.warning(f"System firewall unblock returned False for {target} (non-fatal)")
+        except Exception as e:
+            fw_logger.error(f"System firewall unblock raised for {target}: {e} (non-fatal)")
+            fw_ok = False
+
         return {
             "success": True,
             "action": "unblock_ip",
             "target": target,
-            "command": f"iptables -D INPUT -s {target} -j DROP",
+            "system_fw": fw_ok,
         }
 
     async def _add_firewall_rule(self, target: str, params: dict) -> dict:
