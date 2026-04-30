@@ -81,7 +81,7 @@ export default function DeceptionPage() {
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight flex items-center gap-3">
-            <Sparkles className="w-6 h-6 text-[#F97316]" />
+            <Sparkles className="w-6 h-6 text-[var(--brand-accent)]" />
             Honey-AI Deception
           </h1>
           <p className="text-sm text-muted-foreground mt-1 hidden sm:block">
@@ -91,7 +91,7 @@ export default function DeceptionPage() {
         </div>
         <button
           onClick={() => setBuilderOpen(true)}
-          className="flex items-center gap-2 bg-[#F97316] hover:bg-[#EA580C] text-[#09090B] font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px] shrink-0"
+          className="flex items-center gap-2 bg-[var(--brand-accent)] hover:bg-[var(--brand-accent)] text-[#09090B] font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px] shrink-0"
         >
           <Plus className="w-4 h-4" />
           <span className="hidden sm:inline">New Campaign</span>
@@ -133,7 +133,7 @@ export default function DeceptionPage() {
           <div className="p-8 text-center">
             <p className="text-muted-foreground text-[13px]">
               No campaigns yet. Click{' '}
-              <span className="text-[#F97316] font-medium">New Campaign</span>{' '}
+              <span className="text-[var(--brand-accent)] font-medium">New Campaign</span>{' '}
               to deploy fake infrastructure.
             </p>
           </div>

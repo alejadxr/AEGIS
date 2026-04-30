@@ -15,8 +15,7 @@ import { MetricsSummaryBar } from '@/components/live/MetricsSummaryBar';
 import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Card } from '@/components/ui/card';
 
 interface Overview {
   total_assets: number;
@@ -75,20 +74,19 @@ async function fetchLiveMetrics(): Promise<LiveMetricsResponse | null> {
 }
 
 function StatusPill({ status }: { status: WSStatus }) {
-  const cfg: Record<WSStatus, { label: string; color: string; dot: string }> = {
-    idle: { label: 'IDLE', color: 'text-muted-foreground/60', dot: 'bg-muted-foreground/40' },
-    connecting: { label: 'SYNC', color: 'text-[#F59E0B]', dot: 'bg-[#F59E0B] animate-pulse' },
-    open: { label: 'LIVE', color: 'text-[#22C55E]', dot: 'bg-[#22C55E]' },
-    closed: { label: 'OFFLINE', color: 'text-destructive', dot: 'bg-destructive' },
-    error: { label: 'ERROR', color: 'text-destructive', dot: 'bg-destructive animate-pulse' },
+  const cfg: Record<WSStatus, { label: string; pill: string }> = {
+    idle:       { label: 'IDLE',    pill: 'pill pill-muted' },
+    connecting: { label: 'SYNC',    pill: 'pill pill-warning' },
+    open:       { label: 'LIVE',    pill: 'pill pill-success' },
+    closed:     { label: 'OFFLINE', pill: 'pill pill-danger' },
+    error:      { label: 'ERROR',   pill: 'pill pill-danger' },
   };
   const c = cfg[status];
+  const pulsing = status === 'connecting' || status === 'open' || status === 'error';
   return (
-    <div className="flex items-center gap-1.5">
-      <span className={cn('w-1.5 h-1.5 rounded-full', c.dot)} />
-      <span className={cn('text-[10px] font-mono uppercase tracking-widest', c.color)}>
-        {c.label}
-      </span>
+    <div className={c.pill}>
+      <span className={cn('pill-dot', pulsing && 'animate-pulse')} style={{ background: 'currentColor' }} />
+      {c.label}
     </div>
   );
 }
@@ -200,13 +198,18 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4 animate-fade-in">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-[20px] sm:text-[24px] font-semibold text-foreground tracking-tight">
-            Security Overview
-          </h1>
-          <p className="text-[12px] text-muted-foreground/60 mt-0.5">
-            Real-time monitoring and threat intelligence
+      <div className="flex items-end justify-between gap-4 pt-1">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-[-0.02em] leading-none">
+              Security Overview
+            </h1>
+            <span className="hidden sm:inline-block text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/50 px-2 py-1 border border-border rounded-md">
+              v1.4
+            </span>
+          </div>
+          <p className="text-[13px] text-muted-foreground mt-1.5">
+            Real-time monitoring · threat intelligence · autonomous response
           </p>
         </div>
         <StatusPill status={wsStatus} />
@@ -267,7 +270,7 @@ export default function DashboardPage() {
           <Top10Table
             title="Top Attackers"
             rows={metrics?.top_attackers ?? []}
-            accent="#EF4444"
+            accent="var(--danger)"
             monoLabel
           />
         </div>
@@ -275,14 +278,14 @@ export default function DashboardPage() {
           <Top10Table
             title="Top Targets"
             rows={metrics?.top_targets ?? []}
-            accent="#F97316"
+            accent="var(--brand-accent)"
           />
         </div>
         <div className="h-56">
           <Top10Table
             title="Attack Types"
             rows={metrics?.top_attack_types ?? []}
-            accent="#A855F7"
+            accent="var(--chart-5)"
           />
         </div>
       </div>

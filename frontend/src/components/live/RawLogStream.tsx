@@ -14,13 +14,13 @@ interface LogLine {
 const MAX_LINES = 200;
 
 const LEVEL_COLOR: Record<string, string> = {
-  critical: 'text-[#FF6B6B] font-bold',
-  error: 'text-[#FF6B6B] font-bold',
-  high: 'text-[#FF9F43] font-bold',
-  warn: 'text-[#FECA57] font-bold',
-  warning: 'text-[#FECA57] font-bold',
-  info: 'text-[#48DBFB] font-semibold',
-  debug: 'text-muted-foreground/70',
+  critical: 'text-[var(--danger)] font-bold',
+  error:    'text-[var(--danger)] font-bold',
+  high:     'text-[var(--brand-accent)] font-bold',
+  warn:     'text-[var(--warning)] font-bold',
+  warning:  'text-[var(--warning)] font-bold',
+  info:     'text-[var(--info)] font-semibold',
+  debug:    'text-muted-foreground/70',
 };
 
 function shortTime(ts?: string): string {
@@ -78,10 +78,13 @@ export function RawLogStream() {
   }, [lines, autoScroll]);
 
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+    <div className="aegis-card overflow-hidden flex flex-col h-full">
+      <div className="aegis-section-header shrink-0">
         <div className="flex items-center gap-2.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--success)] opacity-75" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--success)]" />
+          </span>
           <span className="text-[13px] font-semibold text-foreground tracking-tight">Raw Log Stream</span>
         </div>
         <label className="flex items-center gap-1.5 cursor-pointer">
@@ -91,12 +94,12 @@ export function RawLogStream() {
             onChange={(e) => setAutoScroll(e.target.checked)}
             className="w-3 h-3 accent-primary cursor-pointer"
           />
-          <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">auto-scroll</span>
+          <span className="text-label-xs">auto-scroll</span>
         </label>
       </div>
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto font-mono text-[12px] leading-[1.5] p-3 space-y-0.5 bg-background/90"
+        className="flex-1 overflow-y-auto font-mono text-[12px] leading-[1.55] px-3 py-2.5 space-y-0.5 bg-[var(--surface)]"
       >
         {lines.length === 0 ? (
           <p className="text-muted-foreground/40 italic">Waiting for log events…</p>

@@ -27,7 +27,7 @@ const WINDOW_SECONDS = 60;
 const chartConfig = {
   events: {
     label: 'Events',
-    color: '#22D3EE',
+    color: 'var(--chart-1)',
   },
 } satisfies ChartConfig;
 
@@ -87,18 +87,19 @@ export function EventsPerSecChart() {
   }, []);
 
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+    <div className="aegis-card overflow-hidden flex flex-col h-full">
+      <div className="aegis-section-header shrink-0">
         <div className="flex items-center gap-2.5">
           <span className="text-[13px] font-semibold text-foreground tracking-tight">Events / Second</span>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] text-muted-foreground font-mono font-semibold uppercase tracking-widest">now</span>
+        <div className="flex items-center gap-5">
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-label-xs">now</span>
             <span className="text-[18px] text-primary font-mono font-bold tabular-nums leading-none">{current}</span>
           </div>
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] text-muted-foreground font-mono font-semibold uppercase tracking-widest">peak</span>
+          <div className="w-px h-6 bg-border" />
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-label-xs">peak</span>
             <span className="text-[18px] text-foreground font-mono font-bold tabular-nums leading-none">{peak}</span>
           </div>
         </div>

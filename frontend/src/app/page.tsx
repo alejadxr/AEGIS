@@ -110,7 +110,7 @@ export default function LoginPage() {
   if (checking) {
     return (
       <div className="min-h-screen c6-page flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-white/10 border-t-[#22D3EE] rounded-full animate-spin" />
+        <div className="w-5 h-5 border-2 border-white/10 border-t-[var(--brand)] rounded-full animate-spin" />
       </div>
     );
   }
@@ -133,7 +133,7 @@ export default function LoginPage() {
         {/* Logo & Title */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl c6-card mb-6">
-            <span className="font-mono text-[#22D3EE] text-xl font-semibold tracking-wider">C6</span>
+            <span className="font-mono text-[var(--brand)] text-xl font-semibold tracking-wider">C6</span>
           </div>
           <h1 className="text-5xl font-bold tracking-tight">
             <span className="c6-logo-gradient">AEGIS</span>
@@ -151,7 +151,7 @@ export default function LoginPage() {
               onClick={() => { setAuthMode('apikey'); setError(''); }}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                 authMode === 'apikey'
-                  ? 'bg-white/[0.06] text-[#22D3EE] shadow-sm'
+                  ? 'bg-white/[0.06] text-[var(--brand)] shadow-sm'
                   : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
@@ -162,7 +162,7 @@ export default function LoginPage() {
               onClick={() => { setAuthMode('login'); setError(''); }}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                 authMode === 'login'
-                  ? 'bg-white/[0.06] text-[#22D3EE] shadow-sm'
+                  ? 'bg-white/[0.06] text-[var(--brand)] shadow-sm'
                   : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
@@ -186,7 +186,7 @@ export default function LoginPage() {
                   onChange={(e) => { setKey(e.target.value); setError(''); }}
                   onKeyDown={handleKeyDown}
                   placeholder="Enter your API key"
-                  className="w-full c6-input rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[#22D3EE]/40 focus:ring-1 focus:ring-[#22D3EE]/20 transition-all duration-200"
+                  className="w-full c6-input rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[var(--brand)]/40 focus:ring-1 focus:ring-[var(--brand)]/20 transition-all duration-200"
                   autoComplete="off"
                   spellCheck={false}
                 />
@@ -210,7 +210,7 @@ export default function LoginPage() {
                     onChange={(e) => { setEmail(e.target.value); setError(''); }}
                     onKeyDown={handleKeyDown}
                     placeholder="admin@organization.com"
-                    className="w-full c6-input rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[#22D3EE]/40 focus:ring-1 focus:ring-[#22D3EE]/20 transition-all duration-200"
+                    className="w-full c6-input rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[var(--brand)]/40 focus:ring-1 focus:ring-[var(--brand)]/20 transition-all duration-200"
                     autoComplete="email"
                     spellCheck={false}
                   />
@@ -228,7 +228,7 @@ export default function LoginPage() {
                     onChange={(e) => { setPassword(e.target.value); setError(''); }}
                     onKeyDown={handleKeyDown}
                     placeholder="Enter your password"
-                    className="w-full c6-input rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[#22D3EE]/40 focus:ring-1 focus:ring-[#22D3EE]/20 transition-all duration-200"
+                    className="w-full c6-input rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[var(--brand)]/40 focus:ring-1 focus:ring-[var(--brand)]/20 transition-all duration-200"
                     autoComplete="current-password"
                   />
                 </div>
@@ -237,13 +237,13 @@ export default function LoginPage() {
           )}
 
           {error && (
-            <p className="text-[#EF4444] text-xs font-medium">{error}</p>
+            <p className="text-[var(--danger)] text-xs font-medium">{error}</p>
           )}
 
           <button
             onClick={authMode === 'apikey' ? handleApiKeyConnect : handleLoginConnect}
             disabled={loading}
-            className="w-full bg-[#22D3EE] hover:bg-[#06B6D4] disabled:opacity-50 disabled:cursor-not-allowed text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#22D3EE]/10 active:scale-[0.98]"
+            className="w-full bg-[var(--brand)] hover:bg-[var(--brand)] disabled:opacity-50 disabled:cursor-not-allowed text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[var(--brand)]/10 active:scale-[0.98]"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
@@ -273,7 +273,7 @@ export default function LoginPage() {
         <div className="text-center mt-8 space-y-3">
           <Link
             href="/setup"
-            className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-[#22D3EE] transition-colors font-medium"
+            className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-[var(--brand)] transition-colors font-medium"
           >
             First time? Set up AEGIS
             <span className="text-[10px]">&rarr;</span>

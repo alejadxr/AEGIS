@@ -147,15 +147,15 @@ function getAssetIcon(type: string) {
 }
 
 function getRiskColor(score: number | undefined) {
-  if (score === undefined || score < 30) return 'text-[#22C55E]';
-  if (score <= 60) return 'text-[#F59E0B]';
-  return 'text-[#EF4444]';
+  if (score === undefined || score < 30) return 'text-[var(--success)]';
+  if (score <= 60) return 'text-[var(--warning)]';
+  return 'text-[var(--danger)]';
 }
 
 function getRiskBgColor(score: number | undefined) {
-  if (score === undefined || score < 30) return 'bg-[#22C55E]/10 border-[#22C55E]/20';
-  if (score <= 60) return 'bg-[#F59E0B]/10 border-[#F59E0B]/20';
-  return 'bg-[#EF4444]/10 border-[#EF4444]/20';
+  if (score === undefined || score < 30) return 'bg-[var(--success)]/10 border-[var(--success)]/20';
+  if (score <= 60) return 'bg-[var(--warning)]/10 border-[var(--warning)]/20';
+  return 'bg-[var(--danger)]/10 border-[var(--danger)]/20';
 }
 
 function getRiskLabel(score: number | undefined) {
@@ -693,9 +693,9 @@ export default function SetupWizard() {
             <div key={s.id} className="flex items-center">
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 ${
                 step === s.id
-                  ? 'bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/20'
+                  ? 'bg-[var(--brand)]/10 text-[var(--brand)] border border-[var(--brand)]/20'
                   : completedSteps[s.id]
-                  ? 'bg-[#22C55E]/10 text-[#22C55E] border border-[#22C55E]/20'
+                  ? 'bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20'
                   : 'text-zinc-600 border border-white/[0.06]'
               }`}>
                 {completedSteps[s.id] && step !== s.id ? (
@@ -707,7 +707,7 @@ export default function SetupWizard() {
               </div>
               {i < STEPS.length - 1 && (
                 <div className={`w-6 h-px mx-1 transition-colors duration-300 ${
-                  completedSteps[s.id] ? 'bg-[#22C55E]/30' : 'bg-white/[0.06]'
+                  completedSteps[s.id] ? 'bg-[var(--success)]/30' : 'bg-white/[0.06]'
                 }`} />
               )}
             </div>
@@ -723,8 +723,8 @@ export default function SetupWizard() {
           {step === 1 && (
             <div className="space-y-6">
               <div className="text-center mb-2">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 mb-4">
-                  <ShieldCheck className="w-6 h-6 text-[#22D3EE]" />
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 mb-4">
+                  <ShieldCheck className="w-6 h-6 text-[var(--brand)]" />
                 </div>
                 <h2 className="text-2xl font-bold text-white">Welcome to AEGIS</h2>
                 <p className="text-zinc-500 text-sm mt-2">
@@ -738,7 +738,7 @@ export default function SetupWizard() {
                   onClick={() => update({ authMethod: 'register', loginMode: false })}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                     state.authMethod === 'register'
-                      ? 'bg-white/[0.06] text-[#22D3EE] shadow-sm'
+                      ? 'bg-white/[0.06] text-[var(--brand)] shadow-sm'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
@@ -749,7 +749,7 @@ export default function SetupWizard() {
                   onClick={() => update({ authMethod: 'apikey', loginMode: false })}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                     state.authMethod === 'apikey'
-                      ? 'bg-white/[0.06] text-[#22D3EE] shadow-sm'
+                      ? 'bg-white/[0.06] text-[var(--brand)] shadow-sm'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
@@ -804,7 +804,7 @@ export default function SetupWizard() {
                   {state.loginMode && (
                     <button
                       onClick={() => update({ loginMode: false })}
-                      className="text-xs text-zinc-500 hover:text-[#22D3EE] transition-colors"
+                      className="text-xs text-zinc-500 hover:text-[var(--brand)] transition-colors"
                     >
                       Need to create an account instead?
                     </button>
@@ -838,8 +838,8 @@ export default function SetupWizard() {
           {step === 2 && (
             <div className="space-y-6">
               <div className="text-center mb-2">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 mb-4">
-                  <Cpu className="w-6 h-6 text-[#22D3EE]" />
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 mb-4">
+                  <Cpu className="w-6 h-6 text-[var(--brand)]" />
                 </div>
                 <h2 className="text-2xl font-bold text-white">Connect AI Provider</h2>
                 <p className="text-zinc-500 text-sm mt-2">AEGIS uses AI for threat analysis and autonomous response</p>
@@ -854,14 +854,14 @@ export default function SetupWizard() {
                       onClick={() => update({ aiProvider: p.id })}
                       className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 text-left ${
                         state.aiProvider === p.id
-                          ? 'border-[#22D3EE]/30 bg-[#22D3EE]/5'
+                          ? 'border-[var(--brand)]/30 bg-[var(--brand)]/5'
                           : 'border-white/[0.06] hover:border-white/[0.1] hover:bg-white/[0.02]'
                       }`}
                     >
                       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                        state.aiProvider === p.id ? 'bg-[#22D3EE]/10' : 'bg-white/[0.04]'
+                        state.aiProvider === p.id ? 'bg-[var(--brand)]/10' : 'bg-white/[0.04]'
                       }`}>
-                        <Icon className={`w-4 h-4 ${state.aiProvider === p.id ? 'text-[#22D3EE]' : 'text-zinc-500'}`} />
+                        <Icon className={`w-4 h-4 ${state.aiProvider === p.id ? 'text-[var(--brand)]' : 'text-zinc-500'}`} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className={`text-sm font-medium ${state.aiProvider === p.id ? 'text-white' : 'text-zinc-300'}`}>
@@ -870,7 +870,7 @@ export default function SetupWizard() {
                         <div className="text-xs text-zinc-500">{p.description}</div>
                       </div>
                       {state.aiProvider === p.id && (
-                        <div className="w-5 h-5 rounded-full bg-[#22D3EE] flex items-center justify-center">
+                        <div className="w-5 h-5 rounded-full bg-[var(--brand)] flex items-center justify-center">
                           <Check className="w-3 h-3 text-[#09090B]" />
                         </div>
                       )}
@@ -916,8 +916,8 @@ export default function SetupWizard() {
           {step === 3 && (
             <div className="space-y-6">
               <div className="text-center mb-2">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 mb-4">
-                  <Wifi className="w-6 h-6 text-[#22D3EE]" />
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 mb-4">
+                  <Wifi className="w-6 h-6 text-[var(--brand)]" />
                 </div>
                 <h2 className="text-2xl font-bold text-white">Discover Your Assets</h2>
                 <p className="text-zinc-500 text-sm mt-2">Scan your network or add assets manually</p>
@@ -929,7 +929,7 @@ export default function SetupWizard() {
                   onClick={() => update({ assetMode: 'auto' })}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                     state.assetMode === 'auto'
-                      ? 'bg-white/[0.06] text-[#22D3EE] shadow-sm'
+                      ? 'bg-white/[0.06] text-[var(--brand)] shadow-sm'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
@@ -940,7 +940,7 @@ export default function SetupWizard() {
                   onClick={() => update({ assetMode: 'manual' })}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                     state.assetMode === 'manual'
-                      ? 'bg-white/[0.06] text-[#22D3EE] shadow-sm'
+                      ? 'bg-white/[0.06] text-[var(--brand)] shadow-sm'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
@@ -953,9 +953,9 @@ export default function SetupWizard() {
               {state.assetMode === 'auto' && (
                 <div className="space-y-4">
                   {/* Warning Card */}
-                  <div className="rounded-xl border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-4">
+                  <div className="rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/5 p-4">
                     <div className="flex gap-3">
-                      <AlertTriangle className="w-5 h-5 text-[#F59E0B] flex-shrink-0 mt-0.5" />
+                      <AlertTriangle className="w-5 h-5 text-[var(--warning)] flex-shrink-0 mt-0.5" />
                       <div className="space-y-2">
                         <p className="text-sm text-zinc-300">
                           AEGIS will scan your network to discover services.
@@ -969,7 +969,7 @@ export default function SetupWizard() {
                             onClick={() => update({ scanConsent: !state.scanConsent })}
                             className={`w-4 h-4 rounded border flex items-center justify-center transition-all flex-shrink-0 ${
                               state.scanConsent
-                                ? 'bg-[#22D3EE] border-[#22D3EE]'
+                                ? 'bg-[var(--brand)] border-[var(--brand)]'
                                 : 'border-white/20 hover:border-white/40'
                             }`}
                           >
@@ -998,7 +998,7 @@ export default function SetupWizard() {
                         <button
                           onClick={handleDiscover}
                           disabled={scanning || !state.scanTarget.trim()}
-                          className="self-end mb-[1px] px-5 py-3 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[#22D3EE] text-sm font-medium hover:bg-[#22D3EE]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2"
+                          className="self-end mb-[1px] px-5 py-3 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 text-[var(--brand)] text-sm font-medium hover:bg-[var(--brand)]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2"
                         >
                           {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                           {scanning ? 'Scanning' : 'Scan'}
@@ -1010,7 +1010,7 @@ export default function SetupWizard() {
                         <div className="space-y-3">
                           <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-[#22D3EE] rounded-full transition-all duration-500 ease-out"
+                              className="h-full bg-[var(--brand)] rounded-full transition-all duration-500 ease-out"
                               style={{ width: `${Math.min(scanProgress, 100)}%` }}
                             />
                           </div>
@@ -1026,14 +1026,14 @@ export default function SetupWizard() {
                               return (
                                 <div key={phase.label} className="flex items-center gap-2">
                                   {done ? (
-                                    <Check className="w-3.5 h-3.5 text-[#22C55E]" />
+                                    <Check className="w-3.5 h-3.5 text-[var(--success)]" />
                                   ) : active ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#22D3EE]" />
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--brand)]" />
                                   ) : (
                                     <div className="w-3.5 h-3.5 rounded-full border border-white/10" />
                                   )}
                                   <span className={`text-xs ${
-                                    active ? 'text-[#22D3EE]' : done ? 'text-zinc-500' : 'text-zinc-700'
+                                    active ? 'text-[var(--brand)]' : done ? 'text-zinc-500' : 'text-zinc-700'
                                   }`}>
                                     {phase.label}{active ? '...' : ''}
                                   </span>
@@ -1073,7 +1073,7 @@ export default function SetupWizard() {
                         <select
                           value={manualForm.asset_type}
                           onChange={e => setManualForm(prev => ({ ...prev, asset_type: e.target.value }))}
-                          className="w-full bg-[#18181B] border border-white/[0.06] text-white rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[#22D3EE]/40 focus:ring-1 focus:ring-[#22D3EE]/20 transition-all duration-200 appearance-none"
+                          className="w-full bg-[#18181B] border border-white/[0.06] text-white rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[var(--brand)]/40 focus:ring-1 focus:ring-[var(--brand)]/20 transition-all duration-200 appearance-none"
                         >
                           {ASSET_TYPES.map(t => (
                             <option key={t.value} value={t.value}>{t.label}</option>
@@ -1090,7 +1090,7 @@ export default function SetupWizard() {
                     />
                     <button
                       onClick={handleAddManual}
-                      className="w-full px-4 py-2.5 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[#22D3EE] text-sm font-medium hover:bg-[#22D3EE]/20 transition-all duration-200 flex items-center justify-center gap-2"
+                      className="w-full px-4 py-2.5 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 text-[var(--brand)] text-sm font-medium hover:bg-[var(--brand)]/20 transition-all duration-200 flex items-center justify-center gap-2"
                     >
                       <Plus className="w-4 h-4" />
                       Add Asset
@@ -1118,7 +1118,7 @@ export default function SetupWizard() {
                           onClick={() => toggleAssetSelection(asset.id)}
                           className={`relative p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
                             asset.selected
-                              ? 'border-[#22D3EE]/20 bg-[#22D3EE]/5'
+                              ? 'border-[var(--brand)]/20 bg-[var(--brand)]/5'
                               : 'border-white/[0.06] bg-white/[0.02] opacity-60 hover:opacity-80'
                           }`}
                         >
@@ -1126,7 +1126,7 @@ export default function SetupWizard() {
                             {/* Checkbox */}
                             <div className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition-all flex-shrink-0 ${
                               asset.selected
-                                ? 'bg-[#22D3EE] border-[#22D3EE]'
+                                ? 'bg-[var(--brand)] border-[var(--brand)]'
                                 : 'border-white/20'
                             }`}>
                               {asset.selected && <Check className="w-3 h-3 text-[#09090B]" />}
@@ -1134,9 +1134,9 @@ export default function SetupWizard() {
 
                             {/* Icon */}
                             <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                              asset.selected ? 'bg-[#22D3EE]/10' : 'bg-white/[0.04]'
+                              asset.selected ? 'bg-[var(--brand)]/10' : 'bg-white/[0.04]'
                             }`}>
-                              <AssetIcon className={`w-4 h-4 ${asset.selected ? 'text-[#22D3EE]' : 'text-zinc-500'}`} />
+                              <AssetIcon className={`w-4 h-4 ${asset.selected ? 'text-[var(--brand)]' : 'text-zinc-500'}`} />
                             </div>
 
                             {/* Service info */}
@@ -1162,7 +1162,7 @@ export default function SetupWizard() {
                                   {asset.technologies.map(tech => (
                                     <span
                                       key={tech}
-                                      className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/10"
+                                      className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--brand)]/10 text-[var(--brand)] border border-[var(--brand)]/10"
                                     >
                                       {tech}
                                     </span>
@@ -1186,7 +1186,7 @@ export default function SetupWizard() {
                             {/* Remove button */}
                             <button
                               onClick={e => { e.stopPropagation(); handleRemoveAsset(asset.id); }}
-                              className="text-zinc-600 hover:text-[#EF4444] transition-colors flex-shrink-0 mt-1"
+                              className="text-zinc-600 hover:text-[var(--danger)] transition-colors flex-shrink-0 mt-1"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1200,7 +1200,7 @@ export default function SetupWizard() {
                   <button
                     onClick={handleRegisterAssets}
                     disabled={loading || state.discoveredAssets.filter(a => a.selected).length === 0}
-                    className="w-full mt-2 px-4 py-2.5 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[#22D3EE] text-sm font-medium hover:bg-[#22D3EE]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2"
+                    className="w-full mt-2 px-4 py-2.5 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 text-[var(--brand)] text-sm font-medium hover:bg-[var(--brand)]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                     Register Selected Assets ({state.discoveredAssets.filter(a => a.selected).length})
@@ -1226,8 +1226,8 @@ export default function SetupWizard() {
           {step === 4 && (
             <div className="space-y-6">
               <div className="text-center mb-2">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#F97316]/10 border border-[#F97316]/20 mb-4">
-                  <Bug className="w-6 h-6 text-[#F97316]" />
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--brand-accent)]/10 border border-[var(--brand-accent)]/20 mb-4">
+                  <Bug className="w-6 h-6 text-[var(--brand-accent)]" />
                 </div>
                 <h2 className="text-2xl font-bold text-white">Deploy Honeypots</h2>
                 <p className="text-zinc-500 text-sm mt-2">Select deception traps to detect and profile attackers</p>
@@ -1244,21 +1244,21 @@ export default function SetupWizard() {
                       onClick={() => toggleHoneypot(hp.id)}
                       className={`p-4 rounded-xl border text-left transition-all duration-200 ${
                         isSelected
-                          ? 'border-[#F97316]/30 bg-[#F97316]/5'
+                          ? 'border-[var(--brand-accent)]/30 bg-[var(--brand-accent)]/5'
                           : 'border-white/[0.06] hover:border-white/[0.1] hover:bg-white/[0.02]'
                       }`}
                     >
                       <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 ${
-                        isSelected ? 'bg-[#F97316]/10' : 'bg-white/[0.04]'
+                        isSelected ? 'bg-[var(--brand-accent)]/10' : 'bg-white/[0.04]'
                       }`}>
-                        <Icon className={`w-4 h-4 ${isSelected ? 'text-[#F97316]' : 'text-zinc-500'}`} />
+                        <Icon className={`w-4 h-4 ${isSelected ? 'text-[var(--brand-accent)]' : 'text-zinc-500'}`} />
                       </div>
                       <div className="text-sm font-medium text-white mb-0.5">{hp.name}</div>
                       <div className="text-[11px] text-zinc-500 leading-tight mb-2">{hp.description}</div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-mono text-zinc-600">Port {hp.port}</span>
                         {isSelected && (
-                          <div className="w-5 h-5 rounded-full bg-[#F97316] flex items-center justify-center">
+                          <div className="w-5 h-5 rounded-full bg-[var(--brand-accent)] flex items-center justify-center">
                             <Check className="w-3 h-3 text-[#09090B]" />
                           </div>
                         )}
@@ -1271,9 +1271,9 @@ export default function SetupWizard() {
               {/* Smart Honeypots (Premium) */}
               <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-4 h-4 text-[#F97316]" />
+                  <Sparkles className="w-4 h-4 text-[var(--brand-accent)]" />
                   <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Smart Honeypots</span>
-                  <span className="text-[10px] font-bold text-[#F97316] bg-[#F97316]/10 border border-[#F97316]/20 px-2 py-0.5 rounded-full">ENTERPRISE</span>
+                  <span className="text-[10px] font-bold text-[var(--brand-accent)] bg-[var(--brand-accent)]/10 border border-[var(--brand-accent)]/20 px-2 py-0.5 rounded-full">ENTERPRISE</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {SMART_HONEYPOT_TYPES.map(hp => {
@@ -1285,17 +1285,17 @@ export default function SetupWizard() {
                         onClick={() => toggleHoneypot(hp.id, true)}
                         className={`relative p-3 rounded-xl border text-left transition-all duration-200 ${
                           isSelected
-                            ? 'border-[#F97316]/30 bg-[#F97316]/5'
-                            : 'border-white/[0.06] hover:border-[#F97316]/20 hover:bg-white/[0.02]'
+                            ? 'border-[var(--brand-accent)]/30 bg-[var(--brand-accent)]/5'
+                            : 'border-white/[0.06] hover:border-[var(--brand-accent)]/20 hover:bg-white/[0.02]'
                         }`}
                       >
                         <div className="absolute top-2 right-2">
-                          <Crown className="w-3.5 h-3.5 text-[#F97316]" />
+                          <Crown className="w-3.5 h-3.5 text-[var(--brand-accent)]" />
                         </div>
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${
-                          isSelected ? 'bg-[#F97316]/10' : 'bg-white/[0.04]'
+                          isSelected ? 'bg-[var(--brand-accent)]/10' : 'bg-white/[0.04]'
                         }`}>
-                          <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-[#F97316]' : 'text-zinc-500'}`} />
+                          <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-[var(--brand-accent)]' : 'text-zinc-500'}`} />
                         </div>
                         <div className="text-xs font-medium text-white mb-0.5">{hp.name}</div>
                         <div className="text-[10px] text-zinc-500 leading-tight">{hp.description}</div>
@@ -1337,8 +1337,8 @@ export default function SetupWizard() {
           {step === 5 && (
             <div className="space-y-6">
               <div className="text-center mb-2">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 mb-4">
-                  <Bell className="w-6 h-6 text-[#22D3EE]" />
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 mb-4">
+                  <Bell className="w-6 h-6 text-[var(--brand)]" />
                 </div>
                 <h2 className="text-2xl font-bold text-white">Configure Alerts</h2>
                 <p className="text-zinc-500 text-sm mt-2">Get notified when AEGIS detects threats</p>
@@ -1346,16 +1346,16 @@ export default function SetupWizard() {
 
               {/* Webhook */}
               <div className={`p-4 rounded-xl border transition-all duration-200 ${
-                state.webhookEnabled ? 'border-[#22D3EE]/20 bg-[#22D3EE]/5' : 'border-white/[0.06]'
+                state.webhookEnabled ? 'border-[var(--brand)]/20 bg-[var(--brand)]/5' : 'border-white/[0.06]'
               }`}>
                 <button
                   onClick={() => update({ webhookEnabled: !state.webhookEnabled })}
                   className="w-full flex items-center gap-3 text-left"
                 >
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                    state.webhookEnabled ? 'bg-[#22D3EE]/10' : 'bg-white/[0.04]'
+                    state.webhookEnabled ? 'bg-[var(--brand)]/10' : 'bg-white/[0.04]'
                   }`}>
-                    <Webhook className={`w-4 h-4 ${state.webhookEnabled ? 'text-[#22D3EE]' : 'text-zinc-500'}`} />
+                    <Webhook className={`w-4 h-4 ${state.webhookEnabled ? 'text-[var(--brand)]' : 'text-zinc-500'}`} />
                   </div>
                   <div className="flex-1">
                     <div className="text-sm font-medium text-white">Webhook</div>
@@ -1378,16 +1378,16 @@ export default function SetupWizard() {
 
               {/* Telegram */}
               <div className={`p-4 rounded-xl border transition-all duration-200 ${
-                state.telegramEnabled ? 'border-[#22D3EE]/20 bg-[#22D3EE]/5' : 'border-white/[0.06]'
+                state.telegramEnabled ? 'border-[var(--brand)]/20 bg-[var(--brand)]/5' : 'border-white/[0.06]'
               }`}>
                 <button
                   onClick={() => update({ telegramEnabled: !state.telegramEnabled })}
                   className="w-full flex items-center gap-3 text-left"
                 >
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                    state.telegramEnabled ? 'bg-[#22D3EE]/10' : 'bg-white/[0.04]'
+                    state.telegramEnabled ? 'bg-[var(--brand)]/10' : 'bg-white/[0.04]'
                   }`}>
-                    <Send className={`w-4 h-4 ${state.telegramEnabled ? 'text-[#22D3EE]' : 'text-zinc-500'}`} />
+                    <Send className={`w-4 h-4 ${state.telegramEnabled ? 'text-[var(--brand)]' : 'text-zinc-500'}`} />
                   </div>
                   <div className="flex-1">
                     <div className="text-sm font-medium text-white">Telegram</div>
@@ -1433,24 +1433,24 @@ export default function SetupWizard() {
           {step === 6 && (
             <div className="space-y-6">
               <div className="text-center mb-2">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 mb-4">
-                  <Share2 className="w-6 h-6 text-[#22D3EE]" />
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 mb-4">
+                  <Share2 className="w-6 h-6 text-[var(--brand)]" />
                 </div>
                 <h2 className="text-2xl font-bold text-white">Threat Intelligence</h2>
                 <p className="text-zinc-500 text-sm mt-2">Share and receive threat data from the AEGIS community</p>
               </div>
 
               <div className={`p-5 rounded-xl border transition-all duration-200 ${
-                state.intelSharingEnabled ? 'border-[#22D3EE]/20 bg-[#22D3EE]/5' : 'border-white/[0.06]'
+                state.intelSharingEnabled ? 'border-[var(--brand)]/20 bg-[var(--brand)]/5' : 'border-white/[0.06]'
               }`}>
                 <button
                   onClick={() => update({ intelSharingEnabled: !state.intelSharingEnabled })}
                   className="w-full flex items-center gap-3 text-left"
                 >
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                    state.intelSharingEnabled ? 'bg-[#22D3EE]/10' : 'bg-white/[0.04]'
+                    state.intelSharingEnabled ? 'bg-[var(--brand)]/10' : 'bg-white/[0.04]'
                   }`}>
-                    <Share2 className={`w-4 h-4 ${state.intelSharingEnabled ? 'text-[#22D3EE]' : 'text-zinc-500'}`} />
+                    <Share2 className={`w-4 h-4 ${state.intelSharingEnabled ? 'text-[var(--brand)]' : 'text-zinc-500'}`} />
                   </div>
                   <div className="flex-1">
                     <div className="text-sm font-medium text-white">Share Threat Intelligence with AEGIS Community</div>
@@ -1467,19 +1467,19 @@ export default function SetupWizard() {
                 <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">What gets shared</h3>
                 <ul className="space-y-2 text-xs text-zinc-500">
                   <li className="flex items-center gap-2">
-                    <Check className="w-3 h-3 text-[#22C55E]" />
+                    <Check className="w-3 h-3 text-[var(--success)]" />
                     Anonymized IP reputation data (hashed IPs)
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-3 h-3 text-[#22C55E]" />
+                    <Check className="w-3 h-3 text-[var(--success)]" />
                     Attack patterns and techniques observed
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-3 h-3 text-[#22C55E]" />
+                    <Check className="w-3 h-3 text-[var(--success)]" />
                     Malware signatures and indicators of compromise
                   </li>
                   <li className="flex items-center gap-2">
-                    <X className="w-3 h-3 text-[#EF4444]" />
+                    <X className="w-3 h-3 text-[var(--danger)]" />
                     No hostnames, internal IPs, or organization data
                   </li>
                 </ul>
@@ -1503,8 +1503,8 @@ export default function SetupWizard() {
           {step === 7 && (
             <div className="space-y-6">
               <div className="text-center mb-2">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#22C55E]/10 border border-[#22C55E]/20 mb-4">
-                  <ShieldCheck className="w-6 h-6 text-[#22C55E]" />
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--success)]/10 border border-[var(--success)]/20 mb-4">
+                  <ShieldCheck className="w-6 h-6 text-[var(--success)]" />
                 </div>
                 <h2 className="text-2xl font-bold text-white">You&apos;re All Set</h2>
                 <p className="text-zinc-500 text-sm mt-2">Review your configuration before entering the dashboard</p>
@@ -1515,24 +1515,24 @@ export default function SetupWizard() {
                   const ItemIcon = item.icon;
                   return (
                     <div key={item.label} className={`flex items-center gap-3 p-3.5 rounded-xl border transition-all duration-200 ${
-                      item.done ? 'border-[#22C55E]/10 bg-[#22C55E]/[0.02]' : 'border-white/[0.06]'
+                      item.done ? 'border-[var(--success)]/10 bg-[var(--success)]/[0.02]' : 'border-white/[0.06]'
                     }`}>
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        item.done ? 'bg-[#22C55E]/10' : 'bg-white/[0.04]'
+                        item.done ? 'bg-[var(--success)]/10' : 'bg-white/[0.04]'
                       }`}>
-                        <ItemIcon className={`w-4 h-4 ${item.done ? 'text-[#22C55E]' : 'text-zinc-600'}`} />
+                        <ItemIcon className={`w-4 h-4 ${item.done ? 'text-[var(--success)]' : 'text-zinc-600'}`} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-white">{item.label}</span>
-                          {item.done && <Check className="w-3 h-3 text-[#22C55E]" />}
+                          {item.done && <Check className="w-3 h-3 text-[var(--success)]" />}
                         </div>
                         <div className="text-xs text-zinc-500">{item.value}</div>
                       </div>
                       {!item.done && (
                         <button
                           onClick={() => animateStep(item.stepNum)}
-                          className="text-[11px] text-[#22D3EE] hover:text-[#06B6D4] font-medium transition-colors flex-shrink-0"
+                          className="text-[11px] text-[var(--brand)] hover:text-[var(--brand)] font-medium transition-colors flex-shrink-0"
                         >
                           Configure
                         </button>
@@ -1546,13 +1546,13 @@ export default function SetupWizard() {
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-zinc-400">Setup completion</span>
-                  <span className="text-xs font-mono text-[#22D3EE]">
+                  <span className="text-xs font-mono text-[var(--brand)]">
                     {summaryItems().filter(i => i.done).length}/{summaryItems().length}
                   </span>
                 </div>
                 <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-[#22C55E] rounded-full transition-all duration-700 ease-out"
+                    className="h-full bg-[var(--success)] rounded-full transition-all duration-700 ease-out"
                     style={{ width: `${(summaryItems().filter(i => i.done).length / summaryItems().length) * 100}%` }}
                   />
                 </div>
@@ -1560,7 +1560,7 @@ export default function SetupWizard() {
 
               <button
                 onClick={handleFinish}
-                className="w-full bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#22D3EE]/10 active:scale-[0.98] flex items-center justify-center gap-2"
+                className="w-full bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[var(--brand)]/10 active:scale-[0.98] flex items-center justify-center gap-2"
               >
                 Go to Dashboard
                 <ArrowRight className="w-4 h-4" />
@@ -1587,8 +1587,8 @@ export default function SetupWizard() {
               <X className="w-5 h-5" />
             </button>
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[#F97316]/10 border border-[#F97316]/20 mb-4">
-                <Crown className="w-7 h-7 text-[#F97316]" />
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[var(--brand-accent)]/10 border border-[var(--brand-accent)]/20 mb-4">
+                <Crown className="w-7 h-7 text-[var(--brand-accent)]" />
               </div>
               <h3 className="text-xl font-bold text-white">Upgrade to Enterprise</h3>
               <p className="text-sm text-zinc-500 mt-2">
@@ -1598,7 +1598,7 @@ export default function SetupWizard() {
             <div className="space-y-2 mb-6">
               {['AI-powered deception that adapts to attackers', 'Automatically mimics your real applications', 'Advanced attacker profiling and forensics'].map(f => (
                 <div key={f} className="flex items-center gap-2 text-sm text-zinc-300">
-                  <Check className="w-4 h-4 text-[#F97316] flex-shrink-0" />
+                  <Check className="w-4 h-4 text-[var(--brand-accent)] flex-shrink-0" />
                   {f}
                 </div>
               ))}
@@ -1608,7 +1608,7 @@ export default function SetupWizard() {
                 setShowUpgradeModal(false);
                 router.push('/dashboard/settings');
               }}
-              className="w-full bg-[#F97316] hover:bg-[#EA580C] text-white font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#F97316]/20 active:scale-[0.98] flex items-center justify-center gap-2"
+              className="w-full bg-[var(--brand-accent)] hover:bg-[var(--brand-accent)] text-white font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[var(--brand-accent)]/20 active:scale-[0.98] flex items-center justify-center gap-2"
             >
               <Crown className="w-4 h-4" />
               Contact Sales
@@ -1659,7 +1659,7 @@ const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function InputF
           placeholder={placeholder}
           autoComplete={autoComplete}
           spellCheck={false}
-          className="w-full bg-[#09090B] border border-white/[0.06] text-white placeholder-zinc-600 rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[#22D3EE]/40 focus:ring-1 focus:ring-[#22D3EE]/20 transition-all duration-200"
+          className="w-full bg-[#09090B] border border-white/[0.06] text-white placeholder-zinc-600 rounded-xl px-4 py-3 pl-11 text-sm focus:outline-none focus:border-[var(--brand)]/40 focus:ring-1 focus:ring-[var(--brand)]/20 transition-all duration-200"
         />
       </div>
     </div>
@@ -1671,7 +1671,7 @@ function StepButton({ label, loading, onClick }: { label: string; loading: boole
     <button
       onClick={onClick}
       disabled={loading}
-      className="flex-1 bg-[#22D3EE] hover:bg-[#06B6D4] disabled:opacity-50 disabled:cursor-not-allowed text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#22D3EE]/10 active:scale-[0.98] flex items-center justify-center gap-2"
+      className="flex-1 bg-[var(--brand)] hover:bg-[var(--brand)] disabled:opacity-50 disabled:cursor-not-allowed text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[var(--brand)]/10 active:scale-[0.98] flex items-center justify-center gap-2"
     >
       {loading ? (
         <>
@@ -1713,7 +1713,7 @@ function SkipButton({ onClick }: { onClick: () => void }) {
 
 function ErrorMessage({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2 text-[#EF4444] text-xs font-medium bg-[#EF4444]/5 border border-[#EF4444]/10 rounded-xl p-3">
+    <div className="flex items-start gap-2 text-[var(--danger)] text-xs font-medium bg-[var(--danger)]/5 border border-[var(--danger)]/10 rounded-xl p-3">
       <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
       <span>{message}</span>
     </div>
@@ -1723,7 +1723,7 @@ function ErrorMessage({ message }: { message: string }) {
 function ToggleSwitch({ enabled }: { enabled: boolean }) {
   return (
     <div className={`w-10 h-5 rounded-full transition-colors duration-200 relative ${
-      enabled ? 'bg-[#22D3EE]' : 'bg-white/10'
+      enabled ? 'bg-[var(--brand)]' : 'bg-white/10'
     }`}>
       <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${
         enabled ? 'translate-x-5' : 'translate-x-0.5'

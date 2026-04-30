@@ -51,9 +51,9 @@ interface TooltipState {
 
 function markerColor(count: number, maxCount: number): string {
   const ratio = count / maxCount;
-  if (ratio > 0.66) return '#EF4444';
-  if (ratio > 0.33) return '#F97316';
-  return '#22D3EE';
+  if (ratio > 0.66) return 'var(--danger)';
+  if (ratio > 0.33) return 'var(--brand-accent)';
+  return 'var(--brand)';
 }
 
 export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
@@ -84,7 +84,7 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
     );
   }
 
-  const activeColor = tooltip ? markerColor(tooltip.entry.count, maxCount) : '#22D3EE';
+  const activeColor = tooltip ? markerColor(tooltip.entry.count, maxCount) : 'var(--brand)';
   const activeRatio = tooltip ? tooltip.entry.count / maxCount : 0;
   const activeSeverity = activeRatio > 0.66 ? 'CRITICAL' : activeRatio > 0.33 ? 'HIGH' : 'LOW';
 
@@ -248,9 +248,9 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
 
       <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-2.5 py-1.5 rounded-xl bg-muted/40 border border-border">
         {([
-          { label: 'Critical', color: '#EF4444' },
-          { label: 'High', color: '#F97316' },
-          { label: 'Low', color: '#22D3EE' },
+          { label: 'Critical', color: 'var(--danger)' },
+          { label: 'High', color: 'var(--brand-accent)' },
+          { label: 'Low', color: 'var(--brand)' },
         ] as const).map(({ label, color }) => (
           <div key={label} className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}` }} />

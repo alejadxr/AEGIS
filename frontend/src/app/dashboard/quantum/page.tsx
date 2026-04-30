@@ -46,17 +46,17 @@ interface EntropyResult {
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
 function scoreColor(score: number): string {
-  if (score > 70) return '#22C55E';
-  if (score >= 40) return '#F59E0B';
-  return '#EF4444';
+  if (score > 70) return 'var(--success)';
+  if (score >= 40) return 'var(--warning)';
+  return 'var(--danger)';
 }
 
 function statusBadge(status: string) {
   const map: Record<string, { bg: string; text: string; label: string }> = {
-    safe: { bg: 'bg-[#22C55E]/10', text: 'text-[#22C55E]', label: 'Safe' },
-    at_risk: { bg: 'bg-[#F59E0B]/10', text: 'text-[#F59E0B]', label: 'At Risk' },
-    vulnerable: { bg: 'bg-[#F97316]/10', text: 'text-[#F97316]', label: 'Vulnerable' },
-    broken: { bg: 'bg-[#EF4444]/10', text: 'text-[#EF4444]', label: 'Broken' },
+    safe: { bg: 'bg-[var(--success)]/10', text: 'text-[var(--success)]', label: 'Safe' },
+    at_risk: { bg: 'bg-[var(--warning)]/10', text: 'text-[var(--warning)]', label: 'At Risk' },
+    vulnerable: { bg: 'bg-[var(--brand-accent)]/10', text: 'text-[var(--brand-accent)]', label: 'Vulnerable' },
+    broken: { bg: 'bg-[var(--danger)]/10', text: 'text-[var(--danger)]', label: 'Broken' },
   };
   const s = map[status] || map.safe;
   return (
@@ -71,10 +71,10 @@ function statusBadge(status: string) {
 }
 
 function timelineBarColor(status: string): string {
-  if (status === 'safe') return '#22C55E';
-  if (status === 'at_risk') return '#F59E0B';
-  if (status === 'vulnerable') return '#F97316';
-  return '#EF4444';
+  if (status === 'safe') return 'var(--success)';
+  if (status === 'at_risk') return 'var(--warning)';
+  if (status === 'vulnerable') return 'var(--brand-accent)';
+  return 'var(--danger)';
 }
 
 // ─── Fallback data ────────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ export default function QuantumPage() {
         <div>
           <div className="flex items-center gap-3 mb-1">
             <div className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
-              <Atom className="text-[#22D3EE]" size={20} />
+              <Atom className="text-[var(--brand)]" size={20} />
             </div>
             <div>
               <h1 className="text-2xl font-semibold text-foreground tracking-tight">Quantum Security</h1>
@@ -258,16 +258,16 @@ export default function QuantumPage() {
           </div>
         </div>
         {usingFallback && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/20">
-            <Info size={14} className="text-[#F59E0B]" />
-            <span className="text-[12px] text-[#F59E0B] font-medium">Using reference data</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--warning)]/10 border border-[var(--warning)]/20">
+            <Info size={14} className="text-[var(--warning)]" />
+            <span className="text-[12px] text-[var(--warning)] font-medium">Using reference data</span>
           </div>
         )}
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 size={24} className="text-[#22D3EE] animate-spin" />
+          <Loader2 size={24} className="text-[var(--brand)] animate-spin" />
         </div>
       ) : (
         <>
@@ -401,10 +401,10 @@ export default function QuantumPage() {
               {/* Legend */}
               <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border">
                 {[
-                  { color: '#22C55E', label: 'Quantum-Safe' },
-                  { color: '#F59E0B', label: 'At Risk' },
-                  { color: '#F97316', label: 'Vulnerable' },
-                  { color: '#EF4444', label: 'Broken' },
+                  { color: 'var(--success)', label: 'Quantum-Safe' },
+                  { color: 'var(--warning)', label: 'At Risk' },
+                  { color: 'var(--brand-accent)', label: 'Vulnerable' },
+                  { color: 'var(--danger)', label: 'Broken' },
                 ].map(l => (
                   <div key={l.label} className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: l.color, opacity: 0.7 }} />
@@ -451,12 +451,12 @@ export default function QuantumPage() {
                         <span className={cn(
                           'text-[11px] font-medium px-2 py-0.5 rounded-full border',
                           a.type === 'PQC'
-                            ? 'bg-[#22D3EE]/10 text-[#22D3EE] border-[#22D3EE]/20'
+                            ? 'bg-[var(--brand)]/10 text-[var(--brand)] border-[var(--brand)]/20'
                             : a.type === 'Symmetric'
                               ? 'bg-[#A78BFA]/10 text-[#A78BFA] border-[#A78BFA]/20'
                               : a.type === 'Hash'
                                 ? 'bg-zinc-500/10 text-muted-foreground border-zinc-500/20'
-                                : 'bg-[#F97316]/10 text-[#F97316] border-[#F97316]/20'
+                                : 'bg-[var(--brand-accent)]/10 text-[var(--brand-accent)] border-[var(--brand-accent)]/20'
                         )}>
                           {a.type}
                         </span>
@@ -467,7 +467,7 @@ export default function QuantumPage() {
                       <td className="py-3 pr-4">
                         <span className={cn(
                           'text-data text-[12px]',
-                          a.quantum_security.includes('~0') ? 'text-[#EF4444]' : 'text-foreground/80'
+                          a.quantum_security.includes('~0') ? 'text-[var(--danger)]' : 'text-foreground/80'
                         )}>
                           {a.quantum_security}
                         </span>
@@ -503,7 +503,7 @@ export default function QuantumPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-data text-[12px] text-foreground/80">{result.source}</span>
                         {result.anomaly_detected && (
-                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#EF4444]/10 text-[#EF4444] text-[10px] font-semibold border border-[#EF4444]/20">
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--danger)]/10 text-[var(--danger)] text-[10px] font-semibold border border-[var(--danger)]/20">
                             <AlertTriangle size={10} />
                             {result.detection_type || 'Anomaly'}
                           </span>
@@ -526,7 +526,7 @@ export default function QuantumPage() {
                               className="h-full rounded-full transition-all duration-500"
                               style={{
                                 width: `${Math.min(order.entropy * 12.5, 100)}%`,
-                                backgroundColor: order.entropy > 7 ? '#22C55E' : order.entropy > 5 ? '#F59E0B' : '#EF4444',
+                                backgroundColor: order.entropy > 7 ? 'var(--success)' : order.entropy > 5 ? 'var(--warning)' : 'var(--danger)',
                               }}
                             />
                           </div>
@@ -561,8 +561,8 @@ export default function QuantumPage() {
               <X size={20} />
             </button>
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 mb-4">
-                <Atom size={28} className="text-[#22D3EE]" />
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 mb-4">
+                <Atom size={28} className="text-[var(--brand)]" />
               </div>
               <h3 className="text-xl font-bold text-foreground">Upgrade to Enterprise</h3>
               <p className="text-sm text-muted-foreground mt-2">
@@ -577,7 +577,7 @@ export default function QuantumPage() {
                 'AI-powered migration recommendations',
               ].map(f => (
                 <div key={f} className="flex items-center gap-2 text-sm text-foreground/80">
-                  <Check size={16} className="text-[#22D3EE] flex-shrink-0" />
+                  <Check size={16} className="text-[var(--brand)] flex-shrink-0" />
                   {f}
                 </div>
               ))}
@@ -587,7 +587,7 @@ export default function QuantumPage() {
                 setShowUpgradeModal(false);
                 router.push('/dashboard/settings');
               }}
-              className="w-full bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#22D3EE]/20 active:scale-[0.98] flex items-center justify-center gap-2"
+              className="w-full bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[var(--brand)]/20 active:scale-[0.98] flex items-center justify-center gap-2"
             >
               <Crown size={16} />
               Upgrade to Enterprise
@@ -609,9 +609,9 @@ export default function QuantumPage() {
 
 function UpgradeGateBanner({ feature, onUpgrade }: { feature: string; onUpgrade: () => void }) {
   return (
-    <div className="rounded-xl border border-[#22D3EE]/10 bg-[#22D3EE]/[0.03] p-6 flex flex-col items-center text-center">
-      <div className="w-10 h-10 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 flex items-center justify-center mb-3">
-        <Lock size={18} className="text-[#22D3EE]" />
+    <div className="rounded-xl border border-[var(--brand)]/10 bg-[var(--brand)]/[0.03] p-6 flex flex-col items-center text-center">
+      <div className="w-10 h-10 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 flex items-center justify-center mb-3">
+        <Lock size={18} className="text-[var(--brand)]" />
       </div>
       <p className="text-sm font-medium text-foreground mb-1">Upgrade to unlock full analysis</p>
       <p className="text-xs text-muted-foreground mb-4">
@@ -619,7 +619,7 @@ function UpgradeGateBanner({ feature, onUpgrade }: { feature: string; onUpgrade:
       </p>
       <button
         onClick={onUpgrade}
-        className="px-5 py-2 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[#22D3EE] text-sm font-medium hover:bg-[#22D3EE]/20 transition-all duration-200 flex items-center gap-2"
+        className="px-5 py-2 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 text-[var(--brand)] text-sm font-medium hover:bg-[var(--brand)]/20 transition-all duration-200 flex items-center gap-2"
       >
         <Crown size={14} />
         Upgrade to Enterprise

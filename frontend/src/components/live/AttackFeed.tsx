@@ -20,19 +20,19 @@ interface AttackEvent {
 const MAX_EVENTS = 50;
 
 const severityDot: Record<string, string> = {
-  critical: 'bg-[#EF4444] shadow-[0_0_8px_rgba(239,68,68,0.8)]',
-  high: 'bg-[#F97316] shadow-[0_0_8px_rgba(249,115,22,0.8)]',
-  medium: 'bg-[#F59E0B]',
-  low: 'bg-[#3B82F6]',
-  info: 'bg-muted-foreground/40',
+  critical: 'bg-[var(--danger)] shadow-[0_0_10px_color-mix(in_oklab,var(--danger)_70%,transparent)]',
+  high:     'bg-[var(--brand-accent)] shadow-[0_0_10px_color-mix(in_oklab,var(--brand-accent)_70%,transparent)]',
+  medium:   'bg-[var(--warning)]',
+  low:      'bg-[var(--info)]',
+  info:     'bg-muted-foreground/40',
 };
 
-const severityBadge: Record<string, string> = {
-  critical: 'bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/30',
-  high: 'bg-[#F97316]/10 text-[#F97316] border-[#F97316]/30',
-  medium: 'bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30',
-  low: 'bg-[#3B82F6]/10 text-[#3B82F6] border-[#3B82F6]/30',
-  info: 'bg-muted text-muted-foreground border-border',
+const severityPill: Record<string, string> = {
+  critical: 'pill pill-danger',
+  high:     'pill pill-warning',
+  medium:   'pill pill-warning',
+  low:      'pill pill-info',
+  info:     'pill pill-muted',
 };
 
 function shortTime(ts?: string): string {
@@ -66,7 +66,6 @@ export function AttackFeed() {
   const seenIds = useRef(new Set<string>());
   const router = useRouter();
 
-  // Load recent incidents from API on mount
   useEffect(() => {
     async function loadRecent() {
       try {
@@ -92,7 +91,6 @@ export function AttackFeed() {
     loadRecent();
   }, []);
 
-  // Subscribe to real-time incidents via WebSocket
   useEffect(() => {
     const off1 = subscribeTopic('incidents.new', (data) => {
       const ev = normalizeWS(data);
@@ -116,27 +114,40 @@ export function AttackFeed() {
     router.push(`/dashboard/response?incident=${ev.id}`);
   }
 
+  const statusColor = (status?: string) => {
+    if (!status) return 'text-muted-foreground/60';
+    if (status === 'resolved' || status === 'auto_responded') return 'text-[var(--success)]';
+    if (status === 'investigating') return 'text-[var(--warning)]';
+    return 'text-muted-foreground/60';
+  };
+
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+    <div className="aegis-card overflow-hidden flex flex-col h-full">
+      <div className="aegis-section-header shrink-0">
         <div className="flex items-center gap-2.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(34,211,238,0.8)] animate-pulse" />
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
+          </span>
           <span className="text-[13px] font-semibold text-foreground tracking-tight">Live Attack Feed</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground/60 font-mono uppercase tracking-widest">total</span>
-          <span className="text-[11px] text-muted-foreground font-mono tabular-nums">{events.length}</span>
+          <span className="text-label-xs">total</span>
+          <span className="text-[11px] text-foreground font-mono tabular-nums">{events.length}</span>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto max-h-[420px]">
+      <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="h-full flex items-center justify-center py-8">
+          <div className="h-full flex items-center justify-center py-12">
             <p className="text-muted-foreground/60 text-[12px] font-mono">Loading incidents…</p>
           </div>
         ) : events.length === 0 ? (
-          <div className="h-full flex items-center justify-center py-8">
-            <p className="text-muted-foreground/60 text-[12px] font-mono">No incidents detected</p>
+          <div className="h-full flex flex-col items-center justify-center py-12 gap-2">
+            <span className="w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
+            </span>
+            <p className="text-muted-foreground/70 text-[12px] font-mono">All quiet · 0 incidents</p>
           </div>
         ) : (
           events.slice(0, 8).map((ev, i) => (
@@ -144,48 +155,37 @@ export function AttackFeed() {
               key={ev.id}
               onClick={() => handleClick(ev)}
               className={cn(
-                'flex items-center gap-3 px-4 py-2 border-b border-border/50 hover:bg-muted/60 hover:border-border transition-all duration-150 cursor-pointer',
-                i === 0 && 'animate-[slide-in_0.3s_ease-out]'
+                'group flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-b-0',
+                'hover:bg-muted/50 transition-colors duration-150 cursor-pointer',
+                i === 0 && 'animate-fade-in'
               )}
-              style={i === 0 ? { animation: 'fade-in 0.3s ease-out' } : undefined}
             >
-              <div className="shrink-0">
-                <span className={cn('block w-2.5 h-2.5 rounded-full', severityDot[ev.severity] ?? 'bg-muted-foreground/40')} />
-              </div>
+              <span className={cn('shrink-0 block w-2 h-2 rounded-full', severityDot[ev.severity] ?? severityDot.info)} />
+
               <div className="flex-1 min-w-0">
-                <p className="text-[12px] text-foreground font-medium truncate leading-tight">{ev.title}</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span
-                    className={cn(
-                      'text-[8px] font-semibold uppercase tracking-wider px-1 py-0 rounded border leading-tight',
-                      severityBadge[ev.severity] ?? severityBadge.info
-                    )}
-                  >
+                <p className="text-[12.5px] text-foreground font-medium truncate leading-tight">{ev.title}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={cn(severityPill[ev.severity] ?? severityPill.info, '!py-0 !px-1.5 !text-[9px]')}>
                     {ev.severity}
                   </span>
                   {ev.source_ip && (
-                    <span className="text-[9px] text-muted-foreground font-mono tabular-nums">{ev.source_ip}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono tabular-nums">{ev.source_ip}</span>
                   )}
                   {ev.mitre_technique && (
-                    <span className="text-[9px] text-primary font-mono">{ev.mitre_technique}</span>
+                    <span className="text-[10px] text-primary font-mono">{ev.mitre_technique}</span>
                   )}
                   {ev.status && (
-                    <span className={cn(
-                      'text-[8px] font-mono uppercase tracking-wider',
-                      ev.status === 'resolved' ? 'text-[#22C55E]' :
-                      ev.status === 'auto_responded' ? 'text-[#22C55E]' :
-                      ev.status === 'investigating' ? 'text-[#F59E0B]' :
-                      'text-muted-foreground/60'
-                    )}>
+                    <span className={cn('text-[9px] font-mono uppercase tracking-widest', statusColor(ev.status))}>
                       {ev.status === 'auto_responded' ? 'blocked' : ev.status}
                     </span>
                   )}
                 </div>
               </div>
-              <span className="shrink-0 text-[9px] text-muted-foreground/50 font-mono tabular-nums">
+
+              <span className="shrink-0 text-[10px] text-muted-foreground/50 font-mono tabular-nums">
                 {shortTime(ev.detected_at)}
               </span>
-              <svg className="w-3 h-3 text-muted-foreground/30 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/70 shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </div>
@@ -193,16 +193,15 @@ export function AttackFeed() {
         )}
       </div>
 
-      {/* View all link */}
       {events.length > 8 && (
         <div
           onClick={() => router.push('/dashboard/response')}
-          className="px-4 py-2.5 border-t border-border shrink-0 flex items-center justify-center gap-2 cursor-pointer hover:bg-primary/10 transition-colors"
+          className="px-4 py-2.5 border-t border-border shrink-0 flex items-center justify-center gap-2 cursor-pointer hover:bg-primary/5 transition-colors group"
         >
           <span className="text-[12px] text-primary font-semibold tracking-tight">
             View all {events.length} incidents
           </span>
-          <svg className="w-3.5 h-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
           </svg>
         </div>

@@ -13,11 +13,11 @@ interface NodeStatus {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  online: 'bg-[#22C55E] shadow-[0_0_6px_rgba(34,197,94,0.8)]',
-  active: 'bg-[#22C55E] shadow-[0_0_6px_rgba(34,197,94,0.8)]',
-  offline: 'bg-[#EF4444] shadow-[0_0_6px_rgba(239,68,68,0.6)]',
-  degraded: 'bg-[#F59E0B] shadow-[0_0_6px_rgba(245,158,11,0.6)]',
-  warning: 'bg-[#F59E0B] shadow-[0_0_6px_rgba(245,158,11,0.6)]',
+  online:   'bg-[var(--success)] shadow-[0_0_6px_color-mix(in_oklab,var(--success)_60%,transparent)]',
+  active:   'bg-[var(--success)] shadow-[0_0_6px_color-mix(in_oklab,var(--success)_60%,transparent)]',
+  offline:  'bg-[var(--danger)] shadow-[0_0_6px_color-mix(in_oklab,var(--danger)_50%,transparent)]',
+  degraded: 'bg-[var(--warning)] shadow-[0_0_6px_color-mix(in_oklab,var(--warning)_50%,transparent)]',
+  warning:  'bg-[var(--warning)] shadow-[0_0_6px_color-mix(in_oklab,var(--warning)_50%,transparent)]',
 };
 
 function statusDot(s: string) {
@@ -66,11 +66,11 @@ export function NodeHeartbeatGrid() {
   const online = nodes.filter((n) => n.status === 'online' || n.status === 'active').length;
 
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+    <div className="aegis-card overflow-hidden flex flex-col h-full">
+      <div className="aegis-section-header shrink-0">
         <span className="text-[13px] font-semibold text-foreground tracking-tight">Node Heartbeats</span>
-        <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
-          <span className="text-[#22C55E]">{online}</span>
+        <span className="text-[11px] font-mono tabular-nums">
+          <span className="text-[var(--success)]">{online}</span>
           <span className="text-muted-foreground/60"> / {nodes.length}</span>
         </span>
       </div>

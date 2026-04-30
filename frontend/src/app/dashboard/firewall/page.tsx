@@ -188,7 +188,7 @@ export default function FirewallPage() {
       </div>
 
       {isDemo && (
-        <div className="bg-[#F97316]/[0.06] border border-[#F97316]/20 text-[#F97316] rounded-xl px-4 py-3 text-[13px]">
+        <div className="bg-[var(--brand-accent)]/[0.06] border border-[var(--brand-accent)]/20 text-[var(--brand-accent)] rounded-xl px-4 py-3 text-[13px]">
           Running in demo mode — the backend did not respond, so a sample rule is shown. Rules you create will not persist until the API is reachable.
         </div>
       )}
@@ -196,9 +196,9 @@ export default function FirewallPage() {
       {/* Summary tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatTile label="Total rules" value={rules.length} />
-        <StatTile label="Enabled" value={rules.filter((r) => r.enabled).length} accent="#22C55E" />
-        <StatTile label="Total hits" value={rules.reduce((acc, r) => acc + r.hits, 0)} accent="#22D3EE" />
-        <StatTile label="Templates" value={templates.length} accent="#A855F7" />
+        <StatTile label="Enabled" value={rules.filter((r) => r.enabled).length} accent="var(--success)" />
+        <StatTile label="Total hits" value={rules.reduce((acc, r) => acc + r.hits, 0)} accent="var(--brand)" />
+        <StatTile label="Templates" value={templates.length} accent="var(--chart-5)" />
       </div>
 
       {/* Rules list */}
@@ -234,14 +234,14 @@ export default function FirewallPage() {
                 onClick={() => handleToggle(rule)}
                 className={cn(
                   'w-11 h-6 rounded-full transition-colors relative',
-                  rule.enabled ? 'bg-[#22C55E]/30' : 'bg-muted'
+                  rule.enabled ? 'bg-[var(--success)]/30' : 'bg-muted'
                 )}
                 aria-label={rule.enabled ? 'Disable rule' : 'Enable rule'}
               >
                 <span
                   className={cn(
                     'absolute top-0.5 w-5 h-5 rounded-full transition-all',
-                    rule.enabled ? 'left-[22px] bg-[#22C55E]' : 'left-0.5 bg-muted-foreground'
+                    rule.enabled ? 'left-[22px] bg-[var(--success)]' : 'left-0.5 bg-muted-foreground'
                   )}
                 />
               </button>
@@ -256,16 +256,16 @@ export default function FirewallPage() {
               {formatDate(rule.updated_at)}
             </div>
             <div className="flex justify-end gap-1">
-              <Button variant="ghost" size="icon-xs" onClick={() => handleTest(rule)} title="Test rule" className="text-muted-foreground hover:text-[#22D3EE]">
+              <Button variant="ghost" size="icon-xs" onClick={() => handleTest(rule)} title="Test rule" className="text-muted-foreground hover:text-[var(--brand)]">
                 <Beaker className="w-4 h-4" />
               </Button>
               <Button variant="ghost" size="icon-xs" onClick={() => handleEdit(rule)} title="Edit" className="text-muted-foreground hover:text-foreground">
                 <Pencil className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon-xs" onClick={() => handleToggle(rule)} title={rule.enabled ? 'Disable' : 'Enable'} className="text-muted-foreground hover:text-[#F97316]">
+              <Button variant="ghost" size="icon-xs" onClick={() => handleToggle(rule)} title={rule.enabled ? 'Disable' : 'Enable'} className="text-muted-foreground hover:text-[var(--brand-accent)]">
                 <Power className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon-xs" onClick={() => handleDelete(rule)} title="Delete" className="text-muted-foreground hover:text-[#EF4444]">
+              <Button variant="ghost" size="icon-xs" onClick={() => handleDelete(rule)} title="Delete" className="text-muted-foreground hover:text-[var(--danger)]">
                 <Trash2 className="w-4 h-4" />
               </Button>
             </div>
@@ -330,7 +330,7 @@ export default function FirewallPage() {
             <p className="text-[13px] text-muted-foreground">No templates available.</p>
           )}
           {templates.map((tpl) => (
-            <Card key={tpl.id} className="rounded-xl hover:ring-[#22D3EE]/20 hover:ring-1 transition-all">
+            <Card key={tpl.id} className="rounded-xl hover:ring-[var(--brand)]/20 hover:ring-1 transition-all">
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -340,7 +340,7 @@ export default function FirewallPage() {
                   <Button
                     onClick={() => handleCloneTemplate(tpl)}
                     size="sm"
-                    className="bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold"
+                    className="bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold"
                   >
                     Use
                   </Button>

@@ -55,5 +55,5 @@ export const CHART_COLORS = {
   danger: '#FF3B5C',
   warning: '#FFB800',
   success: '#00D68F',
-  info: '#3B82F6',
+  info: 'var(--info)',
 };

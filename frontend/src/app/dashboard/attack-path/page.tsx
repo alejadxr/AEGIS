@@ -46,10 +46,10 @@ interface GraphEdge {
    ────────────────────────────────────────── */
 
 function riskColor(score: number): string {
-  if (score >= 9) return '#EF4444'; // critical red
-  if (score >= 7) return '#F97316'; // high orange
+  if (score >= 9) return 'var(--danger)'; // critical red
+  if (score >= 7) return 'var(--brand-accent)'; // high orange
   if (score >= 4) return '#EAB308'; // medium yellow
-  return '#22C55E'; // low green
+  return 'var(--success)'; // low green
 }
 
 function riskLabel(score: number): string {
@@ -415,7 +415,7 @@ export default function AttackPathPage() {
         </div>
         <button
           onClick={fetchAssets}
-          className="flex items-center gap-2 bg-white/[0.05] border border-border hover:border-[#22D3EE]/20 text-foreground/80 hover:text-[#22D3EE] px-4 py-2 rounded-xl transition-all text-[13px] font-medium shrink-0"
+          className="flex items-center gap-2 bg-white/[0.05] border border-border hover:border-[var(--brand)]/20 text-foreground/80 hover:text-[var(--brand)] px-4 py-2 rounded-xl transition-all text-[13px] font-medium shrink-0"
         >
           <RefreshCw className="w-4 h-4" />
           Refresh
@@ -425,10 +425,10 @@ export default function AttackPathPage() {
       {/* Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Entry Points', value: stats.entryPoints, color: '#22D3EE' },
-          { label: 'Critical Paths', value: stats.criticalPaths, color: '#EF4444' },
-          { label: 'High Risk Paths', value: stats.highPaths, color: '#F97316' },
-          { label: 'Max Depth', value: stats.maxDepth, color: '#A855F7' },
+          { label: 'Entry Points', value: stats.entryPoints, color: 'var(--brand)' },
+          { label: 'Critical Paths', value: stats.criticalPaths, color: 'var(--danger)' },
+          { label: 'High Risk Paths', value: stats.highPaths, color: 'var(--brand-accent)' },
+          { label: 'Max Depth', value: stats.maxDepth, color: 'var(--chart-5)' },
         ].map((stat) => (
           <div key={stat.label} className="bg-card border border-border rounded-2xl p-4">
             <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">{stat.label}</p>
@@ -494,10 +494,10 @@ export default function AttackPathPage() {
                 <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" fill="#52525B">
                   <path d="M0,0 L8,3 L0,6 Z" />
                 </marker>
-                <marker id="arrow-critical" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" fill="#EF4444">
+                <marker id="arrow-critical" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" fill="var(--danger)">
                   <path d="M0,0 L8,3 L0,6 Z" />
                 </marker>
-                <marker id="arrow-high" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" fill="#F97316">
+                <marker id="arrow-high" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" fill="var(--brand-accent)">
                   <path d="M0,0 L8,3 L0,6 Z" />
                 </marker>
               </defs>
@@ -552,7 +552,7 @@ export default function AttackPathPage() {
               {/* Nodes */}
               {nodes.map((node) => {
                 const r = node.id === 'internet' ? 22 : nodeRadius(node.risk);
-                const color = node.id === 'internet' ? '#22D3EE' : riskColor(node.risk);
+                const color = node.id === 'internet' ? 'var(--brand)' : riskColor(node.risk);
                 const isHovered = hoveredNode?.id === node.id;
 
                 return (
@@ -650,7 +650,7 @@ export default function AttackPathPage() {
                       <span className={cn(
                         'text-[10px] font-medium px-1.5 py-0.5 rounded',
                         hoveredNode.asset.status === 'active'
-                          ? 'bg-[#22C55E]/10 text-[#22C55E]'
+                          ? 'bg-[var(--success)]/10 text-[var(--success)]'
                           : 'bg-zinc-800 text-muted-foreground'
                       )}>
                         {hoveredNode.asset.status}
@@ -672,10 +672,10 @@ export default function AttackPathPage() {
             {/* Legend */}
             <div className="absolute bottom-4 left-4 flex items-center gap-4 bg-[#09090B]/80 backdrop-blur-sm border border-border rounded-xl px-4 py-2">
               {[
-                { label: 'Low', color: '#22C55E' },
+                { label: 'Low', color: 'var(--success)' },
                 { label: 'Medium', color: '#EAB308' },
-                { label: 'High', color: '#F97316' },
-                { label: 'Critical', color: '#EF4444' },
+                { label: 'High', color: 'var(--brand-accent)' },
+                { label: 'Critical', color: 'var(--danger)' },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />

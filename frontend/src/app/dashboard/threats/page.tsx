@@ -45,11 +45,11 @@ const typeIcons: Record<string, typeof Monitor> = {
 };
 
 const typeColors: Record<string, string> = {
-  ip: 'text-[#22D3EE] bg-[#22D3EE]/10',
-  domain: 'text-[#A855F7] bg-[#A855F7]/10',
-  hash: 'text-[#F59E0B] bg-[#F59E0B]/10',
-  url: 'text-[#3B82F6] bg-[#3B82F6]/10',
-  email: 'text-[#22C55E] bg-[#22C55E]/10',
+  ip: 'text-[var(--brand)] bg-[var(--brand)]/10',
+  domain: 'text-[var(--chart-5)] bg-[var(--chart-5)]/10',
+  hash: 'text-[var(--warning)] bg-[var(--warning)]/10',
+  url: 'text-[var(--info)] bg-[var(--info)]/10',
+  email: 'text-[var(--success)] bg-[var(--success)]/10',
 };
 
 export default function ThreatsPage() {
@@ -134,7 +134,7 @@ export default function ThreatsPage() {
               <div
                 className={cn(
                   'h-full rounded-full',
-                  pct >= 90 ? 'bg-[#22C55E]' : pct >= 70 ? 'bg-[#F59E0B]' : 'bg-[#EF4444]'
+                  pct >= 90 ? 'bg-[var(--success)]' : pct >= 70 ? 'bg-[var(--warning)]' : 'bg-[var(--danger)]'
                 )}
                 style={{ width: `${pct}%` }}
               />
@@ -185,7 +185,7 @@ export default function ThreatsPage() {
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Add IOC</span>
           </button>
-          <button className="flex items-center gap-1.5 bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]">
+          <button className="flex items-center gap-1.5 bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]">
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Export</span>
           </button>
@@ -202,7 +202,7 @@ export default function ThreatsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="Search IOCs..."
-            className="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
+            className="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30 transition-colors"
           />
         </div>
         <button
@@ -220,7 +220,7 @@ export default function ThreatsPage() {
           onClick={() => setTypeFilter('all')}
           className={cn(
             'px-2 sm:px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors',
-            typeFilter === 'all' ? 'bg-[#22D3EE]/10 text-[#22D3EE]' : 'text-muted-foreground hover:text-foreground'
+            typeFilter === 'all' ? 'bg-[var(--brand)]/10 text-[var(--brand)]' : 'text-muted-foreground hover:text-foreground'
           )}
         >
           All ({iocs.length})
@@ -233,7 +233,7 @@ export default function ThreatsPage() {
               onClick={() => setTypeFilter(t.value)}
               className={cn(
                 'px-2 sm:px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors',
-                typeFilter === t.value ? 'bg-[#22D3EE]/10 text-[#22D3EE]' : 'text-muted-foreground hover:text-foreground'
+                typeFilter === t.value ? 'bg-[var(--brand)]/10 text-[var(--brand)]' : 'text-muted-foreground hover:text-foreground'
               )}
             >
               {t.label} ({count})
@@ -257,7 +257,7 @@ export default function ThreatsPage() {
             <select
               value={newIOC.ioc_type}
               onChange={(e) => setNewIOC({ ...newIOC, ioc_type: e.target.value })}
-              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#22D3EE]/30"
+              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[var(--brand)]/30"
             >
               {IOC_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -271,7 +271,7 @@ export default function ThreatsPage() {
               value={newIOC.ioc_value}
               onChange={(e) => setNewIOC({ ...newIOC, ioc_value: e.target.value })}
               placeholder="e.g., 192.168.1.1 or evil.com"
-              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
             />
           </div>
           <div>
@@ -281,7 +281,7 @@ export default function ThreatsPage() {
               value={newIOC.threat_type}
               onChange={(e) => setNewIOC({ ...newIOC, threat_type: e.target.value })}
               placeholder="e.g., C2 Infrastructure, Malware, Phishing"
-              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30"
+              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30"
             />
           </div>
           <div>
@@ -291,14 +291,14 @@ export default function ThreatsPage() {
               value={newIOC.tags}
               onChange={(e) => setNewIOC({ ...newIOC, tags: e.target.value })}
               placeholder="apt, cobalt-strike, windows"
-              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30"
+              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30"
             />
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-[13px] text-muted-foreground hover:text-foreground transition-colors rounded-xl">
               Cancel
             </button>
-            <button onClick={handleAdd} className="flex items-center gap-2 bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold px-4 py-2 rounded-xl transition-colors text-[13px]">
+            <button onClick={handleAdd} className="flex items-center gap-2 bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold px-4 py-2 rounded-xl transition-colors text-[13px]">
               <Plus className="w-4 h-4" />
               Add IOC
             </button>

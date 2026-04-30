@@ -72,7 +72,7 @@ export function RuleTester({ ruleId, yamlDef }: RuleTesterProps) {
           onChange={(e) => setEventJson(e.target.value)}
           rows={9}
           spellCheck={false}
-          className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-3 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono leading-relaxed"
+          className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-3 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30 font-mono leading-relaxed"
         />
       </div>
 
@@ -87,7 +87,7 @@ export function RuleTester({ ruleId, yamlDef }: RuleTesterProps) {
       </button>
 
       {error && (
-        <div className="flex items-start gap-2 bg-[#EF4444]/[0.06] border border-[#EF4444]/30 rounded-xl px-4 py-3 text-[13px] text-[#EF4444]">
+        <div className="flex items-start gap-2 bg-[var(--danger)]/[0.06] border border-[var(--danger)]/30 rounded-xl px-4 py-3 text-[13px] text-[var(--danger)]">
           <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <span className="font-mono">{error}</span>
         </div>
@@ -98,7 +98,7 @@ export function RuleTester({ ruleId, yamlDef }: RuleTesterProps) {
           className={cn(
             'rounded-xl border px-4 py-3 text-[13px]',
             result.matched
-              ? 'bg-[#22C55E]/[0.06] border-[#22C55E]/30 text-[#22C55E]'
+              ? 'bg-[var(--success)]/[0.06] border-[var(--success)]/30 text-[var(--success)]'
               : 'bg-white/[0.03] border-white/[0.06] text-zinc-400'
           )}
         >
@@ -139,7 +139,7 @@ export function RuleTester({ ruleId, yamlDef }: RuleTesterProps) {
             {result.error && (
               <>
                 <dt className="text-zinc-500">error</dt>
-                <dd className="text-[#EF4444]">{result.error}</dd>
+                <dd className="text-[var(--danger)]">{result.error}</dd>
               </>
             )}
           </dl>

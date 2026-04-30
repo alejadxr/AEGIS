@@ -43,10 +43,10 @@ interface RecentEvent {
 }
 
 const sevDot: Record<string, string> = {
-  critical: 'bg-[#EF4444]',
-  high: 'bg-[#F97316]',
-  medium: 'bg-[#F59E0B]',
-  low: 'bg-[#3B82F6]',
+  critical: 'bg-[var(--danger)]',
+  high: 'bg-[var(--brand-accent)]',
+  medium: 'bg-[var(--warning)]',
+  low: 'bg-[var(--info)]',
   info: 'bg-muted-foreground',
 };
 
@@ -225,8 +225,8 @@ export default function EdrDashboardPage() {
           <p className="text-sm text-muted-foreground mt-1 hidden sm:block">Process telemetry, attack chain detection, and live event stream</p>
         </div>
         {agents.some((a) => a.id === 'aegis-host-monitor') && (
-          <Badge variant="outline" className="bg-[#22C55E]/10 border-[#22C55E]/20 text-[#22C55E] gap-1.5 px-3 py-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+          <Badge variant="outline" className="bg-[var(--success)]/10 border-[var(--success)]/20 text-[var(--success)] gap-1.5 px-3 py-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] animate-pulse" />
             Host protected
           </Badge>
         )}
@@ -236,7 +236,7 @@ export default function EdrDashboardPage() {
       <Card className="rounded-xl">
         <CardHeader className="border-b border-border px-4 sm:px-6 py-4">
           <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-[#F97316]" />
+            <Zap className="w-4 h-4 text-[var(--brand-accent)]" />
             <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Attack Chain Matches</CardTitle>
             <span className="text-[11px] text-muted-foreground ml-2">{chains.length} recent</span>
           </div>
@@ -260,7 +260,7 @@ export default function EdrDashboardPage() {
                         {c.severity}
                       </span>
                       {c.mitre_technique && (
-                        <Badge variant="secondary" className="text-[10px] font-mono text-[#A855F7] px-2 py-0.5">
+                        <Badge variant="secondary" className="text-[10px] font-mono text-[var(--chart-5)] px-2 py-0.5">
                           {c.mitre_technique}
                         </Badge>
                       )}
@@ -277,7 +277,7 @@ export default function EdrDashboardPage() {
                   <div className="flex items-center gap-3 shrink-0">
                     {c.ai_analysis?.pid && (
                       containedChains.has(c.id) ? (
-                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-[#22C55E]">
+                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--success)]">
                           <CheckCircle className="w-3.5 h-3.5" />
                           Contained
                         </span>
@@ -310,7 +310,7 @@ export default function EdrDashboardPage() {
       <Card className="rounded-xl">
         <CardHeader className="border-b border-border px-4 sm:px-6 py-4">
           <div className="flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-[#22D3EE]" />
+            <GitBranch className="w-4 h-4 text-[var(--brand)]" />
             <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Process Tree</CardTitle>
           </div>
         </CardHeader>
@@ -321,7 +321,7 @@ export default function EdrDashboardPage() {
               <select
                 value={agentId}
                 onChange={(e) => setAgentId(e.target.value)}
-                className="bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-foreground w-80 font-mono focus:outline-none focus:border-[#22D3EE]/30"
+                className="bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-foreground w-80 font-mono focus:outline-none focus:border-[var(--brand)]/30"
               >
                 {agents.length === 0 && <option value="">No agents enrolled</option>}
                 {agents.map((a) => (
@@ -341,7 +341,7 @@ export default function EdrDashboardPage() {
                 className="w-28 font-mono"
               />
             </div>
-            <Button variant="outline" onClick={loadTree} className="text-[#22D3EE]">
+            <Button variant="outline" onClick={loadTree} className="text-[var(--brand)]">
               Load tree
             </Button>
           </div>
@@ -365,7 +365,7 @@ export default function EdrDashboardPage() {
         <CardHeader className="border-b border-border px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-[#22D3EE]" />
+              <Zap className="w-4 h-4 text-[var(--brand)]" />
               <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Recent Events</CardTitle>
               {agentId && (
                 <span className="text-[11px] text-muted-foreground ml-2 font-mono">
@@ -381,7 +381,7 @@ export default function EdrDashboardPage() {
                   className={cn(
                     'px-3 py-1 text-[11px] font-medium rounded-md transition-colors',
                     filterCategory === cat
-                      ? 'bg-[#22D3EE]/10 text-[#22D3EE]'
+                      ? 'bg-[var(--brand)]/10 text-[var(--brand)]'
                       : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -398,7 +398,7 @@ export default function EdrDashboardPage() {
             </p>
           ) : filteredEvents.length === 0 ? (
             <div className="flex items-center gap-2 py-4">
-              <Monitor className="w-4 h-4 text-[#22D3EE] animate-pulse" />
+              <Monitor className="w-4 h-4 text-[var(--brand)] animate-pulse" />
               <p className="text-[13px] text-muted-foreground">
                 {agentId === 'aegis-host-monitor'
                   ? 'Host monitoring active \u2014 collecting process telemetry...'
@@ -427,13 +427,13 @@ export default function EdrDashboardPage() {
                       <TableCell className="text-[11px] font-mono text-muted-foreground">
                         {new Date(e.timestamp).toLocaleTimeString()}
                       </TableCell>
-                      <TableCell className="text-[11px] font-mono text-[#22D3EE]">{e.details?.kind}</TableCell>
+                      <TableCell className="text-[11px] font-mono text-[var(--brand)]">{e.details?.kind}</TableCell>
                       <TableCell className="text-[11px] font-mono">{pid ?? '-'}</TableCell>
                       <TableCell className="text-[11px] font-mono truncate max-w-[300px]">{e.title}</TableCell>
                       <TableCell className="text-[11px]">
                         {isProcess && pid !== undefined && (
                           isKilled ? (
-                            <span className="text-[#22C55E] text-[10px] flex items-center gap-1">
+                            <span className="text-[var(--success)] text-[10px] flex items-center gap-1">
                               <CheckCircle className="w-3 h-3" /> Killed
                             </span>
                           ) : (
@@ -465,8 +465,8 @@ export default function EdrDashboardPage() {
           <Card className="max-w-sm w-full mx-4 rounded-xl">
             <CardContent className="p-6">
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 rounded-lg bg-[#EF4444]/10 border border-[#EF4444]/20">
-                  <AlertTriangle className="w-5 h-5 text-[#EF4444]" />
+                <div className="p-2 rounded-lg bg-[var(--danger)]/10 border border-[var(--danger)]/20">
+                  <AlertTriangle className="w-5 h-5 text-[var(--danger)]" />
                 </div>
                 <h3 className="text-[14px] font-medium text-foreground">Kill Process</h3>
               </div>

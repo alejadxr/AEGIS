@@ -72,12 +72,12 @@ function buildInteractionHeatmap(interactions: InteractionItem[]): number[][] {
 
 function interactionHeatColor(value: number): string {
   if (value === 0) return 'bg-muted/20';
-  if (value <= 1) return 'bg-[#22D3EE]/15';
-  if (value <= 2) return 'bg-[#22D3EE]/25';
-  if (value <= 3) return 'bg-[#22D3EE]/40';
-  if (value <= 4) return 'bg-[#22D3EE]/55';
-  if (value <= 5) return 'bg-[#22D3EE]/70';
-  return 'bg-[#22D3EE]/85';
+  if (value <= 1) return 'bg-[var(--brand)]/15';
+  if (value <= 2) return 'bg-[var(--brand)]/25';
+  if (value <= 3) return 'bg-[var(--brand)]/40';
+  if (value <= 4) return 'bg-[var(--brand)]/55';
+  if (value <= 5) return 'bg-[var(--brand)]/70';
+  return 'bg-[var(--brand)]/85';
 }
 
 const typeIcons: Record<string, string> = {
@@ -90,10 +90,10 @@ const typeIcons: Record<string, string> = {
 };
 
 const sophisticationColors: Record<string, string> = {
-  script_kiddie: 'text-[#22C55E]',
-  intermediate: 'text-[#F59E0B]',
-  advanced: 'text-[#EF4444]',
-  apt: 'text-[#A855F7]',
+  script_kiddie: 'text-[var(--success)]',
+  intermediate: 'text-[var(--warning)]',
+  advanced: 'text-[var(--danger)]',
+  apt: 'text-[var(--chart-5)]',
 };
 
 export default function PhantomPage() {
@@ -146,7 +146,7 @@ export default function PhantomPage() {
   };
 
   const attackerColumns = [
-    { key: 'source_ip', label: 'Source IP', sortable: true, render: (row: AttackerItem) => <span className="font-mono text-[#22D3EE] text-[13px]">{row.source_ip}</span> },
+    { key: 'source_ip', label: 'Source IP', sortable: true, render: (row: AttackerItem) => <span className="font-mono text-[var(--brand)] text-[13px]">{row.source_ip}</span> },
     {
       key: 'sophistication', label: 'Level', sortable: true,
       render: (row: AttackerItem) => (
@@ -266,8 +266,8 @@ export default function PhantomPage() {
                 <Card key={hp.id} className="rounded-xl p-4 py-4 hover:border-border/80 transition-all duration-200">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-[#22D3EE]/10 flex items-center justify-center">
-                        <span className="text-[11px] font-bold text-[#22D3EE] font-mono">{typeIcons[hp.honeypot_type] || '?'}</span>
+                      <div className="w-10 h-10 rounded-lg bg-[var(--brand)]/10 flex items-center justify-center">
+                        <span className="text-[11px] font-bold text-[var(--brand)] font-mono">{typeIcons[hp.honeypot_type] || '?'}</span>
                       </div>
                       <div>
                         <p className="text-[13px] font-medium text-foreground">{hp.name}</p>
@@ -299,7 +299,7 @@ export default function PhantomPage() {
                       <RotateCw className={cn('w-3 h-3', hp.status === 'rotating' && 'animate-spin')} />
                       Rotate
                     </Button>
-                    <Button variant="outline" size="icon-sm" className="text-muted-foreground hover:text-[#EF4444]">
+                    <Button variant="outline" size="icon-sm" className="text-muted-foreground hover:text-[var(--danger)]">
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   </div>
@@ -322,8 +322,8 @@ export default function PhantomPage() {
                 <Card key={ix.id} className="rounded-xl p-4 py-4 hover:border-border/80 transition-colors">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <Badge variant="outline" className="text-[10px] font-bold text-[#22D3EE] bg-[#22D3EE]/10 border-[#22D3EE]/20 font-mono uppercase tracking-wider">{ix.protocol}</Badge>
-                      <span className="font-mono text-[#22D3EE] text-[13px]">{ix.source_ip}</span>
+                      <Badge variant="outline" className="text-[10px] font-bold text-[var(--brand)] bg-[var(--brand)]/10 border-[var(--brand)]/20 font-mono uppercase tracking-wider">{ix.protocol}</Badge>
+                      <span className="font-mono text-[var(--brand)] text-[13px]">{ix.source_ip}</span>
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-muted-foreground/50 font-mono">
                       {ix.session_duration && <span>{ix.session_duration}s</span>}
@@ -333,7 +333,7 @@ export default function PhantomPage() {
                   {ix.commands.length > 0 && (
                     <div className="bg-background border border-border rounded-lg p-3 mb-2">
                       <p className="text-[10px] text-muted-foreground/50 mb-1.5 font-medium uppercase tracking-wider">Commands Executed</p>
-                      <div className="font-mono text-[11px] text-[#22C55E] space-y-0.5">
+                      <div className="font-mono text-[11px] text-[var(--success)] space-y-0.5">
                         {ix.commands.map((cmd, i) => (
                           <p key={i}><span className="text-muted-foreground/50">$</span> {cmd}</p>
                         ))}
@@ -343,7 +343,7 @@ export default function PhantomPage() {
                   {ix.credentials_tried.length > 0 && (
                     <div className="bg-background border border-border rounded-lg p-3">
                       <p className="text-[10px] text-muted-foreground/50 mb-1.5 font-medium uppercase tracking-wider">Credentials Attempted</p>
-                      <div className="font-mono text-[11px] text-[#F59E0B] space-y-0.5">
+                      <div className="font-mono text-[11px] text-[var(--warning)] space-y-0.5">
                         {ix.credentials_tried.map((cred, i) => (
                           <p key={i}>{cred.username}:{cred.password}</p>
                         ))}
@@ -408,7 +408,7 @@ export default function PhantomPage() {
             <Button variant="ghost" onClick={() => setShowDeployModal(false)}>
               Cancel
             </Button>
-            <Button onClick={handleDeploy} className="bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B]">
+            <Button onClick={handleDeploy} className="bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B]">
               <Ghost className="w-4 h-4" />
               Deploy
             </Button>

@@ -63,18 +63,18 @@ interface VulnRow {
 }
 
 const trendChartConfig = {
-  vulns: { label: 'Vulnerabilities', color: '#EF4444' },
+  vulns: { label: 'Vulnerabilities', color: 'var(--danger)' },
 } satisfies ChartConfig;
 
 const detectionChartConfig = {
-  vulns: { label: 'Detections', color: '#22D3EE' },
+  vulns: { label: 'Detections', color: 'var(--brand)' },
 } satisfies ChartConfig;
 
 const severityChartConfig = {
-  Critical: { label: 'Critical', color: '#EF4444' },
-  High: { label: 'High', color: '#F97316' },
-  Medium: { label: 'Medium', color: '#F59E0B' },
-  Low: { label: 'Low', color: '#3B82F6' },
+  Critical: { label: 'Critical', color: 'var(--danger)' },
+  High:     { label: 'High',     color: 'var(--brand-accent)' },
+  Medium:   { label: 'Medium',   color: 'var(--warning)' },
+  Low:      { label: 'Low',      color: 'var(--info)' },
 } satisfies ChartConfig;
 
 const typeIcons: Record<string, typeof Server> = {
@@ -86,9 +86,9 @@ const typeIcons: Record<string, typeof Server> = {
 };
 
 function riskColor(score: number): string {
-  if (score >= 7) return 'text-[#EF4444]';
-  if (score >= 4) return 'text-[#F59E0B]';
-  return 'text-[#22C55E]';
+  if (score >= 7) return 'text-[var(--danger)]';
+  if (score >= 4) return 'text-[var(--warning)]';
+  return 'text-[var(--success)]';
 }
 
 /** Strip fake "www.X.X.X.X" or "mail.X.X.X.X" hostname prefixes */
@@ -106,10 +106,10 @@ function buildSeverityDist(vulns: VulnRow[]) {
     if (key in counts) counts[key] += 1;
   });
   const colorMap: Record<string, string> = {
-    Critical: '#EF4444',
-    High: '#F97316',
-    Medium: '#F59E0B',
-    Low: '#3B82F6',
+    Critical: 'var(--danger)',
+    High:     'var(--brand-accent)',
+    Medium:   'var(--warning)',
+    Low:      'var(--info)',
   };
   return Object.entries(counts)
     .filter(([, v]) => v > 0)
@@ -183,7 +183,7 @@ export default function SurfacePage() {
             const Icon = typeIcons[row.asset_type] || Server;
             return <Icon className="w-3.5 h-3.5 text-muted-foreground" />;
           })()}
-          <span className="font-mono text-[#22D3EE] text-[13px]">{cleanHostname(row.hostname)}</span>
+          <span className="font-mono text-primary text-[13px]">{cleanHostname(row.hostname)}</span>
         </div>
       ),
     },
@@ -336,7 +336,7 @@ export default function SurfacePage() {
               <CardDescription className="text-[11px] mt-0.5 hidden sm:block">Vulnerabilities found per day this week</CardDescription>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-1 rounded-full bg-[#22D3EE]" />
+              <span className="w-2.5 h-1 rounded-full bg-primary" />
               <span className="text-[11px] text-muted-foreground font-medium">Detections</span>
             </div>
           </div>
@@ -403,7 +403,7 @@ export default function SurfacePage() {
                 variant={severityFilter === s ? 'default' : 'ghost'}
                 className={cn(
                   'cursor-pointer capitalize',
-                  severityFilter === s ? 'bg-[#22D3EE]/10 text-[#22D3EE]' : 'text-muted-foreground hover:text-foreground'
+                  severityFilter === s ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
                 )}
                 onClick={() => setSeverityFilter(s)}
               >
@@ -449,7 +449,7 @@ export default function SurfacePage() {
             <Button variant="ghost" onClick={() => setShowScanModal(false)}>
               Cancel
             </Button>
-            <Button onClick={handleScan} className="bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B]">
+            <Button onClick={handleScan} className="bg-primary hover:bg-primary/90 text-primary-foreground">
               <Radar01Icon size={16} />
               Launch Scan
             </Button>
