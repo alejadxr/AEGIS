@@ -34,6 +34,15 @@ class RulePack:
     def sigma_count(self) -> int:
         return sum(len(v) for v in self.rules.values())
 
+    def compile_pattern(self, pattern: str) -> re.Pattern:
+        """Return a compiled regex for *pattern*, reusing a cached version when possible."""
+        cached = self.regex_cache.get(pattern)
+        if cached is not None:
+            return cached
+        compiled = re.compile(pattern)
+        self.regex_cache[pattern] = compiled
+        return compiled
+
 
 def _load_yaml_file(path: Path) -> dict | None:
     try:
