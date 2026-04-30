@@ -1,0 +1,40 @@
+id: ransomware_winrm_exec
+name: WinRM Remote Execution — wsmprovhost Under svchost
+kind: sigma
+description: |
+  Detects wsmprovhost.exe spawned as a child of svchost.exe, the canonical
+  process tree for incoming WinRM / PowerShell Remoting sessions (T1021.006).
+  Ransomware groups use WinRM to execute payloads laterally after initial
+  compromise, often combined with script execution (T1059). The process_path
+  and parent_process regex filters are enforced at the EDR/agent layer; the
+  Python engine fires on the first matching process_create event grouped by
+  hostname (count_threshold=1 — any single occurrence is suspicious).
+severity: high
+enabled: true
+tactics:
+  - LateralMovement
+  - Execution
+techniques:
+  - T1021.006
+  - T1059
+data_sources:
+  - edr
+condition:
+  event_type: process_create
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: hostname
+entityMappings:
+  - type: Host
+    field: hostname
+  - type: Account
+    field: username
+customDetails:
+  process_path: process_path
+  parent_process_path: parent_process_path
+  command_line: command_line
+  process_path_regex: '(?i)wsmprovhost\.exe'
+  parent_process_regex: '(?i)svchost\.exe'
+references:
+  - https://attack.mitre.org/techniques/T1021/006/
+  - https://attack.mitre.org/techniques/T1059/
