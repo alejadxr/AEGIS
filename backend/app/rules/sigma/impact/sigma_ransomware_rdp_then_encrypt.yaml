@@ -1,0 +1,43 @@
+id: ransomware_rdp_then_encrypt
+name: Successful RDP Login from External IP
+kind: sigma
+description: |
+  Detects a successful RDP authentication originating from a non-RFC1918
+  address. This is the RDP-leg of the composite "RDP then encrypt" attack
+  pattern. The v1.5 per-rule schema does not support composite/multi-step
+  event conditions — composite behaviour (RDP login followed by mass
+  file-extension change within 30 min from the same host) is delegated to
+  the ransomware_chain rule (kind: chain). This rule fires on the RDP login
+  alone and feeds the chain rule's sigma_fire_log so the chain can correlate
+  it with ransomware_extension_mass_change (T1486).
+severity: critical
+enabled: true
+tactics:
+  - InitialAccess
+  - LateralMovement
+techniques:
+  - T1133
+  - T1021.001
+data_sources:
+  - auth_log
+  - edr
+condition:
+  event_type: rdp_login
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: hostname
+  filter:
+    auth_result: success
+entityMappings:
+  - type: Host
+    field: hostname
+  - type: Account
+    field: username
+  - type: IP
+    field: source_ip
+customDetails:
+  source_ip: source_ip
+  username: username
+references:
+  - https://attack.mitre.org/techniques/T1133/
+  - https://attack.mitre.org/techniques/T1021/001/
