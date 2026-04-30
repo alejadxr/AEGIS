@@ -2315,6 +2315,14 @@ def _matches_filter(event: dict, filt: dict) -> bool:
                 return False
             continue
 
+        # Regex match: command_line_regex → re.search(pattern, event["command_line"])
+        if key.endswith("_regex"):
+            field = key[:-6]  # strip "_regex"
+            actual_val = event.get(field)
+            if actual_val is None or not re.search(str(expected), str(actual_val)):
+                return False
+            continue
+
         # List membership check
         if isinstance(expected, list):
             # path_contains: any element must be a substring of actual
