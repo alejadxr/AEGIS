@@ -302,22 +302,25 @@ def test_winrm_no_fire_on_wrong_event_type():
 # customDetails — regex patterns stored for EDR/agent layer enforcement
 # ---------------------------------------------------------------------------
 
-def test_winrm_custom_details_has_process_path_regex(pack):
+def test_winrm_filter_has_process_path_regex(pack):
     rule = pack.by_id["ransomware_winrm_exec"]
-    assert "process_path_regex" in rule["customDetails"]
-    assert "wsmprovhost" in rule["customDetails"]["process_path_regex"]
+    filt = rule["condition"].filter
+    assert "process_path_regex" in filt
+    assert "wsmprovhost" in filt["process_path_regex"]
 
 
-def test_winrm_custom_details_has_parent_process_regex(pack):
+def test_winrm_filter_has_parent_process_regex(pack):
     rule = pack.by_id["ransomware_winrm_exec"]
-    assert "parent_process_regex" in rule["customDetails"]
-    assert "svchost" in rule["customDetails"]["parent_process_regex"]
+    filt = rule["condition"].filter
+    assert "parent_process_path_regex" in filt
+    assert "svchost" in filt["parent_process_path_regex"]
 
 
-def test_smb_custom_details_has_target_share_regex(pack):
+def test_smb_filter_has_target_share_regex(pack):
     rule = pack.by_id["ransomware_smb_lateral"]
-    assert "target_share_regex" in rule["customDetails"]
-    assert r"C\$" in rule["customDetails"]["target_share_regex"]
+    filt = rule["condition"].filter
+    assert "target_share_regex" in filt
+    assert r"C\$" in filt["target_share_regex"]
 
 
 def test_rdp_filter_has_auth_result(pack):
