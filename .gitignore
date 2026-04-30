@@ -73,6 +73,11 @@ backend/pytest.ini
 .claude/
 docs/superpowers/
 CLAUDE.md
+
+# Internal docs (not for public repo)
+AEGIS_CONTEXT.md
+AEGIS_MARKETING.md
+ARCHITECTURE.md
 langgraph_pentest.py
 deepagent_pentest.py
 deepagent_pentest_v2.py
