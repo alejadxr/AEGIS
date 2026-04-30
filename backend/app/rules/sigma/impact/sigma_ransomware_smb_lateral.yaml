@@ -24,6 +24,8 @@ condition:
   count_threshold: 20
   time_window_seconds: 60
   group_by: source_ip
+  filter:
+    target_share_regex: '(?i)\\(C\$|ADMIN\$|IPC\$)'
 entityMappings:
   - type: Host
     field: hostname
@@ -32,6 +34,5 @@ entityMappings:
 customDetails:
   target_share: target_share
   bytes_written: bytes_written
-  target_share_regex: '(?i)\\(C\$|ADMIN\$|IPC\$)'
 references:
   - https://attack.mitre.org/techniques/T1021/002/
