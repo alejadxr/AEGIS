@@ -1,0 +1,20 @@
+id: sigma_exfil_clipboard
+name: Clipboard Data Access
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1115
+data_sources:
+- edr
+condition:
+  event_type: clipboard_access
+  count_threshold: 10
+  time_window_seconds: 60
+  group_by: process_name
+entityMappings:
+- type: IP
+  field: source_ip
+description: Process accessing clipboard data for potential exfiltration.

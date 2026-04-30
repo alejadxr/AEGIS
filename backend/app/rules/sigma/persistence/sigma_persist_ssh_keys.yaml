@@ -1,0 +1,20 @@
+id: sigma_persist_ssh_keys
+name: SSH Authorized Keys Modified
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1098.004
+data_sources:
+- edr
+condition:
+  event_type: file_modification
+  filter:
+    path_contains:
+    - authorized_keys
+entityMappings:
+- type: IP
+  field: source_ip
+description: Modification of SSH authorized_keys file for persistent access.

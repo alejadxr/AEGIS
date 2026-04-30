@@ -1,0 +1,21 @@
+id: sigma_persist_startup_folder
+name: Startup Folder Persistence
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1547.001
+data_sources:
+- edr
+condition:
+  event_type: file_creation
+  filter:
+    path_contains:
+    - \Start Menu\Programs\Startup
+    - \Startup\
+entityMappings:
+- type: IP
+  field: source_ip
+description: File placed in Windows Startup folder for automatic execution.

@@ -1,0 +1,28 @@
+id: sigma_exfil_cloud_upload
+name: Cloud Storage Upload Detected
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1567.002
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 3
+  time_window_seconds: 300
+  group_by: source_ip
+  filter:
+    path_contains:
+    - s3.amazonaws.com
+    - storage.googleapis.com
+    - blob.core.windows.net
+    - dropbox.com
+    - drive.google.com
+entityMappings:
+- type: IP
+  field: source_ip
+description: Data upload to cloud storage services detected.

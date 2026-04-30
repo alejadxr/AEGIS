@@ -1,0 +1,22 @@
+id: sigma_auth_pass_the_hash
+name: Pass-the-Hash Attack
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1550.002
+data_sources:
+- auth_log
+condition:
+  event_type: ntlm_auth
+  count_threshold: 2
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    logon_type: network
+entityMappings:
+- type: IP
+  field: source_ip
+description: Authentication using NTLM hash without interactive login.

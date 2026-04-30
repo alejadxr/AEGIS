@@ -1,0 +1,19 @@
+id: sigma_lateral_port_forward
+name: Port Forwarding Detected
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1572
+data_sources:
+- network
+condition:
+  event_type: network
+  filter:
+    port_forward: true
+entityMappings:
+- type: IP
+  field: source_ip
+description: Local or remote port forwarding established.
