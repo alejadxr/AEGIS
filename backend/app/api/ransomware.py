@@ -6,28 +6,46 @@ when it detects and blocks a ransomware process. Creates:
   1. A RansomwareEvent row (full forensic chain)
   2. A CRITICAL Incident (so the dashboard surfaces it immediately)
   3. An AgentEvent (forensic category) for timeline continuity
+
+Phase R-C additions:
+  - GET  /recovery-options/{event_id}  — snapshots + decryptors for an event
+  - POST /restore                       — trigger snapshot restore job
+  - GET  /decryptors                    — direct decryptor lookup by file extension
 """
 
 import logging
+import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.core.auth import AuthContext, require_analyst, get_auth_context
+from app.core.auth import AuthContext, require_analyst, require_admin, get_auth_context
 from app.core.events import event_bus
 from app.models.ransomware_event import RansomwareEvent
 from app.models.endpoint_agent import (
     EndpointAgent, AgentEvent, EventSeverity, EventCategory,
 )
 from app.models.incident import Incident
+from app.services.snapshot_manager import get_snapshot_provider, Snapshot, RestoreJob
+from app.services.decryptor_library import DecryptorLibrary, DecryptorEntry
 
 logger = logging.getLogger("aegis.ransomware")
 router = APIRouter(prefix="/ransomware", tags=["ransomware"])
+
+# Module-level singleton — constructed lazily on first request
+_decryptor_library: Optional[DecryptorLibrary] = None
+
+
+def _get_decryptor_library() -> DecryptorLibrary:
+    global _decryptor_library
+    if _decryptor_library is None:
+        _decryptor_library = DecryptorLibrary()
+    return _decryptor_library
 
 
 # ---------------------------------------------------------------------------
@@ -256,3 +274,209 @@ async def list_ransomware_events(
         }
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase R-C: Recovery schemas
+# ---------------------------------------------------------------------------
+
+class SnapshotOut(BaseModel):
+    id: str
+    host_id: str
+    created_at: str
+    age_hours: float
+    label: Optional[str] = None
+    provider: str
+
+
+class DecryptorOut(BaseModel):
+    name: str
+    source_url: str
+    supported_groups: list[str]
+    file_extensions: list[str]
+    ransom_notes: list[str]
+
+
+class RecoveryOptionsOut(BaseModel):
+    event_id: str
+    host_id: Optional[str]
+    snapshots: list[SnapshotOut]
+    decryptors: list[DecryptorOut]
+
+
+class RestoreRequest(BaseModel):
+    host_id: str = Field(..., description="Hostname or agent ID to restore")
+    snapshot_id: str = Field(..., description="Snapshot identifier to restore from")
+    target_path: str = Field(..., description="Filesystem path for the restore target")
+
+
+class RestoreJobOut(BaseModel):
+    job_id: str
+    host_id: str
+    snapshot_id: str
+    target_path: str
+    status: str
+    started_at: str
+    error: Optional[str] = None
+
+
+def _snapshot_to_out(snap: Snapshot) -> SnapshotOut:
+    return SnapshotOut(
+        id=snap.id,
+        host_id=snap.host_id,
+        created_at=snap.created_at.isoformat(),
+        age_hours=round(snap.age_hours(), 2),
+        label=snap.label,
+        provider=snap.provider,
+    )
+
+
+def _decryptor_to_out(entry: DecryptorEntry) -> DecryptorOut:
+    return DecryptorOut(
+        name=entry.name,
+        source_url=entry.source_url,
+        supported_groups=entry.supported_groups,
+        file_extensions=entry.file_extensions,
+        ransom_notes=entry.ransom_notes,
+    )
+
+
+def _job_to_out(job: RestoreJob) -> RestoreJobOut:
+    return RestoreJobOut(
+        job_id=job.job_id,
+        host_id=job.host_id,
+        snapshot_id=job.snapshot_id,
+        target_path=job.target_path,
+        status=job.status,
+        started_at=job.started_at.isoformat(),
+        error=job.error,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase R-C: Recovery endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/recovery-options/{event_id}", response_model=RecoveryOptionsOut)
+async def get_recovery_options(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(require_analyst),
+):
+    """Return available snapshots and decryptors for a given ransomware event.
+
+    Scoped to the authenticated client for tenant isolation.
+    """
+    # Resolve event — enforce tenant scope
+    event = await db.get(RansomwareEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="ransomware event not found")
+    if event.client_id != auth.client_id:
+        raise HTTPException(status_code=403, detail="access denied")
+
+    # Determine host from the linked agent
+    host_id: Optional[str] = None
+    if event.agent_id:
+        agent = await db.get(EndpointAgent, event.agent_id)
+        if agent:
+            host_id = agent.hostname or agent.ip_address or event.agent_id
+
+    # Snapshot listing (gated by AEGIS_REAL_RECOVERY; returns noop data in dev)
+    provider = get_snapshot_provider()
+    try:
+        snapshots = provider.list_snapshots(host_id or "localhost")
+    except Exception as e:
+        logger.warning("ransomware.recovery_options: snapshot listing failed: %s", e)
+        snapshots = []
+
+    # Decryptor lookup — derive extensions from affected file names
+    lib = _get_decryptor_library()
+    decryptors: list[DecryptorEntry] = []
+    seen_names: set[str] = set()
+
+    affected_files: list[str] = event.affected_files or []
+    for filepath in affected_files[:50]:  # cap at 50 to avoid O(n^2) on large sets
+        ext = "." + filepath.rsplit(".", 1)[-1].lower() if "." in filepath else ""
+        if ext and ext != ".":
+            for entry in lib.lookup_by_extension(ext):
+                if entry.name not in seen_names:
+                    decryptors.append(entry)
+                    seen_names.add(entry.name)
+
+    return RecoveryOptionsOut(
+        event_id=event_id,
+        host_id=host_id,
+        snapshots=[_snapshot_to_out(s) for s in snapshots],
+        decryptors=[_decryptor_to_out(e) for e in decryptors],
+    )
+
+
+@router.post("/restore", response_model=RestoreJobOut)
+async def trigger_restore(
+    body: RestoreRequest,
+    auth: AuthContext = Depends(require_admin),
+):
+    """Trigger a snapshot restore job on the given host.
+
+    Requires admin role — destructive operation.
+    Input is validated via Pydantic; snapshot_manager further sanitizes
+    paths before any subprocess call.
+    """
+    provider = get_snapshot_provider()
+    try:
+        job = provider.restore(body.host_id, body.snapshot_id, body.target_path)
+    except NotImplementedError as e:
+        raise HTTPException(
+            status_code=501,
+            detail=f"restore not supported on this platform: {e}",
+        )
+    except Exception as e:
+        logger.error("ransomware.restore: unexpected error: %s", e)
+        raise HTTPException(status_code=500, detail="restore job failed to start")
+
+    logger.info(
+        "ransomware.restore: job %s started for host=%s snapshot=%s target=%s status=%s",
+        job.job_id, job.host_id, job.snapshot_id, job.target_path, job.status,
+    )
+    return _job_to_out(job)
+
+
+@router.get("/decryptors", response_model=list[DecryptorOut])
+async def lookup_decryptors(
+    file_extension: Optional[str] = Query(
+        default=None,
+        description="File extension to search for (e.g. .locky)",
+    ),
+    ransom_note: Optional[str] = Query(
+        default=None,
+        description="Ransom note filename to match (e.g. README.TXT)",
+    ),
+    auth: AuthContext = Depends(require_analyst),
+):
+    """Look up known decryptors by file extension or ransom note filename.
+
+    At least one query parameter is required.
+    """
+    if not file_extension and not ransom_note:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one of 'file_extension' or 'ransom_note' is required",
+        )
+
+    lib = _get_decryptor_library()
+    results: list[DecryptorEntry] = []
+    seen_names: set[str] = set()
+
+    if file_extension:
+        for entry in lib.lookup_by_extension(file_extension):
+            if entry.name not in seen_names:
+                results.append(entry)
+                seen_names.add(entry.name)
+
+    if ransom_note:
+        for entry in lib.lookup_by_ransom_note(ransom_note):
+            if entry.name not in seen_names:
+                results.append(entry)
+                seen_names.add(entry.name)
+
+    return [_decryptor_to_out(e) for e in results]
