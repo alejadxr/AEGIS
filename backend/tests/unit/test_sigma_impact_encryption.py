@@ -258,10 +258,10 @@ def test_note_dropped_fires_on_ransom_note():
     assert eng._check_rule(rule, event, now)
 
 
-def test_note_dropped_fires_on_generic_file_create():
+def test_note_dropped_no_fire_on_benign_file_create():
     """
-    The engine evaluates by event_type + count only (no inline regex filtering).
-    Any file_create event satisfies the rule's count_threshold=1 condition.
+    The engine enforces file_name_regex via _matches_filter (_regex suffix).
+    A file_create with a non-matching file_name must NOT trip the rule.
     """
     eng = _make_engine(RULES_PATH)
     rule = eng._rule_pack.by_id["ransomware_note_dropped"]
@@ -270,10 +270,9 @@ def test_note_dropped_fires_on_generic_file_create():
     event = _note_dropped_event("readme.md")
     eng._window.append((now, event))
 
-    # count_threshold=1 — the engine fires on first file_create regardless of
-    # file_name since _matches_filter does exact-string comparison, not regex.
-    # Regex enforcement lives in the Rust agent / EDR layer, not the Python engine.
-    assert eng._check_rule(rule, event, now)
+    # readme.md is NOT a ransom-note pattern (regex requires .txt/.hta/.html
+    # suffix or specific keywords like how_to_decrypt). Engine must reject.
+    assert not eng._check_rule(rule, event, now)
 
 
 # ---------------------------------------------------------------------------

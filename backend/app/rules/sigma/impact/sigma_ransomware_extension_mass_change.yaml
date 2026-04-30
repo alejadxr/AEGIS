@@ -20,8 +20,9 @@ condition:
   count_threshold: 50
   time_window_seconds: 60
   group_by: process_pid
-customDetails:
-  new_extension_regex: '\.(locked|crypt|encrypted|enc|aes|rsa|pwnd|wcry|wncry|cryptolocker|locky|petya)$'
+  filter:
+    new_extension_regex: '\.(locked|crypt|encrypted|enc|aes|rsa|pwnd|wcry|wncry|cryptolocker|locky|petya)$'
+customDetails: {}
 entityMappings:
 - type: Host
   field: hostname
