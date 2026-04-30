@@ -1,0 +1,53 @@
+{
+  "brute_force": [
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 3600, "reason": "brute_force"}},
+    {"action_type": "rate_limit", "target_kind": "source_ip", "params": {"requests_per_minute": 5}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "high"}}
+  ],
+  "sql_injection": [
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 86400, "reason": "sql_injection"}},
+    {"action_type": "waf_rule", "target_kind": "endpoint", "params": {"rule": "block_sql_patterns"}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "critical"}}
+  ],
+  "xss": [
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 3600, "reason": "xss"}},
+    {"action_type": "waf_rule", "target_kind": "endpoint", "params": {"rule": "block_xss_patterns"}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "high"}}
+  ],
+  "path_traversal": [
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 3600, "reason": "path_traversal"}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "high"}}
+  ],
+  "scanner": [
+    {"action_type": "tarpit", "target_kind": "source_ip", "params": {"delay_ms": 5000}},
+    {"action_type": "honeypot_redirect", "target_kind": "source_ip", "params": {}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "medium"}}
+  ],
+  "port_scan": [
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 1800, "reason": "port_scan"}},
+    {"action_type": "tarpit", "target_kind": "source_ip", "params": {"delay_ms": 10000}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "medium"}}
+  ],
+  "command_injection": [
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 86400, "reason": "command_injection"}},
+    {"action_type": "isolate_asset", "target_kind": "target_host", "params": {}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "critical"}}
+  ],
+  "lateral_movement": [
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 86400, "reason": "lateral_movement"}},
+    {"action_type": "isolate_asset", "target_kind": "target_host", "params": {}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "critical"}}
+  ],
+  "c2_beacon": [
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 604800, "reason": "c2_beacon"}},
+    {"action_type": "dns_sinkhole", "target_kind": "c2_domain", "params": {}},
+    {"action_type": "isolate_asset", "target_kind": "target_host", "params": {}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "critical"}}
+  ],
+  "ransomware": [
+    {"action_type": "isolate_asset", "target_kind": "target_host", "params": {"immediate": true}},
+    {"action_type": "block_ip", "target_kind": "source_ip", "params": {"duration": 604800, "reason": "ransomware"}},
+    {"action_type": "snapshot_asset", "target_kind": "target_host", "params": {}},
+    {"action_type": "alert_soc", "target_kind": "incident", "params": {"priority": "critical", "escalate": true}}
+  ]
+}
