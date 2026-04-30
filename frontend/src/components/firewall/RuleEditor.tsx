@@ -103,7 +103,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Block SSH brute force"
-            className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30"
+            className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30"
           />
         </div>
         <div className="sm:col-span-2">
@@ -114,7 +114,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
             type="number"
             value={priority}
             onChange={(e) => setPriority(parseInt(e.target.value || '0', 10))}
-            className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+            className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--brand)]/30 font-mono"
           />
         </div>
         <div className="sm:col-span-1">
@@ -127,7 +127,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
             className={cn(
               'w-full h-[42px] rounded-xl text-[13px] font-medium transition-colors',
               enabled
-                ? 'bg-[#22C55E]/10 text-[#22C55E] border border-[#22C55E]/30'
+                ? 'bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/30'
                 : 'bg-white/[0.03] text-zinc-500 border border-white/[0.06]'
             )}
           >
@@ -144,7 +144,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
           className={cn(
             'flex items-center gap-2 px-3 py-2 text-[13px] font-medium border-b-2 -mb-px transition-colors',
             mode === 'form'
-              ? 'text-white border-[#22D3EE]'
+              ? 'text-white border-[var(--brand)]'
               : 'text-zinc-500 border-transparent hover:text-zinc-300'
           )}
         >
@@ -157,7 +157,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
           className={cn(
             'flex items-center gap-2 px-3 py-2 text-[13px] font-medium border-b-2 -mb-px transition-colors',
             mode === 'yaml'
-              ? 'text-white border-[#22D3EE]'
+              ? 'text-white border-[var(--brand)]'
               : 'text-zinc-500 border-transparent hover:text-zinc-300'
           )}
         >
@@ -178,7 +178,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
                 value={sourceIp}
                 onChange={(e) => setSourceIp(e.target.value)}
                 placeholder="10.0.0.0/8 (optional)"
-                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
               />
             </div>
             <div>
@@ -190,7 +190,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
                 value={port}
                 onChange={(e) => setPort(e.target.value)}
                 placeholder="22"
-                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
               />
             </div>
             <div>
@@ -200,7 +200,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
               <select
                 value={protocol}
                 onChange={(e) => setProtocol(e.target.value)}
-                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#22D3EE]/30"
+                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--brand)]/30"
               >
                 <option value="any">Any</option>
                 <option value="tcp">TCP</option>
@@ -217,7 +217,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
                 value={userAgent}
                 onChange={(e) => setUserAgent(e.target.value)}
                 placeholder="nmap, sqlmap, ..."
-                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30"
+                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30"
               />
             </div>
           </div>
@@ -232,7 +232,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
                 value={rateCount}
                 onChange={(e) => setRateCount(e.target.value)}
                 placeholder="5"
-                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
               />
             </div>
             <div>
@@ -244,7 +244,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
                 value={rateWindow}
                 onChange={(e) => setRateWindow(e.target.value)}
                 placeholder="60"
-                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
               />
             </div>
             <div>
@@ -256,7 +256,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
                 value={durationSeconds}
                 onChange={(e) => setDurationSeconds(e.target.value)}
                 placeholder="3600"
-                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
               />
             </div>
           </div>
@@ -274,7 +274,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
                   className={cn(
                     'px-3 py-2.5 rounded-xl text-[12px] font-medium transition-colors font-mono',
                     action === a
-                      ? 'bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30'
+                      ? 'bg-[var(--brand)]/10 text-[var(--brand)] border border-[var(--brand)]/30'
                       : 'bg-white/[0.03] text-zinc-500 border border-white/[0.06] hover:text-zinc-300'
                   )}
                 >
@@ -298,7 +298,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
             onChange={(e) => setYamlDef(e.target.value)}
             rows={14}
             spellCheck={false}
-            className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-3 text-[13px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-[#22D3EE]/30 font-mono leading-relaxed"
+            className="w-full bg-[#09090B] border border-white/[0.06] rounded-xl px-4 py-3 text-[13px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-[var(--brand)]/30 font-mono leading-relaxed"
           />
         </div>
       )}
@@ -314,7 +314,7 @@ export function RuleEditor({ initial, onSubmit, onCancel, submitting }: RuleEdit
         <button
           type="submit"
           disabled={submitting}
-          className="bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B] font-semibold px-4 py-2 rounded-xl transition-colors text-[13px] disabled:opacity-50"
+          className="bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold px-4 py-2 rounded-xl transition-colors text-[13px] disabled:opacity-50"
         >
           {submitting ? 'Saving...' : 'Save rule'}
         </button>

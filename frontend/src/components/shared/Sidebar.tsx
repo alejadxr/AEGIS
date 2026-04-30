@@ -15,7 +15,7 @@ import {
   ComputerIcon,
   FlashIcon,
 } from 'hugeicons-react';
-import { Ghost, GitFork, Atom, FileCheck, FileText, ShieldCheck, Sparkles, BookOpen } from 'lucide-react';
+import { Ghost, GitFork, Atom, FileCheck, FileText, ShieldCheck, ShieldAlert, Sparkles, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type IconComponent = React.ComponentType<{ className?: string; size?: number }>;
@@ -33,6 +33,7 @@ const iconMap: Record<string, IconComponent> = {
   FileCheck: FileCheck as IconComponent,
   FileText: FileText as IconComponent,
   ShieldCheck: ShieldCheck as IconComponent,
+  ShieldAlert: ShieldAlert as IconComponent,
   FlashIcon: FlashIcon as IconComponent,
   Sparkles: Sparkles as IconComponent,
   BookOpen: BookOpen as IconComponent,
@@ -85,50 +86,51 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
     onCollapsedChange?.(collapsed);
   }, [collapsed, onCollapsedChange]);
 
-  const handleCollapse = () => {
-    setCollapsed(!collapsed);
-  };
-
   return (
     <>
-      {/* Mobile overlay backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden animate-fade-in"
           onClick={onMobileClose}
         />
       )}
 
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 h-screen flex flex-col transition-all duration-200',
-          'bg-card border-r border-border',
-          collapsed ? 'w-[56px]' : 'w-[220px]',
-          'max-md:-translate-x-full max-md:w-[220px]',
+          'fixed left-0 top-0 z-40 h-screen flex flex-col transition-[width,transform] duration-200 ease-out',
+          'bg-sidebar border-r border-sidebar-border',
+          collapsed ? 'w-[60px]' : 'w-[224px]',
+          'max-md:-translate-x-full max-md:w-[224px]',
           mobileOpen && 'max-md:translate-x-0'
         )}
       >
-        {/* Logo */}
+        {/* Logo / Brand */}
         <div className={cn(
-          'flex items-center h-14 shrink-0 border-b border-border',
+          'flex items-center h-[52px] shrink-0 border-b border-sidebar-border',
           collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
         )}>
-          <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
-            <span className="font-mono text-primary font-semibold text-[10px] tracking-wider">A</span>
+          <div className="relative w-7 h-7 rounded-md bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center shrink-0">
+            <span className="font-mono text-primary font-bold text-[11px] tracking-wider">A</span>
+            <span className="absolute inset-0 rounded-md bg-primary/10 blur-md opacity-60 -z-10" />
           </div>
           {!collapsed && (
-            <span className="text-foreground/90 font-semibold text-[14px] tracking-tight">
-              AEGIS
-            </span>
+            <div className="flex items-baseline gap-1.5 min-w-0">
+              <span className="text-sidebar-foreground font-semibold text-[14px] tracking-tight">
+                AEGIS
+              </span>
+              <span className="text-[9px] font-mono text-muted-foreground/50 tracking-widest uppercase mt-px">
+                v1.4
+              </span>
+            </div>
           )}
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-3 px-2 overflow-y-auto space-y-5">
-          {NAV_SECTIONS.map((section) => (
-            <div key={section.label}>
+        <nav className="flex-1 py-4 px-2 overflow-y-auto overflow-x-hidden">
+          {NAV_SECTIONS.map((section, sIdx) => (
+            <div key={section.label} className={cn(sIdx > 0 && 'mt-5')}>
               {!collapsed && (
-                <p className="text-[9px] font-semibold text-muted-foreground/70 tracking-[0.1em] uppercase px-2.5 mb-1.5">
+                <p className="text-label-xs text-muted-foreground/60 px-2.5 mb-1.5">
                   {section.label}
                 </p>
               )}
@@ -143,25 +145,30 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
                       key={item.href}
                       href={item.href}
                       onClick={onMobileClose}
+                      title={collapsed ? item.label : undefined}
                       className={cn(
-                        'group relative flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] font-normal transition-all duration-150',
+                        'group relative flex items-center gap-2.5 px-2.5 py-[7px] rounded-md text-[13px] transition-all duration-150',
                         isActive
-                          ? 'text-foreground bg-primary/10'
-                          : 'text-muted-foreground hover:text-foreground/80 hover:bg-muted'
+                          ? 'text-sidebar-foreground bg-sidebar-accent'
+                          : 'text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/60'
                       )}
                     >
-                      {/* Active indicator — subtle left accent bar */}
                       {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-full bg-primary" />
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-[60%] rounded-r-full bg-primary" />
                       )}
                       {Icon && (
-                        <Icon className={cn(
-                          'shrink-0 transition-colors duration-150',
-                          isActive ? 'text-primary' : 'text-muted-foreground/60 group-hover:text-muted-foreground'
-                        )} size={16} />
+                        <Icon
+                          className={cn(
+                            'shrink-0 transition-colors duration-150',
+                            isActive ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-sidebar-foreground/80'
+                          )}
+                          size={16}
+                        />
                       )}
                       {!collapsed && (
-                        <span className={cn(isActive && 'font-medium')}>{item.label}</span>
+                        <span className={cn('flex-1 truncate', isActive && 'font-medium')}>
+                          {item.label}
+                        </span>
                       )}
                     </Link>
                   );
@@ -171,18 +178,12 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
           ))}
         </nav>
 
-        {/* Footer with version */}
-        {!collapsed && (
-          <div className="px-4 py-3 border-t border-border">
-            <p className="text-[10px] text-muted-foreground/40 font-mono">v1.4.0</p>
-          </div>
-        )}
-
-        {/* Collapse Toggle — desktop only */}
-        <div className="p-1.5 border-t border-border shrink-0 hidden md:block">
+        {/* Collapse Toggle */}
+        <div className="p-1.5 border-t border-sidebar-border shrink-0 hidden md:block">
           <button
-            onClick={handleCollapse}
-            className="w-full flex items-center justify-center py-1.5 rounded-lg text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 transition-all duration-150"
+            onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="w-full flex items-center justify-center py-1.5 rounded-md text-muted-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all duration-150"
           >
             {collapsed
               ? <ArrowRight01Icon size={14} />
@@ -199,7 +200,7 @@ export function SidebarToggle({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground/60 hover:bg-muted/50 transition-all duration-150 md:hidden"
+      className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-150 md:hidden"
       aria-label="Open navigation"
     >
       <Menu01Icon size={18} />

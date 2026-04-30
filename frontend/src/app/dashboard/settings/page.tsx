@@ -126,7 +126,7 @@ function formatAIContent(text: string) {
     if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
       elements.push(
         <div key={i} className="flex gap-2 pl-1">
-          <span className="text-[#22D3EE] mt-0.5 shrink-0">&#8226;</span>
+          <span className="text-[var(--brand)] mt-0.5 shrink-0">&#8226;</span>
           <span>{typeof processed === 'string' ? line.trim().slice(2) : processed}</span>
         </div>
       );
@@ -172,7 +172,7 @@ function Toggle({ enabled, onChange, label, description }: {
         aria-label={`Toggle ${label}`}
         className={cn(
           'relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0',
-          enabled ? 'bg-[#22D3EE]' : 'bg-white/[0.06]'
+          enabled ? 'bg-[var(--brand)]' : 'bg-white/[0.06]'
         )}
       >
         <span
@@ -191,9 +191,9 @@ function StatusDot({ connected, label }: { connected: boolean; label: string }) 
     <div className="flex items-center gap-2">
       <span className={cn(
         'w-1.5 h-1.5 rounded-full shrink-0',
-        connected ? 'bg-[#22C55E]' : 'bg-muted-foreground/40'
+        connected ? 'bg-[var(--success)]' : 'bg-muted-foreground/40'
       )} />
-      <span className={cn('text-[11px]', connected ? 'text-[#22C55E]' : 'text-muted-foreground')}>
+      <span className={cn('text-[11px]', connected ? 'text-[var(--success)]' : 'text-muted-foreground')}>
         {label}
       </span>
     </div>
@@ -232,7 +232,7 @@ function IntervalSlider({ label, value, min, max, step, onChange }: {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="text-[13px] text-foreground">{label}</label>
-        <span className="text-[13px] font-mono text-[#22D3EE]">{formatMinutes(value)}</span>
+        <span className="text-[13px] font-mono text-[var(--brand)]">{formatMinutes(value)}</span>
       </div>
       <input
         type="range"
@@ -241,7 +241,7 @@ function IntervalSlider({ label, value, min, max, step, onChange }: {
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-1.5 bg-white/[0.04] rounded-full appearance-none cursor-pointer accent-[#22D3EE] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#22D3EE] [&::-webkit-slider-thumb]:cursor-pointer"
+        className="w-full h-1.5 bg-white/[0.04] rounded-full appearance-none cursor-pointer accent-[var(--brand)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--brand)] [&::-webkit-slider-thumb]:cursor-pointer"
       />
       <div className="flex justify-between text-[10px] text-muted-foreground/60">
         <span>{formatMinutes(min)}</span>
@@ -572,7 +572,7 @@ export default function SettingsPage() {
 
       {/* Save success toast */}
       {saveSuccess && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-[#22C55E]/10 border border-[#22C55E]/20 text-[#22C55E] text-[13px] font-medium px-4 py-2.5 rounded-xl animate-fade-in">
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-[var(--success)]/10 border border-[var(--success)]/20 text-[var(--success)] text-[13px] font-medium px-4 py-2.5 rounded-xl animate-fade-in">
           <Check className="w-4 h-4" />
           {saveSuccess}
         </div>
@@ -589,8 +589,8 @@ export default function SettingsPage() {
       <Card className="rounded-xl overflow-hidden">
         <div className="px-4 sm:px-6 py-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#22D3EE]/10 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-[#22D3EE]" />
+            <div className="w-8 h-8 rounded-lg bg-[var(--brand)]/10 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-[var(--brand)]" />
             </div>
             <div>
               <h3 className="text-[13px] font-medium text-foreground">AI Configuration Assistant</h3>
@@ -603,7 +603,7 @@ export default function SettingsPage() {
               <button
                 key={action.label}
                 onClick={() => handleQuickAction(action.prompt)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-[12px] text-muted-foreground hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all duration-200"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-[12px] text-muted-foreground hover:text-[var(--brand)] hover:border-[var(--brand)]/20 transition-all duration-200"
               >
                 <action.icon className="w-3 h-3" size={12} />
                 {action.label}
@@ -632,7 +632,7 @@ export default function SettingsPage() {
                 className={cn(
                   'max-w-[80%] text-[13px] leading-relaxed',
                   msg.role === 'user'
-                    ? 'bg-[#22D3EE]/10 text-[#22D3EE] rounded-xl rounded-br-md px-4 py-2'
+                    ? 'bg-[var(--brand)]/10 text-[var(--brand)] rounded-xl rounded-br-md px-4 py-2'
                     : 'bg-white/[0.02] text-muted-foreground rounded-xl rounded-bl-md px-4 py-3'
                 )}
               >
@@ -643,7 +643,7 @@ export default function SettingsPage() {
                 )}
                 <p className={cn(
                   'text-[10px] mt-1.5',
-                  msg.role === 'user' ? 'text-[#22D3EE]/40' : 'text-muted-foreground/60'
+                  msg.role === 'user' ? 'text-[var(--brand)]/40' : 'text-muted-foreground/60'
                 )}>
                   {msg.timestamp}
                 </p>
@@ -657,9 +657,9 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
                   <span>AEGIS is thinking</span>
                   <span className="inline-flex gap-0.5">
-                    <span className="w-1 h-1 rounded-full bg-[#22D3EE] animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1 h-1 rounded-full bg-[#22D3EE] animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1 h-1 rounded-full bg-[#22D3EE] animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <span className="w-1 h-1 rounded-full bg-[var(--brand)] animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1 h-1 rounded-full bg-[var(--brand)] animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1 h-1 rounded-full bg-[var(--brand)] animate-bounce" style={{ animationDelay: '300ms' }} />
                   </span>
                 </div>
               </div>
@@ -684,7 +684,7 @@ export default function SettingsPage() {
               onClick={() => sendChatMessage(chatInput)}
               disabled={!chatInput.trim() || chatLoading}
               size="icon"
-              className="bg-[#22D3EE] hover:bg-[#06B6D4] disabled:opacity-30 shrink-0"
+              className="bg-[var(--brand)] hover:bg-[var(--brand)] disabled:opacity-30 shrink-0"
             >
               <ArrowUp className="w-4 h-4 text-[#09090B]" />
             </Button>
@@ -729,7 +729,7 @@ export default function SettingsPage() {
                   type="text"
                   value={clientName}
                   onChange={(e) => setClientName(e.target.value)}
-                  className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#22D3EE]/30 transition-colors"
+                  className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[var(--brand)]/30 transition-colors"
                 />
               </div>
               <div>
@@ -763,8 +763,8 @@ export default function SettingsPage() {
             description="Select the AI provider for all model routing"
             headerRight={
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#22C55E]/10 border border-[#22C55E]/20 text-[11px] font-medium text-[#22C55E]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--success)]/10 border border-[var(--success)]/20 text-[11px] font-medium text-[var(--success)]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] animate-pulse" />
                   Active
                 </span>
               </div>
@@ -780,7 +780,7 @@ export default function SettingsPage() {
                     className={cn(
                       'px-4 py-2 rounded-xl text-[13px] font-medium transition-all border',
                       activeProvider === p
-                        ? 'bg-[#22D3EE]/10 border-[#22D3EE]/20 text-[#22D3EE]'
+                        ? 'bg-[var(--brand)]/10 border-[var(--brand)]/20 text-[var(--brand)]'
                         : 'bg-white/[0.02] border-border text-muted-foreground hover:text-foreground hover:border-white/[0.08]'
                     )}
                   >
@@ -813,13 +813,13 @@ export default function SettingsPage() {
                         updated[idx] = { ...updated[idx], model: e.target.value };
                         setModels(updated);
                       }}
-                      className="w-full sm:w-72 bg-background border border-border rounded-xl px-3 py-2 text-foreground text-[11px] font-mono focus:outline-none focus:border-[#22D3EE]/30"
+                      className="w-full sm:w-72 bg-background border border-border rounded-xl px-3 py-2 text-foreground text-[11px] font-mono focus:outline-none focus:border-[var(--brand)]/30"
                     />
                     <button
                       onClick={() => testModel(model.task_type, model.model)}
                       disabled={testingModel === model.task_type}
                       title="Test this model"
-                      className="p-2 rounded-lg bg-white/[0.03] border border-border text-muted-foreground hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-colors disabled:opacity-30 shrink-0"
+                      className="p-2 rounded-lg bg-white/[0.03] border border-border text-muted-foreground hover:text-[var(--brand)] hover:border-[var(--brand)]/20 transition-colors disabled:opacity-30 shrink-0"
                     >
                       {testingModel === model.task_type ? (
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -832,8 +832,8 @@ export default function SettingsPage() {
                     <div className={cn(
                       'w-full mt-2 px-3 py-2 rounded-lg text-[11px] font-mono',
                       modelTestResult.success
-                        ? 'bg-[#22C55E]/10 border border-[#22C55E]/20 text-[#22C55E]'
-                        : 'bg-[#EF4444]/10 border border-[#EF4444]/20 text-[#EF4444]'
+                        ? 'bg-[var(--success)]/10 border border-[var(--success)]/20 text-[var(--success)]'
+                        : 'bg-[var(--danger)]/10 border border-[var(--danger)]/20 text-[var(--danger)]'
                     )}>
                       {modelTestResult.success && <span className="text-muted-foreground">Latency: {modelTestResult.latency_ms}ms -- </span>}
                       {modelTestResult.response.slice(0, 120)}
@@ -877,7 +877,7 @@ export default function SettingsPage() {
                         value={telegramBotToken}
                         onChange={(e) => setTelegramBotToken(e.target.value)}
                         placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                        className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30 font-mono pr-12"
+                        className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30 font-mono pr-12"
                       />
                       <button
                         onClick={() => setShowBotToken(!showBotToken)}
@@ -896,7 +896,7 @@ export default function SettingsPage() {
                       value={telegramChatId}
                       onChange={(e) => setTelegramChatId(e.target.value)}
                       placeholder="-1001234567890"
-                      className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                      className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
                     />
                   </div>
 
@@ -904,7 +904,7 @@ export default function SettingsPage() {
                     <button
                       onClick={testTelegram}
                       disabled={testingTelegram || !telegramBotToken || !telegramChatId}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-border text-[13px] text-muted-foreground hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all disabled:opacity-30"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-border text-[13px] text-muted-foreground hover:text-[var(--brand)] hover:border-[var(--brand)]/20 transition-all disabled:opacity-30"
                     >
                       {testingTelegram ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       Send Test Message
@@ -912,7 +912,7 @@ export default function SettingsPage() {
                     {telegramTestResult && (
                       <span className={cn(
                         'text-[12px]',
-                        telegramTestResult.success ? 'text-[#22C55E]' : 'text-[#EF4444]'
+                        telegramTestResult.success ? 'text-[var(--success)]' : 'text-[var(--danger)]'
                       )}>
                         {telegramTestResult.message}
                       </span>
@@ -922,8 +922,8 @@ export default function SettingsPage() {
                   <div className="bg-white/[0.02] border border-border rounded-xl p-3">
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
                       <span className="text-foreground font-medium">Setup:</span> Create a bot via{' '}
-                      <span className="text-[#22D3EE]">@BotFather</span> on Telegram, get the token, then send a message to the bot and use{' '}
-                      <span className="text-[#22D3EE] font-mono text-[10px]">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</span>{' '}
+                      <span className="text-[var(--brand)]">@BotFather</span> on Telegram, get the token, then send a message to the bot and use{' '}
+                      <span className="text-[var(--brand)] font-mono text-[10px]">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</span>{' '}
                       to find your chat_id.
                     </p>
                   </div>
@@ -950,7 +950,7 @@ export default function SettingsPage() {
                   value={webhookUrl}
                   onChange={(e) => setWebhookUrl(e.target.value)}
                   placeholder="https://hooks.slack.com/services/..."
-                  className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30 font-mono"
+                  className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
                 />
               </div>
 
@@ -960,7 +960,7 @@ export default function SettingsPage() {
                   <select
                     value={webhookFormat}
                     onChange={(e) => setWebhookFormat(e.target.value)}
-                    className="w-full sm:w-64 bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[#22D3EE]/30 appearance-none cursor-pointer"
+                    className="w-full sm:w-64 bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[var(--brand)]/30 appearance-none cursor-pointer"
                   >
                     {WEBHOOK_FORMATS.map((f) => (
                       <option key={f.value} value={f.value}>{f.label}</option>
@@ -974,7 +974,7 @@ export default function SettingsPage() {
                 <button
                   onClick={testWebhook}
                   disabled={testingWebhook || !webhookUrl}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-border text-[13px] text-muted-foreground hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all disabled:opacity-30"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-border text-[13px] text-muted-foreground hover:text-[var(--brand)] hover:border-[var(--brand)]/20 transition-all disabled:opacity-30"
                 >
                   {testingWebhook ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
                   Send Test
@@ -982,7 +982,7 @@ export default function SettingsPage() {
                 {webhookTestResult && (
                   <span className={cn(
                     'text-[12px]',
-                    webhookTestResult.success ? 'text-[#22C55E]' : 'text-[#EF4444]'
+                    webhookTestResult.success ? 'text-[var(--success)]' : 'text-[var(--danger)]'
                   )}>
                     {webhookTestResult.message}
                   </span>
@@ -1006,7 +1006,7 @@ export default function SettingsPage() {
                     value={emailRecipients}
                     onChange={(e) => setEmailRecipients(e.target.value)}
                     placeholder="soc@example.com, admin@example.com"
-                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[#22D3EE]/30"
+                    className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30"
                   />
                 </div>
               )}
@@ -1091,9 +1091,9 @@ export default function SettingsPage() {
               </div>
 
               {scanIntervals.adaptive_scanning && (
-                <div className="bg-[#22D3EE]/5 border border-[#22D3EE]/10 rounded-xl p-3">
+                <div className="bg-[var(--brand)]/5 border border-[var(--brand)]/10 rounded-xl p-3">
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    <span className="text-[#22D3EE] font-medium">Adaptive mode:</span> Scan intervals will automatically adjust based on threat activity. During active incidents, intervals may decrease to as low as 50% of configured values. During quiet periods, intervals may increase up to 200%.
+                    <span className="text-[var(--brand)] font-medium">Adaptive mode:</span> Scan intervals will automatically adjust based on threat activity. During active incidents, intervals may decrease to as low as 50% of configured values. During quiet periods, intervals may increase up to 200%.
                   </p>
                 </div>
               )}
@@ -1131,17 +1131,17 @@ export default function SettingsPage() {
                   onClick={copyApiKey}
                   className="flex items-center gap-1.5 px-3 py-2.5 bg-white/[0.04] hover:bg-white/[0.06] border border-border rounded-xl text-muted-foreground hover:text-foreground transition-colors text-[13px]"
                 >
-                  {copied ? <Check className="w-4 h-4 text-[#22C55E]" /> : <Copy className="w-4 h-4" />}
+                  {copied ? <Check className="w-4 h-4 text-[var(--success)]" /> : <Copy className="w-4 h-4" />}
                   {copied ? 'Copied' : 'Copy'}
                 </button>
               </div>
             </div>
 
             <div className="pt-4 border-t border-border">
-              <div className="bg-[#EF4444]/5 border border-[#EF4444]/20 rounded-xl p-4">
-                <h4 className="text-[13px] font-medium text-[#EF4444] mb-1">Danger Zone</h4>
+              <div className="bg-[var(--danger)]/5 border border-[var(--danger)]/20 rounded-xl p-4">
+                <h4 className="text-[13px] font-medium text-[var(--danger)] mb-1">Danger Zone</h4>
                 <p className="text-[11px] text-muted-foreground mb-3">Regenerating your API key will invalidate the current key and disconnect all active sessions.</p>
-                <button className="text-[11px] font-medium text-[#EF4444] border border-border hover:bg-[#EF4444]/10 px-3 py-2 rounded-xl transition-colors">
+                <button className="text-[11px] font-medium text-[var(--danger)] border border-border hover:bg-[var(--danger)]/10 px-3 py-2 rounded-xl transition-colors">
                   Regenerate API Key
                 </button>
               </div>
@@ -1160,7 +1160,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3">
                 <span className={cn(
                   'text-[11px] font-medium',
-                  intelSharingEnabled ? 'text-[#22C55E]' : 'text-muted-foreground'
+                  intelSharingEnabled ? 'text-[var(--success)]' : 'text-muted-foreground'
                 )}>
                   {intelSharingEnabled ? 'Active' : 'Disabled'}
                 </span>
@@ -1170,7 +1170,7 @@ export default function SettingsPage() {
                   aria-label="Toggle threat intelligence sharing"
                   className={cn(
                     'relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0',
-                    intelSharingEnabled ? 'bg-[#22D3EE]' : 'bg-white/[0.06]'
+                    intelSharingEnabled ? 'bg-[var(--brand)]' : 'bg-white/[0.06]'
                   )}
                 >
                   <span
@@ -1191,8 +1191,8 @@ export default function SettingsPage() {
                   { label: 'Auto-Blocked', value: 0, icon: Shield },
                 ].map((stat) => (
                   <div key={stat.label} className="flex flex-col items-center gap-2 p-4 rounded-xl bg-white/[0.02] border border-border">
-                    <div className="w-8 h-8 rounded-lg bg-[#22D3EE]/10 flex items-center justify-center">
-                      <stat.icon className="w-4 h-4 text-[#22D3EE]" />
+                    <div className="w-8 h-8 rounded-lg bg-[var(--brand)]/10 flex items-center justify-center">
+                      <stat.icon className="w-4 h-4 text-[var(--brand)]" />
                     </div>
                     <span className="text-xl font-semibold text-foreground">{stat.value}</span>
                     <span className="text-[11px] text-muted-foreground">{stat.label}</span>
@@ -1278,14 +1278,14 @@ export default function SettingsPage() {
                     { method: 'GET', path: '/api/v1/threats/hub/info', desc: 'Hub capabilities', icon: Globe },
                   ].map((ep) => (
                     <div key={ep.path} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-border">
-                      <div className="w-7 h-7 rounded-lg bg-[#22D3EE]/10 flex items-center justify-center shrink-0 mt-0.5">
-                        <ep.icon className="w-3.5 h-3.5 text-[#22D3EE]" />
+                      <div className="w-7 h-7 rounded-lg bg-[var(--brand)]/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <ep.icon className="w-3.5 h-3.5 text-[var(--brand)]" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className={cn(
                             'text-[9px] font-bold px-1.5 py-0.5 rounded',
-                            ep.method === 'GET' ? 'bg-[#22C55E]/10 text-[#22C55E]' : 'bg-[#F97316]/10 text-[#F97316]'
+                            ep.method === 'GET' ? 'bg-[var(--success)]/10 text-[var(--success)]' : 'bg-[var(--brand-accent)]/10 text-[var(--brand-accent)]'
                           )}>
                             {ep.method}
                           </span>
@@ -1316,9 +1316,9 @@ export default function SettingsPage() {
                   { topic: 'incidents.new', desc: 'New incidents from any node' },
                 ].map((t) => (
                   <div key={t.topic} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-border">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#22D3EE] shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand)] shrink-0" />
                     <div className="min-w-0">
-                      <span className="text-[11px] font-mono text-[#22D3EE] block">{t.topic}</span>
+                      <span className="text-[11px] font-mono text-[var(--brand)] block">{t.topic}</span>
                       <span className="text-[10px] text-muted-foreground/60">{t.desc}</span>
                     </div>
                   </div>
@@ -1333,9 +1333,9 @@ export default function SettingsPage() {
               <div className="bg-white/[0.02] border border-border rounded-xl p-4">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   <span className="text-foreground font-medium">To connect a remote AEGIS instance:</span> Set the
-                  <span className="text-[#22D3EE] font-mono text-[10px] mx-1">AEGIS_HUB_URL</span>
+                  <span className="text-[var(--brand)] font-mono text-[10px] mx-1">AEGIS_HUB_URL</span>
                   environment variable in the remote node{"'"}s <span className="font-mono text-[10px]">.env</span> file to
-                  <span className="text-[#22D3EE] font-mono text-[10px] ml-1">https://api-aegis.somoswilab.com</span>.
+                  <span className="text-[var(--brand)] font-mono text-[10px] ml-1">https://api-aegis.somoswilab.com</span>.
                   The node will automatically register and begin sharing threat intelligence.
                 </p>
               </div>
@@ -1344,9 +1344,9 @@ export default function SettingsPage() {
                 <label className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider block mb-1.5">Example .env configuration</label>
                 <div className="bg-[#09090B] border border-border rounded-xl p-4 font-mono text-[11px] text-muted-foreground leading-relaxed">
                   <div><span className="text-muted-foreground/40"># Connect to the AEGIS threat sharing hub</span></div>
-                  <div><span className="text-[#22D3EE]">AEGIS_HUB_URL</span>=https://api-aegis.somoswilab.com</div>
+                  <div><span className="text-[var(--brand)]">AEGIS_HUB_URL</span>=https://api-aegis.somoswilab.com</div>
                   <div className="mt-2"><span className="text-muted-foreground/40"># MongoDB Atlas for shared intel storage</span></div>
-                  <div><span className="text-[#22D3EE]">AEGIS_MONGODB_URI</span>=mongodb+srv://...</div>
+                  <div><span className="text-[var(--brand)]">AEGIS_MONGODB_URI</span>=mongodb+srv://...</div>
                 </div>
               </div>
 
@@ -1375,7 +1375,7 @@ export default function SettingsPage() {
                 localStorage.removeItem('aegis_guide_seen');
                 window.location.href = '/dashboard';
               }}
-              className="flex items-center gap-2 text-[12px] font-medium px-4 py-2 rounded-xl bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/20 hover:bg-[#22D3EE]/20 transition-colors"
+              className="flex items-center gap-2 text-[12px] font-medium px-4 py-2 rounded-xl bg-[var(--brand)]/10 text-[var(--brand)] border border-[var(--brand)]/20 hover:bg-[var(--brand)]/20 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Restart Feature Guide
@@ -1383,18 +1383,18 @@ export default function SettingsPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {[
-              { icon: Activity, name: 'Dashboard', desc: 'Real-time SOC view with live attack feed, threat map, events/sec, top attackers, log stream, node heartbeats \u2014 all WebSocket-powered.', href: '/dashboard', color: '#22D3EE', free: true },
+              { icon: Activity, name: 'Dashboard', desc: 'Real-time SOC view with live attack feed, threat map, events/sec, top attackers, log stream, node heartbeats \u2014 all WebSocket-powered.', href: '/dashboard', color: 'var(--brand)', free: true },
               { icon: Globe, name: 'Surface (ASM)', desc: 'Attack surface management. AI-powered asset discovery via nmap, vulnerability scanning with Nuclei, SBOM analysis, risk scoring, and scheduled scans.', href: '/dashboard/surface', color: '#34D399', free: true },
               { icon: Zap, name: 'Response (SOAR)', desc: 'Autonomous incident response. 18\u03BCs fast path, 10 playbooks, AI triage with MITRE ATT&CK mapping. All actions auto-approved by default \u2014 override per guardrail.', href: '/dashboard/response', color: '#F87171', free: true },
-              { icon: Bug, name: 'Phantom (Deception)', desc: 'SSH + HTTP honeypots with breadcrumb traps. Attacker steals fake credentials \u2192 tries on real API \u2192 CRITICAL alert + auto-block.', href: '/dashboard/phantom', color: '#F97316', free: true },
+              { icon: Bug, name: 'Phantom (Deception)', desc: 'SSH + HTTP honeypots with breadcrumb traps. Attacker steals fake credentials \u2192 tries on real API \u2192 CRITICAL alert + auto-block.', href: '/dashboard/phantom', color: 'var(--brand-accent)', free: true },
               { icon: Shield, name: 'Threats (TIP)', desc: '5 threat feeds, STIX 2.1 export, Intel Cloud hub for sharing IOCs across AEGIS instances. Campaign tracking detects coordinated multi-phase attacks.', href: '/dashboard/threats', color: '#FBBF24', free: true },
               { icon: Fingerprint, name: 'EDR/XDR Core', desc: 'Endpoint detection and response. ETW (Windows) + eBPF (Linux) telemetry, process tree reconstruction, 6 MITRE attack chain detection rules.', href: '/dashboard/edr', color: '#A78BFA', free: true },
-              { icon: Flame, name: 'Ransomware Protection', desc: 'Canary files + entropy detection + process kill in <500ms. Auto-rollback via VSS (Windows) or Btrfs/LVM snapshots (Linux).', href: '/dashboard/response', color: '#EF4444', free: true },
-              { icon: Radar, name: 'Antivirus Engine', desc: 'YARA + ClamAV signature scanning, hash reputation cache, encrypted quarantine. On-access + daily scheduled scans. Auto-updates from YARA-Forge.', href: '/dashboard/antivirus', color: '#06B6D4', free: true },
+              { icon: Flame, name: 'Ransomware Protection', desc: 'Canary files + entropy detection + process kill in <500ms. Auto-rollback via VSS (Windows) or Btrfs/LVM snapshots (Linux).', href: '/dashboard/response', color: 'var(--danger)', free: true },
+              { icon: Radar, name: 'Antivirus Engine', desc: 'YARA + ClamAV signature scanning, hash reputation cache, encrypted quarantine. On-access + daily scheduled scans. Auto-updates from YARA-Forge.', href: '/dashboard/antivirus', color: 'var(--brand)', free: true },
               { icon: Shield, name: 'Configurable Firewall', desc: 'YAML rule engine with rate limiting, CIDR matching, UA regex. 6 default templates. Hot reload in <1s. Test rules with synthetic events.', href: '/dashboard/firewall', color: '#10B981', free: true },
               { icon: Sparkles, name: 'Quantum Analytics', desc: 'Renyi entropy for C2 beacon detection, Grover calculator for post-quantum crypto assessment, adversarial ML poisoning detection.', href: '/dashboard/quantum', color: '#A78BFA', free: false },
-              { icon: Bot, name: 'Honey-AI Deception', desc: 'Deploy 50+ fake services with AI-generated content. 4 industry themes (fintech, healthcare, ecommerce, devops). Breadcrumb UUID tracking.', href: '/dashboard/deception', color: '#F97316', free: false },
-              { icon: Shield, name: 'Counter-Attack AI', desc: 'Analyze attackers with uncensored AI model. Recon, intel lookup, deception, abuse reporting, tarpit. Fully autonomous.', href: '/dashboard/response', color: '#EF4444', free: true },
+              { icon: Bot, name: 'Honey-AI Deception', desc: 'Deploy 50+ fake services with AI-generated content. 4 industry themes (fintech, healthcare, ecommerce, devops). Breadcrumb UUID tracking.', href: '/dashboard/deception', color: 'var(--brand-accent)', free: false },
+              { icon: Shield, name: 'Counter-Attack AI', desc: 'Analyze attackers with uncensored AI model. Recon, intel lookup, deception, abuse reporting, tarpit. Fully autonomous.', href: '/dashboard/response', color: 'var(--danger)', free: true },
             ].map((m) => (
               <button
                 key={m.name}
@@ -1409,8 +1409,8 @@ export default function SettingsPage() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[13px] font-medium text-foreground group-hover:text-[#22D3EE] transition-colors">{m.name}</span>
-                    {!m.free && <span className="text-[9px] font-bold text-[#F97316] bg-[#F97316]/10 px-1.5 py-0.5 rounded">ENTERPRISE</span>}
+                    <span className="text-[13px] font-medium text-foreground group-hover:text-[var(--brand)] transition-colors">{m.name}</span>
+                    {!m.free && <span className="text-[9px] font-bold text-[var(--brand-accent)] bg-[var(--brand-accent)]/10 px-1.5 py-0.5 rounded">ENTERPRISE</span>}
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">{m.desc}</p>
                 </div>

@@ -52,17 +52,17 @@ interface ActionItem {
 }
 
 const statusChartConfig = {
-  escalated: { label: 'Escalated', color: '#22C55E' },
-  resolved: { label: 'Resolved', color: '#22D3EE' },
-  in_progress: { label: 'In Progress', color: '#A855F7' },
-  open: { label: 'Open', color: '#52525B' },
+  escalated:   { label: 'Escalated',   color: 'var(--success)' },
+  resolved:    { label: 'Resolved',    color: 'var(--brand)' },
+  in_progress: { label: 'In Progress', color: 'var(--chart-5)' },
+  open:        { label: 'Open',        color: 'var(--muted-foreground)' },
 } satisfies ChartConfig;
 
 const severityDotColor: Record<string, string> = {
-  critical: 'bg-[#EF4444]',
-  high: 'bg-[#F97316]',
-  medium: 'bg-[#F59E0B]',
-  low: 'bg-[#3B82F6]',
+  critical: 'bg-[var(--danger)]',
+  high:     'bg-[var(--brand-accent)]',
+  medium:   'bg-[var(--warning)]',
+  low:      'bg-[var(--info)]',
 };
 
 const TACTICS = [
@@ -71,11 +71,11 @@ const TACTICS = [
 ];
 
 function heatmapCellColor(value: number): string {
-  if (value === 0) return 'bg-muted/20';
-  if (value === 1) return 'bg-[#22D3EE]/20';
-  if (value === 2) return 'bg-[#22D3EE]/40';
-  if (value === 3) return 'bg-[#22D3EE]/60';
-  return 'bg-[#22D3EE]/80';
+  if (value === 0) return 'bg-muted/30';
+  if (value === 1) return 'bg-primary/15';
+  if (value === 2) return 'bg-primary/35';
+  if (value === 3) return 'bg-primary/55';
+  return 'bg-primary/80';
 }
 
 function getLast7DayLabels(): string[] {
@@ -214,8 +214,8 @@ export default function ResponsePage() {
           <p className="text-sm text-muted-foreground mt-1 hidden sm:block">Autonomous threat analysis and response actions</p>
         </div>
         {pendingActions.length > 0 && (
-          <Badge variant="outline" className="bg-[#F59E0B]/10 border-[#F59E0B]/20 text-[#F59E0B] shrink-0 px-3 sm:px-4 py-2 h-auto">
-            <Clock01Icon size={16} />
+          <Badge variant="outline" className="bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] border-[color-mix(in_oklab,var(--warning)_30%,transparent)] text-[var(--warning)] shrink-0 px-3 sm:px-4 py-2 h-auto gap-1.5">
+            <Clock01Icon size={14} />
             <span className="text-[12px] sm:text-[13px] font-medium">{pendingActions.length} pending</span>
           </Badge>
         )}
@@ -327,7 +327,7 @@ export default function ResponsePage() {
           <div className="space-y-3">
             {incidents.length === 0 ? (
               <Card className="rounded-xl p-12 text-center">
-                <SecurityCheckIcon size={48} className="text-[#22C55E] mx-auto mb-3 opacity-50" />
+                <SecurityCheckIcon size={48} className="text-[var(--success)] mx-auto mb-3 opacity-50" />
                 <p className="text-muted-foreground text-[13px]">No active incidents. Your perimeter is secure.</p>
               </Card>
             ) : (
@@ -352,7 +352,7 @@ export default function ResponsePage() {
                             <span className="text-[11px] text-muted-foreground font-mono">{incident.source_ip}</span>
                           )}
                           {incident.mitre_technique && (
-                            <Badge variant="outline" className="text-[10px] text-[#A855F7] bg-[#A855F7]/10 border-[#A855F7]/20 px-1.5 py-0.5 h-auto font-mono font-medium">{incident.mitre_technique}</Badge>
+                            <Badge variant="outline" className="text-[10px] text-[var(--chart-5)] bg-[color-mix(in_oklab,var(--chart-5)_12%,transparent)] border-[color-mix(in_oklab,var(--chart-5)_25%,transparent)] px-1.5 py-0.5 h-auto font-mono font-medium">{incident.mitre_technique}</Badge>
                           )}
                         </div>
                       </div>
@@ -402,7 +402,7 @@ export default function ResponsePage() {
                                   </p>
                                   {triage.mitre_technique && (
                                     <div className="flex items-center gap-2 mt-2">
-                                      <Badge variant="outline" className="text-[9px] text-[#A855F7] bg-[#A855F7]/10 border-[#A855F7]/20 px-1.5 py-0.5 h-auto font-mono">
+                                      <Badge variant="outline" className="text-[9px] text-[var(--chart-5)] bg-[color-mix(in_oklab,var(--chart-5)_12%,transparent)] border-[color-mix(in_oklab,var(--chart-5)_25%,transparent)] px-1.5 py-0.5 h-auto font-mono">
                                         {`${triage.mitre_technique}`}
                                       </Badge>
                                       {triage.mitre_tactic && (
@@ -435,7 +435,7 @@ export default function ResponsePage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleApprove(action.id)}
-                                    className="text-[11px] bg-[#22C55E]/10 text-[#22C55E] hover:bg-[#22C55E]/20 font-medium"
+                                    className="text-[11px] bg-[color-mix(in_oklab,var(--success)_12%,transparent)] text-[var(--success)] hover:bg-[color-mix(in_oklab,var(--success)_22%,transparent)] font-medium gap-1.5"
                                   >
                                     Approve
                                   </Button>
@@ -468,7 +468,7 @@ export default function ResponsePage() {
                     <div className="flex items-center gap-3">
                       <StatusIndicator status={action.status} />
                       <span className="text-[13px] font-medium text-foreground capitalize">{action.action_type.replace(/_/g, ' ')}</span>
-                      <Badge variant="outline" className="text-[11px] font-mono text-[#22D3EE] bg-[#22D3EE]/10 border-[#22D3EE]/20">{action.target}</Badge>
+                      <Badge variant="outline" className="text-[11px] font-mono text-primary bg-primary/10 border-primary/20">{action.target}</Badge>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-[11px] text-muted-foreground/50 font-mono tabular-nums">{formatRelativeTime(action.created_at)}</span>
@@ -477,7 +477,7 @@ export default function ResponsePage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleApprove(action.id)}
-                          className="text-[11px] bg-[#22C55E]/10 text-[#22C55E] hover:bg-[#22C55E]/20 font-medium"
+                          className="text-[11px] bg-[color-mix(in_oklab,var(--success)_12%,transparent)] text-[var(--success)] hover:bg-[color-mix(in_oklab,var(--success)_22%,transparent)] font-medium gap-1.5"
                         >
                           <CheckCircle className="w-3 h-3" />
                           Approve
@@ -524,7 +524,7 @@ export default function ResponsePage() {
                         onClick={() => toggleGuardrail(key)}
                         className={cn(
                           'relative w-11 h-6 rounded-full transition-colors duration-200',
-                          enabled ? 'bg-[#22D3EE]' : 'bg-muted'
+                          enabled ? 'bg-primary' : 'bg-muted'
                         )}
                       >
                         <span

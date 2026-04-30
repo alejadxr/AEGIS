@@ -16,22 +16,12 @@ interface StatCardProps {
   color?: 'accent' | 'orange' | 'danger' | 'warning' | 'success';
 }
 
-const colorConfig = {
-  accent: {
-    iconText: 'text-primary',
-  },
-  orange: {
-    iconText: 'text-[#F97316]',
-  },
-  danger: {
-    iconText: 'text-destructive',
-  },
-  warning: {
-    iconText: 'text-[#F59E0B]',
-  },
-  success: {
-    iconText: 'text-[#22C55E]',
-  },
+const colorConfig: Record<NonNullable<StatCardProps['color']>, { icon: string; ring: string }> = {
+  accent:  { icon: 'text-primary',       ring: 'group-hover:border-primary/30' },
+  orange:  { icon: 'text-[var(--brand-accent)]', ring: 'group-hover:border-[var(--brand-accent)]/30' },
+  danger:  { icon: 'text-[var(--danger)]',  ring: 'group-hover:border-[var(--danger)]/30' },
+  warning: { icon: 'text-[var(--warning)]', ring: 'group-hover:border-[var(--warning)]/30' },
+  success: { icon: 'text-[var(--success)]', ring: 'group-hover:border-[var(--success)]/30' },
 };
 
 export function StatCard({ title, value, trend, icon: Icon, color = 'accent' }: StatCardProps) {
@@ -55,32 +45,55 @@ export function StatCard({ title, value, trend, icon: Icon, color = 'accent' }: 
   }, [value]);
 
   return (
-    <Card className="rounded-xl py-0 gap-0 shadow-none transition-all duration-200 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/20 hover:-translate-y-0.5">
+    <Card className={cn(
+      'group relative rounded-xl py-0 gap-0 shadow-none overflow-hidden',
+      'transition-[transform,border-color,box-shadow] duration-200',
+      'hover:-translate-y-0.5 hover:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)]',
+      cfg.ring,
+    )}>
+      {/* Subtle top accent line on hover */}
+      <span className={cn(
+        'absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-current to-transparent opacity-0 group-hover:opacity-40 transition-opacity',
+        cfg.icon
+      )} />
+
       <CardContent className="p-4 sm:p-5">
-        {/* Label row */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3.5">
           <span className="text-label">{title}</span>
-          <Icon className={cn(cfg.iconText, 'opacity-40')} size={15} />
+          <div className={cn(
+            'flex items-center justify-center w-7 h-7 rounded-md bg-muted/60',
+            cfg.icon
+          )}>
+            <Icon size={14} />
+          </div>
         </div>
 
-        {/* Value */}
-        <p className="text-[32px] sm:text-[38px] font-bold text-foreground tracking-tight leading-none font-mono tabular-nums">
+        <p className="text-[30px] sm:text-[36px] font-bold text-foreground tracking-[-0.035em] leading-none font-mono tabular-nums">
           {formatNumber(displayValue)}
         </p>
 
-        {/* Trend */}
-        {trend !== 0 && (
-          <div className="flex items-center gap-1 mt-2.5">
+        {trend !== 0 ? (
+          <div className="flex items-center gap-1 mt-3">
             {isPositive ? (
-              <ArrowUpRight01Icon size={11} className="text-[#22C55E]" />
+              <ArrowUpRight01Icon size={11} className="text-[var(--success)]" />
             ) : (
-              <ArrowDownLeft01Icon size={11} className="text-destructive" />
+              <ArrowDownLeft01Icon size={11} className="text-[var(--danger)]" />
             )}
             <span className={cn(
               'text-[11px] font-mono font-semibold tabular-nums',
-              isPositive ? 'text-[#22C55E]' : 'text-destructive'
+              isPositive ? 'text-[var(--success)]' : 'text-[var(--danger)]'
             )}>
               {isPositive ? '+' : '-'}{Math.abs(trend)}%
+            </span>
+            <span className="text-[10px] text-muted-foreground/50 font-mono tracking-wide uppercase ml-1">
+              vs last
+            </span>
+          </div>
+        ) : (
+          <div className="mt-3 flex items-center gap-1.5">
+            <span className="w-1 h-1 rounded-full bg-muted-foreground/40" />
+            <span className="text-[10px] text-muted-foreground/50 font-mono tracking-wide uppercase">
+              no change
             </span>
           </div>
         )}

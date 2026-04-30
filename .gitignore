@@ -86,3 +86,7 @@ langgraph_pentest*.py
 scripts/deploy_sync.py
 scripts/setup-wizard.py
 *.tsbuildinfo
+
+# macOS metadata (never commit)
+._*
+.DS_Store

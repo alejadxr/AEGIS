@@ -8,9 +8,9 @@ interface SeverityBadgeProps {
 
 const severityStyles: Record<string, string> = {
   critical: 'bg-destructive/10 text-destructive border-destructive/20',
-  high: 'bg-[#F97316]/10 text-[#F97316] border-[#F97316]/20',
-  medium: 'bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20',
-  low: 'bg-[#3B82F6]/10 text-[#3B82F6] border-[#3B82F6]/20',
+  high: 'bg-[var(--brand-accent)]/10 text-[var(--brand-accent)] border-[var(--brand-accent)]/20',
+  medium: 'bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/20',
+  low: 'bg-[var(--info)]/10 text-[var(--info)] border-[var(--info)]/20',
   info: 'bg-muted text-muted-foreground border-border',
 };
 

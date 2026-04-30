@@ -77,32 +77,39 @@ export function MetricsSummaryBar({ external }: Props) {
     };
   }, []);
 
-  const merged: Metrics = { ...m, ...external };
+  // Spread external only if value is a valid number — avoids undefined overrides.
+  const clean: Partial<Metrics> = {};
+  if (external) {
+    (Object.keys(external) as (keyof Metrics)[]).forEach((k) => {
+      const v = external[k];
+      if (typeof v === 'number' && Number.isFinite(v)) clean[k] = v;
+    });
+  }
+  const merged: Metrics = { ...m, ...clean };
+  const num = (v: number) => Number.isFinite(v) ? v : 0;
 
   const cells = [
-    { label: 'EVENTS / SEC', value: merged.eventsPerSec, color: '#22D3EE' },
-    { label: 'BLOCKED / MIN', value: merged.blockedPerMin, color: '#F97316' },
-    { label: 'AI DECISIONS / MIN', value: merged.aiDecisionsPerMin, color: '#A855F7' },
-    { label: 'INCIDENTS OPEN', value: merged.incidentsOpen, color: '#EF4444' },
-    { label: 'HONEYPOT HITS', value: merged.honeypotHits, color: '#22C55E' },
+    { label: 'EVENTS / SEC',       value: num(merged.eventsPerSec),       color: 'var(--brand)' },
+    { label: 'BLOCKED / MIN',      value: num(merged.blockedPerMin),      color: 'var(--brand-accent)' },
+    { label: 'AI DECISIONS / MIN', value: num(merged.aiDecisionsPerMin),  color: 'var(--chart-5)' },
+    { label: 'INCIDENTS OPEN',     value: num(merged.incidentsOpen),      color: 'var(--danger)' },
+    { label: 'HONEYPOT HITS',      value: num(merged.honeypotHits),       color: 'var(--success)' },
   ];
 
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden flex items-stretch">
+    <div className="aegis-card overflow-hidden flex items-stretch">
       {cells.map((c, i) => (
         <div
           key={c.label}
-          className={`flex-1 flex flex-col items-center justify-center px-4 py-3 ${i > 0 ? 'border-l border-border' : ''}`}
+          className={`flex-1 flex flex-col items-center justify-center px-4 py-3.5 ${i > 0 ? 'border-l border-border' : ''}`}
         >
           <span
-            className="text-[20px] font-mono tabular-nums leading-none"
-            style={{ color: c.color, textShadow: `0 0 12px ${c.color}30` }}
+            className="text-[22px] font-mono tabular-nums leading-none font-bold"
+            style={{ color: c.color }}
           >
             {c.value.toLocaleString()}
           </span>
-          <span className="text-[9px] text-muted-foreground/60 font-mono uppercase tracking-widest mt-1.5">
-            {c.label}
-          </span>
+          <span className="text-label-xs mt-2">{c.label}</span>
         </div>
       ))}
     </div>

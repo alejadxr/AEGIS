@@ -54,10 +54,10 @@ type NodeType = 'server' | 'workspace';
 // ─── LED Bar Component ────────────────────────────────────────────────────────
 
 const LED_COLORS = {
-  cyan: { active: '#22D3EE', glow: 'rgba(34,211,238,0.6)', dim: 'rgba(34,211,238,0.1)' },
+  cyan: { active: 'var(--brand)', glow: 'rgba(34,211,238,0.6)', dim: 'rgba(34,211,238,0.1)' },
   pink: { active: '#D946EF', glow: 'rgba(217,70,239,0.6)', dim: 'rgba(217,70,239,0.1)' },
-  green: { active: '#22C55E', glow: 'rgba(34,197,94,0.6)', dim: 'rgba(34,197,94,0.1)' },
-  orange: { active: '#F97316', glow: 'rgba(249,115,22,0.6)', dim: 'rgba(249,115,22,0.1)' },
+  green: { active: 'var(--success)', glow: 'rgba(34,197,94,0.6)', dim: 'rgba(34,197,94,0.1)' },
+  orange: { active: 'var(--brand-accent)', glow: 'rgba(249,115,22,0.6)', dim: 'rgba(249,115,22,0.1)' },
 } as const;
 
 type LEDColor = keyof typeof LED_COLORS;
@@ -107,10 +107,10 @@ function ServerCard({ system }: { system: SystemInfo }) {
               className={cn(
                 'w-2 h-2 rounded-full shrink-0',
                 status === 'online'
-                  ? 'bg-[#22C55E] shadow-[0_0_6px_#22C55E]'
+                  ? 'bg-[var(--success)] shadow-[0_0_6px_color-mix(in_oklab,var(--success)_60%,transparent)]'
                   : status === 'degraded'
-                  ? 'bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]'
-                  : 'bg-[#EF4444] shadow-[0_0_6px_#EF4444]'
+                  ? 'bg-[var(--warning)] shadow-[0_0_6px_color-mix(in_oklab,var(--warning)_60%,transparent)]'
+                  : 'bg-[var(--danger)] shadow-[0_0_6px_color-mix(in_oklab,var(--danger)_60%,transparent)]'
               )}
             />
             <h3 className="font-mono text-[13px] font-semibold text-foreground tracking-tight">
@@ -172,9 +172,9 @@ function ServerCard({ system }: { system: SystemInfo }) {
 
 function StatusBadge({ status }: { status: PM2Process['status'] }) {
   const config = {
-    online: { bg: 'bg-[#22C55E]/10', text: 'text-[#22C55E]', dot: 'bg-[#22C55E]' },
+    online: { bg: 'bg-[var(--success)]/10', text: 'text-[var(--success)]', dot: 'bg-[var(--success)]' },
     stopped: { bg: 'bg-[#71717A]/10', text: 'text-[#71717A]', dot: 'bg-[#71717A]' },
-    errored: { bg: 'bg-[#EF4444]/10', text: 'text-[#EF4444]', dot: 'bg-[#EF4444]' },
+    errored: { bg: 'bg-[var(--danger)]/10', text: 'text-[var(--danger)]', dot: 'bg-[var(--danger)]' },
   };
   const c = config[status] || config.stopped;
 
@@ -195,8 +195,8 @@ function NetworkNode({ system }: { system: SystemInfo }) {
         className={cn(
           'w-2.5 h-2.5 rounded-full shrink-0',
           system.status === 'online'
-            ? 'bg-[#22C55E] shadow-[0_0_6px_#22C55E]'
-            : 'bg-[#EF4444] shadow-[0_0_6px_#EF4444]'
+            ? 'bg-[var(--success)] shadow-[0_0_6px_color-mix(in_oklab,var(--success)_60%,transparent)]'
+            : 'bg-[var(--danger)] shadow-[0_0_6px_color-mix(in_oklab,var(--danger)_60%,transparent)]'
         )}
       />
       <div className="flex-1 min-w-0">
@@ -238,7 +238,7 @@ function NodeTypeBadge({ type }: { type: string | null }) {
     <span className={cn(
       'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider',
       isServer
-        ? 'bg-[#22D3EE]/10 text-[#22D3EE]'
+        ? 'bg-[var(--brand)]/10 text-[var(--brand)]'
         : 'bg-[#A78BFA]/10 text-[#A78BFA]'
     )}>
       {isServer ? <Server className="w-2.5 h-2.5" /> : <Laptop className="w-2.5 h-2.5" />}
@@ -274,10 +274,10 @@ function NodeCard({ node, onRemove, onSelect }: { node: NodeInfo; onRemove: (id:
           className={cn(
             'w-2 h-2 rounded-full shrink-0',
             isOnline
-              ? 'bg-[#22C55E] shadow-[0_0_6px_#22C55E]'
+              ? 'bg-[var(--success)] shadow-[0_0_6px_color-mix(in_oklab,var(--success)_60%,transparent)]'
               : isStale
-              ? 'bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]'
-              : 'bg-[#EF4444] shadow-[0_0_6px_#EF4444]'
+              ? 'bg-[var(--warning)] shadow-[0_0_6px_color-mix(in_oklab,var(--warning)_60%,transparent)]'
+              : 'bg-[var(--danger)] shadow-[0_0_6px_color-mix(in_oklab,var(--danger)_60%,transparent)]'
           )}
         />
         <h4 className="text-[13px] font-semibold text-foreground truncate flex-1">{node.hostname}</h4>
@@ -299,7 +299,7 @@ function NodeCard({ node, onRemove, onSelect }: { node: NodeInfo; onRemove: (id:
           <span className="text-muted-foreground">Status</span>
           <span className={cn(
             'font-medium capitalize',
-            isOnline ? 'text-[#22C55E]' : isStale ? 'text-[#F59E0B]' : 'text-[#EF4444]'
+            isOnline ? 'text-[var(--success)]' : isStale ? 'text-[var(--warning)]' : 'text-[var(--danger)]'
           )}>
             {node.status}
           </span>
@@ -352,11 +352,11 @@ function AddNodeCard({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/[0.08] hover:border-[#22D3EE]/40 hover:bg-[#22D3EE]/[0.03] p-4 transition-colors min-h-[160px] cursor-pointer group"
+      className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-white/[0.08] hover:border-[var(--brand)]/40 hover:bg-[var(--brand)]/[0.03] p-4 transition-colors min-h-[160px] cursor-pointer group"
       aria-label="Add new node"
     >
-      <div className="w-10 h-10 rounded-xl bg-white/[0.04] group-hover:bg-[#22D3EE]/10 flex items-center justify-center transition-colors">
-        <Plus className="w-5 h-5 text-muted-foreground group-hover:text-[#22D3EE] transition-colors" />
+      <div className="w-10 h-10 rounded-xl bg-white/[0.04] group-hover:bg-[var(--brand)]/10 flex items-center justify-center transition-colors">
+        <Plus className="w-5 h-5 text-muted-foreground group-hover:text-[var(--brand)] transition-colors" />
       </div>
       <span className="text-[12px] text-muted-foreground group-hover:text-muted-foreground font-medium transition-colors">
         Add Node
@@ -430,8 +430,8 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
             </p>
 
             <div className="flex gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#22D3EE]/10 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-[11px] font-bold text-[#22D3EE]">1</span>
+              <div className="w-6 h-6 rounded-full bg-[var(--brand)]/10 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-[11px] font-bold text-[var(--brand)]">1</span>
               </div>
               <div>
                 <p className="text-[13px] text-foreground font-medium mb-2">
@@ -453,8 +453,8 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
             </div>
 
             <div className="flex gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#22D3EE]/10 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-[11px] font-bold text-[#22D3EE]">2</span>
+              <div className="w-6 h-6 rounded-full bg-[var(--brand)]/10 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-[11px] font-bold text-[var(--brand)]">2</span>
               </div>
               <div>
                 <p className="text-[13px] text-foreground font-medium">
@@ -467,8 +467,8 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
             </div>
 
             <div className="flex gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#22D3EE]/10 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-[11px] font-bold text-[#22D3EE]">3</span>
+              <div className="w-6 h-6 rounded-full bg-[var(--brand)]/10 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-[11px] font-bold text-[var(--brand)]">3</span>
               </div>
               <div>
                 <p className="text-[13px] text-foreground font-medium mb-2">
@@ -482,7 +482,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                       className={cn(
                         'flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-all',
                         nodeType === value
-                          ? 'bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/20'
+                          ? 'bg-[var(--brand)]/10 text-[var(--brand)] border border-[var(--brand)]/20'
                           : 'text-muted-foreground hover:text-foreground/80 border border-transparent'
                       )}
                       type="button"
@@ -499,8 +499,8 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
             </div>
 
             <div className="flex gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#22D3EE]/10 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-[11px] font-bold text-[#22D3EE]">4</span>
+              <div className="w-6 h-6 rounded-full bg-[var(--brand)]/10 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-[11px] font-bold text-[var(--brand)]">4</span>
               </div>
               <div>
                 <p className="text-[13px] text-foreground font-medium mb-3">
@@ -513,7 +513,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                     onChange={(e) => setCode(formatCodeInput(e.target.value))}
                     placeholder="C6-____-____"
                     maxLength={12}
-                    className="flex-1 px-4 py-2.5 rounded-xl c6-input text-[15px] font-mono tracking-wider text-center placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/40"
+                    className="flex-1 px-4 py-2.5 rounded-xl c6-input text-[15px] font-mono tracking-wider text-center placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40"
                     aria-label="Enrollment code"
                     onKeyDown={(e) => { if (e.key === 'Enter') handleEnroll(); }}
                     autoFocus
@@ -524,7 +524,7 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                     className={cn(
                       'px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-colors',
                       code.length >= 12
-                        ? 'bg-[#22D3EE] text-black hover:bg-[#22D3EE]/90'
+                        ? 'bg-[var(--brand)] text-black hover:bg-[var(--brand)]/90'
                         : 'bg-white/[0.06] text-muted-foreground/60 cursor-not-allowed'
                     )}
                   >
@@ -543,15 +543,15 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
 
       {step === 'loading' && (
         <div className="flex flex-col items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 text-[#22D3EE] animate-spin mb-4" />
+          <Loader2 className="w-8 h-8 text-[var(--brand)] animate-spin mb-4" />
           <p className="text-[13px] text-muted-foreground">Enrolling node...</p>
         </div>
       )}
 
       {step === 'success' && (
         <div className="flex flex-col items-center justify-center py-8 space-y-4">
-          <div className="w-12 h-12 rounded-full bg-[#22C55E]/10 flex items-center justify-center">
-            <CheckCircle className="w-6 h-6 text-[#22C55E]" />
+          <div className="w-12 h-12 rounded-full bg-[var(--success)]/10 flex items-center justify-center">
+            <CheckCircle className="w-6 h-6 text-[var(--success)]" />
           </div>
           <div className="text-center">
             <p className="text-[15px] font-semibold text-foreground mb-1">Node Enrolled Successfully</p>
@@ -568,8 +568,8 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
 
       {step === 'error' && (
         <div className="flex flex-col items-center justify-center py-8 space-y-4">
-          <div className="w-12 h-12 rounded-full bg-[#EF4444]/10 flex items-center justify-center">
-            <AlertCircle className="w-6 h-6 text-[#EF4444]" />
+          <div className="w-12 h-12 rounded-full bg-[var(--danger)]/10 flex items-center justify-center">
+            <AlertCircle className="w-6 h-6 text-[var(--danger)]" />
           </div>
           <div className="text-center">
             <p className="text-[15px] font-semibold text-foreground mb-1">Enrollment Failed</p>
@@ -611,17 +611,17 @@ function NodeDetailModal({ node, open, onClose }: { node: NodeInfo | null; open:
             className={cn(
               'w-3 h-3 rounded-full shrink-0',
               isOnline
-                ? 'bg-[#22C55E] shadow-[0_0_8px_#22C55E]'
+                ? 'bg-[var(--success)] shadow-[0_0_8px_color-mix(in_oklab,var(--success)_60%,transparent)]'
                 : isStale
-                ? 'bg-[#F59E0B] shadow-[0_0_8px_#F59E0B]'
-                : 'bg-[#EF4444] shadow-[0_0_8px_#EF4444]'
+                ? 'bg-[var(--warning)] shadow-[0_0_8px_color-mix(in_oklab,var(--warning)_60%,transparent)]'
+                : 'bg-[var(--danger)] shadow-[0_0_8px_color-mix(in_oklab,var(--danger)_60%,transparent)]'
             )}
           />
           <div>
             <p className="text-[14px] font-semibold text-foreground">{node.hostname}</p>
             <p className={cn(
               'text-[11px] font-medium capitalize',
-              isOnline ? 'text-[#22C55E]' : isStale ? 'text-[#F59E0B]' : 'text-[#EF4444]'
+              isOnline ? 'text-[var(--success)]' : isStale ? 'text-[var(--warning)]' : 'text-[var(--danger)]'
             )}>
               {node.status}
             </p>
@@ -673,7 +673,7 @@ function ConfirmRemoveModal({ open, onClose, onConfirm, hostname }: { open: bool
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 rounded-xl bg-[#EF4444]/10 text-[13px] text-[#EF4444] font-semibold hover:bg-[#EF4444]/20 transition-colors"
+            className="px-4 py-2 rounded-xl bg-[var(--danger)]/10 text-[13px] text-[var(--danger)] font-semibold hover:bg-[var(--danger)]/20 transition-colors"
           >
             Remove Node
           </button>
@@ -813,7 +813,7 @@ export default function InfraPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center space-y-3">
-          <div className="w-8 h-8 border-2 border-[#22D3EE]/30 border-t-[#22D3EE] rounded-full animate-spin mx-auto" />
+          <div className="w-8 h-8 border-2 border-[var(--brand)]/30 border-t-[var(--brand)] rounded-full animate-spin mx-auto" />
           <p className="text-sm text-muted-foreground">Loading infrastructure metrics...</p>
         </div>
       </div>
@@ -824,13 +824,13 @@ export default function InfraPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center space-y-3">
-          <div className="w-10 h-10 rounded-xl bg-[#EF4444]/10 flex items-center justify-center mx-auto">
-            <span className="text-[#EF4444] text-lg">!</span>
+          <div className="w-10 h-10 rounded-xl bg-[var(--danger)]/10 flex items-center justify-center mx-auto">
+            <span className="text-[var(--danger)] text-lg">!</span>
           </div>
           <p className="text-sm text-muted-foreground">{error}</p>
           <button
             onClick={() => { setLoading(true); fetchData(); }}
-            className="text-xs text-[#22D3EE] hover:underline"
+            className="text-xs text-[var(--brand)] hover:underline"
           >
             Retry
           </button>
@@ -853,9 +853,9 @@ export default function InfraPage() {
         </div>
         <div className="flex items-center gap-2 mt-1">
           {error ? (
-            <span className="w-1.5 h-1.5 bg-[#F59E0B] rounded-full animate-pulse" />
+            <span className="w-1.5 h-1.5 bg-[var(--warning)] rounded-full animate-pulse" />
           ) : (
-            <span className="w-1.5 h-1.5 bg-[#22C55E] rounded-full animate-pulse" />
+            <span className="w-1.5 h-1.5 bg-[var(--success)] rounded-full animate-pulse" />
           )}
           <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
             {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
@@ -866,8 +866,8 @@ export default function InfraPage() {
       {/* Summary Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#22C55E]/10 flex items-center justify-center">
-            <span className="text-[#22C55E] font-mono font-bold text-sm">{onlineCount}</span>
+          <div className="w-10 h-10 rounded-xl bg-[var(--success)]/10 flex items-center justify-center">
+            <span className="text-[var(--success)] font-mono font-bold text-sm">{onlineCount}</span>
           </div>
           <div>
             <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Systems</p>
@@ -875,8 +875,8 @@ export default function InfraPage() {
           </div>
         </div>
         <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#22D3EE]/10 flex items-center justify-center">
-            <Monitor size={18} className="text-[#22D3EE]" />
+          <div className="w-10 h-10 rounded-xl bg-[var(--brand)]/10 flex items-center justify-center">
+            <Monitor size={18} className="text-[var(--brand)]" />
           </div>
           <div>
             <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Nodes</p>
@@ -884,8 +884,8 @@ export default function InfraPage() {
           </div>
         </div>
         <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#22D3EE]/10 flex items-center justify-center">
-            <Activity01Icon size={18} className="text-[#22D3EE]" />
+          <div className="w-10 h-10 rounded-xl bg-[var(--brand)]/10 flex items-center justify-center">
+            <Activity01Icon size={18} className="text-[var(--brand)]" />
           </div>
           <div>
             <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Avg CPU</p>
@@ -915,7 +915,7 @@ export default function InfraPage() {
           </div>
           <button
             onClick={() => setEnrollModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#22D3EE]/10 text-[11px] text-[#22D3EE] font-semibold hover:bg-[#22D3EE]/20 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--brand)]/10 text-[11px] text-[var(--brand)] font-semibold hover:bg-[var(--brand)]/20 transition-colors"
             aria-label="Add node"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -926,7 +926,7 @@ export default function InfraPage() {
         <div className="p-4 sm:p-6">
           {nodesLoading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 text-[#22D3EE] animate-spin" />
+              <Loader2 className="w-6 h-6 text-[var(--brand)] animate-spin" />
             </div>
           ) : nodes.length === 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -978,7 +978,7 @@ export default function InfraPage() {
               <span className="text-[11px] text-muted-foreground/60 font-mono">Mac Pro</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-[#22C55E] rounded-full animate-pulse" />
+              <span className="w-1.5 h-1.5 bg-[var(--success)] rounded-full animate-pulse" />
               <span className="text-[11px] text-muted-foreground font-medium">
                 {allProcesses.filter((p) => p.status === 'online').length} running
               </span>
@@ -1021,7 +1021,7 @@ export default function InfraPage() {
                     <td className="px-4 py-3 hidden md:table-cell">
                       <span className={cn(
                         'text-[12px] font-mono tabular-nums',
-                        proc.restarts > 0 ? 'text-[#F59E0B]' : 'text-muted-foreground/60'
+                        proc.restarts > 0 ? 'text-[var(--warning)]' : 'text-muted-foreground/60'
                       )}>
                         {proc.restarts}
                       </span>

@@ -96,9 +96,9 @@ function calculateFrameworkScore(framework: Framework): number {
 }
 
 function statusIcon(status: ControlStatus) {
-  if (status === 'met') return <CheckCircle size={14} className="text-[#22C55E]" />;
-  if (status === 'partial') return <AlertTriangle size={14} className="text-[#F59E0B]" />;
-  return <XCircle size={14} className="text-[#EF4444]" />;
+  if (status === 'met') return <CheckCircle size={14} className="text-[var(--success)]" />;
+  if (status === 'partial') return <AlertTriangle size={14} className="text-[var(--warning)]" />;
+  return <XCircle size={14} className="text-[var(--danger)]" />;
 }
 
 function statusLabel(status: ControlStatus): string {
@@ -108,15 +108,15 @@ function statusLabel(status: ControlStatus): string {
 }
 
 function statusBadgeStyle(status: ControlStatus): string {
-  if (status === 'met') return 'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/20';
-  if (status === 'partial') return 'bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20';
-  return 'bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20';
+  if (status === 'met') return 'bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20';
+  if (status === 'partial') return 'bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/20';
+  return 'bg-[var(--danger)]/10 text-[var(--danger)] border-[var(--danger)]/20';
 }
 
 function scoreColor(score: number): string {
-  if (score >= 80) return '#22C55E';
-  if (score >= 60) return '#F59E0B';
-  return '#EF4444';
+  if (score >= 80) return 'var(--success)';
+  if (score >= 60) return 'var(--warning)';
+  return 'var(--danger)';
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ export default function CompliancePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 size={24} className="text-[#22D3EE] animate-spin" />
+        <Loader2 size={24} className="text-[var(--brand)] animate-spin" />
       </div>
     );
   }
@@ -170,7 +170,7 @@ export default function CompliancePage() {
       <div>
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
-            <FileCheck className="text-[#22D3EE]" size={20} />
+            <FileCheck className="text-[var(--brand)]" size={20} />
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-foreground tracking-tight">Compliance</h1>
@@ -195,7 +195,7 @@ export default function CompliancePage() {
               onClick={() => setExpandedFramework(expandedFramework === fw.shortName ? null : fw.shortName)}
               className={cn(
                 'bg-card border rounded-2xl p-5 text-left transition-all duration-200 hover:border-white/[0.1]',
-                expandedFramework === fw.shortName ? 'border-[#22D3EE]/30 ring-1 ring-[#22D3EE]/10' : 'border-border'
+                expandedFramework === fw.shortName ? 'border-[var(--brand)]/30 ring-1 ring-[var(--brand)]/10' : 'border-border'
               )}
             >
               <div className="flex items-start justify-between mb-4">
@@ -225,26 +225,26 @@ export default function CompliancePage() {
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5">
-                  <CheckCircle size={12} className="text-[#22C55E]" />
+                  <CheckCircle size={12} className="text-[var(--success)]" />
                   <span className="text-data text-[12px] text-muted-foreground">{met} met</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <AlertTriangle size={12} className="text-[#F59E0B]" />
+                  <AlertTriangle size={12} className="text-[var(--warning)]" />
                   <span className="text-data text-[12px] text-muted-foreground">{partial} partial</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <XCircle size={12} className="text-[#EF4444]" />
+                  <XCircle size={12} className="text-[var(--danger)]" />
                   <span className="text-data text-[12px] text-muted-foreground">{notMet} gaps</span>
                 </div>
               </div>
               {/* Coverage bar */}
               <div className="mt-3 h-1.5 bg-white/[0.04] rounded-full overflow-hidden flex">
                 <div
-                  className="h-full bg-[#22C55E] transition-all duration-700"
+                  className="h-full bg-[var(--success)] transition-all duration-700"
                   style={{ width: `${(met / fw.controls.length) * 100}%` }}
                 />
                 <div
-                  className="h-full bg-[#F59E0B] transition-all duration-700"
+                  className="h-full bg-[var(--warning)] transition-all duration-700"
                   style={{ width: `${(partial / fw.controls.length) * 100}%` }}
                 />
               </div>
@@ -266,7 +266,7 @@ export default function CompliancePage() {
           <div className="bg-card border border-border rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <ChevronDown size={16} className="text-[#22D3EE]" />
+                <ChevronDown size={16} className="text-[var(--brand)]" />
                 <h2 className="text-sm font-semibold text-foreground">{fw.name} Controls</h2>
                 <span className="text-data text-[11px] text-muted-foreground/60 ml-1">{filtered.length} controls</span>
               </div>
@@ -279,7 +279,7 @@ export default function CompliancePage() {
                     className={cn(
                       'px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors',
                       filterStatus === f
-                        ? 'bg-[#22D3EE]/10 text-[#22D3EE]'
+                        ? 'bg-[var(--brand)]/10 text-[var(--brand)]'
                         : 'text-muted-foreground hover:text-foreground/80 hover:bg-white/[0.03]'
                     )}
                   >
@@ -303,7 +303,7 @@ export default function CompliancePage() {
                   {filtered.map(c => (
                     <tr key={c.id} className="border-b border-border/30 hover:bg-white/[0.02] transition-colors">
                       <td className="py-3 pr-4">
-                        <span className="text-data text-[13px] text-[#22D3EE] font-medium">{c.id}</span>
+                        <span className="text-data text-[13px] text-[var(--brand)] font-medium">{c.id}</span>
                       </td>
                       <td className="py-3 pr-4">
                         <span className="text-[13px] text-foreground">{c.name}</span>
@@ -340,13 +340,13 @@ export default function CompliancePage() {
       {/* Gaps Summary */}
       <div className="bg-card border border-border rounded-2xl p-6">
         <div className="flex items-center gap-2 mb-4">
-          <XCircle size={16} className="text-[#EF4444]" />
+          <XCircle size={16} className="text-[var(--danger)]" />
           <h2 className="text-sm font-semibold text-foreground">Coverage Gaps</h2>
           <span className="text-data text-[11px] text-muted-foreground/60 ml-1">{gaps.length} controls not covered</span>
         </div>
         {gaps.length === 0 ? (
           <div className="flex items-center gap-2 py-4">
-            <CheckCircle size={16} className="text-[#22C55E]" />
+            <CheckCircle size={16} className="text-[var(--success)]" />
             <span className="text-sm text-muted-foreground">Full coverage across all frameworks</span>
           </div>
         ) : (
@@ -354,14 +354,14 @@ export default function CompliancePage() {
             {gaps.map(gap => (
               <div
                 key={`${gap.framework}-${gap.id}`}
-                className="flex items-start gap-3 p-3 rounded-xl bg-background border border-border hover:border-[#EF4444]/10 transition-colors"
+                className="flex items-start gap-3 p-3 rounded-xl bg-background border border-border hover:border-[var(--danger)]/10 transition-colors"
               >
                 <div className="shrink-0 mt-0.5">
-                  <XCircle size={14} className="text-[#EF4444]" />
+                  <XCircle size={14} className="text-[var(--danger)]" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-data text-[11px] text-[#22D3EE] font-medium">{gap.framework}</span>
+                    <span className="text-data text-[11px] text-[var(--brand)] font-medium">{gap.framework}</span>
                     <ChevronRight size={10} className="text-muted-foreground/60" />
                     <span className="text-data text-[12px] text-foreground/80 font-medium">{gap.id}</span>
                     <span className="text-[12px] text-muted-foreground">{gap.name}</span>

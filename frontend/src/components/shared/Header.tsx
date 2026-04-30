@@ -40,10 +40,10 @@ function timeAgo(ts: string): string {
 }
 
 const severityDotColor: Record<string, string> = {
-  critical: 'bg-[#EF4444]',
-  high: 'bg-[#F97316]',
-  medium: 'bg-[#F59E0B]',
-  low: 'bg-[#3B82F6]',
+  critical: 'bg-[var(--danger)]',
+  high: 'bg-[var(--brand-accent)]',
+  medium: 'bg-[var(--warning)]',
+  low: 'bg-[var(--info)]',
 };
 
 async function fetchRecentIncidents(): Promise<Incident[]> {

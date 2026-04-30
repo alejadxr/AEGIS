@@ -14,7 +14,7 @@ export function BreadcrumbHits({ hits, onSelectCampaign }: Props) {
     return (
       <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl">
         <div className="px-4 sm:px-6 py-4 border-b border-white/[0.06] flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-[#F97316]" />
+          <AlertTriangle className="w-4 h-4 text-[var(--brand-accent)]" />
           <span className="text-[14px] font-semibold text-white">
             Breadcrumb Hits
           </span>
@@ -33,7 +33,7 @@ export function BreadcrumbHits({ hits, onSelectCampaign }: Props) {
     <div className="bg-[#18181B] border border-white/[0.06] rounded-2xl">
       <div className="px-4 sm:px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-[#F97316]" />
+          <AlertTriangle className="w-4 h-4 text-[var(--brand-accent)]" />
           <span className="text-[14px] font-semibold text-white">
             Breadcrumb Hits
           </span>
@@ -84,7 +84,7 @@ export function BreadcrumbHits({ hits, onSelectCampaign }: Props) {
             {onSelectCampaign && (
               <button
                 onClick={() => onSelectCampaign(hit.campaign_id)}
-                className="text-[11px] text-[#F97316] hover:text-[#FB923C] flex items-center gap-1 shrink-0"
+                className="text-[11px] text-[var(--brand-accent)] hover:text-[#FB923C] flex items-center gap-1 shrink-0"
               >
                 Campaign
                 <ExternalLink className="w-3 h-3" />

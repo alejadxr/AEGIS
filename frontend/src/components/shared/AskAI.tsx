@@ -102,7 +102,7 @@ export function AskAI() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-[#22D3EE] hover:bg-[#06B6D4] transition-all duration-200 flex items-center justify-center shadow-lg shadow-[#22D3EE]/20 hover:shadow-[#22D3EE]/40 hover:scale-105"
+          className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-[var(--brand)] hover:bg-[var(--brand)] transition-all duration-200 flex items-center justify-center shadow-lg shadow-[var(--brand)]/20 hover:shadow-[var(--brand)]/40 hover:scale-105"
           title="Ask AEGIS"
         >
           <svg className="w-5 h-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -117,7 +117,7 @@ export function AskAI() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[#22D3EE] animate-pulse" />
+              <div className="w-2 h-2 rounded-full bg-[var(--brand)] animate-pulse" />
               <span className="text-sm font-medium text-white/90">Ask AEGIS</span>
             </div>
             <div className="flex items-center gap-1">
@@ -154,7 +154,7 @@ export function AskAI() {
                 <div
                   className={`max-w-[85%] rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
                     msg.role === 'user'
-                      ? 'bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/20'
+                      ? 'bg-[var(--brand)]/10 text-[var(--brand)] border border-[var(--brand)]/20'
                       : 'bg-white/[0.03] text-white/80 border border-white/[0.04]'
                   }`}
                 >
@@ -170,9 +170,9 @@ export function AskAI() {
               <div className="flex justify-start">
                 <div className="bg-white/[0.03] border border-white/[0.04] rounded-xl px-3 py-2">
                   <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#22D3EE] animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#22D3EE] animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#22D3EE] animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--brand)] animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--brand)] animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--brand)] animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </div>
@@ -197,7 +197,7 @@ export function AskAI() {
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || isLoading}
-                className="flex-shrink-0 w-7 h-7 rounded-lg bg-[#22D3EE] hover:bg-[#06B6D4] disabled:opacity-30 disabled:hover:bg-[#22D3EE] flex items-center justify-center transition-colors"
+                className="flex-shrink-0 w-7 h-7 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand)] disabled:opacity-30 disabled:hover:bg-[var(--brand)] flex items-center justify-center transition-colors"
               >
                 <svg className="w-3.5 h-3.5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />

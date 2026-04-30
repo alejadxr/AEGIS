@@ -67,7 +67,7 @@ export default function DashboardLayout({
         className={cn(
           'flex flex-col min-h-screen transition-all duration-200',
           'pl-0',
-          collapsed ? 'md:pl-[56px]' : 'md:pl-[220px]'
+          collapsed ? 'md:pl-[60px]' : 'md:pl-[224px]'
         )}
       >
         <Header onMobileMenuToggle={toggleMobile} />

@@ -23,10 +23,10 @@ export function formatDate(dateStr: string | null | undefined): string {
 
 export function severityColor(severity: string): string {
   const map: Record<string, string> = {
-    critical: 'text-[#EF4444]',
-    high: 'text-[#F97316]',
-    medium: 'text-[#F59E0B]',
-    low: 'text-[#3B82F6]',
+    critical: 'text-[var(--danger)]',
+    high: 'text-[var(--brand-accent)]',
+    medium: 'text-[var(--warning)]',
+    low: 'text-[var(--info)]',
     info: 'text-[#737373]',
   };
   return map[severity?.toLowerCase()] || map.info;

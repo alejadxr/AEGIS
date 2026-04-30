@@ -23,7 +23,7 @@ interface TourStep {
 const STEPS: TourStep[] = [
   {
     icon: BookOpen,
-    color: '#22D3EE',
+    color: 'var(--brand)',
     title: 'Welcome to AEGIS',
     subtitle: 'Your autonomous cybersecurity platform',
     description: 'AEGIS detects, analyzes, and neutralizes cyber threats without human intervention. From the moment you deploy it, 5 detection layers work simultaneously to protect your infrastructure.',
@@ -38,7 +38,7 @@ const STEPS: TourStep[] = [
   },
   {
     icon: Layers,
-    color: '#22D3EE',
+    color: 'var(--brand)',
     title: 'The 5-Layer Pipeline',
     subtitle: 'How AEGIS catches everything',
     description: 'Every request to your server passes through 5 detection layers. Each layer catches what the previous one missed. The fast path resolves known threats in <300ms without even calling the AI.',
@@ -54,7 +54,7 @@ const STEPS: TourStep[] = [
   },
   {
     icon: Activity,
-    color: '#22D3EE',
+    color: 'var(--brand)',
     title: 'Live Dashboard',
     subtitle: 'Real-time SOC command center',
     description: 'The Dashboard is your main screen. It uses WebSocket streaming to push every event to your browser instantly — no polling, no refresh needed. Every attack, every blocked IP, every honeypot interaction appears the moment it happens.',
@@ -103,7 +103,7 @@ const STEPS: TourStep[] = [
   },
   {
     icon: Bug,
-    color: '#F97316',
+    color: 'var(--brand-accent)',
     title: 'Phantom — Honeypot Deception',
     subtitle: 'Trap attackers with fake services',
     description: 'AEGIS deploys fake SSH servers and web applications that look real. When an attacker connects, it captures their credentials, commands, and tools. The killer feature: breadcrumb traps — fake .env files with trap API keys. When the attacker tries those keys on your real API, AEGIS instantly knows.',
@@ -119,7 +119,7 @@ const STEPS: TourStep[] = [
   },
   {
     icon: Flame,
-    color: '#EF4444',
+    color: 'var(--danger)',
     title: 'Ransomware Protection',
     subtitle: 'Detect, kill, and rollback in <500ms',
     description: 'The Rust node agent plants 10 hidden canary files across your user directories. If ransomware tries to encrypt them, AEGIS kills the entire process tree instantly and restores the affected files from shadow copies — all before the ransomware can finish.',
@@ -169,7 +169,7 @@ const STEPS: TourStep[] = [
   },
   {
     icon: Bot,
-    color: '#F97316',
+    color: 'var(--brand-accent)',
     title: 'Honey-AI — Deception at Scale',
     subtitle: 'The killer differentiator',
     description: 'Deploy 50+ fake services that look real — fake web apps, REST APIs, and MySQL databases, all with AI-generated content. Every fake asset embeds a tracking UUID. When an attacker steals data from a fake service and tries to use it on a real one, AEGIS links the two events and raises a CRITICAL alert.',
