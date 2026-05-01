@@ -14,6 +14,8 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessesToUpdate, System};
+#[cfg(unix)]
+use sysinfo::Signal;
 
 /// A lightweight process entry captured for forensics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
