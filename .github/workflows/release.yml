@@ -64,7 +64,7 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd frontend
-          npm ci
+          npm install --legacy-peer-deps
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -110,9 +110,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version from tag
+      - name: Extract version + lowercase repo
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          echo "REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Build and push API image
         uses: docker/build-push-action@v6
@@ -120,8 +122,8 @@ jobs:
           context: ./backend
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/aegis-api:${{ steps.version.outputs.VERSION }}
-            ghcr.io/${{ github.repository }}/aegis-api:latest
+            ghcr.io/${{ steps.version.outputs.REPO_LC }}/aegis-api:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ steps.version.outputs.REPO_LC }}/aegis-api:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -131,7 +133,7 @@ jobs:
           context: ./frontend
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/aegis-frontend:${{ steps.version.outputs.VERSION }}
-            ghcr.io/${{ github.repository }}/aegis-frontend:latest
+            ghcr.io/${{ steps.version.outputs.REPO_LC }}/aegis-frontend:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ steps.version.outputs.REPO_LC }}/aegis-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
