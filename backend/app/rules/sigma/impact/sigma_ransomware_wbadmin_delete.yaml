@@ -1,0 +1,28 @@
+id: ransomware_wbadmin_delete
+name: Windows backup catalog deletion
+kind: sigma
+description: |
+  Detects wbadmin commands that delete the Windows backup catalog or system
+  state backups. Ransomware groups routinely execute this before encrypting
+  files to prevent recovery via Windows Server Backup.
+severity: critical
+tactics:
+  - Impact
+techniques:
+  - T1490
+data_sources:
+  - process_creation
+condition:
+  event_type: process_create
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: hostname
+  filter:
+    command_line_regex: '(?i)wbadmin\s+delete\s+(catalog|systemstate)'
+entityMappings:
+  - type: Host
+    field: hostname
+  - type: Account
+    field: username
+references:
+  - https://attack.mitre.org/techniques/T1490/
