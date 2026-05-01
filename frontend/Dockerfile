@@ -5,8 +5,8 @@
 # --- Stage 1: Install dependencies ---
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --ignore-scripts
+COPY package.json package-lock.json* .npmrc* ./
+RUN npm install --legacy-peer-deps --ignore-scripts
 
 # --- Stage 2: Build the Next.js application ---
 FROM node:20-alpine AS builder
