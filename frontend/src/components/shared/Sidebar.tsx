@@ -15,7 +15,7 @@ import {
   ComputerIcon,
   FlashIcon,
 } from 'hugeicons-react';
-import { Ghost, GitFork, Atom, FileCheck, FileText, ShieldCheck, ShieldAlert, Sparkles, BookOpen } from 'lucide-react';
+import { Ghost, GitFork, Atom, FileCheck, FileText, ShieldCheck, ShieldAlert, Sparkles, BookOpen, ShieldX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type IconComponent = React.ComponentType<{ className?: string; size?: number }>;
@@ -34,6 +34,7 @@ const iconMap: Record<string, IconComponent> = {
   FileText: FileText as IconComponent,
   ShieldCheck: ShieldCheck as IconComponent,
   ShieldAlert: ShieldAlert as IconComponent,
+  ShieldX: ShieldX as IconComponent,
   FlashIcon: FlashIcon as IconComponent,
   Sparkles: Sparkles as IconComponent,
   BookOpen: BookOpen as IconComponent,
@@ -56,6 +57,7 @@ const NAV_SECTIONS = [
       { label: 'Firewall', href: '/dashboard/firewall', icon: 'ShieldCheck' },
       { label: 'EDR / XDR', href: '/dashboard/edr', icon: 'GitFork' },
       { label: 'Antivirus', href: '/dashboard/antivirus', icon: 'ShieldAlert' },
+      { label: 'Ransomware', href: '/dashboard/ransomware', icon: 'ShieldX' },
       { label: 'Threats', href: '/dashboard/threats', icon: 'Search01Icon' },
       { label: 'Attack Path', href: '/dashboard/attack-path', icon: 'GitFork' },
       { label: 'Infra', href: '/dashboard/infra', icon: 'ComputerIcon' },

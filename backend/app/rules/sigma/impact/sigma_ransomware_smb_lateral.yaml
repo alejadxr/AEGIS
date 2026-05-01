@@ -1,0 +1,38 @@
+id: ransomware_smb_lateral
+name: Suspicious SMB Write to Admin Share — Ransomware Lateral Movement
+kind: sigma
+description: |
+  Detects high-volume SMB write activity targeting administrative shares
+  (C$, ADMIN$, IPC$) from a single source IP within a 60-second window.
+  Ransomware operators use SMB to push payloads across the network before
+  detonating encryption on all reachable hosts (T1021.002). The
+  target_share_regex filter is evaluated by the EDR/agent layer; the Python
+  engine counts smb_write events grouped by source_ip to detect the volume
+  anomaly. Threshold set at 20 writes/60 s — well above legitimate file
+  server traffic to admin shares.
+severity: high
+enabled: true
+tactics:
+  - LateralMovement
+techniques:
+  - T1021.002
+data_sources:
+  - edr
+  - network
+condition:
+  event_type: smb_write
+  count_threshold: 20
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    target_share_regex: '(?i)\\(C\$|ADMIN\$|IPC\$)'
+entityMappings:
+  - type: Host
+    field: hostname
+  - type: IP
+    field: source_ip
+customDetails:
+  target_share: target_share
+  bytes_written: bytes_written
+references:
+  - https://attack.mitre.org/techniques/T1021/002/

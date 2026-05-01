@@ -1,0 +1,27 @@
+id: ransomware_canary_modified
+name: Canary file modification (ransomware tripwire)
+description: |
+  An AEGIS-planted canary file was written or modified. By design no legitimate
+  process ever touches canary files. A single event is sufficient to trip this
+  rule — the threshold is intentionally 1 so the alarm is instant.
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Impact
+techniques:
+- T1486
+data_sources:
+- fim
+condition:
+  event_type: canary_modified
+  count_threshold: 1
+  time_window_seconds: 1
+  group_by: hostname
+entityMappings:
+- type: Host
+  field: hostname
+- type: FileHash
+  field: canary_id
+references:
+- https://attack.mitre.org/techniques/T1486/

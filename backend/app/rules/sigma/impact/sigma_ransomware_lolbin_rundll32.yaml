@@ -1,0 +1,37 @@
+id: ransomware_lolbin_rundll32
+name: rundll32 executing remote / suspicious DLL — ransomware payload launch
+kind: sigma
+description: |
+  Detects rundll32.exe loading DLLs from temp directories, network paths, or
+  with javascript: / mshtml: protocol handlers. Ransomware loaders chain
+  rundll32 to bypass allowlists and reflectively load encryption payloads
+  without dropping a standalone executable.
+severity: high
+enabled: true
+tactics:
+  - DefenseEvasion
+  - Execution
+techniques:
+  - T1218.011
+data_sources:
+  - process_creation
+  - edr
+condition:
+  event_type: process_create
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: hostname
+  filter:
+    process_name_regex: '(?i)rundll32(\.exe)?$'
+    command_line_regex: '(?i)(\\Temp\\|\\AppData\\|javascript:|mshtml,|\\\\[\w.-]+\\)'
+entityMappings:
+  - type: Host
+    field: hostname
+  - type: Account
+    field: username
+customDetails:
+  command_line: command_line
+  parent_process_path: parent_process_path
+references:
+  - https://attack.mitre.org/techniques/T1218/011/
+  - https://lolbas-project.github.io/lolbas/Binaries/Rundll32/
