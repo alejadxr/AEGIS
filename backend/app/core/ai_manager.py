@@ -16,6 +16,7 @@ from app.core.ai_providers import (
     OpenAIProvider,
     OllamaProvider,
     InceptionProvider,
+    GeminiProvider,
     create_provider,
     PROVIDER_CLASSES,
 )
@@ -208,6 +209,8 @@ def init_default_providers(
     openrouter_base_url: str = "https://openrouter.ai/api/v1",
     inception_api_key: str = "",
     inception_base_url: str = "https://api.inceptionlabs.ai/v1",
+    gemini_api_key: str = "",
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta",
 ) -> AIManager:
     """Register the default set of providers using env-level keys.
 
@@ -230,12 +233,19 @@ def init_default_providers(
     ai_manager.register_provider("openai", OpenAIProvider())
     # Ollama (local, no key needed)
     ai_manager.register_provider("ollama", OllamaProvider())
+    # Google Gemini (cheap+fast hot-path enrichment)
+    ai_manager.register_provider(
+        "gemini",
+        GeminiProvider(api_key=gemini_api_key, base_url=gemini_base_url),
+    )
 
-    # Set active provider: prefer Inception if key available, else OpenRouter
+    # Set active provider precedence: Inception → OpenRouter → Gemini
     if inception_api_key:
         ai_manager.set_active_provider("inception")
     elif openrouter_api_key:
         ai_manager.set_active_provider("openrouter")
+    elif gemini_api_key:
+        ai_manager.set_active_provider("gemini")
 
     logger.info(
         f"AI Manager initialized with {len(ai_manager.providers)} providers. "
