@@ -439,6 +439,8 @@ async def lifespan(app: FastAPI):
         openrouter_base_url=settings.OPENROUTER_BASE_URL,
         inception_api_key=settings.INCEPTION_API_KEY,
         inception_base_url=settings.INCEPTION_BASE_URL,
+        gemini_api_key=settings.GEMINI_API_KEY,
+        gemini_base_url=settings.GEMINI_BASE_URL,
     )
     openrouter_client.bind_ai_manager(ai_manager)
     logger.info("Multi-provider AI manager initialized")
