@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     INCEPTION_API_KEY: str = ""
     INCEPTION_BASE_URL: str = "https://api.inceptionlabs.ai/v1"
 
+    # Google Gemini (Generative Language API) — cheap+fast, default model
+    # gemini-flash-lite-latest. Suitable for enrichment + triage on hot path.
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta"
+    GEMINI_DEFAULT_MODEL: str = "gemini-flash-lite-latest"
+
     # Community Threat Intel Hub
     AEGIS_MONGODB_URI: str = ""     # Direct MongoDB connection (for self-hosted hubs)
     AEGIS_HUB_URL: str = ""         # HTTP hub URL (connect to another AEGIS instance)

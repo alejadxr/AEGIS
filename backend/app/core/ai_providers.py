@@ -583,6 +583,155 @@ class InceptionProvider(AIProvider):
 
 
 # ---------------------------------------------------------------------------
+# Google Gemini (Generative Language API)
+# ---------------------------------------------------------------------------
+
+class GeminiProvider(AIProvider):
+    """Google Gemini via Generative Language REST API.
+
+    Default model: gemini-flash-lite-latest (cheap + fast, suitable for
+    enrichment + triage on the AEGIS hot path).
+    """
+
+    KNOWN_MODELS = [
+        {"id": "gemini-flash-lite-latest", "name": "Gemini Flash Lite (latest)"},
+        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash"},
+        {"id": "gemini-2.0-flash-lite", "name": "Gemini 2.0 Flash Lite"},
+        {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro"},
+    ]
+
+    def __init__(
+        self,
+        api_key: str = "",
+        base_url: str = "https://generativelanguage.googleapis.com/v1beta",
+    ):
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=120.0)
+        return self._client
+
+    async def close(self):
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
+    def get_name(self) -> str:
+        return "gemini"
+
+    @staticmethod
+    def _to_gemini_contents(messages: list[dict]) -> tuple[list[dict], Optional[str]]:
+        """Translate OpenAI-style messages → Gemini `contents` + system_instruction.
+
+        Gemini's role names are "user" and "model" (not "assistant").
+        System messages are merged into a single system_instruction string.
+        """
+        system_parts: list[str] = []
+        contents: list[dict] = []
+        for m in messages:
+            role = m.get("role", "user")
+            text = m.get("content", "")
+            if not text:
+                continue
+            if role == "system":
+                system_parts.append(text)
+                continue
+            gemini_role = "model" if role == "assistant" else "user"
+            contents.append({"role": gemini_role, "parts": [{"text": text}]})
+        system_instruction = "\n\n".join(system_parts) if system_parts else None
+        return contents, system_instruction
+
+    async def chat(
+        self,
+        messages: list[dict],
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+    ) -> dict:
+        if not self.api_key:
+            return {
+                "content": '{"note": "Gemini API key not configured."}',
+                "tokens_used": 0,
+                "cost_usd": 0.0,
+                "latency_ms": 0,
+            }
+
+        model = model or "gemini-flash-lite-latest"
+        client = await self._get_client()
+        contents, system_instruction = self._to_gemini_contents(messages)
+
+        body: dict = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+        if system_instruction:
+            body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
+        start = time.time()
+        resp = await client.post(
+            f"{self.base_url}/models/{model}:generateContent",
+            params={"key": self.api_key},
+            headers={"Content-Type": "application/json"},
+            json=body,
+        )
+        latency_ms = int((time.time() - start) * 1000)
+
+        if resp.status_code != 200:
+            raise Exception(f"Gemini returned {resp.status_code}: {resp.text[:200]}")
+
+        data = resp.json()
+        candidates = data.get("candidates", []) or []
+        if not candidates:
+            content = ""
+        else:
+            parts = candidates[0].get("content", {}).get("parts", []) or []
+            content = "".join(p.get("text", "") for p in parts)
+
+        usage = data.get("usageMetadata", {}) or {}
+        tokens_used = (
+            usage.get("totalTokenCount")
+            or (usage.get("promptTokenCount", 0) + usage.get("candidatesTokenCount", 0))
+            or 0
+        )
+
+        return {
+            "content": content,
+            "tokens_used": tokens_used,
+            "cost_usd": 0.0,
+            "latency_ms": latency_ms,
+        }
+
+    async def get_models(self) -> list[dict]:
+        if not self.api_key:
+            return list(self.KNOWN_MODELS)
+        try:
+            client = await self._get_client()
+            resp = await client.get(
+                f"{self.base_url}/models",
+                params={"key": self.api_key},
+            )
+            if resp.status_code == 200:
+                models = resp.json().get("models", []) or []
+                out = [
+                    {
+                        "id": m["name"].removeprefix("models/"),
+                        "name": m.get("displayName") or m["name"],
+                    }
+                    for m in models
+                    if "generateContent" in (m.get("supportedGenerationMethods") or [])
+                ]
+                return out if out else list(self.KNOWN_MODELS)
+        except Exception:
+            pass
+        return list(self.KNOWN_MODELS)
+
+
+# ---------------------------------------------------------------------------
 # Provider factory
 # ---------------------------------------------------------------------------
 
@@ -592,6 +741,7 @@ PROVIDER_CLASSES: dict[str, type[AIProvider]] = {
     "openai": OpenAIProvider,
     "ollama": OllamaProvider,
     "inception": InceptionProvider,
+    "gemini": GeminiProvider,
 }
 
 
