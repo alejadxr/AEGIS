@@ -1,0 +1,46 @@
+id: sigma_web_parametric_brute
+name: Parametric Endpoint Brute Force / ID Enumeration
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Discovery
+- CredentialAccess
+techniques:
+- T1190
+- T1110.004
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 15
+  time_window_seconds: 60
+  group_by: source_ip
+  unique_field: path
+  filter:
+    path_contains:
+    - /api/reports/
+    - /api/users/
+    - /api/orders/
+    - /api/invoices/
+    - /api/accounts/
+    - /api/customers/
+    - /api/sessions/
+    - /api/tokens/
+    - /api/keys/
+    - /api/files/
+    - /api/documents/
+    - /api/leads/
+    - /api/projects/
+    - /api/tasks/
+    - /api/messages/
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  Same source IP hitting many distinct paths under a parametric resource collection
+  (e.g. /api/reports/{id}) within 60 seconds. Indicates automated ID enumeration,
+  IDOR probing, or brute-force over resource identifiers — common precursor to
+  data exfiltration. Threshold (15 unique paths in 60s) tuned to avoid normal
+  pagination/dashboard refresh patterns while catching scripted enumeration.
