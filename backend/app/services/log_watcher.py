@@ -248,7 +248,7 @@ class LogWatcher:
                 await asyncio.sleep(10)
 
     async def _tail_pm2_logs(self):
-        # Determine log source: PM2 (macOS/Mac Pro) or journalctl (Linux/Pi)
+        # Determine log source: PM2 file-tail (macOS/Mac Pro) or journalctl (Linux/Pi)
         extra_paths = ["/usr/local/bin"]
         env = os.environ.copy()
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
@@ -259,17 +259,12 @@ class LogWatcher:
         from app.config import settings
 
         if pm2_path:
-            # PM2 mode (Mac Pro, servers with Node.js)
-            monitored = [
-                a.strip()
-                for a in (settings.AEGIS_MONITORED_APPS or "").split(",")
-                if a.strip()
-            ]
-            cmd = [pm2_path, "logs", "--raw", "--lines", "0", *monitored]
-            logger.info(
-                f"Starting PM2 log tail: {' '.join(cmd)} "
-                f"(apps={monitored or 'ALL'})"
-            )
+            # PM2 file-tail mode: read ~/.pm2/logs/<app>-{out,error}.log directly.
+            # The old approach (pm2 logs subprocess) returned EOF in ~2ms when
+            # no TTY is attached, so AEGIS never saw any app output. File-tail
+            # seeks to EOF on startup and polls for new lines every 0.5 s,
+            # with inode-change detection for log rotation.
+            await self._tail_pm2_files(settings)
         elif journalctl_path:
             # Journalctl mode (Pi, Linux servers without PM2)
             # Monitor sshd, aegis services, and auth logs for attack detection
@@ -282,43 +277,167 @@ class LogWatcher:
                 "-u", "apache2",
             ]
             logger.info(f"Starting journalctl log tail (no PM2 found): {' '.join(cmd)}")
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    env=env,
+                )
+            except FileNotFoundError:
+                logger.error("journalctl not found. Log watcher disabled.")
+                self._running = False
+                return
+
+            try:
+                while self._running:
+                    try:
+                        line_bytes = await asyncio.wait_for(proc.stdout.readline(), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        continue
+
+                    if not line_bytes:
+                        logger.warning("journalctl log stream ended")
+                        break
+
+                    line = line_bytes.decode("utf-8", errors="replace").strip()
+                    if line:
+                        await self._process_line(line)
+            finally:
+                try:
+                    proc.terminate()
+                    await proc.wait()
+                except Exception:
+                    pass
         else:
             logger.error("Neither PM2 nor journalctl found. Log watcher disabled.")
             self._running = False
-            return
 
+    async def _resolve_pm2_log_paths(self, apps: list) -> dict:
+        """Use 'pm2 jlist' to resolve actual log file paths for each app.
+
+        PM2 apps may write to custom paths (e.g. ~/web-logs/) instead of the
+        default ~/.pm2/logs/. We query pm2 jlist once at startup to get the
+        authoritative paths from PM2's own process metadata.
+
+        Returns: {app_name: {"out": path, "error": path}}
+        """
+        import json, subprocess
+        result = {}
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env=env,
+            proc = subprocess.run(
+                ["pm2", "jlist"],
+                capture_output=True, text=True, timeout=10,
             )
-        except FileNotFoundError:
-            logger.error(f"Log source command not found. Log watcher disabled.")
+            pm2_info = json.loads(proc.stdout)
+            for entry in pm2_info:
+                name = entry.get("name", "")
+                if name not in apps:
+                    continue
+                pm2env = entry.get("pm2_env", {})
+                out_path = pm2env.get("pm_out_log_path", "")
+                err_path = pm2env.get("pm_err_log_path", "")
+                result[name] = {"out": out_path, "error": err_path}
+        except Exception as exc:
+            logger.warning(f"log_watcher: pm2 jlist failed, will fall back to default paths: {exc}")
+        return result
+
+    async def _tail_pm2_files(self, settings):
+        """File-tail multiplexer for PM2 log files.
+
+        Resolves actual log paths via 'pm2 jlist' (apps may use custom paths
+        outside ~/.pm2/logs/). Seeks to EOF on startup and polls every 0.5 s.
+        Detects log rotation via inode change and reopens at the beginning.
+        """
+        pm2_logs_dir = os.path.expanduser(
+            os.environ.get("AEGIS_PM2_LOGS_DIR", "~/.pm2/logs")
+        )
+        apps = [
+            a.strip()
+            for a in (settings.AEGIS_MONITORED_APPS or "").split(",")
+            if a.strip()
+        ]
+
+        # Resolve actual log paths from PM2 metadata
+        pm2_paths = await self._resolve_pm2_log_paths(apps)
+
+        # Build handle list: [fp, inode, path, app_name, stream_kind]
+        handles = []
+        for app in apps:
+            app_paths = pm2_paths.get(app, {})
+            for stream in ("out", "error"):
+                # Use pm2 jlist path if available, fall back to default naming
+                stream_key = stream  # "out" or "error"
+                if app_paths.get(stream_key):
+                    fpath = app_paths[stream_key]
+                else:
+                    suffix = "out" if stream == "out" else "error"
+                    fpath = os.path.join(pm2_logs_dir, f"{app}-{suffix}.log")
+                if not os.path.exists(fpath):
+                    logger.warning(f"log_watcher: PM2 log file not found, skipping: {fpath}")
+                    continue
+                try:
+                    fp = open(fpath, "r", errors="replace")
+                    fp.seek(0, 2)  # seek to EOF — only tail new lines
+                    inode = os.stat(fpath).st_ino
+                    handles.append([fp, inode, fpath, app, stream])
+                except Exception as exc:
+                    logger.warning(f"log_watcher: cannot open {fpath}: {exc}")
+
+        logger.info(
+            f"log_watcher file-tail started: {len(handles)} files across {len(apps)} apps"
+        )
+
+        if not handles:
+            logger.error("log_watcher: no PM2 log files opened — log watching disabled")
             self._running = False
             return
 
+        rotation_check_interval = 30.0  # seconds between inode checks
+        last_rotation_check = asyncio.get_event_loop().time()
+
         try:
             while self._running:
-                try:
-                    line_bytes = await asyncio.wait_for(proc.stdout.readline(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    continue
+                for handle in handles:
+                    fp, inode, path, app_name, stream_kind = handle
+                    while True:
+                        line = fp.readline()
+                        if not line:
+                            break
+                        line = line.rstrip("\n").rstrip("\r")
+                        if line:
+                            await self._process_line(line)
 
-                if not line_bytes:
-                    logger.warning("PM2 log stream ended")
-                    break
+                await asyncio.sleep(0.5)
 
-                line = line_bytes.decode("utf-8", errors="replace").strip()
-                if line:
-                    await self._process_line(line)
+                # Rotation detection: re-stat every 30 s
+                now = asyncio.get_event_loop().time()
+                if now - last_rotation_check >= rotation_check_interval:
+                    last_rotation_check = now
+                    for handle in handles:
+                        fp, inode, path, app_name, stream_kind = handle
+                        try:
+                            new_inode = os.stat(path).st_ino
+                        except OSError:
+                            continue
+                        if new_inode != inode:
+                            logger.info(f"log_watcher: rotation detected for {path}, reopening")
+                            try:
+                                fp.close()
+                            except Exception:
+                                pass
+                            try:
+                                new_fp = open(path, "r", errors="replace")
+                                handle[0] = new_fp
+                                handle[1] = new_inode
+                            except Exception as exc:
+                                logger.warning(f"log_watcher: reopen failed for {path}: {exc}")
         finally:
-            try:
-                proc.terminate()
-                await proc.wait()
-            except Exception:
-                pass
+            for handle in handles:
+                try:
+                    handle[0].close()
+                except Exception:
+                    pass
 
     async def _process_line(self, line: str):
         # Publish every log line to event_bus for the Raw Log Stream widget

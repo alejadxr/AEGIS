@@ -7,6 +7,7 @@ call ``openrouter_client.query()`` which delegates here transparently.
 """
 
 import logging
+import os
 from typing import Optional
 
 from app.core.ai_providers import (
@@ -102,6 +103,20 @@ class AIManager:
 
         Tries the designated provider first, then walks the fallback chain.
         """
+        # Short-circuit when AI is disabled. Accepts {disabled, offline, off, none}
+        # so existing deployments using AEGIS_AI_MODE=offline keep working.
+        _mode = os.environ.get("AEGIS_AI_MODE", "optional").strip().lower()
+        if _mode in {"disabled", "offline", "off", "none"}:
+            return {
+                "content": "",
+                "tokens_used": 0,
+                "cost_usd": 0.0,
+                "latency_ms": 0,
+                "provider": "disabled",
+                "model": "disabled",
+                "task_type": task_type,
+            }
+
         # Determine which provider to try first
         primary_name = self.task_routing.get(task_type, None)
         if client_settings:
