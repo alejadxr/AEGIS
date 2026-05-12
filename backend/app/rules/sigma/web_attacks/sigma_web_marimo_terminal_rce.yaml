@@ -1,0 +1,31 @@
+id: sigma_web_marimo_terminal_rce
+name: Marimo Notebook Pre-Auth Terminal WebSocket RCE (CVE-2026-39987)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+- Execution
+techniques:
+- T1190
+- T1059.004
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /terminal/ws
+    - /marimo/terminal
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  Marimo notebook server pre-authentication WebSocket RCE
+  (CVE-2026-39987, CVSS 9.3, KEV-listed). Affects marimo <0.23.0.
+  Connect to /terminal/ws without auth header → spawns shell on
+  host. Single request = compromise.
