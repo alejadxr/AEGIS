@@ -32,7 +32,7 @@ _KNOWN_SAFE_IPS = frozenset({
 # Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
 # IPs in this set bypass the internal-IP filter so that pentest lab machines
 # on Tailscale CGNAT (e.g. a pentest host in the 100.64.0.0/10 range) can generate real incidents.
-# Shared semantics with correlation_engine._ATTACKER_IPS — same env var.
+# Shared semantics with correlation_engine._ATTACKER_IPS ? same env var.
 from app.config import settings as _settings
 
 _ATTACKER_IPS: set[str] = {
@@ -47,10 +47,10 @@ if _ATTACKER_IPS:
 def _is_private_ip(ip: str) -> bool:
     """Check if an IP is internal, private, Tailscale, or a known safe IP.
 
-    An IP in `AEGIS_ATTACKER_IPS` always returns False — the explicit
+    An IP in `AEGIS_ATTACKER_IPS` always returns False ? the explicit
     allow-list wins over the network-range classification.
     """
-    # Explicit allow-list wins — see correlation_engine._is_internal_ip.
+    # Explicit allow-list wins ? see correlation_engine._is_internal_ip.
     if ip in _ATTACKER_IPS:
         return False
     if ip in _KNOWN_SAFE_IPS:
@@ -90,12 +90,42 @@ PATTERNS = [
     },
     {
         "name": "auth_failure", "severity": "medium", "threat_type": "brute_force",
-        # Only match 401 Unauthorized — NOT 403 (which is normal for tier-gated features)
+        # Only match 401 Unauthorized ? NOT 403 (which is normal for tier-gated features)
         "regex": re.compile(r'"(?:GET|POST|PUT|DELETE)\s+\S+\s+HTTP/[\d.]+"\s+401\b'),
     },
     {
         "name": "server_error", "severity": "low", "threat_type": "error_spike",
         "regex": re.compile(r'"(?:GET|POST|PUT|DELETE)\s+\S+\s+HTTP/[\d.]+"\s+500'),
+    },
+    {
+        # npm supply-chain worms (Shai-Hulud 2.0, TanStack compromise, Sept 2025 chalk/debug wave).
+        # Attacker Ethereum address, malware C2 domains, browser globals injected by infected
+        # chalk/debug, Bun runtime dropped to /tmp by Shai-Hulud postinstall, generic preinstall RCE.
+        "name": "npm_supply_chain_worm", "severity": "critical", "threat_type": "supply_chain",
+        "regex": re.compile(
+            r"(0xFc4a4858bafef54D1b1d7697bfb5c52F4c166976"
+            r"|stealthProxyControl|checkethereumw|runmask|newdlocal"
+            r"|updatenet\.work|npmjs\.help"
+            r"|/tmp/bun_[a-zA-Z0-9]+|bun\s+setup\.mjs"
+            r"|preinstall.*node\s+-e\s+eval"
+            r"|postinstall.*child_process)"
+        ),
+    },
+    {
+        # HuggingFace malicious model pull. Loose marker: from_pretrained with very short org name,
+        # pickle/binary weights on resolve URLs, trust_remote_code=True, or snapshot_download
+        # with a pinned commit hash (which attackers do to lock victims to malicious commit).
+        "name": "hf_malicious_model", "severity": "high", "threat_type": "supply_chain",
+        "regex": re.compile(
+            r"(?i)(huggingface\.co/[^/\s]+/[^/\s]+/resolve/.*\.(pkl|pickle|bin)"
+            r"|huggingface_hub.*snapshot_download.*revision=[a-f0-9]{40}"
+            r"|trust_remote_code\s*=\s*True)"
+        ),
+    },
+    {
+        # Marimo CVE-2026-39987 pre-auth terminal RCE marker ? any access to /terminal/ws.
+        "name": "marimo_terminal_rce", "severity": "critical", "threat_type": "rce",
+        "regex": re.compile(r"/terminal/ws|/marimo/terminal"),
     },
     {
         "name": "cmd_injection", "severity": "critical", "threat_type": "rce",
@@ -118,9 +148,9 @@ INTERNAL_IPS = frozenset(_internal_default)
 # Without this filter the log_watcher would read its OWN warning output and
 # correlation_engine would read ITS OWN `[CORRELATION]` emissions, producing a
 # self-referential feedback loop: a real (or false-positive) detection is
-# logged → the log line contains the matched payload → log_watcher tails its
-# own stderr → regex matches again → creates another incident → writes another
-# warning → repeat. AEGIS's own SQLAlchemy tracebacks (`MissingGreenlet`,
+# logged ? the log line contains the matched payload ? log_watcher tails its
+# own stderr ? regex matches again ? creates another incident ? writes another
+# warning ? repeat. AEGIS's own SQLAlchemy tracebacks (`MissingGreenlet`,
 # `ExceptionGroup`, etc.) also contain dash dividers and keyword fragments
 # that matched the old SQLi regex. Dropping any line tagged with one of these
 # markers stops the loop at the source.
@@ -215,7 +245,7 @@ class LogWatcher:
         self._brute_force_tracker: dict = defaultdict(deque)
         self._port_scan_tracker = PortScanTracker(window_seconds=60, threshold=10)
         self._recent_alerts: deque = deque(maxlen=500)
-        # Incident deduplication: track (ip, threat_type) → last_created timestamp
+        # Incident deduplication: track (ip, threat_type) ? last_created timestamp
         # Don't create another incident for the same IP+type within 5 minutes
         self._incident_cooldown: dict[str, datetime] = {}
         self._COOLDOWN_SECONDS = 300  # 5 minutes between incidents for same IP+type
@@ -378,7 +408,7 @@ class LogWatcher:
                     continue
                 try:
                     fp = open(fpath, "r", errors="replace")
-                    fp.seek(0, 2)  # seek to EOF — only tail new lines
+                    fp.seek(0, 2)  # seek to EOF ? only tail new lines
                     inode = os.stat(fpath).st_ino
                     handles.append([fp, inode, fpath, app, stream])
                 except Exception as exc:
@@ -389,7 +419,7 @@ class LogWatcher:
         )
 
         if not handles:
-            logger.error("log_watcher: no PM2 log files opened — log watching disabled")
+            logger.error("log_watcher: no PM2 log files opened ? log watching disabled")
             self._running = False
             return
 
@@ -461,7 +491,7 @@ class LogWatcher:
         if ip and (ip in INTERNAL_IPS or _is_private_ip(ip)):
             return
 
-        # Honey-AI breadcrumb scan — if this log line contains a UUID that
+        # Honey-AI breadcrumb scan ? if this log line contains a UUID that
         # was planted in a deception campaign we raise a CRITICAL incident.
         try:
             await self._scan_breadcrumbs(line)
@@ -579,7 +609,7 @@ class LogWatcher:
             logger.debug(f'Skipping incident without source IP: {pattern_name}')
             return
 
-        # Skip private/Tailscale/internal IPs — these are NEVER attackers
+        # Skip private/Tailscale/internal IPs ? these are NEVER attackers
         if _is_private_ip(source_ip) or source_ip in INTERNAL_IPS:
             logger.debug(f'Skipping incident for internal IP {source_ip}: {pattern_name}')
             return
@@ -641,3 +671,4 @@ class LogWatcher:
 
 
 log_watcher = LogWatcher()
+

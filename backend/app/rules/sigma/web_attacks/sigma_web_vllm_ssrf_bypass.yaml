@@ -1,0 +1,35 @@
+id: sigma_web_vllm_ssrf_bypass
+name: vLLM SSRF Allowlist Bypass via URL Parser Differential (CVE-2026-25960)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+- Discovery
+techniques:
+- T1190
+- T1046
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /v1/completions
+    - /v1/chat/completions
+    - load_from_url_async
+    - "\\@"
+    - "%5C@"
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  vLLM SSRF protection bypass via URL parser differential between
+  aiohttp and yarl (CVE-2026-25960). Affects vllm <0.17.0.
+  Payload like https://allowlist.com\@attacker.com passes allowlist
+  check but routes to attacker host. Detection: backslash + at-sign
+  in URL on vLLM endpoints.

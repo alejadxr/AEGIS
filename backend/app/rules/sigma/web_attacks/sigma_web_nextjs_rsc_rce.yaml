@@ -1,0 +1,33 @@
+id: sigma_web_nextjs_rsc_rce
+name: React Server Components RCE Probe (CVE-2025-55182 / React2Shell)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+- Execution
+techniques:
+- T1190
+- T1059
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /_rsc
+    - x-rsc-payload
+    - x-flight-data
+    - application/x-rsc
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  React Server Components Flight protocol RCE probe (CVE-2025-55182,
+  CVSS 10.0, KEV-listed Dec 2025). Affects React 19.0.0-19.2.3 and
+  Next.js 14.x-15.x with RSC enabled. Pre-auth RCE via deserialized
+  Flight payload. Active exploitation observed.
