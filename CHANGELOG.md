@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-05-13
+
+### Added — Ransomware Defense & Cloud-Native CVE Coverage
+
+#### Sigma rule pack — 2025-2026 CVE coverage (8 new rules)
+- **`sigma_web_nextjs_rsc_rce`** — CVE-2025-55182 React2Shell (RSC Flight RCE, KEV-listed Dec 2025, CVSS 10.0).
+- **`sigma_web_nextjs_segment_prefetch_bypass`** — CVE-2026-44575 Next.js 15 App Router middleware bypass via `.rsc?`, `__RSC_MANIFEST__`, `/_next/data/`, segment-prefetch routes.
+- **`sigma_web_vite_fs_disclosure`** — CVE-2025-30208 / CVE-2025-31486 Vite dev server `/@fs/` arbitrary file read with `?raw??`, `?import&raw`, `?raw&url` query variants.
+- **`sigma_web_marimo_terminal_rce`** — CVE-2026-39987 Marimo notebook pre-auth `/terminal/ws` RCE (CVSS 9.3, KEV-listed).
+- **`sigma_web_vllm_ssrf_bypass`** — CVE-2026-25960 vLLM `<0.17.0` SSRF allowlist bypass via URL parser differential (backslash + at-sign).
+- **`sigma_web_nextjs_image_ssrf`** — Next.js `/_next/image?url=` + Cloudflare `/cdn-cgi/image/` SSRF probing localhost / RFC1918 / cloud metadata endpoints (covers CVE-2026-3125).
+- **`sigma_web_pickle_rce_endpoint`** — CVE-2026-26215 generic pickle / dynamic-method-execute endpoint probe.
+- **`sigma_web_parametric_brute`** — Parametric endpoint brute-force / ID enumeration across 15 parametric collections.
+
+#### log_watcher PATTERNS — supply-chain stdout detection (3 new patterns)
+- **`npm_supply_chain_worm`** (critical) — Shai-Hulud 2.0, TanStack compromise, Sept 2025 chalk/debug wave. Markers: attacker Ethereum address `0xFc4a...`, malware C2 domains (`updatenet.work`, `npmjs.help`), injected browser globals (`stealthProxyControl`, `checkethereumw`, `runmask`, `newdlocal`), Bun runtime drops (`/tmp/bun_*`), pre/postinstall `node -e eval` patterns.
+- **`hf_malicious_model`** (high) — HuggingFace malicious model pull. Markers: pickle/binary weights on resolve URLs, `snapshot_download(revision=<commit-sha>)`, `trust_remote_code=True`.
+- **`marimo_terminal_rce`** (critical) — Defense in depth marker for Marimo terminal websocket access at the log-line level.
+
+#### File Integrity Monitoring expansion
+- **`FIM_PATHS`** now covers macOS launch persistence (`/Library/LaunchDaemons/`, `/Library/LaunchAgents/`), cron / sudoers persistence (`/var/spool/cron/`, `/etc/cron.d/`, `/etc/sudoers.d/`), cloud credential exfil targets (`~/.aws/`, `~/.kube/`, `~/.docker/`, `~/.config/gh/`).
+- **`FIM_CRITICAL_MARKERS`** — substring markers that elevate any file event to `critical` severity: `/tmp/bun_` (Shai-Hulud), `/authorized_keys`, `/etc/sudoers.d/`, launch dirs, `.aws/credentials`, `.kube/config`, `.docker/config.json`, `/dev/null`, `/dev/console` (runc escape class).
+
+#### Pi-side firewall executor (Rasputin-style restored)
+- **`AEGIS_FIREWALL_URL=http://<pi>:8765`** re-enabled. AEGIS delegates iptables block enforcement to `aegis-firewall.service` on the Pi 5 + Hailo gateway via `firewall_client`. End-to-end verified: Kali → Sable HTTP log → AEGIS detection → `POST /block` to Pi → iptables DROP confirmed.
+- **`aegis-iptables-init.service`** (Pi) — idempotent `AEGIS_BLOCK` chain creation linked into INPUT/FORWARD, persisted via systemd one-shot.
+
+#### log_watcher — file-tail multiplexer (replaces broken PM2 subprocess)
+- **`_tail_pm2_files(settings)`** — replaces `pm2 logs` subprocess (which returned EOF in ~2 ms with no TTY and silently dropped every log line). Now opens `~/.pm2/logs/<app>-{out,error}.log` directly, seeks to EOF, polls every 0.5 s, with inode-change rotation detection every 30 s.
+- **`_resolve_pm2_log_paths(apps)`** — queries `pm2 jlist` at startup to resolve the *actual* log paths for each monitored app, supporting custom log paths outside `~/.pm2/logs/` (e.g., apps that pipe to `~/web-logs/<app>.log`).
+- **AI offline gate in `ai_manager.chat()`** — short-circuits when `AEGIS_AI_MODE ∈ {disabled, offline, off, none}`, returning a synthetic zero-cost response. Zero outbound httpx in offline mode (verified).
+
+#### Google Gemini provider
+- **`GeminiProvider`** in `app/core/ai_providers.py` — multi-model provider with `gemini-flash-lite-latest` default. Wired into `AIManager` task-routing.
+
+### Changed
+- Production version string `1.5.0` → `1.6.0` across `backend/app/__init__.py`, `backend/app/main.py`, `frontend/package.json`.
+- `AEGIS_FIREWALL_URL` reversed from "commented out — never re-enable" (v1.5 stance) to "active — Pi runs aegis-firewall as executor" (v1.6 stance).
+
+### Security
+- Detection coverage expanded against KEV-listed CVEs of 2025-2026: CVE-2025-55182 (React RSC), CVE-2026-39987 (Marimo), CVE-2026-44575 (Next.js segment-prefetch).
+- Supply-chain worm coverage for Shai-Hulud 2.0, TanStack compromise, and the Sept 2025 chalk/debug wave (2.6B weekly downloads affected).
+
+### Not yet integrated (kernel / eBPF needed)
+- CVE-2026-43284 "Dirty Frag" (Linux ESP/RxRPC kernel)
+- CVE-2026-31431 "Copy Fail" (AF_ALG splice → root)
+- CVE-2025-31133 / -52565 / -52881 (runc container escape — file-watcher hints exist via `/dev/null`, `/dev/console` markers, but full coverage needs syscall tracing)
+- CVE-2026-4105 (systemd-machined D-Bus race)
+
+---
+
 ## [1.5.0] - 2026-04-27
 
 ### Added

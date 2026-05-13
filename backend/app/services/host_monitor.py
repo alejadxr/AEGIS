@@ -68,8 +68,57 @@ SUSPICIOUS_PROCESSES: dict[str, str] = {
     "cryptonight": "critical",
 }
 
-# Directories to monitor for file integrity
-FIM_PATHS = ["/etc/", os.path.expanduser("~/.ssh/"), "/tmp/", "/var/log/"]
+# Directories to monitor for file integrity. Expanded in v1.6 to cover:
+#   - macOS LaunchDaemons/Agents persistence (CVE-2025-24085)
+#   - cron / systemd / sudoers persistence (T1053, T1548)
+#   - Cloud credential exfil targets (~/.aws, ~/.kube, ~/.docker)
+#   - Container runtime sensitive paths (runc /dev/null/console swap class)
+FIM_PATHS = [
+    "/etc/",
+    os.path.expanduser("~/.ssh/"),
+    "/tmp/",
+    "/var/log/",
+    # macOS launch persistence — CVE-2025-24085 class
+    "/Library/LaunchDaemons/",
+    "/Library/LaunchAgents/",
+    os.path.expanduser("~/Library/LaunchAgents/"),
+    # cron + scheduled task persistence
+    "/var/spool/cron/",
+    "/etc/cron.d/",
+    "/etc/cron.daily/",
+    "/etc/cron.hourly/",
+    # privilege grants
+    "/etc/sudoers.d/",
+    # cloud credentials (npm/HF/PyPI exfil targets — Shai-Hulud, spellcheckpy, typosquats)
+    os.path.expanduser("~/.aws/"),
+    os.path.expanduser("~/.kube/"),
+    os.path.expanduser("~/.docker/"),
+    os.path.expanduser("~/.config/gh/"),
+]
+
+# Path patterns that elevate severity to critical regardless of base dir.
+# Matched as substring against the full file path. Add new IOCs here, not in
+# the _fim_consumer logic.
+FIM_CRITICAL_MARKERS = (
+    # Shai-Hulud 2.0 npm worm — Bun runtime dropped to /tmp during npm install
+    "/tmp/bun_",
+    "/tmp/setup.mjs",
+    # Persistence on authorized SSH keys
+    "/authorized_keys",
+    # sudoers escalation
+    "/etc/sudoers.d/",
+    # macOS persistence — plist writes in launch dirs
+    "/Library/LaunchDaemons/",
+    "/Library/LaunchAgents/",
+    # Credential file writes (exfil staging or theft)
+    "/.aws/credentials",
+    "/.kube/config",
+    "/.docker/config.json",
+    "/.netrc",
+    # runc escape class — symlink swap on /dev pseudo-files
+    "/dev/null",
+    "/dev/console",
+)
 
 # Network anomaly: max outbound connections per process per window
 NET_ANOMALY_WINDOW_SECS = 30
@@ -188,7 +237,10 @@ class HostMonitor:
             file_path = item["path"]
 
             severity = EventSeverity.medium
-            if "ssh" in file_path.lower():
+            # Critical markers win over everything else
+            if any(marker in file_path for marker in FIM_CRITICAL_MARKERS):
+                severity = EventSeverity.critical
+            elif "ssh" in file_path.lower():
                 severity = EventSeverity.high
             elif file_path.startswith("/etc/"):
                 severity = EventSeverity.high
