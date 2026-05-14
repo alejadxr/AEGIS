@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.6.0] - 2026-05-13
+## [1.6.1] - 2026-05-14
 
 ### Added — Ransomware Defense & Cloud-Native CVE Coverage
 
@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`GeminiProvider`** in `app/core/ai_providers.py` — multi-model provider with `gemini-flash-lite-latest` default. Wired into `AIManager` task-routing.
 
 ### Changed
-- Production version string `1.5.0` → `1.6.0` across `backend/app/__init__.py`, `backend/app/main.py`, `frontend/package.json`.
+- Production version string `1.6.0` → `1.6.1` across `backend/app/__init__.py`, `backend/app/main.py`, `frontend/package.json`.
 - `AEGIS_FIREWALL_URL` reversed from "commented out — never re-enable" (v1.5 stance) to "active — Pi runs aegis-firewall as executor" (v1.6 stance).
 
 ### Security
@@ -257,6 +257,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.6.1]: https://github.com/alejadxr/AEGIS/releases/tag/v1.6.1
 [1.5.0]: https://github.com/alejandxr/AEGIS/releases/tag/v1.5.0
 [1.4.0]: https://github.com/alejandxr/AEGIS/releases/tag/v1.4.0
 [1.2.0]: https://github.com/alejandxr/AEGIS/releases/tag/v1.2.0

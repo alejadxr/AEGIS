@@ -89,7 +89,7 @@ jobs:
             | macOS (Intel) | `.dmg` |
             | Windows | `.msi` / `.exe` |
             | Linux | `.AppImage` / `.deb` |
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
 
   # ------------------------------------------------------------------

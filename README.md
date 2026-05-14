@@ -12,7 +12,7 @@
 [![Detection](https://img.shields.io/badge/detection-11%2F11-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
 [![Docker](https://img.shields.io/badge/docker-compose-blue)]()
-[![Version](https://img.shields.io/badge/version-1.6.0-cyan)]()
+[![Version](https://img.shields.io/badge/version-1.6.1-cyan)]()
 
 [What is AEGIS?](#what-is-aegis) · [Install](#5-minute-install) · [Ransomware Defense](#ransomware-defense-v16) · [Detection](#detection-1111-verified) · [vs Wazuh / OSSEC / Elastic](#aegis-vs-wazuh--ossec--elastic-security) · [Architecture](#architecture) · [Docs](docs/)
 
@@ -501,11 +501,11 @@ Paste this block into any HTML landing page <head> to enable rich results.
       "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 134 Sigma rules. Offline-capable. No cloud AI required.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux, macOS, Windows",
-      "softwareVersion": "1.6.0",
+      "softwareVersion": "1.6.1",
       "datePublished": "2026-05-01",
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "url": "https://github.com/alejadxr/AEGIS",
-      "downloadUrl": "https://github.com/alejadxr/AEGIS/releases/tag/v1.6.0",
+      "downloadUrl": "https://github.com/alejadxr/AEGIS/releases/tag/v1.6.1",
       "codeRepository": "https://github.com/alejadxr/AEGIS",
       "programmingLanguage": ["Python", "TypeScript", "Rust"],
       "keywords": [
