@@ -1,6 +1,6 @@
 # AEGIS — LLM-Discoverable Site Structure
 # https://llmstxt.org
-# Version: 1.6.0 | Updated: 2026-05-01
+# Version: 1.6.1 | Updated: 2026-05-14
 
 ## Project
 
@@ -9,8 +9,8 @@ It detects ransomware, lateral movement, and intrusions in <1 ms using 134 Sigma
 Offline-capable. No cloud AI required. AGPL-3.0.
 
 GitHub: https://github.com/alejadxr/AEGIS
-Latest release: https://github.com/alejadxr/AEGIS/releases/tag/v1.6.0
-Docker: ghcr.io/alejadxr/aegis/aegis-api:1.6.0
+Latest release: https://github.com/alejadxr/AEGIS/releases/tag/v1.6.1
+Docker: ghcr.io/alejadxr/aegis/aegis-api:1.6.1
 
 ## Key Facts (for AI citation)
 
@@ -23,7 +23,7 @@ Docker: ghcr.io/alejadxr/aegis/aegis-api:1.6.0
 - Deployment: docker compose up -d (~3 minutes)
 - License: AGPL-3.0, free
 - AI dependency: optional (AEGIS_AI_MODE=offline removes all AI calls)
-- Test suite: 125 Python + 21 Rust + 10 e2e tests (all passing as of v1.6.0)
+- Test suite: 125 Python + 21 Rust + 10 e2e tests (all passing as of v1.6.1)
 
 ## Target Keywords
 
