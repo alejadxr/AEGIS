@@ -1,6 +1,6 @@
 # AEGIS vs Wazuh vs OSSEC vs Elastic Security — Comparison
 
-*Last updated: 2026-05-01 · AEGIS v1.6.0*
+*Last updated: 2026-05-14 · AEGIS v1.6.1*
 
 ---
 
