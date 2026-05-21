@@ -8,7 +8,27 @@ call ``openrouter_client.query()`` which delegates here transparently.
 
 import logging
 import os
+import time
 from typing import Optional
+
+# Skip a provider for this many seconds after it signals quota exhaustion
+# (HTTP 402/429, "free_tier", "quota"). Without this the manager pays the
+# round-trip on every request and floods logs with the same WARNING.
+_QUARANTINE_TTL_SECONDS = 3600
+
+_QUOTA_ERROR_MARKERS = (
+    "402",
+    "429",
+    "free_tier",
+    "quota",
+    "payment required",
+    "insufficient_quota",
+)
+
+
+def _is_quota_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _QUOTA_ERROR_MARKERS)
 
 from app.core.ai_providers import (
     AIProvider,
@@ -17,10 +37,14 @@ from app.core.ai_providers import (
     OpenAIProvider,
     OllamaProvider,
     InceptionProvider,
-    GeminiProvider,
     create_provider,
     PROVIDER_CLASSES,
 )
+
+try:
+    from app.core.ai_providers import GeminiProvider  # type: ignore
+except ImportError:
+    GeminiProvider = None  # type: ignore[assignment]
 
 logger = logging.getLogger("aegis.ai_manager")
 
@@ -35,6 +59,23 @@ class AIManager:
         self.task_routing: dict[str, str] = {}
         # ordered fallback chain of provider names
         self.fallback_chain: list[str] = ["inception", "openrouter", "openai", "anthropic", "ollama"]
+        # provider name -> unix timestamp until which the provider is skipped
+        self._quarantined: dict[str, float] = {}
+
+    def _is_quarantined(self, name: str) -> bool:
+        until = self._quarantined.get(name)
+        if until is None:
+            return False
+        if time.time() >= until:
+            self._quarantined.pop(name, None)
+            return False
+        return True
+
+    def _quarantine(self, name: str, reason: str) -> None:
+        self._quarantined[name] = time.time() + _QUARANTINE_TTL_SECONDS
+        logger.warning(
+            f"Provider {name} quarantined for {_QUARANTINE_TTL_SECONDS}s: {reason}"
+        )
 
     # ------------------------------------------------------------------
     # Registration
@@ -131,6 +172,8 @@ class AIManager:
 
         last_error: Exception | None = None
         for pname in providers_to_try:
+            if self._is_quarantined(pname):
+                continue
             try:
                 provider = self._resolve_provider(pname, client_settings)
             except ValueError:
@@ -148,6 +191,8 @@ class AIManager:
             except Exception as exc:
                 logger.warning(f"Provider {pname} failed for task_type={task_type}: {exc}")
                 last_error = exc
+                if _is_quota_error(exc):
+                    self._quarantine(pname, f"quota error: {exc}")
 
         logger.error(f"All providers failed for task_type={task_type}: {last_error}")
         return {
@@ -248,11 +293,13 @@ def init_default_providers(
     ai_manager.register_provider("openai", OpenAIProvider())
     # Ollama (local, no key needed)
     ai_manager.register_provider("ollama", OllamaProvider())
-    # Google Gemini (cheap+fast hot-path enrichment)
-    ai_manager.register_provider(
-        "gemini",
-        GeminiProvider(api_key=gemini_api_key, base_url=gemini_base_url),
-    )
+    # Google Gemini (cheap+fast hot-path enrichment) — only if the provider
+    # class is available in this build of ai_providers.
+    if GeminiProvider is not None:
+        ai_manager.register_provider(
+            "gemini",
+            GeminiProvider(api_key=gemini_api_key, base_url=gemini_base_url),
+        )
 
     # Set active provider precedence: Inception → OpenRouter → Gemini
     if inception_api_key:
