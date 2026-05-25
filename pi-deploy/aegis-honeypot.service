@@ -1,0 +1,22 @@
+[Unit]
+Description=AEGIS HTTP Honeypot (Pi edition)
+After=network-online.target aegis-firewall.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=diego
+Group=diego
+WorkingDirectory=/home/diego/aegis-honeypot
+Environment=HONEYPOT_PORT=8081
+Environment=HONEYPOT_LOG=/var/log/aegis/honeypot.log
+Environment=AEGIS_LOCAL_FW=http://127.0.0.1:8765
+Environment=AEGIS_API_URL=http://100.87.222.58:8000
+ExecStart=/usr/bin/python3 /home/diego/aegis-honeypot/aegis_honeypot.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
