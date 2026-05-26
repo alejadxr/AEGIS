@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     # traceback dividers). Empty string = tail all apps (legacy behavior).
     AEGIS_MONITORED_APPS: str = "cayde6-api,cayde6-frontend"
 
+    # Extra log paths to tail in addition to PM2 stdout/stderr.
+    # Colon-separated, supports glob patterns. Used to point AEGIS at the
+    # unified aegis-feed.jsonl that web apps write to.
+    # Example: AEGIS_EXTRA_LOG_PATHS=/Users/alejandxr/web-logs/aegis-feed.jsonl
+    AEGIS_EXTRA_LOG_PATHS: str = ""
+
     # Attacker allow-list — comma-separated IPs that bypass the internal-IP
     # filter even if they would otherwise be classified as private/Tailscale.
     # Use this for pentest lab machines that need to generate real incidents

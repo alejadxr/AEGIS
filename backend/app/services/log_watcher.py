@@ -1,4 +1,5 @@
 import asyncio
+import glob as _glob
 import ipaddress as _ipaddress
 import logging
 import os
@@ -7,6 +8,24 @@ import shutil
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import Optional
+
+
+def _resolve_extra_log_paths(raw: str = "") -> list[str]:
+    """Glob-expand AEGIS_EXTRA_LOG_PATHS. Colon-separated, supports * and ?.
+
+    Falls back to os.environ if no value passed in. Returns absolute file
+    paths that exist. Empty → empty list. Used by log_watcher to tail
+    external log files (e.g. /web-logs/aegis-feed.jsonl) in addition to
+    PM2 stdout/stderr.
+    """
+    if not raw:
+        raw = os.environ.get("AEGIS_EXTRA_LOG_PATHS", "")
+    result: list[str] = []
+    for pattern in (p.strip() for p in raw.split(":") if p.strip()):
+        for fpath in sorted(_glob.glob(os.path.expanduser(pattern))):
+            if os.path.isfile(fpath):
+                result.append(fpath)
+    return result
 
 logger = logging.getLogger("aegis.log_watcher")
 
@@ -413,6 +432,21 @@ class LogWatcher:
                     handles.append([fp, inode, fpath, app, stream])
                 except Exception as exc:
                     logger.warning(f"log_watcher: cannot open {fpath}: {exc}")
+
+        # AEGIS_EXTRA_LOG_PATHS — additional file-tail targets outside PM2
+        # (e.g. the unified aegis-feed.jsonl that web apps write to).
+        # Pulled from pydantic Settings so it picks up .env values, not just
+        # the process environment.
+        extra_paths_raw = getattr(settings, "AEGIS_EXTRA_LOG_PATHS", "") or ""
+        for extra_path in _resolve_extra_log_paths(extra_paths_raw):
+            try:
+                fp = open(extra_path, "r", errors="replace")
+                fp.seek(0, 2)
+                inode = os.stat(extra_path).st_ino
+                handles.append([fp, inode, extra_path, "extra", "out"])
+                logger.info(f"log_watcher: tailing extra path: {extra_path}")
+            except Exception as exc:
+                logger.warning(f"log_watcher: cannot open extra path {extra_path}: {exc}")
 
         logger.info(
             f"log_watcher file-tail started: {len(handles)} files across {len(apps)} apps"
