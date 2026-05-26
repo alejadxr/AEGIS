@@ -1,4 +1,6 @@
-"""Patch script: inline-injects AEGIS unified-feed write into web-server-logger.py.
+"""Patch script: inline-injects AEGIS unified-feed write into web-server-logger.py
+AND adds X-Forwarded-For / X-Real-IP header injection to proxy_request so the
+upstream backend (sid-backend FastAPI) sees the real client IP.
 
 Idempotent: detects if AEGIS feed block is already present and skips.
 Run on Mac Pro: python3 web-server-logger.patch.py
