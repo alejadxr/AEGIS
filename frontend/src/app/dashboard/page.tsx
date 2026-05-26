@@ -205,7 +205,7 @@ export default function DashboardPage() {
               Security Overview
             </h1>
             <span className="hidden sm:inline-block text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/50 px-2 py-1 border border-border rounded-md">
-              v1.4
+              v1.6.2
             </span>
           </div>
           <p className="text-[13px] text-muted-foreground mt-1.5">

@@ -279,7 +279,7 @@ export default function LoginPage() {
             <span className="text-[10px]">&rarr;</span>
           </Link>
           <p className="text-xs text-zinc-700">
-            AEGIS Defense Platform &middot; v1.6.1
+            AEGIS Defense Platform &middot; v1.6.2
           </p>
         </div>
       </div>

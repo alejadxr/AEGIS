@@ -78,7 +78,7 @@ export default function RootLayout({
                   "datePublished": "2026-05-01",
                   "license": "https://www.gnu.org/licenses/agpl-3.0.html",
                   "url": "https://github.com/alejadxr/AEGIS",
-                  "downloadUrl": "https://github.com/alejadxr/AEGIS/releases/tag/v1.6.1",
+                  "downloadUrl": "https://github.com/alejadxr/AEGIS/releases/tag/v1.6.2",
                   "codeRepository": "https://github.com/alejadxr/AEGIS",
                   "programmingLanguage": ["Python", "TypeScript", "Rust"],
                   "keywords": "open source EDR, self-hosted ransomware defense, deterministic SOAR, open source SIEM alternative, MITRE ATT&CK detection, ransomware kill-chain, offline security platform",
