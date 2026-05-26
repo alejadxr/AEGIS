@@ -121,7 +121,7 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
                 AEGIS
               </span>
               <span className="text-[9px] font-mono text-muted-foreground/50 tracking-widest uppercase mt-px">
-                v1.4
+                v1.6.2
               </span>
             </div>
           )}
