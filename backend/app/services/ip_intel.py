@@ -1197,6 +1197,198 @@ def _hostname_flags(hostname: str | None) -> dict[str, bool]:
     return out
 
 
+_CLOUD_TAGS = {
+    "cloud", "aws", "amazon", "azure", "gcp", "google",
+    "digitalocean", "ovh", "hetzner", "linode", "vultr",
+    "alibaba", "tencent", "oracle",
+}
+
+
+def _consensus_risk(merged: dict, tor_match: bool, spamhaus_match: bool) -> int:
+    """
+    Aggregate per-provider risk signals into a single 0-100 score.
+
+    Strategy: collect every available risk signal on a 0-100 scale and take
+    the MAX. This avoids the previous UI behaviour where a single provider's
+    score (often 0 from ipquery for known clouds) overrode everything else.
+    """
+    signals: list[float] = []
+
+    # ipquery / ipapi.is style numeric risk_score (already 0-100 in our schema)
+    rs = merged.get("risk_score")
+    if isinstance(rs, (int, float)) and rs >= 0:
+        signals.append(float(rs))
+
+    # proxycheck.io 0-100
+    pc_risk = merged.get("proxycheck_risk")
+    if isinstance(pc_risk, (int, float)):
+        signals.append(float(pc_risk))
+
+    # ipapi.is abuse_score (0..1) -> 0..100
+    abuse_score = merged.get("ipapi_is_abuse_score")
+    if isinstance(abuse_score, (int, float)) and abuse_score > 0:
+        signals.append(min(100.0, float(abuse_score) * 100.0))
+
+    # AbuseIPDB confidence 0-100
+    aip = merged.get("abuseipdb_score")
+    if isinstance(aip, (int, float)) and aip > 0:
+        signals.append(float(aip))
+
+    # VirusTotal malicious engines ratio
+    vt_mal = merged.get("vt_malicious_count") or 0
+    vt_total = (
+        (merged.get("vt_total_engines") or 0)
+        or (merged.get("vt_malicious_count") or 0)
+        + (merged.get("vt_harmless_count") or 0)
+        + (merged.get("vt_undetected_count") or 0)
+        + (merged.get("vt_suspicious_count") or 0)
+    )
+    if vt_mal > 0 and vt_total > 0:
+        signals.append(min(100.0, (vt_mal / vt_total) * 100.0))
+    elif vt_mal > 0:
+        signals.append(min(95.0, 60.0 + vt_mal * 5))
+
+    # Tor exit (live list or provider flag) → 90 baseline (de-facto high risk
+    # for services that don't expect Tor traffic).
+    if tor_match or merged.get("is_tor"):
+        signals.append(90.0)
+
+    # GreyNoise classification
+    gn_cls = (merged.get("greynoise_classification") or "").lower()
+    if gn_cls == "malicious":
+        signals.append(95.0)
+    elif gn_cls == "suspicious":
+        signals.append(70.0)
+
+    # OTX pulses
+    otx = merged.get("otx_pulse_count") or 0
+    if otx > 0:
+        signals.append(min(95.0, 60.0 + otx * 5.0))
+
+    # Internal external_feeds matches
+    feeds = merged.get("external_feeds") or []
+    if feeds:
+        signals.append(80.0)
+
+    # Spamhaus DROP list
+    if spamhaus_match:
+        signals.append(95.0)
+
+    # ipapi.is is_abuser
+    if merged.get("is_abuser"):
+        signals.append(75.0)
+
+    if not signals:
+        return 0
+    return int(round(max(signals)))
+
+
+def _confidence_additive(merged: dict, tor_match: bool, asn_rep: dict) -> dict:
+    """
+    Additive per-flag confidence (0..1 clamped) computed independently from
+    the vote-aggregator used for classification. Result is merged via max()
+    into the existing `confidence` dict so labels stay stable but the UI sees
+    accurate strength of evidence for each axis.
+
+    Datacenter votes:
+      - any provider's is_datacenter=true  → +0.4 each (cap +0.7 from providers)
+      - Shodan tags include known cloud    → +0.3
+      - ASN reputation tag in {cloud,hosting,datacenter} → +0.3
+      - Hostname matches DC regex          → +0.2
+    """
+    out: dict[str, float] = {"tor": 0.0, "vpn": 0.0, "proxy": 0.0,
+                              "datacenter": 0.0, "attacker": 0.0}
+
+    # --- Datacenter -------------------------------------------------------
+    dc_from_providers = 0.0
+    if merged.get("is_datacenter"):
+        dc_from_providers += 0.4
+    # ipapi.is + proxycheck both report is_datacenter; treat their explicit
+    # type='hosting' as an extra provider vote.
+    if (merged.get("proxycheck_type") or "").lower() in ("hosting", "datacenter"):
+        dc_from_providers += 0.4
+    if merged.get("ipapi_is_datacenter") is True:
+        dc_from_providers += 0.4
+    out["datacenter"] += min(0.7, dc_from_providers)
+
+    shodan_tags = {(t or "").lower() for t in (merged.get("shodan_tags") or [])}
+    if shodan_tags & _CLOUD_TAGS:
+        out["datacenter"] += 0.3
+
+    asn_tag = (asn_rep.get("asn_reputation_tag") or "").lower()
+    if asn_tag in {"cloud", "hosting", "datacenter"}:
+        out["datacenter"] += 0.3
+
+    # Owner string (e.g. "Alibaba (US) Technology Co., Ltd.") — additional
+    # signal beyond hostname regex.
+    owner_blob = " ".join(str(x).lower() for x in (
+        merged.get("asn_reputation_owner") or "",
+        merged.get("org") or "",
+    ))
+    if any(k in owner_blob for k in (
+        "amazon", "aws", "google", "microsoft", "azure", "alibaba", "tencent",
+        "digitalocean", "ovh", "hetzner", "linode", "vultr", "oracle",
+        "cloudflare", "fastly",
+    )):
+        out["datacenter"] += 0.3
+
+    host_flags = _hostname_flags(merged.get("hostname"))
+    if host_flags.get("host_dc_hint"):
+        out["datacenter"] += 0.2
+
+    # --- Tor --------------------------------------------------------------
+    if tor_match:
+        out["tor"] = 1.0
+    elif merged.get("is_tor"):
+        out["tor"] += 0.7
+    if (merged.get("proxycheck_type") or "").lower() == "tor":
+        out["tor"] += 0.5
+    if host_flags.get("host_tor_hint"):
+        out["tor"] += 0.2
+    if asn_tag == "tor":
+        out["tor"] += 0.5
+
+    # --- VPN --------------------------------------------------------------
+    if merged.get("is_vpn"):
+        out["vpn"] += 0.5
+    if (merged.get("proxycheck_type") or "").lower() == "vpn":
+        out["vpn"] += 0.5
+    if host_flags.get("host_vpn_hint"):
+        out["vpn"] += 0.3
+
+    # --- Proxy ------------------------------------------------------------
+    if merged.get("is_proxy"):
+        out["proxy"] += 0.5
+    if (merged.get("proxycheck_type") or "").lower() in ("cgi", "public proxy", "open proxy"):
+        out["proxy"] += 0.5
+    if host_flags.get("host_proxy_hint"):
+        out["proxy"] += 0.3
+
+    # --- Attacker ---------------------------------------------------------
+    if merged.get("is_malicious") or merged.get("is_abuser"):
+        out["attacker"] += 0.4
+    pc_risk = merged.get("proxycheck_risk")
+    if isinstance(pc_risk, (int, float)) and pc_risk >= 66:
+        out["attacker"] += 0.3
+    if (merged.get("greynoise_classification") or "").lower() == "malicious":
+        out["attacker"] += 0.5
+    aip = merged.get("abuseipdb_score") or 0
+    if isinstance(aip, (int, float)) and aip >= 50:
+        out["attacker"] += 0.4
+    if (merged.get("vt_malicious_count") or 0) >= 3:
+        out["attacker"] += 0.3
+    if (merged.get("otx_pulse_count") or 0) >= 1:
+        out["attacker"] += 0.2
+    if merged.get("external_feeds"):
+        out["attacker"] += 0.3
+    if tor_match or merged.get("is_tor"):
+        # Tor exits attacking non-Tor services → moderate boost
+        out["attacker"] += 0.3
+
+    # Clamp 0..1
+    return {k: round(min(1.0, v), 2) for k, v in out.items()}
+
+
 def _classify(merged: dict, tor_match: bool, spamhaus_match: bool, asn_rep: dict) -> tuple[str, dict]:
     """
     Roll up signals into a single classification + confidence votes.
@@ -1497,8 +1689,23 @@ async def lookup(ip: str, deep: bool = False) -> dict:
 
     # Classification + confidence (always)
     label, confidence = _classify(merged, tor_match, spamhaus_match, asn_rep)
+    # Additive-clamp confidence — merged via max() so existing thresholds and
+    # labels (vote_aggregation) stay stable; UI just sees stronger evidence on
+    # the per-flag pills when multiple datacenter/tor/etc signals coincide.
+    try:
+        conf_v2 = _confidence_additive(merged, tor_match, asn_rep)
+        for k, v in conf_v2.items():
+            confidence[k] = max(confidence.get(k, 0.0), v)
+    except Exception as exc:
+        logger.debug("confidence_additive failed for %s: %s", ip, exc)
     merged["classification"] = label
     merged["confidence"] = confidence
+    # Consensus risk (0-100) — max across every provider's risk signal.
+    try:
+        merged["consensus_risk"] = _consensus_risk(merged, tor_match, spamhaus_match)
+    except Exception as exc:
+        logger.debug("consensus_risk failed for %s: %s", ip, exc)
+        merged["consensus_risk"] = merged.get("risk_score") or 0
     merged["deep"] = deep
 
     # Optional AI threat brief — ONLY path where ip_intel touches an LLM.

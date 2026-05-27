@@ -367,7 +367,18 @@ async def _ai_threat_brief(ip: str, intel: dict[str, Any]) -> dict[str, Any] | N
         return None
 
     content = (res or {}).get("content", "").strip()
-    if not content:
+    # Bail when:
+    #   - manager returned an error envelope (all providers failed/quarantined)
+    #   - provider name is "none" or "disabled"
+    #   - content is empty OR looks like a "key not configured" stub leak
+    provider_name = (res or {}).get("provider", "")
+    if (
+        not content
+        or (res or {}).get("error")
+        or provider_name in {"none", "disabled", ""}
+        or "key not configured" in content.lower()
+        or content.startswith("AI analysis unavailable")
+    ):
         return None
 
     return {
