@@ -482,6 +482,30 @@ export const api = {
       request<{ iocs_shared: number; iocs_received: number; auto_blocked: number }>('/threats/sharing/stats'),
   },
 
+  // IP Intelligence (free public providers — no AI involved)
+  // Backed by /api/v1/intel/ip/{ip} which queries ipinfo.io + ip.guide +
+  // api.ipquery.io in parallel and merges into a normalized record.
+  ipIntel: {
+    lookup: (ip: string) =>
+      request<{
+        ip: string;
+        asn?: string;
+        org?: string;
+        country?: string;
+        city?: string;
+        region?: string;
+        hostname?: string;
+        is_tor?: boolean | null;
+        is_vpn?: boolean | null;
+        is_proxy?: boolean | null;
+        is_datacenter?: boolean | null;
+        risk_score?: number | null;
+        providers?: string[];
+        cached?: boolean;
+        internal?: boolean;
+      }>(`/intel/ip/${encodeURIComponent(ip)}`),
+  },
+
   // AI Providers
   ai: {
     setActive: (provider: string) =>

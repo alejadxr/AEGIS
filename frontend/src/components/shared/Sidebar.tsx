@@ -66,6 +66,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       { label: 'Antivirus', href: '/dashboard/antivirus', icon: 'ShieldAlert' },
       { label: 'Ransomware', href: '/dashboard/ransomware', icon: 'ShieldX' },
       { label: 'Threats', href: '/dashboard/threats', icon: 'Search01Icon' },
+      { label: 'IP Intel', href: '/dashboard/ip-intel', icon: 'Search01Icon', sublabel: 'Lookup any IP' },
       { label: 'Attack Path', href: '/dashboard/attack-path', icon: 'GitFork' },
       { label: 'Infra', href: '/dashboard/infra', icon: 'ComputerIcon' },
     ],
