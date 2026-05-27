@@ -36,6 +36,9 @@ from app.models.action import Action
 from app.services.log_watcher import log_watcher
 from app.services.scheduled_scanner import scheduled_scanner
 from app.services.host_monitor import host_monitor, AGENT_ID as HOST_MONITOR_AGENT_ID
+# Side-effect import: registers SQLAlchemy after_insert listener on Incident
+# that fires ip_intel.lookup() in the background and updates ai_analysis.
+import app.services.incident_enrichment  # noqa: F401
 
 from app.api import auth, dashboard, surface, response, phantom, threats, correlation, admin
 from app.api import feeds, reports, ai_providers as ai_providers_router
