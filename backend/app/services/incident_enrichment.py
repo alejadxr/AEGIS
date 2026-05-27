@@ -22,6 +22,7 @@ import asyncio
 import ipaddress
 import logging
 import os
+from datetime import datetime
 
 from sqlalchemy import event, update
 
@@ -63,6 +64,12 @@ async def _enrich(incident_id: str, src_ip: str) -> None:
             if row is None:
                 return
             analysis = dict(row.ai_analysis or {})
+            intel["_provenance"] = {
+                "kind": "algorithm",
+                "source": "ip_intel.lookup",
+                "providers": intel.get("providers", []),
+                "ts": datetime.utcnow().isoformat(),
+            }
             analysis["ip_intel"] = intel
             await db.execute(
                 update(Incident)

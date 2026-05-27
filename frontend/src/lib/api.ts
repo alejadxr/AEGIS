@@ -483,10 +483,12 @@ export const api = {
   },
 
   // IP Intelligence (free public providers — no AI involved)
-  // Backed by /api/v1/intel/ip/{ip} which queries ipinfo.io + ip.guide +
-  // api.ipquery.io in parallel and merges into a normalized record.
+  // Backed by /api/v1/intel/ip/{ip}. Default (deep=false): ipinfo, ipguide,
+  // ipquery, greynoise, ipapi, geojs in parallel. deep=true adds Shodan
+  // InternetDB, Spamhaus DROP, Tor exit list ground truth, ASN reputation,
+  // and a behavioral fingerprint computed from the local aegis-feed.jsonl.
   ipIntel: {
-    lookup: (ip: string) =>
+    lookup: (ip: string, deep: boolean = false) =>
       request<{
         ip: string;
         asn?: string;
@@ -499,11 +501,53 @@ export const api = {
         is_vpn?: boolean | null;
         is_proxy?: boolean | null;
         is_datacenter?: boolean | null;
+        is_mobile?: boolean | null;
+        is_malicious?: boolean | null;
+        is_scanner?: boolean | null;
+        is_known_service?: boolean | null;
         risk_score?: number | null;
         providers?: string[];
         cached?: boolean;
         internal?: boolean;
-      }>(`/intel/ip/${encodeURIComponent(ip)}`),
+        deep?: boolean;
+        classification?: string;
+        confidence?: {
+          tor: number; vpn: number; proxy: number; datacenter: number; attacker: number;
+        };
+        greynoise_classification?: string;
+        greynoise_noise?: boolean;
+        greynoise_riot?: boolean;
+        greynoise_name?: string;
+        greynoise_link?: string;
+        shodan_seen?: boolean;
+        shodan_ports?: number[];
+        shodan_hostnames?: string[];
+        shodan_tags?: string[];
+        shodan_vulns?: string[];
+        abuseipdb_score?: number;
+        abuseipdb_reports?: number;
+        abuseipdb_last_reported?: string;
+        asn_reputation_tag?: string;
+        asn_reputation_name?: string;
+        asn_reputation_owner?: string;
+        tor_list_match?: boolean;
+        spamhaus_match?: boolean;
+        behavioral?: {
+          hits: number;
+          distinct_apps?: number;
+          distinct_paths?: number;
+          distinct_uas?: number;
+          apps?: string[];
+          paths?: string[];
+          uas?: string[];
+          first_seen?: number;
+          last_seen?: number;
+          request_interval_mean_sec?: number;
+          request_interval_stddev_sec?: number;
+          session_fingerprint?: string;
+        };
+        correlated_sessions?: string[];
+      }>(`/intel/ip/${encodeURIComponent(ip)}${deep ? '?deep=true' : ''}`),
   },
 
   // AI Providers

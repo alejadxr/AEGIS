@@ -21,8 +21,8 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.openrouter import openrouter_client
-from app.core.ai_mode import degrade_or_call, ai_available
+from app.core.openrouter import openrouter_client, MODEL_ROUTING
+from app.core.ai_mode import degrade_or_call, ai_available, MODE, AIMode
 from app.core.guardrails import guardrail_engine
 from app.core.events import event_bus
 from app.models.client import Client
@@ -235,6 +235,7 @@ class AIDecisionEngine:
                 mitre = MITRE_MAPPINGS.get(threat_type, {})
                 rule_titles = [m.get("title", m.get("rule_title", "")) for m in sigma_matches]
 
+                sigma_rule_ids = [m.get("id", m.get("rule_id")) for m in sigma_matches]
                 incident = Incident(
                     client_id=client.id,
                     title=f"{severity.upper()}: {', '.join(rule_titles) or 'Fast triage detection'}",
@@ -248,9 +249,15 @@ class AIDecisionEngine:
                     ai_analysis={
                         "triage_type": "fast",
                         "threat_type": threat_type,
-                        "sigma_matches": [m.get("id", m.get("rule_id")) for m in sigma_matches],
+                        "sigma_matches": sigma_rule_ids,
                         "actions_taken": len(triage_result.get("actions_taken", [])),
                         "elapsed_ms": triage_result.get("elapsed_ms"),
+                        "_origin": {
+                            "kind": "algorithm",
+                            "source": "fast_triage",
+                            "rules": sigma_rule_ids,
+                            "ts": datetime.utcnow().isoformat(),
+                        },
                     },
                     raw_alert=event,
                 )
@@ -432,7 +439,17 @@ class AIDecisionEngine:
         async def _ai_triage(_data: dict) -> dict:
             messages = [{"role": "user", "content": f"Triage this security event:\n{json.dumps(_data, default=str)}"}]
             response = await openrouter_client.query(messages, "triage")
-            return self._parse_json_response(response.get("content", "{}"), _default)
+            result = self._parse_json_response(response.get("content", "{}"), _default)
+            raw_model = response.get("model_used", "unknown")
+            # When AI Manager returns a provider name instead of model ID, fall back to the route
+            resolved_model = raw_model if "/" in raw_model else MODEL_ROUTING.get("triage", raw_model)
+            result["_provenance"] = {
+                "kind": "agent",
+                "source": f"openrouter:{resolved_model}",
+                "model": resolved_model,
+                "ts": datetime.utcnow().isoformat(),
+            }
+            return result
 
         def _heuristic_triage(_data: dict) -> dict:
             threat_type = _data.get("threat_type", "unknown")
@@ -441,6 +458,11 @@ class AIDecisionEngine:
             result["threat_type"] = threat_type
             result["mitre_technique"] = mitre.get("technique", "")
             result["mitre_tactic"] = mitre.get("tactic", "")
+            result["_provenance"] = {
+                "kind": "algorithm",
+                "source": "offline_triage_template",
+                "ts": datetime.utcnow().isoformat(),
+            }
             return result
 
         return await degrade_or_call(_ai_triage, _heuristic_triage, alert_data)
@@ -464,10 +486,26 @@ class AIDecisionEngine:
                 ),
             }]
             response = await openrouter_client.query(messages, "classification")
-            return self._parse_json_response(response.get("content", "{}"), _default)
+            result = self._parse_json_response(response.get("content", "{}"), _default)
+            raw_model = response.get("model_used", "unknown")
+            # When AI Manager returns a provider name instead of model ID, fall back to the route
+            resolved_model = raw_model if "/" in raw_model else MODEL_ROUTING.get("classification", raw_model)
+            result["_provenance"] = {
+                "kind": "agent",
+                "source": f"openrouter:{resolved_model}",
+                "model": resolved_model,
+                "ts": datetime.utcnow().isoformat(),
+            }
+            return result
 
         def _heuristic_classify(_data: dict, _triage: dict) -> dict:
-            return dict(_default)
+            result = dict(_default)
+            result["_provenance"] = {
+                "kind": "algorithm",
+                "source": "offline_triage_template",
+                "ts": datetime.utcnow().isoformat(),
+            }
+            return result
 
         return await degrade_or_call(_ai_classify, _heuristic_classify, alert_data, triage)
 
@@ -492,17 +530,25 @@ class AIDecisionEngine:
             f"{triage.get('severity', 'medium').upper()}: "
             f"{triage.get('summary', 'Security Alert')}"
         )
+        alert_source = alert_data.get("source", "webhook")
+        _origin = {
+            "kind": "algorithm" if alert_source in ("log_watcher", "correlation_engine", "fast_triage") else "agent",
+            "source": alert_source,
+            "ts": datetime.utcnow().isoformat(),
+        }
+        if alert_source in ("log_watcher", "correlation_engine") and alert_data.get("pattern"):
+            _origin["rule"] = alert_data.get("pattern")
         incident = Incident(
             client_id=client.id,
             title=caller_title or fallback_title,
             description=triage.get("summary", "") or alert_data.get("description", ""),
             severity=triage.get("severity", "medium"),
             status="investigating",
-            source=alert_data.get("source", "webhook"),
+            source=alert_source,
             mitre_technique=mitre.get("technique", triage.get("mitre_technique")),
             mitre_tactic=mitre.get("tactic", triage.get("mitre_tactic")),
             source_ip=alert_data.get("source_ip"),
-            ai_analysis={"triage": triage, "classification": classification},
+            ai_analysis={"triage": triage, "classification": classification, "_origin": _origin},
             raw_alert=alert_data,
         )
         db.add(incident)
