@@ -1604,6 +1604,33 @@ async def lookup(ip: str, deep: bool = False) -> dict:
         asn_rep = _asn_reputation(merged.get("asn"))
         merged.update(asn_rep)
 
+        # Always: db-ip.com Lite offline lookup (no external HTTP). Backfills
+        # ASN / country / region / city when online providers were slow,
+        # rate-limited, or returned partial data. Source-tagged so the UI
+        # can show `[algorithm:dbip_offline]`.
+        try:
+            from app.services.offline_geoip import lookup as _offline_lookup
+            off = _offline_lookup(ip)
+            if off:
+                if off.get("asn") and not merged.get("asn"):
+                    merged["asn"] = off["asn"]
+                if off.get("asn_owner") and not merged.get("org"):
+                    merged["org"] = off["asn_owner"]
+                if off.get("country") and not merged.get("country"):
+                    merged["country"] = off["country"]
+                if off.get("region") and not merged.get("region"):
+                    merged["region"] = off["region"]
+                if off.get("city") and not merged.get("city"):
+                    merged["city"] = off["city"]
+                # Provenance: tag in providers list (used for UI badges) only
+                # when we actually contributed data.
+                provs = merged.setdefault("providers", [])
+                if "dbip_offline" not in provs:
+                    provs.append("dbip_offline")
+                merged["dbip_offline_match"] = True
+        except Exception as exc:
+            logger.debug("offline_geoip enrichment skipped for %s: %s", ip, exc)
+
         # Deep-mode local lookups
         tor_match = False
         spamhaus_match = False
@@ -1667,6 +1694,22 @@ async def lookup(ip: str, deep: bool = False) -> dict:
             if feeds:
                 # If a real feed lists this IP, raise the malicious vote
                 merged["is_malicious"] = True
+
+            # Synthetic offline-feed markers — surface Spamhaus DROP /
+            # Emerging Threats / db-ip enrichment as source-tagged entries in
+            # the same `external_feeds` list the UI already renders.
+            try:
+                _existing_sources = {f.get("feed") for f in merged["external_feeds"]}
+                if spamhaus_match and "spamhaus_drop" not in _existing_sources:
+                    merged["external_feeds"].append({
+                        "feed": "spamhaus_drop",
+                        "threat_type": "drop_list",
+                        "confidence": 0.95,
+                        "last_seen": None,
+                        "tags": ["offline", "spamhaus", "algorithm:spamhaus_drop"],
+                    })
+            except Exception as exc:
+                logger.debug("synthetic feeds error for %s: %s", ip, exc)
 
             related = await _related_ips(ip, merged.get("asn"))
             merged["related"] = related or {"same_subnet": [], "same_asn": []}

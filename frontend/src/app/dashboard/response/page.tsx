@@ -11,6 +11,7 @@ import { StatusIndicator } from '@/components/shared/StatusIndicator';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { api } from '@/lib/api';
 import { cn, formatRelativeTime, formatDate } from '@/lib/utils';
+import { buildAbuseMailto, abuseContactOf } from '@/lib/abuse-mailto';
 import {
   BarChart,
   Bar,
@@ -500,8 +501,14 @@ export default function ResponsePage() {
                               classification?: string;
                               confidence?: { tor: number; vpn: number; proxy: number; datacenter: number; attacker: number };
                               asn_reputation_name?: string;
+                              asn_reputation_owner?: string;
                               tor_list_match?: boolean;
                               spamhaus_match?: boolean;
+                              consensus_risk?: number | null;
+                              abuseipdb_score?: number | null;
+                              external_feeds?: Array<{ feed?: string; threat_type?: string }>;
+                              history?: { incidents?: { count?: number; first_seen?: string; last_seen?: string } };
+                              ipapi_is_abuse_contact?: string | null;
                             }
                           | undefined;
                         if (!intel) return null;
@@ -616,6 +623,30 @@ export default function ResponsePage() {
                                   </div>
                                 )}
                               </div>
+                              {(() => {
+                                if (!incident.source_ip) return null;
+                                const contact = abuseContactOf({ ...intel, ip: incident.source_ip });
+                                if (!contact) return null;
+                                return (
+                                  <div className="pt-2 border-t border-border flex items-center justify-between gap-3">
+                                    <p className="text-[10px] text-muted-foreground/70">
+                                      Abuse contact:{' '}
+                                      <span className="font-mono text-foreground/80">{contact}</span>
+                                    </p>
+                                    <a
+                                      href={buildAbuseMailto({ ...intel, ip: incident.source_ip })}
+                                      className={cn(
+                                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg',
+                                        'border border-border bg-background hover:bg-muted/40',
+                                        'text-[11px] font-medium text-foreground transition-colors',
+                                      )}
+                                    >
+                                      <Shield className="size-3.5" />
+                                      Report abuse
+                                    </a>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         );

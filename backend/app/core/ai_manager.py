@@ -18,17 +18,47 @@ _QUARANTINE_TTL_SECONDS = 3600
 
 _QUOTA_ERROR_MARKERS = (
     "402",
-    "429",
     "free_tier",
-    "quota",
     "payment required",
     "insufficient_quota",
 )
 
+# 429 alone is NOT enough to quarantine: a single OpenRouter free model can be
+# upstream-throttled while other free models on the same key still work. We
+# only quarantine on hard-quota errors. Per-model 429s are caught and we try
+# the next model in the same provider before moving on.
+_TRANSIENT_ERROR_MARKERS = (
+    "429",
+    "rate-limited",
+    "rate limited",
+    "temporarily",
+    "retry shortly",
+    "too many requests",
+    "404",                       # model not found / no endpoints → try next model
+    "no endpoints found",
+    "model_not_found",
+    "model not found",
+    "503",                       # service unavailable
+    "502",                       # bad gateway
+)
+
 
 def _is_quota_error(exc: BaseException) -> bool:
+    """Hard quota / auth error — quarantine the provider."""
     msg = str(exc).lower()
-    return any(marker in msg for marker in _QUOTA_ERROR_MARKERS)
+    if any(marker in msg for marker in _QUOTA_ERROR_MARKERS):
+        return True
+    # "quota" but NOT "free_tier_quota_exceeded" handled above — keep generic
+    # "quota" too for OpenAI-style insufficient_quota messages.
+    if "quota" in msg and "rate" not in msg:
+        return True
+    return False
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Transient throttle — try next model first, don't quarantine yet."""
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _TRANSIENT_ERROR_MARKERS)
 
 from app.core.ai_providers import (
     AIProvider,
@@ -61,13 +91,27 @@ class AIManager:
         self.task_routing: dict[str, str] = {
             "ip_threat_brief": "openrouter",
         }
-        # task_type -> default model id (provider-specific). Used only when
-        # the caller does not pass `model`. Keeps cheap tasks on cheap models.
-        self.task_model_defaults: dict[str, dict[str, str]] = {
+        # task_type -> default model id list (provider-specific). Used only
+        # when the caller does not pass `model`. Multiple models per provider
+        # are tried in order; if all fail transiently the manager moves to the
+        # next provider in the fallback chain.
+        # Accepts either a single string (legacy) or a list of strings.
+        self.task_model_defaults: dict[str, dict[str, list[str] | str]] = {
             "ip_threat_brief": {
-                # Free tier on OpenRouter; cheap + fast for short briefs.
-                # Fallback chain in the manager handles any 404/quota issues.
-                "openrouter": "meta-llama/llama-3.2-3b-instruct:free",
+                # Try several free OpenRouter models — when one is upstream-
+                # throttled (HTTP 429), the next is tried before quarantining
+                # the entire provider. Order = best-quality short-brief first.
+                "openrouter": [
+                    "meta-llama/llama-3.3-70b-instruct:free",
+                    "qwen/qwen3-next-80b-a3b-instruct:free",
+                    "openai/gpt-oss-20b:free",
+                    "openai/gpt-oss-120b:free",
+                    "google/gemma-4-26b-a4b-it:free",
+                    "deepseek/deepseek-v4-flash:free",
+                    "nvidia/nemotron-nano-9b-v2:free",
+                    "meta-llama/llama-3.2-3b-instruct:free",
+                    "z-ai/glm-4.5-air:free",
+                ],
                 "inception": "mercury-2",
                 "gemini": "gemini-flash-lite-latest",
             },
@@ -194,27 +238,50 @@ class AIManager:
             except ValueError:
                 continue
 
-            try:
-                effective_model = model or (
-                    self.task_model_defaults.get(task_type, {}).get(pname)
-                )
-                result = await provider.chat(
-                    messages=messages,
-                    model=effective_model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-                result["provider"] = pname
-                # Surface the model that actually answered so provenance shows
-                # `openrouter:google/gemma-2-9b-it:free` instead of `:unknown`.
-                if not result.get("model") and effective_model:
-                    result["model"] = effective_model
-                return result
-            except Exception as exc:
-                logger.warning(f"Provider {pname} failed for task_type={task_type}: {exc}")
-                last_error = exc
-                if _is_quota_error(exc):
-                    self._quarantine(pname, f"quota error: {exc}")
+            # Build a list of candidate models for this provider. If the
+            # caller passed `model`, that's the only candidate. Otherwise we
+            # consult task_model_defaults which may yield a list.
+            if model:
+                model_candidates: list[str | None] = [model]
+            else:
+                default_entry = self.task_model_defaults.get(task_type, {}).get(pname)
+                if isinstance(default_entry, list):
+                    model_candidates = list(default_entry)
+                elif default_entry:
+                    model_candidates = [default_entry]
+                else:
+                    model_candidates = [None]  # let provider pick its own default
+
+            provider_exhausted = False
+            for effective_model in model_candidates:
+                try:
+                    result = await provider.chat(
+                        messages=messages,
+                        model=effective_model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    result["provider"] = pname
+                    if not result.get("model") and effective_model:
+                        result["model"] = effective_model
+                    return result
+                except Exception as exc:
+                    logger.warning(
+                        f"Provider {pname} model={effective_model} failed for "
+                        f"task_type={task_type}: {exc}"
+                    )
+                    last_error = exc
+                    if _is_quota_error(exc):
+                        self._quarantine(pname, f"quota error: {exc}")
+                        provider_exhausted = True
+                        break  # skip remaining models for this provider
+                    # transient (429 etc.) — try the next model under same provider
+                    if not _is_transient_error(exc):
+                        # Other error class (timeout, connect, auth) — move on
+                        # to next provider; no point retrying more models.
+                        break
+            if provider_exhausted:
+                continue
 
         logger.error(f"All providers failed for task_type={task_type}: {last_error}")
         return {
