@@ -1,6 +1,11 @@
 """
 IP Intelligence Enrichment Service — AEGIS v1.7
 
+NO AI. This module is pure REST aggregation. It does NOT call OpenAI,
+Anthropic, Gemini, OpenRouter, or any LLM. It does NOT pass through the
+ai_manager or any AEGIS AI subsystem. Behavior is identical regardless
+of AEGIS_AI_MODE (full/local/offline).
+
 Queries free public IP-info APIs in parallel and merges results into
 a normalized IPIntel dict. Results are cached in-memory for 24 hours.
 
