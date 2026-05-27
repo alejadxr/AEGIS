@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Power, Trash2, Pencil, Beaker, FileText } from 'lucide-react';
+import { Plus, Power, Trash2, Pencil, Beaker, FileText, ShieldOff, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn, formatDate } from '@/lib/utils';
 import { LoadingState } from '@/components/shared/LoadingState';
@@ -29,6 +29,22 @@ interface FirewallTemplate {
   name: string;
   description: string;
   yaml_def: string;
+}
+
+interface BlockedIPItem {
+  ip: string;
+  source: 'pi' | 'local' | 'pi+local';
+  added_at: string | null;
+}
+
+interface FirewallStats {
+  blocked_ips_count: number;
+  active_rules: number;
+  enabled_rules: number;
+  total_hits: number;
+  attackers_24h: number;
+  pi_reachable: boolean;
+  real_firewall_active: boolean;
 }
 
 const DEMO_RULES: FirewallRule[] = [
@@ -62,6 +78,13 @@ export default function FirewallPage() {
 
   const [templatesOpen, setTemplatesOpen] = useState(false);
 
+  // Live blocking state
+  const [blockedIPs, setBlockedIPs] = useState<BlockedIPItem[]>([]);
+  const [firewallStats, setFirewallStats] = useState<FirewallStats | null>(null);
+  const [blockedLoading, setBlockedLoading] = useState(true);
+  const [unblockingIP, setUnblockingIP] = useState<string | null>(null);
+  const [blockError, setBlockError] = useState<string | null>(null);
+
   const loadRules = useCallback(async () => {
     try {
       const data = await api.firewall.list();
@@ -84,10 +107,27 @@ export default function FirewallPage() {
     }
   }, []);
 
+  const loadLiveBlocks = useCallback(async () => {
+    setBlockedLoading(true);
+    try {
+      const [blockedData, statsData] = await Promise.all([
+        api.firewall.blocked(),
+        api.firewall.stats(),
+      ]);
+      setBlockedIPs(blockedData.items);
+      setFirewallStats(statsData);
+    } catch {
+      setBlockedIPs([]);
+    } finally {
+      setBlockedLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadRules();
     loadTemplates();
-  }, [loadRules, loadTemplates]);
+    loadLiveBlocks();
+  }, [loadRules, loadTemplates, loadLiveBlocks]);
 
   const handleCreate = () => {
     setEditing(null);
@@ -139,6 +179,20 @@ export default function FirewallPage() {
   const handleTest = (rule: FirewallRule) => {
     setTesterRule(rule);
     setTesterOpen(true);
+  };
+
+  const handleUnblock = async (ip: string) => {
+    if (!confirm(`Unblock ${ip}? This will remove it from the Pi iptables chain and local 403 middleware.`)) return;
+    setUnblockingIP(ip);
+    setBlockError(null);
+    try {
+      await api.firewall.unblock(ip);
+      await loadLiveBlocks();
+    } catch (e) {
+      setBlockError(e instanceof Error ? e.message : 'Failed to unblock IP');
+    } finally {
+      setUnblockingIP(null);
+    }
   };
 
   const handleCloneTemplate = async (tpl: FirewallTemplate) => {
@@ -195,10 +249,10 @@ export default function FirewallPage() {
 
       {/* Summary tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile label="Total rules" value={rules.length} />
-        <StatTile label="Enabled" value={rules.filter((r) => r.enabled).length} accent="var(--success)" />
-        <StatTile label="Total hits" value={rules.reduce((acc, r) => acc + r.hits, 0)} accent="var(--brand)" />
-        <StatTile label="Templates" value={templates.length} accent="var(--chart-5)" />
+        <StatTile label="DSL Rules" value={firewallStats?.active_rules ?? rules.length} />
+        <StatTile label="Enabled" value={firewallStats?.enabled_rules ?? rules.filter((r) => r.enabled).length} accent="var(--success)" />
+        <StatTile label="Total hits" value={firewallStats?.total_hits ?? rules.reduce((acc, r) => acc + r.hits, 0)} accent="var(--brand)" />
+        <StatTile label="Active blocks" value={firewallStats?.blocked_ips_count ?? blockedIPs.length} accent="var(--danger)" />
       </div>
 
       {/* Rules list */}
@@ -272,6 +326,82 @@ export default function FirewallPage() {
           </div>
         ))}
       </Card>
+
+      {/* Active IP Blocks section */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-[16px] font-semibold text-foreground">Active IP Blocks</h2>
+            <p className="text-[12px] text-muted-foreground mt-0.5">
+              Real-time enforcement — Pi iptables AEGIS_BLOCK chain + local 403 middleware
+              {firewallStats && (
+                <span className={cn('ml-2 text-[11px] font-mono px-1.5 py-0.5 rounded', firewallStats.pi_reachable ? 'text-[var(--success)]' : 'text-[var(--danger)]')}
+                  style={{ backgroundColor: firewallStats.pi_reachable ? 'color-mix(in oklab,var(--success) 10%,transparent)' : 'color-mix(in oklab,var(--danger) 10%,transparent)' }}>
+                  {firewallStats.pi_reachable ? 'Pi online' : 'Pi unreachable'}
+                </span>
+              )}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={loadLiveBlocks} className="gap-1.5 text-[12px]" disabled={blockedLoading}>
+            <RefreshCw className={cn('w-3.5 h-3.5', blockedLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+        </div>
+
+        {blockError && (
+          <div className="text-[var(--danger)] rounded-xl px-4 py-3 text-[13px]" style={{ backgroundColor: 'color-mix(in oklab,var(--danger) 8%,transparent)', border: '1px solid color-mix(in oklab,var(--danger) 25%,transparent)' }}>
+            {blockError}
+            <button onClick={() => setBlockError(null)} className="ml-3 underline text-[11px]">Dismiss</button>
+          </div>
+        )}
+
+        <Card className="rounded-xl">
+          <div className="hidden md:grid grid-cols-[1fr_140px_120px] gap-3 px-4 py-3 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            <div>IP Address</div>
+            <div>Source</div>
+            <div className="text-right">Actions</div>
+          </div>
+
+          {blockedLoading && blockedIPs.length === 0 && (
+            <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">Loading live blocks…</div>
+          )}
+
+          {!blockedLoading && blockedIPs.length === 0 && (
+            <div className="px-4 py-10 text-center text-[13px] text-muted-foreground max-w-md mx-auto">
+              No IPs currently blocked. Either no attacks have been detected, or all blocks have expired/been manually cleared.
+            </div>
+          )}
+
+          {blockedIPs.map((item) => (
+            <div
+              key={item.ip}
+              className="grid grid-cols-1 md:grid-cols-[1fr_140px_120px] gap-3 px-4 py-3 border-b border-border/30 last:border-b-0 hover:bg-muted/30 transition-colors items-center"
+            >
+              <div className="font-mono text-[13px] text-foreground">{item.ip}</div>
+              <div>
+                <SourceBadge source={item.source} />
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleUnblock(item.ip)}
+                  disabled={unblockingIP === item.ip}
+                  className="gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--danger)]"
+                  style={{ '--hover-bg': 'color-mix(in oklab,var(--danger) 8%,transparent)' } as never}
+                >
+                  {unblockingIP === item.ip ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <ShieldOff className="w-3.5 h-3.5" />
+                  )}
+                  Unblock
+                </Button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      </div>
 
       {/* Editor modal */}
       <Modal
@@ -384,4 +514,25 @@ function StatTile({
 function extractAction(yaml: string): string | null {
   const m = yaml.match(/^action:\s*(\S+)/m);
   return m ? m[1] : null;
+}
+
+function SourceBadge({ source }: { source: 'pi' | 'local' | 'pi+local' }) {
+  const config = {
+    'pi': { label: 'Pi iptables', color: 'var(--brand-accent)' },
+    'local': { label: 'Local 403', color: 'var(--warning)' },
+    'pi+local': { label: 'Pi + Local', color: 'var(--danger)' },
+  }[source];
+
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-medium"
+      style={{
+        color: config.color,
+        backgroundColor: `color-mix(in oklab,${config.color} 12%,transparent)`,
+        border: `1px solid color-mix(in oklab,${config.color} 25%,transparent)`,
+      }}
+    >
+      {config.label}
+    </span>
+  );
 }
