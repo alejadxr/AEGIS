@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     # Default OFF to avoid surprising existing deployments.
     AEGIS_AUTO_RECONCILE_INCIDENTS: bool = False
 
+    # Opt-in Pi → Mac Pro blocklist pull. When enabled, each firewall sync cycle
+    # appends any Pi-blocked IPs missing from the local blocked_ips.txt so the
+    # FastAPI 403 middleware enforces them too. Default OFF (push-only).
+    AEGIS_FIREWALL_PULL_FROM_PI: bool = False
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
