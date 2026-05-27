@@ -83,6 +83,9 @@ export default function DeceptionPage() {
           <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight flex items-center gap-3">
             <Sparkles className="w-6 h-6 text-[var(--brand-accent)]" />
             Honey-AI Deception
+            <span className="text-[11px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              Enterprise
+            </span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1 hidden sm:block">
             Auto-generate massive fake infrastructure and track stolen bait

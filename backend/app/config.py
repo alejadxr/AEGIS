@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     # When set, AEGIS uses this for real iptables blocking + threat intel.
     AEGIS_FIREWALL_URL: str = ""
 
+    # Opt-in incident reconciliation: when enabled, the firewall sync pass will
+    # auto-resolve incidents whose source_ip is no longer in the Pi blocklist.
+    # Set to True (or AEGIS_AUTO_RECONCILE_INCIDENTS=1 in .env) to activate.
+    # Default OFF to avoid surprising existing deployments.
+    AEGIS_AUTO_RECONCILE_INCIDENTS: bool = False
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
