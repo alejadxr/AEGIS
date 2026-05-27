@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Search01Icon } from 'hugeicons-react';
 import { cn } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api';
+import { buildAbuseMailto } from '@/lib/abuse-mailto';
 
 type Confidence = {
   tor: number; vpn: number; proxy: number; datacenter: number; attacker: number;
@@ -256,59 +257,6 @@ function classifyInternal(ip: string): { label: string; hint: string } {
   if (ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd')) return { label: 'IPv6 ULA', hint: 'Unique local address — private IPv6.' };
   if (ip === '::1') return { label: 'Loopback', hint: 'Localhost.' };
   return { label: 'Reserved / non-routable', hint: 'Public intel not applicable.' };
-}
-
-/**
- * Build a `mailto:` link to the network's abuse contact, pre-filled with the
- * IP, ASN, and AEGIS's detection evidence. Caller is responsible for ensuring
- * `intel.ipapi_is_abuse_contact` is non-empty.
- */
-function buildAbuseMailto(intel: IPIntel): string {
-  const to = intel.ipapi_is_abuse_contact || '';
-  const ip = intel.ip;
-  const subject = `Abuse report: malicious activity from ${ip}`;
-  const lines: string[] = [
-    `Hello,`,
-    ``,
-    `We are reporting abusive activity originating from an IP under your network management.`,
-    ``,
-    `IP:           ${ip}`,
-  ];
-  if (intel.asn) lines.push(`ASN:          ${intel.asn}` + (intel.asn_reputation_owner ? ` (${intel.asn_reputation_owner})` : ''));
-  if (intel.org) lines.push(`Organization: ${intel.org}`);
-  if (intel.country) lines.push(`Country:      ${intel.country}`);
-  if (intel.hostname) lines.push(`Reverse DNS:  ${intel.hostname}`);
-  lines.push(``);
-  lines.push(`AEGIS detection evidence:`);
-  if (intel.classification) lines.push(`  classification: ${intel.classification}`);
-  if (intel.confidence) {
-    const c = intel.confidence;
-    lines.push(`  confidence:     tor=${c.tor} vpn=${c.vpn} proxy=${c.proxy} dc=${c.datacenter} attacker=${c.attacker}`);
-  }
-  if (typeof intel.consensus_risk === 'number') lines.push(`  consensus_risk: ${intel.consensus_risk}/100`);
-  if (intel.tor_list_match) lines.push(`  tor_list_match: yes (verified Tor exit)`);
-  if (intel.spamhaus_match) lines.push(`  spamhaus:       on DROP list`);
-  if (intel.abuseipdb_score !== undefined && intel.abuseipdb_score !== null)
-    lines.push(`  abuseipdb:      ${intel.abuseipdb_score}/100`);
-  if (intel.external_feeds && intel.external_feeds.length > 0) {
-    lines.push(`  external_feeds:`);
-    intel.external_feeds.slice(0, 5).forEach((f) =>
-      lines.push(`    - ${f.feed || 'feed'} (${f.threat_type || 'n/a'})`),
-    );
-  }
-  const inc = intel.history?.incidents;
-  if (inc && (inc as { count?: number }).count) {
-    const ic = inc as { count?: number; first_seen?: string; last_seen?: string };
-    lines.push(`  aegis_history:  ${ic.count} incidents` +
-      (ic.first_seen ? ` (first ${ic.first_seen}` : '') +
-      (ic.last_seen ? `, last ${ic.last_seen})` : (ic.first_seen ? ')' : '')));
-  }
-  lines.push(``);
-  lines.push(`Please investigate and take appropriate action. Thank you.`);
-  lines.push(``);
-  lines.push(`— Reported by an AEGIS-defended network`);
-  const body = lines.join('\n');
-  return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function renderIntelCard(
