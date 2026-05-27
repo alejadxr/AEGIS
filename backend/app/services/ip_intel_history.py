@@ -237,6 +237,52 @@ async def _related_ips(ip: str, asn: str | None) -> dict[str, list[str]] | None:
     return await _run_with_timeout(_q(), "related")
 
 
+async def tls_fingerprints_for_ip(ip: str) -> list[dict[str, Any]]:
+    """Return all JA4 fingerprints observed for this IP at the honeypot."""
+    from app.database import async_session
+    from app.models.tls_fingerprint import TlsFingerprint
+
+    async def _q():
+        async with async_session() as s:
+            stmt = (
+                select(
+                    TlsFingerprint.ja4,
+                    TlsFingerprint.ja4_known_tool,
+                    TlsFingerprint.ja4_category,
+                    TlsFingerprint.ja4_confidence,
+                    TlsFingerprint.sni,
+                    TlsFingerprint.honeypot_source,
+                    TlsFingerprint.first_seen,
+                    TlsFingerprint.last_seen,
+                    TlsFingerprint.count,
+                )
+                .where(TlsFingerprint.ip == ip)
+                .order_by(desc(TlsFingerprint.last_seen))
+                .limit(20)
+            )
+            rows = (await s.execute(stmt)).all()
+        return [
+            {
+                "ja4": r[0],
+                "known_tool": r[1],
+                "category": r[2],
+                "confidence": r[3],
+                "sni": r[4],
+                "source": r[5],
+                "first_seen": r[6].isoformat() if r[6] else None,
+                "last_seen": r[7].isoformat() if r[7] else None,
+                "count": r[8],
+            }
+            for r in rows
+        ]
+
+    try:
+        return await _run_with_timeout(_q(), "tls_fingerprints") or []
+    except Exception as exc:
+        logger.debug("tls_fingerprints_for_ip error: %s", exc)
+        return []
+
+
 async def _external_feeds_match(ip: str) -> list[dict[str, Any]] | None:
     """Cross-reference IP against cached threat_intel rows (emerging_threats,
     feodo_tracker, tor_exit_nodes, etc.)."""
