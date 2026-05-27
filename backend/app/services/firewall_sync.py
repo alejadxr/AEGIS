@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
 from app.core.firewall_client import firewall_client
+from app.core.ip_blocker import ip_blocker_service
+from app.core.attack_detector import _is_safe_ip
 from app.models.attacker_profile import AttackerProfile
 from app.models.threat_intel import ThreatIntel
 from app.models.incident import Incident
@@ -257,6 +259,39 @@ async def _reconcile_incidents(db: AsyncSession, pi_blocked_ips: Set[str]) -> in
     return reconciled
 
 
+async def _pull_blocklist_from_pi() -> dict:
+    """Reconcile Pi blocklist into the local blocked_ips.txt (Pi -> Mac Pro pull).
+
+    For every IP on the Pi that is NOT yet in the local middleware blocklist,
+    append it via ip_blocker_service.block_ip() — this keeps the in-memory set,
+    the persisted file, and the 403 middleware in sync. Safe IPs (per
+    AEGIS_SAFE_IPS / private ranges) and CIDR entries are skipped. Local-only
+    entries are never removed; they only emit a warning so a human can review.
+    """
+    pi_blocked = await firewall_client.get_blocked() or []
+    local_blocked = set(ip_blocker_service.list_blocked())
+    pi_set = {ip for ip in pi_blocked if ip and "/" not in ip}
+
+    added = 0
+    skipped_safe = 0
+    for ip in pi_set - local_blocked:
+        if _is_safe_ip(ip):
+            logger.warning(f"firewall_sync pull: skipping safe IP {ip} from Pi blocklist")
+            skipped_safe += 1
+            continue
+        ip_blocker_service.block_ip(ip)
+        added += 1
+
+    local_only = local_blocked - pi_set
+    if local_only:
+        logger.warning(
+            f"firewall_sync pull: {len(local_only)} IPs in local file but not on Pi "
+            f"(not removed): {sorted(local_only)[:10]}"
+        )
+
+    return {"added": added, "skipped_safe": skipped_safe, "local_only": len(local_only)}
+
+
 async def run_sync():
     async with async_session() as db:
         try:
@@ -278,10 +313,18 @@ async def run_sync():
                 if reconciled:
                     logger.info(f"Reconciled {reconciled} incidents (auto-resolved)")
 
+            pull_result = {}
+            if settings.AEGIS_FIREWALL_PULL_FROM_PI:
+                try:
+                    pull_result = await _pull_blocklist_from_pi()
+                    logger.info(f"firewall_sync pull: {pull_result}")
+                except Exception as e:
+                    logger.error(f"firewall_sync pull failed: {e}", exc_info=True)
+
             logger.info(
                 f"Firewall sync: {attackers_synced} attackers, "
                 f"{blocked_synced} blocked IPs, {events_synced} new incidents, "
-                f"{reconciled} reconciled"
+                f"{reconciled} reconciled, pull={pull_result or 'off'}"
             )
         except Exception as e:
             logger.error(f"Firewall sync failed: {e}", exc_info=True)
