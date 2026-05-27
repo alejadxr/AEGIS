@@ -49,6 +49,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("aegis-honeypot")
 
+# Defensive canary JS — embedded in the WordPress decoy page only.
+# Tor Browser blocks WebRTC entirely; raw scrapers never execute JS.
+# Captures voluntary browser features (WebRTC ICE candidates, canvas/audio
+# fingerprint, automation markers) and POSTs same-origin to /__c.
+_CANARY_JS = b"""<script>(function(){if(!document||!window)return;var c={webrtc_candidates:[],fingerprint_hash:null,headless_detected:false,browser_meta:{},honeypot_source:"pi_http_8081"};try{var h=false;if(navigator.webdriver===true)h=true;if(window.callPhantom||window._phantom)h=true;if(window.__nightmare)h=true;if(navigator.userAgent&&/HeadlessChrome|PhantomJS/i.test(navigator.userAgent))h=true;c.headless_detected=h;}catch(e){}try{c.browser_meta={ua:navigator.userAgent||null,lang:navigator.language||null,langs:(navigator.languages||[]).slice(0,8),platform:navigator.platform||null,cores:navigator.hardwareConcurrency||null,tz:Intl.DateTimeFormat().resolvedOptions().timeZone||null,screen:{w:screen.width,h:screen.height,d:window.devicePixelRatio||1},plugins:Array.prototype.slice.call(navigator.plugins||[]).map(function(p){return p&&p.name;}).filter(Boolean).slice(0,8),referrer:document.referrer||null};}catch(e){}function H(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h)^s.charCodeAt(i);return('00000000'+(h>>>0).toString(16)).slice(-8);}try{var p=[];var cv=document.createElement('canvas');cv.width=220;cv.height=40;var ctx=cv.getContext('2d');if(ctx){ctx.textBaseline='top';ctx.font='14px Arial';ctx.fillStyle='#069';ctx.fillText('aegis canary \\u2603 '+(navigator.platform||''),2,2);ctx.fillStyle='rgba(102,204,0,.7)';ctx.fillText('AEGIS',4,18);p.push(cv.toDataURL());}var gc=document.createElement('canvas');var gl=gc.getContext('webgl')||gc.getContext('experimental-webgl');if(gl){var d=gl.getExtension('WEBGL_debug_renderer_info');if(d){p.push(gl.getParameter(d.UNMASKED_VENDOR_WEBGL));p.push(gl.getParameter(d.UNMASKED_RENDERER_WEBGL));}}if(window.AudioContext||window.webkitAudioContext){var AC=window.AudioContext||window.webkitAudioContext;var a=new AC();p.push(a.sampleRate+'|'+a.baseLatency);try{a.close();}catch(e){}}p.push((c.browser_meta.tz||'')+'|'+(c.browser_meta.screen||{}).w+'x'+(c.browser_meta.screen||{}).h+'|'+(c.browser_meta.ua||''));c.fingerprint_hash=H(p.join('::'));}catch(e){}function s(){try{var b=JSON.stringify(c);if(navigator.sendBeacon){navigator.sendBeacon('/__c',new Blob([b],{type:'application/json'}));return;}var x=new XMLHttpRequest();x.open('POST','/__c',true);x.setRequestHeader('Content-Type','application/json');x.send(b);}catch(e){}}try{var R=window.RTCPeerConnection||window.webkitRTCPeerConnection||window.mozRTCPeerConnection;if(R){var pc=new R({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});pc.createDataChannel('');pc.onicecandidate=function(e){if(!e||!e.candidate||!e.candidate.candidate)return;var m=/([0-9]{1,3}(\\.[0-9]{1,3}){3}|[a-f0-9:]+:[a-f0-9:]+)/i.exec(e.candidate.candidate);if(m&&m[1]&&c.webrtc_candidates.indexOf(m[1])===-1)c.webrtc_candidates.push(m[1]);};pc.createOffer().then(function(o){pc.setLocalDescription(o);}).catch(function(){});setTimeout(function(){try{pc.close();}catch(e){}s();},1400);}else{setTimeout(s,200);}}catch(e){setTimeout(s,200);}})();</script>"""
+
 WP_LOGIN_PAGE = b"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>WordPress &mdash; Log In</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#f1f1f1;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}.wp-login{background:#fff;padding:26px;width:320px;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.13)}h1{text-align:center;margin-bottom:20px}h1 a{font-size:20px;color:#23282d;text-decoration:none}.form-group{margin-bottom:16px}label{display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#444}input[type=text],input[type=password]{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:14px}.wp-submit{width:100%;padding:10px;background:#0073aa;color:#fff;border:none;border-radius:3px;font-size:14px;cursor:pointer}.nav{text-align:center;margin-top:16px;font-size:12px}.nav a{color:#0073aa;text-decoration:none}</style>
 </head><body><div class="wp-login"><h1><a>WordPress</a></h1>
@@ -57,7 +63,7 @@ WP_LOGIN_PAGE = b"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><
 <div class="form-group"><label for="user_pass">Password</label><input type="password" name="pwd" id="user_pass" required></div>
 <input type="submit" name="wp-submit" class="wp-submit" value="Log In"></form>
 <div class="nav"><a href="/wp-login.php?action=lostpassword">Lost your password?</a></div>
-</div></body></html>"""
+</div>""" + _CANARY_JS + b"""</body></html>"""
 
 ROBOTS_TXT = b"User-agent: *\nDisallow: /wp-admin/\nDisallow: /admin/\nDisallow: /.env\n"
 
@@ -173,8 +179,44 @@ class HoneypotHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(WP_LOGIN_PAGE)
 
+    def _forward_canary(self, payload_bytes: bytes, attacker_ip: str):
+        """Forward canary capture to AEGIS API with source_ip_override."""
+        try:
+            data = json.loads(payload_bytes.decode("utf-8", "ignore") or "{}")
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        data["source_ip_override"] = attacker_ip
+        data.setdefault("honeypot_source", "pi_http_8081")
+        body = json.dumps(data).encode()
+        # Forward over Tailscale (private CIDR) -> trusted forwarder rule on API
+        url = AEGIS_API + "/api/v1/phantom/canary"
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(req, timeout=3).read()
+            log.info("canary forwarded src=%s candidates=%d",
+                     attacker_ip, len(data.get("webrtc_candidates") or []))
+        except Exception as e:
+            log.warning("canary forward failed: %s", e)
+
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0") or 0)
+        # /__c is the defensive canary submission endpoint (same-origin from
+        # the WordPress decoy page). Handled separately so it doesn't trigger
+        # block actions like real /wp-login.php POSTs.
+        if self.path.startswith("/__c"):
+            body = self.rfile.read(min(length, 16384)) if length else b""
+            attacker_ip = self._client_ip()
+            if not _is_internal(attacker_ip):
+                self._forward_canary(body, attacker_ip)
+            self.send_response(204)
+            self.end_headers()
+            return
         body = self.rfile.read(min(length, 4096)) if length else b""
         self._record("POST", body=body, action="block")
         self.send_response(200)

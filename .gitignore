@@ -77,6 +77,8 @@ AEGIS_CONTEXT.md
 AEGIS_MARKETING.md
 ARCHITECTURE.md
 marketing AEGIS/
+# Internal investigations / agent reports (audits, threat intel, deep-dives)
+investigations/
 langgraph_pentest.py
 deepagent_pentest.py
 deepagent_pentest_v2.py

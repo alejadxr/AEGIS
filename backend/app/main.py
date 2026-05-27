@@ -635,6 +635,10 @@ app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(surface.router, prefix="/api/v1")
 app.include_router(response.router, prefix="/api/v1")
 app.include_router(phantom.router, prefix="/api/v1")
+# Honeypot canary (defensive JS leak capture). POST is open-auth (the
+# attacker's browser is the caller); GET endpoints inside require API key.
+from app.modules.phantom.canary import router as phantom_canary_router  # noqa: E402
+app.include_router(phantom_canary_router, prefix="/api/v1/phantom")
 app.include_router(threats.router, prefix="/api/v1")
 app.include_router(settings_router.router, prefix="/api/v1")
 app.include_router(correlation.router, prefix="/api/v1")
