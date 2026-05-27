@@ -25,7 +25,8 @@ router = APIRouter(tags=["ip-intel"])
 @router.get("/ip/{ip}")
 async def get_ip_intel(
     ip: str,
-    deep: bool = Query(False, description="Enable deep lookup: Shodan, Spamhaus, Tor list, ASN reputation, behavioral fingerprint from local feed, correlated sessions."),
+    deep: bool = Query(False, description="Enable deep lookup: Shodan, Spamhaus, Tor list, ASN reputation, behavioral fingerprint from local feed, correlated sessions, plus AEGIS internal history (incidents, honeypot interactions, attacker profile, actions, related IPs, external feeds, optional AI threat brief)."),
+    history: bool = Query(False, description="Alias / shortcut for deep=true. When either flag is set, deep mode runs."),
     auth: AuthContext = Depends(require_viewer),
 ):
     """
@@ -57,7 +58,7 @@ async def get_ip_intel(
         raise HTTPException(status_code=400, detail="IP address required")
 
     try:
-        result = await lookup(ip, deep=deep)
+        result = await lookup(ip, deep=(deep or history))
     except Exception as exc:
         logger.error("Unexpected error in ip_intel.lookup(%s, deep=%s): %s", ip, deep, exc)
         raise HTTPException(status_code=500, detail="IP intel lookup failed")
