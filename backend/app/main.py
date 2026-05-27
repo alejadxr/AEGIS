@@ -543,6 +543,12 @@ async def lifespan(app: FastAPI):
         logger.info('HTTP honeypot started on port 8888')
     except Exception as e:
         logger.error(f'Failed to start HTTP honeypot: {e}')
+    # TLS / JA4 fingerprint honeypot (port 8889). Opt-in via AEGIS_TLS_HP_ENABLE=1.
+    try:
+        from app.modules.phantom.tls_honeypot import start_tls_honeypot
+        await start_tls_honeypot()
+    except Exception as e:
+        logger.error(f'Failed to start TLS honeypot: {e}')
     await interaction_processor.start(honeypot_queue)
     logger.info('Honeypot interaction processor started')
 
@@ -596,6 +602,11 @@ async def lifespan(app: FastAPI):
     await interaction_processor.stop()
     await ssh_honeypot.stop()
     await http_honeypot.stop()
+    try:
+        from app.modules.phantom.tls_honeypot import stop_tls_honeypot
+        await stop_tls_honeypot()
+    except Exception:
+        pass
     await engine.dispose()
     logger.info("Cayde-6 shut down")
 
