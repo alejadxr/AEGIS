@@ -53,9 +53,11 @@ type NodeType = 'server' | 'workspace';
 
 // ─── LED Bar Component ────────────────────────────────────────────────────────
 
+// LED-specific colors — intentional hardware aesthetic, not theme colors
+const LED_MAGENTA = '#D946EF';
 const LED_COLORS = {
   cyan: { active: 'var(--brand)', glow: 'rgba(34,211,238,0.6)', dim: 'rgba(34,211,238,0.1)' },
-  pink: { active: '#D946EF', glow: 'rgba(217,70,239,0.6)', dim: 'rgba(217,70,239,0.1)' },
+  pink: { active: LED_MAGENTA, glow: 'rgba(217,70,239,0.6)', dim: 'rgba(217,70,239,0.1)' },
   green: { active: 'var(--success)', glow: 'rgba(34,197,94,0.6)', dim: 'rgba(34,197,94,0.1)' },
   orange: { active: 'var(--brand-accent)', glow: 'rgba(249,115,22,0.6)', dim: 'rgba(249,115,22,0.1)' },
 } as const;
@@ -239,7 +241,7 @@ function NodeTypeBadge({ type }: { type: string | null }) {
       'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider',
       isServer
         ? 'bg-[var(--brand)]/10 text-[var(--brand)]'
-        : 'bg-[#A78BFA]/10 text-[#A78BFA]'
+        : 'bg-[var(--chart-5)]/10 text-[var(--chart-5)]'
     )}>
       {isServer ? <Server className="w-2.5 h-2.5" /> : <Laptop className="w-2.5 h-2.5" />}
       {isServer ? 'Server' : 'Workspace'}
@@ -893,8 +895,8 @@ export default function InfraPage() {
           </div>
         </div>
         <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#D946EF]/10 flex items-center justify-center">
-            <span className="text-[#D946EF] font-mono font-bold text-xs">RAM</span>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `color-mix(in oklab, ${LED_MAGENTA} 10%, transparent)` }}>
+            <span className="font-mono font-bold text-xs" style={{ color: LED_MAGENTA }}>RAM</span>
           </div>
           <div>
             <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Avg Memory</p>

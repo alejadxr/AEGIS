@@ -185,7 +185,7 @@ export default function ThreatsPage() {
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Add IOC</span>
           </button>
-          <button className="flex items-center gap-1.5 bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]">
+          <button className="flex items-center gap-1.5 bg-[var(--brand)] hover:bg-[var(--brand)] text-background font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]">
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Export</span>
           </button>
@@ -257,7 +257,7 @@ export default function ThreatsPage() {
             <select
               value={newIOC.ioc_type}
               onChange={(e) => setNewIOC({ ...newIOC, ioc_type: e.target.value })}
-              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[var(--brand)]/30"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-[var(--brand)]/30"
             >
               {IOC_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -271,7 +271,7 @@ export default function ThreatsPage() {
               value={newIOC.ioc_value}
               onChange={(e) => setNewIOC({ ...newIOC, ioc_value: e.target.value })}
               placeholder="e.g., 192.168.1.1 or evil.com"
-              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30 font-mono"
             />
           </div>
           <div>
@@ -281,7 +281,7 @@ export default function ThreatsPage() {
               value={newIOC.threat_type}
               onChange={(e) => setNewIOC({ ...newIOC, threat_type: e.target.value })}
               placeholder="e.g., C2 Infrastructure, Malware, Phishing"
-              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30"
             />
           </div>
           <div>
@@ -291,14 +291,14 @@ export default function ThreatsPage() {
               value={newIOC.tags}
               onChange={(e) => setNewIOC({ ...newIOC, tags: e.target.value })}
               placeholder="apt, cobalt-strike, windows"
-              className="w-full bg-[#09090B] border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-[var(--brand)]/30"
             />
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-[13px] text-muted-foreground hover:text-foreground transition-colors rounded-xl">
               Cancel
             </button>
-            <button onClick={handleAdd} className="flex items-center gap-2 bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold px-4 py-2 rounded-xl transition-colors text-[13px]">
+            <button onClick={handleAdd} className="flex items-center gap-2 bg-[var(--brand)] hover:bg-[var(--brand)] text-background font-semibold px-4 py-2 rounded-xl transition-colors text-[13px]">
               <Plus className="w-4 h-4" />
               Add IOC
             </button>

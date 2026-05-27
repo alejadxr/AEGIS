@@ -48,7 +48,7 @@ interface GraphEdge {
 function riskColor(score: number): string {
   if (score >= 9) return 'var(--danger)'; // critical red
   if (score >= 7) return 'var(--brand-accent)'; // high orange
-  if (score >= 4) return '#EAB308'; // medium yellow
+  if (score >= 4) return 'var(--warning)'; // medium yellow
   return 'var(--success)'; // low green
 }
 
@@ -627,7 +627,7 @@ export default function AttackPathPage() {
                   top: tooltipPos.y - 10,
                 }}
               >
-                <div className="bg-[#09090B] border border-white/[0.08] rounded-xl p-3 shadow-2xl min-w-[220px]">
+                <div className="bg-background border border-white/[0.08] rounded-xl p-3 shadow-2xl min-w-[220px]">
                   <p className="text-[13px] font-semibold text-foreground">{hoveredNode.asset.hostname}</p>
                   <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{hoveredNode.asset.ip_address}</p>
                   <div className="mt-2 space-y-1">
@@ -651,7 +651,7 @@ export default function AttackPathPage() {
                         'text-[10px] font-medium px-1.5 py-0.5 rounded',
                         hoveredNode.asset.status === 'active'
                           ? 'bg-[var(--success)]/10 text-[var(--success)]'
-                          : 'bg-zinc-800 text-muted-foreground'
+                          : 'bg-muted/40 text-muted-foreground'
                       )}>
                         {hoveredNode.asset.status}
                       </span>
@@ -670,7 +670,7 @@ export default function AttackPathPage() {
             )}
 
             {/* Legend */}
-            <div className="absolute bottom-4 left-4 flex items-center gap-4 bg-[#09090B]/80 backdrop-blur-sm border border-border rounded-xl px-4 py-2">
+            <div className="absolute bottom-4 left-4 flex items-center gap-4 bg-background/80 backdrop-blur-sm border border-border rounded-xl px-4 py-2">
               {[
                 { label: 'Low', color: 'var(--success)' },
                 { label: 'Medium', color: '#EAB308' },

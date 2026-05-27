@@ -24,9 +24,9 @@ function StatPill({
 }) {
   const accentClass =
     accent === 'cyan'
-      ? 'text-[#22D3EE] bg-[#22D3EE]/10 border-[#22D3EE]/20'
+      ? 'text-primary bg-primary/10 border-primary/20'
       : accent === 'orange'
-        ? 'text-[#F97316] bg-[#F97316]/10 border-[#F97316]/20'
+        ? 'text-[var(--brand-accent)] bg-[var(--brand-accent)]/10 border-[var(--brand-accent)]/20'
         : accent === 'danger'
           ? 'text-[var(--danger)] bg-[var(--danger)]/10 border-[var(--danger)]/20'
           : 'text-muted-foreground bg-white/[0.04] border-border';

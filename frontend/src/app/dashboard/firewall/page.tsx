@@ -188,7 +188,7 @@ export default function FirewallPage() {
       </div>
 
       {isDemo && (
-        <div className="bg-[var(--brand-accent)]/[0.06] border border-[var(--brand-accent)]/20 text-[var(--brand-accent)] rounded-xl px-4 py-3 text-[13px]">
+        <div className="text-[var(--brand-accent)] rounded-xl px-4 py-3 text-[13px]" style={{ backgroundColor: 'color-mix(in oklab,var(--brand-accent) 6%,transparent)', border: '1px solid color-mix(in oklab,var(--brand-accent) 20%,transparent)' }}>
           Running in demo mode — the backend did not respond, so a sample rule is shown. Rules you create will not persist until the API is reachable.
         </div>
       )}
@@ -340,7 +340,7 @@ export default function FirewallPage() {
                   <Button
                     onClick={() => handleCloneTemplate(tpl)}
                     size="sm"
-                    className="bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold"
+                    className="bg-[var(--brand)] hover:bg-[var(--brand)] text-background font-semibold"
                   >
                     Use
                   </Button>

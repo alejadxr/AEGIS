@@ -7,6 +7,10 @@ import { Atom, AlertTriangle, CheckCircle, XCircle, Info, Loader2, Crown, Lock, 
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 
+// ─── Entropy thresholds ───────────────────────────────────────────────────────
+const ENTROPY_HIGH = 7; // high entropy → healthy randomness (success)
+const ENTROPY_MED = 5;  // medium entropy → borderline (warning); below → anomaly (danger)
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface QuantumReadiness {
@@ -453,7 +457,7 @@ export default function QuantumPage() {
                           a.type === 'PQC'
                             ? 'bg-[var(--brand)]/10 text-[var(--brand)] border-[var(--brand)]/20'
                             : a.type === 'Symmetric'
-                              ? 'bg-[#A78BFA]/10 text-[#A78BFA] border-[#A78BFA]/20'
+                              ? 'bg-[var(--chart-5)]/10 text-[var(--chart-5)] border-[var(--chart-5)]/20'
                               : a.type === 'Hash'
                                 ? 'bg-zinc-500/10 text-muted-foreground border-zinc-500/20'
                                 : 'bg-[var(--brand-accent)]/10 text-[var(--brand-accent)] border-[var(--brand-accent)]/20'
@@ -526,7 +530,7 @@ export default function QuantumPage() {
                               className="h-full rounded-full transition-all duration-500"
                               style={{
                                 width: `${Math.min(order.entropy * 12.5, 100)}%`,
-                                backgroundColor: order.entropy > 7 ? 'var(--success)' : order.entropy > 5 ? 'var(--warning)' : 'var(--danger)',
+                                backgroundColor: order.entropy > ENTROPY_HIGH ? 'var(--success)' : order.entropy > ENTROPY_MED ? 'var(--warning)' : 'var(--danger)',
                               }}
                             />
                           </div>

@@ -92,8 +92,8 @@ export default function AntivirusPage() {
     <div className="p-6 space-y-6">
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/30">
-            <ShieldAlert className="w-6 h-6 text-orange-400" />
+          <div className="p-2 rounded-xl bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] border border-[color-mix(in_oklab,var(--warning)_25%,transparent)]">
+            <ShieldAlert className="w-6 h-6 text-[var(--warning)]" />
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Antivirus Engine</h1>
@@ -105,7 +105,7 @@ export default function AntivirusPage() {
         <button
           onClick={forceUpdate}
           disabled={updating}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-sm hover:bg-cyan-500/30 disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[color-mix(in_oklab,var(--primary)_15%,transparent)] border border-[color-mix(in_oklab,var(--primary)_30%,transparent)] text-primary text-sm hover:bg-[color-mix(in_oklab,var(--primary)_25%,transparent)] disabled:opacity-50"
         >
           <RefreshCw className={cn('w-4 h-4', updating && 'animate-spin')} />
           Update signatures
@@ -131,7 +131,7 @@ export default function AntivirusPage() {
       {/* Hash reputation lookup */}
       <section className="bg-card border border-border rounded-2xl p-5">
         <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-          <Search className="w-5 h-5 text-cyan-400" />
+          <Search className="w-5 h-5 text-primary" />
           Hash reputation lookup
         </h2>
         <div className="flex flex-wrap items-center gap-3">
@@ -145,7 +145,7 @@ export default function AntivirusPage() {
           <button
             onClick={lookup}
             disabled={lookupHash.length !== 64}
-            className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-sm disabled:opacity-40"
+            className="px-4 py-2 rounded-lg bg-[color-mix(in_oklab,var(--primary)_15%,transparent)] border border-[color-mix(in_oklab,var(--primary)_30%,transparent)] text-primary text-sm disabled:opacity-40"
           >
             Lookup
           </button>
@@ -160,7 +160,7 @@ export default function AntivirusPage() {
       {/* Quarantine list */}
       <section className="bg-card border border-border rounded-2xl p-5">
         <div className="flex items-center gap-2 mb-4">
-          <FileWarning className="w-5 h-5 text-red-400" />
+          <FileWarning className="w-5 h-5 text-[var(--danger)]" />
           <h2 className="text-lg font-semibold text-foreground">Quarantine</h2>
           <span className="text-xs text-muted-foreground ml-2">{items.length} items</span>
         </div>
@@ -188,15 +188,15 @@ export default function AntivirusPage() {
                     <td className="py-2 pr-4 max-w-lg truncate" title={it.path}>
                       {it.path}
                     </td>
-                    <td className="py-2 pr-4 text-orange-400">{it.rule ?? '—'}</td>
-                    <td className="py-2 pr-4 text-cyan-400">{it.engine}</td>
+                    <td className="py-2 pr-4 text-[var(--chart-2)]">{it.rule ?? '—'}</td>
+                    <td className="py-2 pr-4 text-primary">{it.engine}</td>
                     <td className="py-2 pr-4 text-muted-foreground">
                       {it.sha256.slice(0, 12)}...
                     </td>
                     <td className="py-2 text-right">
                       <button
                         onClick={() => release(it.id)}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-zinc-800 border border-border text-foreground/80 hover:bg-zinc-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-transparent border border-border text-foreground hover:bg-muted/40"
                       >
                         <RotateCcw className="w-3 h-3" />
                         Release
