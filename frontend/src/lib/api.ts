@@ -901,6 +901,32 @@ export const api = {
         description: string;
         yaml_def: string;
       }>>('/firewall/templates'),
+    blocked: () =>
+      request<{
+        items: Array<{
+          ip: string;
+          source: 'pi' | 'local' | 'pi+local';
+          added_at: string | null;
+        }>;
+        count: number;
+        pi_reachable: boolean;
+        local_path: string;
+      }>('/firewall/blocked'),
+    stats: () =>
+      request<{
+        blocked_ips_count: number;
+        active_rules: number;
+        enabled_rules: number;
+        total_hits: number;
+        attackers_24h: number;
+        pi_reachable: boolean;
+        real_firewall_active: boolean;
+      }>('/firewall/stats'),
+    unblock: (ip: string) =>
+      request<{ ip: string; pi: unknown; local: unknown }>(
+        `/firewall/blocked/${encodeURIComponent(ip)}`,
+        { method: 'DELETE' }
+      ),
   },
 
   // Honey-AI Deception at Scale
