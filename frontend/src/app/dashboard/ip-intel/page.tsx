@@ -127,6 +127,41 @@ type IPIntel = {
   external_feeds?: ExternalFeed[];
   related?: { same_subnet?: string[]; same_asn?: string[] };
   ai_summary?: AISummary;
+  // Additive (v1.7+ providers — slice 1)
+  is_abuser?: boolean | null;
+  is_crawler?: boolean | null;
+  ipapi_is_abuse_score?: number | null;       // 0..1
+  ipapi_is_abuse_contact?: string | null;
+  ipapi_is_company?: string | null;
+  ipapi_is_company_type?: string | null;
+  proxycheck_type?: string | null;            // VPN | TOR | CGI | Business | Compromised Server | ...
+  proxycheck_risk?: number | null;            // 0..100
+  proxycheck_provider?: string | null;
+  proxycheck_org?: string | null;
+  otx_pulse_count?: number | null;
+  otx_pulses?: Array<{ name?: string; adversary?: string | null; tags?: string[]; references_count?: number; id?: string }>;
+  otx_adversaries?: string[];
+  otx_malware_families?: string[];
+  otx_reputation?: number | null;
+  vt_malicious_count?: number | null;
+  vt_suspicious_count?: number | null;
+  vt_harmless_count?: number | null;
+  vt_undetected_count?: number | null;
+  vt_reputation?: number | null;
+  vt_total_votes?: { harmless?: number; malicious?: number };
+  vt_link?: string;
+  vt_network?: string;
+  ipinfo_lite_continent?: string;
+  ipinfo_lite_as_domain?: string;
+  // Honeypot canary leak captures (slice 3+)
+  honeypot_canaries?: Array<{
+    id: string;
+    captured_at: string;
+    real_ip_webrtc?: string | null;
+    fingerprint_hash?: string | null;
+    headless_detected?: boolean | null;
+    browser_meta?: Record<string, unknown>;
+  }>;
 };
 
 const RECENT_KEY = 'aegis.ipIntel.recent';
@@ -385,6 +420,205 @@ function renderIntelCard(
               viz.greynoise.io
             </a>
           )}
+        </div>
+      )}
+
+      {(() => {
+        // ─── Combined Abuse score (ipapi.is 0..1 ⊕ VT malicious_count) ───
+        // Big single number 0..100, color-coded green/amber/red.
+        const ipApi = typeof intel.ipapi_is_abuse_score === 'number' ? intel.ipapi_is_abuse_score : null;
+        const vtMal = typeof intel.vt_malicious_count === 'number' ? intel.vt_malicious_count : null;
+        if (ipApi === null && vtMal === null) return null;
+        // ipapi 0..1 -> 0..70; vt 0..10+ -> up to 70; combined capped at 100
+        const ipApiScaled = ipApi !== null ? Math.round(ipApi * 70) : 0;
+        const vtScaled = vtMal !== null ? Math.min(70, vtMal * 12) : 0;
+        const combined = Math.min(100, Math.max(ipApiScaled, vtScaled) + Math.min(30, (ipApiScaled + vtScaled) / 4));
+        const score = Math.round(combined);
+        const tone: keyof typeof TONE_CLASS = score > 80 ? 'red' : score >= 50 ? 'amber' : 'cyan';
+        return (
+          <div className="bg-background border border-border rounded-xl p-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 flex items-center gap-2">
+              Abuse score
+              <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">
+                [algorithm:ipapi_is+virustotal]
+              </span>
+            </p>
+            <div className="flex items-end gap-3">
+              <span className={cn(
+                'text-[32px] leading-none font-mono font-semibold px-3 py-1 rounded border',
+                TONE_CLASS[tone],
+              )}>
+                {score}
+              </span>
+              <span className="text-[11px] text-muted-foreground mb-1">
+                / 100
+                {ipApi !== null && (
+                  <> · ipapi.is {(ipApi * 100).toFixed(0)}%</>
+                )}
+                {vtMal !== null && (
+                  <> · VT {vtMal} engines</>
+                )}
+                {intel.is_abuser && <> · <span className="text-[var(--danger)]">is_abuser</span></>}
+              </span>
+            </div>
+            {intel.ipapi_is_abuse_contact && (
+              <p className="text-[11px] text-muted-foreground/70 mt-1 font-mono">
+                abuse contact: {intel.ipapi_is_abuse_contact}
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
+      {intel.proxycheck_type && (
+        <div className="bg-background border border-border rounded-xl p-3">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 flex items-center gap-2">
+            Proxy type
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:proxycheck.io]</span>
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {(() => {
+              const t = (intel.proxycheck_type || '').toUpperCase();
+              const tone: keyof typeof TONE_CLASS =
+                t === 'TOR' || t.includes('COMPROMISED') ? 'red'
+                : t === 'VPN' || t === 'CGI' ? 'amber'
+                : t === 'BUSINESS' || t === 'RESIDENTIAL' ? 'cyan'
+                : 'muted';
+              return (
+                <span className={cn(
+                  'text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border font-mono',
+                  TONE_CLASS[tone],
+                )}>
+                  {t}
+                </span>
+              );
+            })()}
+            {typeof intel.proxycheck_risk === 'number' && (
+              <span className="text-[11px] font-mono text-muted-foreground">
+                risk: {intel.proxycheck_risk}/100
+              </span>
+            )}
+            {intel.proxycheck_provider && (
+              <span className="text-[11px] text-muted-foreground">· {intel.proxycheck_provider}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {typeof intel.otx_pulse_count === 'number' && intel.otx_pulse_count > 0 && (
+        <div className="bg-background border border-border rounded-xl p-3 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 flex items-center gap-2">
+            OTX pulses
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[agent:otx_community]</span>
+          </p>
+          <p className="text-[12px] text-foreground font-mono">
+            {intel.otx_pulse_count} pulses
+            {intel.otx_adversaries && intel.otx_adversaries.length > 0 && (
+              <> · adversaries: {intel.otx_adversaries.slice(0, 3).join(', ')}</>
+            )}
+          </p>
+          {intel.otx_malware_families && intel.otx_malware_families.length > 0 && (
+            <p className="text-[11px] text-[var(--danger)]">
+              malware: {intel.otx_malware_families.slice(0, 5).join(', ')}
+            </p>
+          )}
+          {intel.otx_pulses && intel.otx_pulses.length > 0 && (
+            <ul className="space-y-0.5">
+              {intel.otx_pulses.slice(0, 3).map((p, i) => (
+                <li key={p.id ?? i} className="text-[11px] text-muted-foreground truncate" title={p.name}>
+                  · {p.name}
+                  {p.adversary ? ` (${p.adversary})` : ''}
+                  {typeof p.references_count === 'number' && p.references_count > 0
+                    ? ` · ${p.references_count} refs`
+                    : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {typeof intel.vt_malicious_count === 'number' && (
+        <div className="bg-background border border-border rounded-xl p-3">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 flex items-center gap-2">
+            VirusTotal
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:virustotal_v3]</span>
+          </p>
+          {(() => {
+            const total = (intel.vt_malicious_count ?? 0) + (intel.vt_suspicious_count ?? 0)
+              + (intel.vt_harmless_count ?? 0) + (intel.vt_undetected_count ?? 0);
+            const flagged = (intel.vt_malicious_count ?? 0) + (intel.vt_suspicious_count ?? 0);
+            const tone: keyof typeof TONE_CLASS =
+              (intel.vt_malicious_count ?? 0) >= 3 ? 'red'
+              : (intel.vt_malicious_count ?? 0) >= 1 ? 'amber'
+              : 'cyan';
+            return (
+              <p className="text-[12px] font-mono">
+                <span className={cn(
+                  'px-1.5 py-0.5 rounded border',
+                  TONE_CLASS[tone],
+                )}>
+                  {flagged}/{total || '?'} engines flagged
+                </span>
+                {typeof intel.vt_reputation === 'number' && (
+                  <span className="ml-2 text-muted-foreground">
+                    reputation {intel.vt_reputation}
+                  </span>
+                )}
+                {intel.vt_link && (
+                  <>
+                    {' '}·{' '}
+                    <a
+                      href={intel.vt_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline-offset-2 hover:underline"
+                    >
+                      view on VT
+                    </a>
+                  </>
+                )}
+              </p>
+            );
+          })()}
+        </div>
+      )}
+
+      {(intel.ipinfo_lite_continent || intel.ipinfo_lite_as_domain) && (
+        <div className="bg-background border border-border rounded-xl p-3">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1 flex items-center gap-2">
+            IPInfo Lite
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:ipinfo_lite]</span>
+          </p>
+          <p className="text-[11px] text-muted-foreground font-mono">
+            {intel.ipinfo_lite_continent && <>continent: {intel.ipinfo_lite_continent}{' · '}</>}
+            {intel.ipinfo_lite_as_domain && <>as_domain: {intel.ipinfo_lite_as_domain}</>}
+          </p>
+        </div>
+      )}
+
+      {intel.honeypot_canaries && intel.honeypot_canaries.length > 0 && (
+        <div className="bg-background border border-border rounded-xl p-3 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 flex items-center gap-2">
+            Honeypot canary captures
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:webrtc_leak+browser_fp]</span>
+          </p>
+          <ul className="space-y-1">
+            {intel.honeypot_canaries.slice(0, 5).map((c) => (
+              <li key={c.id} className="text-[11px] font-mono text-foreground">
+                {c.captured_at?.slice(0, 19)}
+                {c.real_ip_webrtc && (
+                  <> · <span className="text-[var(--danger)]">real IP: {c.real_ip_webrtc}</span></>
+                )}
+                {c.fingerprint_hash && (
+                  <> · fp: <span className="text-muted-foreground">{c.fingerprint_hash.slice(0, 12)}</span></>
+                )}
+                {c.headless_detected && (
+                  <> · <span className="text-[var(--warning)]">headless</span></>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

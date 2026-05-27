@@ -15,6 +15,7 @@ from app.models.firewall_rule import FirewallRule
 from app.models.honey_breadcrumb import HoneyBreadcrumb
 from app.models.ransomware_event import RansomwareEvent
 from app.models.av_detection import AvDetection
+from app.models.honeypot_canary import HoneypotCanary
 
 __all__ = [
     "Base",
@@ -38,4 +39,5 @@ __all__ = [
     "HoneyBreadcrumb",
     "RansomwareEvent",
     "AvDetection",
+    "HoneypotCanary",
 ]
