@@ -6,8 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.client import Client
 from app.models.action import Action
 from app.core.events import event_bus
+from app.core.attack_detector import _is_safe_ip
 
 logger = logging.getLogger("aegis.guardrails")
+
+# Action types whose target is an IP — guard against blocking safe IPs.
+_IP_TARGET_ACTIONS = frozenset({"block_ip", "firewall_rule", "isolate_host", "network_segment"})
 
 # Default guardrail policies — AEGIS runs fully autonomous by default.
 # Users can override any of these in client.guardrails to require manual approval.
@@ -55,6 +59,34 @@ class GuardrailEngine:
         incident_id: Optional[str] = None,
     ) -> Action:
         """Evaluate an action against guardrail policies and create an Action record."""
+        # SAFE-IP guard: short-circuit IP-targeted actions for safe IPs.
+        # This runs BEFORE policy evaluation so even auto_approve cannot bypass it.
+        if action_type in _IP_TARGET_ACTIONS and target and _is_safe_ip(target):
+            logger.warning(
+                f"GUARDRAIL: Refusing {action_type} on safe IP {target} "
+                f"(AEGIS_SAFE_IPS). Creating skipped Action."
+            )
+            action = Action(
+                incident_id=incident_id or "",
+                client_id=client.id,
+                action_type=action_type,
+                target=target,
+                parameters={},
+                status="skipped_safe_ip",
+                requires_approval=False,
+                ai_reasoning=f"BLOCKED by safe-IP guardrail. AI reasoning: {ai_reasoning}",
+            )
+            db.add(action)
+            await db.commit()
+            await db.refresh(action)
+            await event_bus.publish("action_skipped_safe_ip", {
+                "action_id": str(action.id),
+                "action_type": action_type,
+                "target": target,
+                "incident_id": str(incident_id) if incident_id else "",
+            })
+            return action
+
         policy = self.get_policy(client, action_type)
 
         if policy == "never_auto":

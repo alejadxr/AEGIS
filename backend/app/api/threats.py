@@ -361,3 +361,35 @@ async def get_sharing_stats():
         "auto_sharer": auto_sharer.stats,
         "nodes_registered": len(_sharing_nodes),
     }
+
+
+# --- TTP Sequence Clustering (v1.7) ---
+
+@router.get("/campaigns")
+async def list_ttp_campaigns(
+    limit: int = 20,
+    window_hours: int = 24,
+    min_distinct_ips: int = 3,
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """List active TTP campaigns (clusters of incidents sharing a MITRE
+    (tactic, technique) fingerprint across distinct source IPs).
+
+    A campaign is surfaced when ≥ min_distinct_ips different source IPs
+    triggered incidents with the same TTP fingerprint inside the window.
+    """
+    from app.services.ttp_clustering import detect_campaigns
+    campaigns = await detect_campaigns(
+        db=db,
+        window_hours=max(1, min(window_hours, 24 * 14)),
+        min_distinct_ips=max(2, min(min_distinct_ips, 50)),
+        client_id=auth.client.id,
+        limit=max(1, min(limit, 100)),
+    )
+    return {
+        "campaigns": campaigns,
+        "count": len(campaigns),
+        "window_hours": window_hours,
+        "min_distinct_ips": min_distinct_ips,
+    }
