@@ -26,6 +26,16 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 
+interface ProvenanceMeta {
+  kind: 'algorithm' | 'agent' | 'honeypot';
+  source: string;
+  model?: string;
+  rule?: string;
+  rules?: string[];
+  providers?: string[];
+  ts?: string;
+}
+
 interface IncidentItem {
   id: string;
   title: string;
@@ -141,6 +151,50 @@ function buildStatusDistribution(incidents: IncidentItem[]): Array<Record<string
   });
 
   return Object.values(buckets);
+}
+
+function ProvenanceBadge({ provenance }: { provenance?: ProvenanceMeta | null }) {
+  const meta = provenance ?? { kind: 'algorithm', source: 'legacy' };
+  const kind = meta.kind ?? 'algorithm';
+
+  let label: string;
+  let colorClass: string;
+
+  if (kind === 'agent') {
+    const model = meta.model ?? meta.source ?? 'agent';
+    label = `Agent · ${model.split(':').pop() ?? model}`;
+    colorClass = [
+      'bg-[color-mix(in_oklab,var(--warning)_12%,transparent)]',
+      'border-[color-mix(in_oklab,var(--warning)_28%,transparent)]',
+      'text-[var(--warning)]',
+    ].join(' ');
+  } else if (kind === 'honeypot') {
+    label = `Honeypot · ${meta.source}`;
+    colorClass = [
+      'bg-[color-mix(in_oklab,var(--primary)_12%,transparent)]',
+      'border-[color-mix(in_oklab,var(--primary)_28%,transparent)]',
+      'text-[var(--primary)]',
+    ].join(' ');
+  } else {
+    // algorithm (deterministic) or legacy
+    const src = meta.source === 'legacy' ? 'legacy' : meta.rule ?? meta.source;
+    label = `Algorithm · ${src}`;
+    colorClass = [
+      'bg-[color-mix(in_oklab,var(--info)_12%,transparent)]',
+      'border-[color-mix(in_oklab,var(--info)_28%,transparent)]',
+      'text-[var(--info)]',
+    ].join(' ');
+  }
+
+  return (
+    <span className={cn(
+      'inline-flex items-center text-[9px] font-semibold uppercase tracking-wider',
+      'px-1.5 py-0.5 rounded border font-mono',
+      colorClass,
+    )}>
+      {label}
+    </span>
+  );
 }
 
 export default function ResponsePage() {
@@ -381,7 +435,15 @@ export default function ResponsePage() {
                       {/* AI Analysis Details */}
                       {incident.ai_analysis && (
                         <div className="mt-4">
-                          <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">AI Analysis</p>
+                          <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2 flex items-center gap-2">
+                            AI Analysis
+                            <ProvenanceBadge
+                              provenance={
+                                ((incident.ai_analysis as Record<string, unknown>)?.triage as Record<string, unknown> | undefined)?._provenance as ProvenanceMeta | undefined
+                                ?? (incident.ai_analysis as Record<string, unknown>)?._origin as ProvenanceMeta | undefined
+                              }
+                            />
+                          </p>
                           <div className="bg-background border border-border rounded-xl p-4 space-y-2">
                             {(() => {
                               const analysis = incident.ai_analysis as Record<string, unknown> | null;
@@ -431,20 +493,38 @@ export default function ResponsePage() {
                               is_vpn?: boolean | null;
                               is_proxy?: boolean | null;
                               is_datacenter?: boolean | null;
+                              is_malicious?: boolean | null;
                               risk_score?: number | null;
                               providers?: string[];
                               cached?: boolean;
+                              classification?: string;
+                              confidence?: { tor: number; vpn: number; proxy: number; datacenter: number; attacker: number };
+                              asn_reputation_name?: string;
+                              tor_list_match?: boolean;
+                              spamhaus_match?: boolean;
                             }
                           | undefined;
                         if (!intel) return null;
                         const hostnameLooksTor = !!intel.hostname && /(tor|exit)/i.test(intel.hostname);
-                        const isTor = intel.is_tor === true || hostnameLooksTor;
+                        const isTor = intel.is_tor === true || hostnameLooksTor || intel.tor_list_match === true;
                         const tags: Array<{ label: string; tone: 'amber' | 'red' | 'cyan' | 'muted' }> = [];
                         if (isTor) tags.push({ label: 'TOR EXIT', tone: 'red' });
                         if (intel.is_vpn) tags.push({ label: 'VPN', tone: 'amber' });
                         if (intel.is_proxy) tags.push({ label: 'PROXY', tone: 'amber' });
                         if (intel.is_datacenter) tags.push({ label: 'DATACENTER', tone: 'cyan' });
+                        if (intel.is_malicious) tags.push({ label: 'MALICIOUS', tone: 'red' });
+                        if (intel.spamhaus_match) tags.push({ label: 'SPAMHAUS', tone: 'red' });
                         if (intel.cached) tags.push({ label: 'CACHED', tone: 'muted' });
+                        const classificationMap: Record<string, { label: string; tone: 'red' | 'amber' | 'cyan' | 'muted' }> = {
+                          tor_exit: { label: 'Tor exit', tone: 'red' },
+                          known_attacker: { label: 'Known attacker', tone: 'red' },
+                          vpn_user: { label: 'VPN user', tone: 'amber' },
+                          known_crawler: { label: 'Known crawler', tone: 'cyan' },
+                          datacenter_bot: { label: 'Datacenter / bot', tone: 'cyan' },
+                          known_service: { label: 'Known service', tone: 'cyan' },
+                          unknown: { label: 'Unknown', tone: 'muted' },
+                        };
+                        const cls = intel.classification ? classificationMap[intel.classification] : undefined;
                         const toneClass: Record<string, string> = {
                           red: 'bg-red-500/10 text-red-400 border-red-500/30',
                           amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
@@ -452,17 +532,40 @@ export default function ResponsePage() {
                           muted: 'bg-muted/40 text-muted-foreground border-border',
                         };
                         const locParts = [intel.city, intel.region, intel.country].filter(Boolean);
+                        const ipIntelProvenance = (intel as unknown as Record<string, unknown>)?._provenance as ProvenanceMeta | undefined;
                         return (
                           <div className="mt-4">
                             <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2 flex items-center gap-2">
                               IP Intel
-                              {intel.providers && intel.providers.length > 0 && (
+                              <ProvenanceBadge provenance={ipIntelProvenance} />
+                              {intel.providers && intel.providers.length > 0 && !ipIntelProvenance && (
                                 <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">
                                   · {intel.providers.join(', ')}
                                 </span>
                               )}
                             </p>
                             <div className="bg-background border border-border rounded-xl p-4 space-y-3">
+                              {cls && (
+                                <div className="flex items-center gap-2">
+                                  <span className={cn('text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border', toneClass[cls.tone])}>
+                                    {cls.label}{intel.asn_reputation_name && (intel.classification === 'known_crawler' || intel.classification === 'known_service') ? ` · ${intel.asn_reputation_name}` : ''}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-muted-foreground/40">[algorithm:classification]</span>
+                                </div>
+                              )}
+                              {intel.confidence && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {(['tor','vpn','proxy','datacenter','attacker'] as const).map((k) => {
+                                    const v = intel.confidence![k];
+                                    const tone: 'red' | 'amber' | 'cyan' | 'muted' = v >= 0.7 ? 'red' : v >= 0.4 ? 'amber' : v >= 0.1 ? 'cyan' : 'muted';
+                                    return (
+                                      <span key={k} className={cn('text-[9px] font-mono font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border', toneClass[tone])}>
+                                        {k} {v.toFixed(2)}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
                               {tags.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5">
                                   {tags.map((t) => (

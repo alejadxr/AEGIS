@@ -2793,6 +2793,7 @@ class CorrelationEngine:
             "triggering_event": triggering_event,
             "source_ip": triggering_event.get("source_ip"),
             "source": "correlation_engine",
+            "pattern": rule["id"],
             "timestamp": datetime.utcnow().isoformat(),
         }
 
@@ -2833,6 +2834,7 @@ class CorrelationEngine:
                     mitre_list = rule.get("mitre", [])
                     mitre_technique = mitre_list[0].get("technique") if mitre_list else None
                     mitre_tactic = mitre_list[0].get("tactic") if mitre_list else None
+                    from datetime import datetime as _dt
                     incident = Incident(
                         client_id=client.id,
                         title=f"{rule['severity'].upper()}: {rule['title']}",
@@ -2843,7 +2845,16 @@ class CorrelationEngine:
                         mitre_technique=mitre_technique,
                         mitre_tactic=mitre_tactic,
                         source_ip=alert_data.get("source_ip"),
-                        ai_analysis={"rule_id": rule["id"], "ai_fallback": True},
+                        ai_analysis={
+                            "rule_id": rule["id"],
+                            "ai_fallback": True,
+                            "_origin": {
+                                "kind": "algorithm",
+                                "source": "correlation_engine",
+                                "rule": rule["id"],
+                                "ts": _dt.utcnow().isoformat(),
+                            },
+                        },
                         raw_alert=alert_data.get("triggering_event"),
                     )
                     db.add(incident)
