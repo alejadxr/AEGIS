@@ -71,6 +71,7 @@ _last_refresh: dict[str, Optional[datetime]] = {
     "emerging_threats": None,
     "tor_exit_nodes": None,
     "feodo_tracker": None,
+    "offline_geoip": None,
 }
 
 
@@ -162,6 +163,18 @@ class ThreatFeedManager:
                 last_tor = _last_refresh.get("tor_exit_nodes")
                 if last_tor is None or (now - last_tor).total_seconds() >= TOR_REFRESH:
                     await self._refresh_single_blocklist("tor_exit_nodes")
+
+                # Offline GeoIP (db-ip.com Lite) — weekly. Cheap when file
+                # exists (will short-circuit on the freshness check).
+                last_off = _last_refresh.get("offline_geoip")
+                if last_off is None or (now - last_off).total_seconds() >= 7 * 24 * 3600:
+                    try:
+                        from app.services import offline_geoip as _og
+                        status = await _og.refresh_async()
+                        logger.info(f"offline_geoip refresh: {status}")
+                        _last_refresh["offline_geoip"] = now
+                    except Exception as exc:
+                        logger.warning(f"offline_geoip refresh failed: {exc}")
 
             except asyncio.CancelledError:
                 break
