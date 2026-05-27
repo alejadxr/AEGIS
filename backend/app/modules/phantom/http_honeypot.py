@@ -418,7 +418,11 @@ class HTTPHoneypot:
 
         html, headers = _get_active_template()
 
-        if path in ("/.env", "/api/config", "/config"):
+        if path in (
+            "/.env", "/api/config", "/config",
+            "/.env.bak", "/.env.example", "/.env.production", "/.env.local",
+            "/api/v1/internal/config",
+        ):
             fake_env = (
                 "# Production Environment\n"
                 "APP_KEY=base64:fake_key_x8Kp2mN9vQ3wR7yT\n"
@@ -437,6 +441,41 @@ class HTTPHoneypot:
             return web.Response(
                 text=fake_env,
                 content_type="text/plain",
+                headers={"Server": "Apache/2.4.52 (Ubuntu)"},
+            )
+
+        if path in ("/wp-config.php", "/wp-config.php.bak", "/wp-config.txt"):
+            # WordPress config file with AWS canary credentials embedded as comments.
+            # Reusing the same BREADCRUMB tokens so attackers trip the existing
+            # BREADCRUMB_INDICATORS detector when they replay the creds anywhere.
+            fake_wpconfig = (
+                "<?php\n"
+                "// ** Database settings ** //\n"
+                "define( 'DB_NAME', 'wp_prod' );\n"
+                "define( 'DB_USER', 'admin' );\n"
+                "define( 'DB_PASSWORD', 'Tr4p_P4ssw0rd_2026' );\n"
+                "define( 'DB_HOST', 'db.internal.prod' );\n"
+                "\n"
+                "// ** AWS S3 backup credentials (added 2025-11-14) ** //\n"
+                "// AWS_ACCESS_KEY_ID=AKIAIOSFODNN7BREADCRUMB\n"
+                "// AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYBREADCRUMB\n"
+                "// S3_BUCKET=prod-backups-internal\n"
+                "\n"
+                "define( 'AUTH_KEY',         'breadcrumb-jwt-secret' );\n"
+                "define( 'SECURE_AUTH_KEY',  'Tr4p_Adm1n_2026' );\n"
+                "define( 'LOGGED_IN_KEY',    'sk-breadcrumb-trap-key' );\n"
+                "define( 'NONCE_KEY',        'sk_live_breadcrumb_trap' );\n"
+                "\n"
+                "$table_prefix = 'wp_';\n"
+                "define( 'WP_DEBUG', false );\n"
+                "if ( ! defined( 'ABSPATH' ) ) {\n"
+                "    define( 'ABSPATH', __DIR__ . '/' );\n"
+                "}\n"
+                "require_once ABSPATH . 'wp-settings.php';\n"
+            )
+            return web.Response(
+                text=fake_wpconfig,
+                content_type="text/plain",  # Apache mis-serves as text when leaked
                 headers={"Server": "Apache/2.4.52 (Ubuntu)"},
             )
 
