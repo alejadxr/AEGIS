@@ -1,10 +1,14 @@
 """
-IP Intelligence Enrichment Service — AEGIS v1.7
+IP Intelligence Enrichment Service — AEGIS v1.8
 
-NO AI. This module is pure REST aggregation + observational correlation.
-It does NOT call OpenAI, Anthropic, Gemini, OpenRouter, or any LLM. It
-does NOT pass through ai_manager or any AEGIS AI subsystem. Behavior is
-identical regardless of AEGIS_AI_MODE (full/local/offline).
+NO AI by default. This module is pure REST aggregation + observational
+correlation. The ONE exception is the optional `ai_summary` field, which is:
+  - opt-in: produced only when deep=True AND AEGIS_AI_MODE != offline
+  - separated from deterministic classification (which never uses an LLM)
+  - clearly provenance-tagged ({"kind": "agent", "source": "<provider>:<model>"})
+When AEGIS_AI_MODE is offline (the prod default for AI gating), behavior is
+fully deterministic and identical across runs. The ai_manager call is the
+only LLM hook and is implemented in `ip_intel_history._ai_threat_brief`.
 
 Default providers (free, no auth, parallel):
   - ipinfo   : ipinfo.io/<ip>/json
@@ -1034,11 +1038,50 @@ async def lookup(ip: str, deep: bool = False) -> dict:
                     corr_sessions = []
             merged["correlated_sessions"] = corr_sessions
 
+    # Internal history blocks (deep only). DB-only, parallel, 4 s budget.
+    if deep:
+        try:
+            from app.services.ip_intel_history import (
+                _ai_threat_brief,
+                _external_feeds_match,
+                _related_ips,
+                assemble_history,
+            )
+            history = await assemble_history(ip, merged.get("asn"))
+            merged["history"] = history
+
+            feeds = await _external_feeds_match(ip)
+            merged["external_feeds"] = feeds or []
+            if feeds:
+                # If a real feed lists this IP, raise the malicious vote
+                merged["is_malicious"] = True
+
+            related = await _related_ips(ip, merged.get("asn"))
+            merged["related"] = related or {"same_subnet": [], "same_asn": []}
+        except Exception as exc:
+            logger.warning("history/feeds enrichment failed for %s: %s", ip, exc)
+            merged.setdefault("history", {"incidents": {"count": 0}, "honeypot": {"total": 0},
+                                          "profile": None, "actions": []})
+            merged.setdefault("external_feeds", [])
+            merged.setdefault("related", {"same_subnet": [], "same_asn": []})
+
     # Classification + confidence (always)
     label, confidence = _classify(merged, tor_match, spamhaus_match, asn_rep)
     merged["classification"] = label
     merged["confidence"] = confidence
     merged["deep"] = deep
+
+    # Optional AI threat brief — ONLY path where ip_intel touches an LLM.
+    # Gated: deep=True AND AEGIS_AI_MODE != offline. Field omitted entirely
+    # in default mode for backward compat.
+    if deep:
+        try:
+            from app.services.ip_intel_history import _ai_threat_brief
+            brief = await _ai_threat_brief(ip, merged)
+            merged["ai_summary"] = brief
+        except Exception as exc:
+            logger.debug("ai_summary skipped for %s: %s", ip, exc)
+            merged["ai_summary"] = None
 
     if deep:
         _deep_cache_set(ip, merged)
