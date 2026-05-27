@@ -106,12 +106,11 @@ class OpenRouterProvider(AIProvider):
         max_tokens: int = 4096,
     ) -> dict:
         if not self.api_key:
-            return {
-                "content": '{"note": "OpenRouter API key not configured. Using mock response."}',
-                "tokens_used": 0,
-                "cost_usd": 0.0,
-                "latency_ms": 0,
-            }
+            # Raise so ai_manager skips this provider and falls through to
+            # the next one in the chain. Returning a successful stub here
+            # caused ai_summary to display "OpenRouter API key not configured"
+            # text in the UI instead of triggering the fallback.
+            raise RuntimeError("openrouter: no api_key configured")
 
         model = model or "openai/gpt-oss-20b:free"
         client = await self._get_client()
@@ -199,12 +198,7 @@ class AnthropicProvider(AIProvider):
         max_tokens: int = 4096,
     ) -> dict:
         if not self.api_key:
-            return {
-                "content": '{"note": "Anthropic API key not configured."}',
-                "tokens_used": 0,
-                "cost_usd": 0.0,
-                "latency_ms": 0,
-            }
+            raise RuntimeError("anthropic: no api_key configured")
 
         model = model or "claude-sonnet-4-6"
         client = await self._get_client()
@@ -307,12 +301,7 @@ class OpenAIProvider(AIProvider):
         max_tokens: int = 4096,
     ) -> dict:
         if not self.api_key:
-            return {
-                "content": '{"note": "OpenAI API key not configured."}',
-                "tokens_used": 0,
-                "cost_usd": 0.0,
-                "latency_ms": 0,
-            }
+            raise RuntimeError("openai: no api_key configured")
 
         model = model or "gpt-4o-mini"
         client = await self._get_client()
@@ -510,12 +499,7 @@ class InceptionProvider(AIProvider):
         **kwargs,
     ) -> dict:
         if not self.api_key:
-            return {
-                "content": '{"note": "Inception Labs API key not configured."}',
-                "tokens_used": 0,
-                "cost_usd": 0.0,
-                "latency_ms": 0,
-            }
+            raise RuntimeError("inception: no api_key configured")
 
         model = model or "mercury-2"
         reasoning = self.TASK_REASONING.get(task_type, "medium")
@@ -651,12 +635,7 @@ class GeminiProvider(AIProvider):
         max_tokens: int = 4096,
     ) -> dict:
         if not self.api_key:
-            return {
-                "content": '{"note": "Gemini API key not configured."}',
-                "tokens_used": 0,
-                "cost_usd": 0.0,
-                "latency_ms": 0,
-            }
+            raise RuntimeError("gemini: no api_key configured")
 
         model = model or "gemini-flash-lite-latest"
         client = await self._get_client()

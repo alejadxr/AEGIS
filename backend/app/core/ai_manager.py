@@ -56,7 +56,22 @@ class AIManager:
         self.providers: dict[str, AIProvider] = {}
         self.active_provider: str = "inception"
         # task_type -> provider name override  (e.g. {"code_analysis": "anthropic"})
-        self.task_routing: dict[str, str] = {}
+        # ip_threat_brief: route to openrouter (cheap free model) by default; the
+        # full fallback chain still applies if quarantined / errors.
+        self.task_routing: dict[str, str] = {
+            "ip_threat_brief": "openrouter",
+        }
+        # task_type -> default model id (provider-specific). Used only when
+        # the caller does not pass `model`. Keeps cheap tasks on cheap models.
+        self.task_model_defaults: dict[str, dict[str, str]] = {
+            "ip_threat_brief": {
+                # Free tier on OpenRouter; cheap + fast for short briefs.
+                # Fallback chain in the manager handles any 404/quota issues.
+                "openrouter": "meta-llama/llama-3.2-3b-instruct:free",
+                "inception": "mercury-2",
+                "gemini": "gemini-flash-lite-latest",
+            },
+        }
         # ordered fallback chain of provider names
         self.fallback_chain: list[str] = ["inception", "openrouter", "openai", "anthropic", "ollama"]
         # provider name -> unix timestamp until which the provider is skipped
@@ -180,13 +195,20 @@ class AIManager:
                 continue
 
             try:
+                effective_model = model or (
+                    self.task_model_defaults.get(task_type, {}).get(pname)
+                )
                 result = await provider.chat(
                     messages=messages,
-                    model=model,
+                    model=effective_model,
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
                 result["provider"] = pname
+                # Surface the model that actually answered so provenance shows
+                # `openrouter:google/gemma-2-9b-it:free` instead of `:unknown`.
+                if not result.get("model") and effective_model:
+                    result["model"] = effective_model
                 return result
             except Exception as exc:
                 logger.warning(f"Provider {pname} failed for task_type={task_type}: {exc}")
