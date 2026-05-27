@@ -16,6 +16,7 @@ from app.models.incident import Incident
 from app.models.action import Action
 from app.models.client import Client
 from app.config import settings
+from app.modules.phantom.safety import should_skip_profile
 
 logger = logging.getLogger("aegis.firewall_sync")
 
@@ -49,6 +50,10 @@ async def _sync_attackers(db: AsyncSession, client_id: str) -> int:
     for atk in attackers:
         ip = atk.get("ip")
         if not ip:
+            continue
+
+        # Skip safe/documentation/non-routable IPs — prevents synthetic profiles
+        if should_skip_profile(ip):
             continue
 
         result = await db.execute(

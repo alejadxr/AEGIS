@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.openrouter import openrouter_client
 from app.models.honeypot import HoneypotInteraction
 from app.models.attacker_profile import AttackerProfile
+from app.modules.phantom.safety import should_skip_profile
 
 logger = logging.getLogger("aegis.phantom.profiler")
 
@@ -23,8 +24,15 @@ class AttackerProfiler:
         source_ip: str,
         interaction_data: dict,
         db: AsyncSession,
-    ) -> HoneypotInteraction:
-        """Record a new honeypot interaction and update attacker profile."""
+    ) -> Optional[HoneypotInteraction]:
+        """Record a new honeypot interaction and update attacker profile.
+
+        Returns None (without writing to DB) if source_ip is a safe,
+        documentation, or non-routable address that should never be profiled.
+        """
+        if should_skip_profile(source_ip):
+            return None
+
         # Find or create attacker profile
         profile = await self._get_or_create_profile(client_id, source_ip, db)
 
