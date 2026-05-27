@@ -1,20 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Sparkles, Plus, RotateCw, Trash2, Loader2 } from 'lucide-react';
-import { api, DeceptionCampaign, DeceptionBreadcrumbHit } from '@/lib/api';
+import { Sparkles, Plus, RotateCw, Trash2, Loader2, Lock } from 'lucide-react';
+import { api, ApiError, DeceptionCampaign, DeceptionBreadcrumbHit } from '@/lib/api';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { CampaignBuilder } from '@/components/deception/CampaignBuilder';
 import { BreadcrumbHits } from '@/components/deception/BreadcrumbHits';
 
 const STATUS_COLORS: Record<string, string> = {
-  running: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-  deploying: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
-  rotating: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
-  stopped: 'text-muted-foreground bg-zinc-500/10 border-zinc-500/20',
-  failed: 'text-red-400 bg-red-500/10 border-red-500/30',
-  pending: 'text-muted-foreground bg-zinc-500/10 border-zinc-500/20',
+  running: 'text-[var(--success)] bg-[color-mix(in_oklab,var(--success)_12%,transparent)] border-[color-mix(in_oklab,var(--success)_25%,transparent)]',
+  deploying: 'text-[var(--warning)] bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] border-[color-mix(in_oklab,var(--warning)_25%,transparent)]',
+  rotating: 'text-[var(--chart-5)] bg-[color-mix(in_oklab,var(--chart-5)_12%,transparent)] border-[color-mix(in_oklab,var(--chart-5)_25%,transparent)]',
+  stopped: 'text-muted-foreground bg-muted/10 border-border',
+  failed: 'text-[var(--danger)] bg-[color-mix(in_oklab,var(--danger)_12%,transparent)] border-[color-mix(in_oklab,var(--danger)_25%,transparent)]',
+  pending: 'text-muted-foreground bg-muted/10 border-border',
 };
 
 export default function DeceptionPage() {
@@ -24,6 +24,7 @@ export default function DeceptionPage() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [enterpriseGated, setEnterpriseGated] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -34,10 +35,14 @@ export default function DeceptionPage() {
       setCampaigns(c.status === 'fulfilled' ? c.value : []);
       setHits(h.status === 'fulfilled' ? h.value : []);
       if (c.status === 'rejected') {
-        const msg =
-          c.reason instanceof Error ? c.reason.message : String(c.reason);
-        if (msg.includes('403')) {
-          setError('Honey-AI Deception requires the Enterprise tier.');
+        const isEnterprise =
+          c.reason instanceof ApiError && c.reason.status === 403;
+        if (isEnterprise) {
+          setEnterpriseGated(true);
+        } else {
+          const msg =
+            c.reason instanceof Error ? c.reason.message : String(c.reason);
+          setError(msg);
         }
       }
     } finally {
@@ -62,6 +67,7 @@ export default function DeceptionPage() {
   };
 
   const handleStop = async (id: string) => {
+    if (!confirm('Delete this campaign? This cannot be undone.')) return;
     setPendingAction(id);
     try {
       await api.deception.deleteCampaign(id);
@@ -83,7 +89,7 @@ export default function DeceptionPage() {
           <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight flex items-center gap-3">
             <Sparkles className="w-6 h-6 text-[var(--brand-accent)]" />
             Honey-AI Deception
-            <span className="text-[11px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">
+            <span className="text-[11px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] border border-[color-mix(in_oklab,var(--warning)_25%,transparent)] text-[var(--warning)]">
               Enterprise
             </span>
           </h1>
@@ -103,12 +109,24 @@ export default function DeceptionPage() {
       </div>
 
       {error && (
-        <div className="bg-amber-500/5 border border-amber-500/30 rounded-2xl px-4 py-3 text-[13px] text-amber-400">
+        <div className="bg-[color-mix(in_oklab,var(--danger)_8%,transparent)] border border-[color-mix(in_oklab,var(--danger)_25%,transparent)] rounded-2xl px-4 py-3 text-[13px] text-[var(--danger)]">
           {error}
         </div>
       )}
 
-      {/* Summary stats */}
+      {enterpriseGated && (
+        <div className="bg-[color-mix(in_oklab,var(--warning)_8%,transparent)] border border-[color-mix(in_oklab,var(--warning)_25%,transparent)] rounded-2xl px-6 py-8 text-center">
+          <Lock className="w-8 h-8 text-[var(--warning)] mx-auto mb-3" />
+          <p className="text-[15px] font-semibold text-[var(--warning)] mb-1">Enterprise tier required</p>
+          <p className="text-[13px] text-muted-foreground">
+            Honey-AI Deception at Scale is available on the Enterprise plan.{' '}
+            <a href="mailto:sales@aegis.ai" className="text-[var(--warning)] hover:underline">Contact us</a> to unlock.
+          </p>
+        </div>
+      )}
+
+      {/* Summary stats — hidden when enterprise-gated (all zeros would be misleading) */}
+      {!enterpriseGated && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard
           label="Active Campaigns"
@@ -124,8 +142,10 @@ export default function DeceptionPage() {
         />
         <StatCard label="Hits" value={hits.length} tone="danger" />
       </div>
+      )}
 
       {/* Campaign list */}
+      {!enterpriseGated && (
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         <div className="px-4 sm:px-6 py-4 border-b border-border">
           <span className="text-[14px] font-semibold text-foreground">
@@ -193,7 +213,7 @@ export default function DeceptionPage() {
                     )}
                   </div>
                   {c.error && (
-                    <p className="text-[11px] text-red-400 mt-1">{c.error}</p>
+                    <p className="text-[11px] text-[var(--danger)] mt-1">{c.error}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -215,7 +235,7 @@ export default function DeceptionPage() {
                     disabled={pendingAction === c.id}
                     onClick={() => handleStop(c.id)}
                     className="w-8 h-8 rounded-lg border border-border hover:border-red-500/40 text-muted-foreground hover:text-red-400 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Stop"
+                    title="Delete campaign"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -225,9 +245,10 @@ export default function DeceptionPage() {
           </div>
         )}
       </div>
+      )}
 
-      {/* Breadcrumb hits */}
-      <BreadcrumbHits hits={hits} />
+      {/* Breadcrumb hits — only shown when not enterprise-gated */}
+      {!enterpriseGated && <BreadcrumbHits hits={hits} />}
 
       {/* Builder modal */}
       <CampaignBuilder
@@ -256,7 +277,7 @@ function StatCard({
       <div
         className={cn(
           'text-[24px] font-bold mt-1 font-mono',
-          tone === 'danger' && value > 0 ? 'text-red-400' : 'text-foreground',
+          tone === 'danger' && value > 0 ? 'text-[var(--danger)]' : 'text-foreground',
         )}
       >
         {value.toLocaleString()}
