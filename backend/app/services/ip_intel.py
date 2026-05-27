@@ -11,12 +11,16 @@ fully deterministic and identical across runs. The ai_manager call is the
 only LLM hook and is implemented in `ip_intel_history._ai_threat_brief`.
 
 Default providers (free, no auth, parallel):
-  - ipinfo   : ipinfo.io/<ip>/json
-  - ipguide  : ip.guide/<ip>
-  - ipquery  : api.ipquery.io/<ip>
-  - greynoise: api.greynoise.io/v3/community/<ip>  (free community endpoint)
-  - ipapi    : ip-api.com/json/<ip>?fields=...    (45 req/min throttled)
-  - geojs    : get.geojs.io/v1/ip/geo/<ip>.json
+  - ipinfo     : ipinfo.io/<ip>/json
+  - ipguide    : ip.guide/<ip>
+  - ipquery    : api.ipquery.io/<ip>
+  - greynoise  : api.greynoise.io/v3/community/<ip>  (free community endpoint)
+  - ipapi      : ip-api.com/json/<ip>?fields=...    (45 req/min throttled)
+  - geojs      : get.geojs.io/v1/ip/geo/<ip>.json
+  - ipapi_is   : api.ipapi.is/?q=<ip>              (1000/day, abuse score + is_abuser)
+  - proxycheck : proxycheck.io/v2/<ip>?vpn=1&risk=1 (1000/day, proxy type VPN/TOR/CGI)
+  - otx        : otx.alienvault.com (community pulses, optional OTX_API_KEY)
+  - ipinfo_lite: ipinfo.io/lite/<ip> (requires IPINFO_LITE_TOKEN — skipped otherwise)
 
 Deep-mode-only (slow / heavy):
   - shodan        : internetdb.shodan.io/<ip>     (open ports + tags + vulns)
@@ -25,6 +29,7 @@ Deep-mode-only (slow / heavy):
   - asn_reputation: in-process ASN classification table
   - behavioral    : observation of /web-logs/aegis-feed.jsonl
   - abuseipdb     : api.abuseipdb.com (REQUIRES env ABUSEIPDB_KEY; skipped otherwise)
+  - virustotal    : virustotal.com api/v3 (REQUIRES env VIRUSTOTAL_API_KEY; 4/min,500/day)
 
 Aggregate post-processing (always):
   - classification : single label (tor_exit / vpn_user / datacenter_bot /
@@ -121,10 +126,62 @@ def _deep_cache_set(ip: str, result: dict) -> None:
 # Provider configuration
 # ---------------------------------------------------------------------------
 
-# All free, no-auth providers active by default. abuseipdb only when key set.
-_DEFAULT_PROVIDERS = "ipinfo,ipguide,ipquery,greynoise,ipapi,geojs"
+# All free, no-auth providers active by default. abuseipdb / vt only when key set.
+_DEFAULT_PROVIDERS = (
+    "ipinfo,ipguide,ipquery,greynoise,ipapi,geojs,"
+    "ipapi_is,proxycheck,ipinfo_lite"
+)
+# OTX is opt-in default for deep-only (it can be slow without an API key)
 _TIMEOUT = httpx.Timeout(3.0, connect=2.0)
 _DEEP_TIMEOUT = httpx.Timeout(6.0, connect=2.0)
+
+
+# ---------------------------------------------------------------------------
+# Per-provider rate limiting (token-bucket via async lock + last-call ts)
+# ---------------------------------------------------------------------------
+# Limits requested by the spec:
+#   ipapi_is  : 30 req/min  -> min interval 2.0s
+#   proxycheck: 50 req/min  -> min interval 1.2s
+#   otx       : 1000/day    -> ~0.7 req/min -> min interval 90s (very loose)
+#   virustotal: 4 req/min   -> min interval 15s
+# Soft limits: we just delay (await sleep) up to a small cap; if the cap is
+# exceeded the call is skipped (returns {} so deep response still completes).
+
+_RATE_INTERVALS: dict[str, float] = {
+    "ipapi_is": 2.0,
+    "proxycheck": 1.2,
+    "otx": 0.5,           # community endpoint — courtesy spacing
+    "virustotal": 15.0,
+}
+_RATE_LAST: dict[str, float] = {}
+_RATE_LOCKS: dict[str, asyncio.Lock] = {}
+_RATE_MAX_WAIT = 3.0  # seconds we are willing to wait before skipping a call
+
+
+def _rate_lock(provider: str) -> asyncio.Lock:
+    lock = _RATE_LOCKS.get(provider)
+    if lock is None:
+        lock = asyncio.Lock()
+        _RATE_LOCKS[provider] = lock
+    return lock
+
+
+async def _rate_acquire(provider: str) -> bool:
+    """Acquire a slot for `provider`. Returns False if the wait would exceed
+    _RATE_MAX_WAIT (caller should skip the request)."""
+    interval = _RATE_INTERVALS.get(provider)
+    if not interval:
+        return True
+    async with _rate_lock(provider):
+        now = time.monotonic()
+        last = _RATE_LAST.get(provider, 0.0)
+        wait = interval - (now - last)
+        if wait > _RATE_MAX_WAIT:
+            return False
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _RATE_LAST[provider] = time.monotonic()
+    return True
 
 
 def _enabled_providers() -> list[str]:
@@ -341,6 +398,306 @@ async def _fetch_geojs(ip: str, client: httpx.AsyncClient) -> dict[str, Any]:
         out["asn"] = f"AS{data['asn']}"
     if data.get("organization_name"):
         out["org"] = data["organization_name"]
+    return out
+
+
+async def _fetch_ipapi_is(ip: str, client: httpx.AsyncClient) -> dict[str, Any]:
+    """
+    ipapi.is — free 1000/day, no auth.
+    Returns is_proxy, is_tor, is_vpn, is_abuser, is_datacenter, is_crawler,
+    asn{asn,route,descr,country}, company{abuser_score string}, abuse{email}.
+    """
+    if not await _rate_acquire("ipapi_is"):
+        logger.debug("ipapi_is rate limit skip for %s", ip)
+        return {}
+    try:
+        r = await client.get(
+            "https://api.ipapi.is/",
+            params={"q": ip},
+            timeout=_TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except Exception as exc:
+        logger.debug("ipapi_is error for %s: %s", ip, exc)
+        return {}
+
+    out: dict[str, Any] = {"_provider": "ipapi_is"}
+    # core flags
+    for flag in ("is_tor", "is_vpn", "is_proxy", "is_datacenter",
+                 "is_mobile", "is_abuser", "is_crawler"):
+        if flag in data:
+            out[flag] = bool(data[flag])
+
+    # ASN
+    asn_block = data.get("asn") or {}
+    if asn_block.get("asn"):
+        out["asn"] = f"AS{asn_block['asn']}"
+    if asn_block.get("descr"):
+        out["org"] = asn_block["descr"]
+
+    # Geo
+    loc = data.get("location") or {}
+    if loc.get("country_code"):
+        out["country"] = loc["country_code"]
+    if loc.get("city"):
+        out["city"] = loc["city"]
+    if loc.get("state"):
+        out["region"] = loc["state"]
+
+    # Abuse score — ipapi.is stores it as a *string* inside `company.abuser_score`
+    # ("0.5273 (Very High)"). Parse to float 0..1. Also `asn.abuser_score` exists.
+    company = data.get("company") or {}
+    score_raw = company.get("abuser_score") or (asn_block.get("abuser_score") if asn_block else None)
+    score_val: float | None = None
+    if isinstance(score_raw, str):
+        try:
+            score_val = float(score_raw.split()[0])
+        except Exception:
+            score_val = None
+    elif isinstance(score_raw, (int, float)):
+        score_val = float(score_raw)
+    if score_val is not None:
+        out["ipapi_is_abuse_score"] = round(score_val, 4)
+        # Mirror into legacy field for backward-compat: scale 0-100
+        if score_val >= 0.5:
+            out["is_malicious"] = True
+
+    # Abuser contact
+    abuse_block = data.get("abuse") or {}
+    if abuse_block.get("email"):
+        out["ipapi_is_abuse_contact"] = abuse_block["email"]
+    if company.get("name"):
+        out["ipapi_is_company"] = company["name"]
+    if company.get("type"):
+        out["ipapi_is_company_type"] = company["type"]
+    return out
+
+
+async def _fetch_proxycheck(ip: str, client: httpx.AsyncClient) -> dict[str, Any]:
+    """
+    proxycheck.io v2 — free 1000/day, no auth.
+    Schema: {status:"ok", "<ip>": {proxy:"yes"|"no", type:"VPN"|"TOR"|"CGI"|"Compromised Server"|"Business"|..., risk:0..100, provider, organisation, asn, isocode, ...}}
+    """
+    if not await _rate_acquire("proxycheck"):
+        logger.debug("proxycheck rate limit skip for %s", ip)
+        return {}
+    try:
+        r = await client.get(
+            f"http://proxycheck.io/v2/{ip}",
+            params={"vpn": "1", "risk": "1", "asn": "1"},
+            timeout=_TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except Exception as exc:
+        logger.debug("proxycheck error for %s: %s", ip, exc)
+        return {}
+
+    if (data.get("status") or "ok") not in ("ok", None):
+        return {}
+
+    entry = data.get(ip) or {}
+    if not isinstance(entry, dict):
+        return {}
+
+    out: dict[str, Any] = {"_provider": "proxycheck"}
+
+    proxy_yn = (entry.get("proxy") or "").lower() == "yes"
+    ptype = entry.get("type")  # may be None
+    if proxy_yn:
+        out["is_proxy"] = True
+    if ptype:
+        out["proxycheck_type"] = ptype
+        tl = ptype.lower()
+        if tl == "vpn":
+            out["is_vpn"] = True
+        elif tl == "tor":
+            out["is_tor"] = True
+        elif tl in ("cgi", "public proxy", "open proxy"):
+            out["is_proxy"] = True
+        elif "compromised" in tl:
+            out["is_malicious"] = True
+        elif tl in ("hosting", "datacenter"):
+            out["is_datacenter"] = True
+
+    if isinstance(entry.get("risk"), (int, float)):
+        out["proxycheck_risk"] = int(entry["risk"])
+        if entry["risk"] >= 66:
+            out["is_malicious"] = True
+
+    if entry.get("provider"):
+        out["proxycheck_provider"] = entry["provider"]
+    if entry.get("organisation"):
+        out["proxycheck_org"] = entry["organisation"]
+    if entry.get("asn"):
+        out["asn"] = entry["asn"]
+    if entry.get("isocode"):
+        out["country"] = entry["isocode"]
+    if entry.get("city"):
+        out["city"] = entry["city"]
+    if entry.get("hostname"):
+        out["hostname"] = entry["hostname"]
+    return out
+
+
+async def _fetch_otx(ip: str, client: httpx.AsyncClient) -> dict[str, Any]:
+    """
+    AlienVault OTX — community endpoint works without a key for `general`.
+    OTX_API_KEY (optional) raises rate limits + unlocks private pulses.
+    """
+    if not await _rate_acquire("otx"):
+        return {}
+    headers: dict[str, str] = {"Accept": "application/json"}
+    api_key = os.environ.get("OTX_API_KEY")
+    if api_key:
+        headers["X-OTX-API-KEY"] = api_key
+    try:
+        r = await client.get(
+            f"https://otx.alienvault.com/api/v1/indicators/IPv4/{ip}/general",
+            headers=headers,
+            timeout=_DEEP_TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json() or {}
+    except Exception as exc:
+        logger.debug("otx error for %s: %s", ip, exc)
+        return {}
+
+    out: dict[str, Any] = {"_provider": "otx"}
+    if data.get("country_name"):
+        out["country"] = data.get("country_code") or data["country_name"]
+    if data.get("asn"):
+        # OTX returns "AS15169 GOOGLE - ..."
+        m = _ASN_RE.match(data["asn"])
+        if m:
+            out["asn"] = m.group(1)
+            if not out.get("org"):
+                out["org"] = m.group(2)
+
+    pulse_info = data.get("pulse_info") or {}
+    count = int(pulse_info.get("count") or 0)
+    out["otx_pulse_count"] = count
+    pulses = pulse_info.get("pulses") or []
+
+    top_pulses: list[dict] = []
+    adversaries: set[str] = set()
+    malware_families: set[str] = set()
+    for p in pulses[:15]:
+        if p.get("adversary"):
+            adversaries.add(p["adversary"])
+        for mf in p.get("malware_families") or []:
+            if isinstance(mf, dict) and mf.get("display_name"):
+                malware_families.add(mf["display_name"])
+            elif isinstance(mf, str):
+                malware_families.add(mf)
+        if len(top_pulses) < 3:
+            top_pulses.append({
+                "name": p.get("name") or "unnamed",
+                "adversary": p.get("adversary") or None,
+                "tags": (p.get("tags") or [])[:5],
+                "references_count": len(p.get("references") or []),
+                "id": p.get("id"),
+            })
+    out["otx_pulses"] = top_pulses
+    out["otx_adversaries"] = sorted(adversaries)
+    out["otx_malware_families"] = sorted(malware_families)
+    if isinstance(data.get("reputation"), (int, float)):
+        out["otx_reputation"] = int(data["reputation"])
+    if count > 0:
+        out["is_malicious"] = True
+    return out
+
+
+async def _fetch_virustotal(ip: str, client: httpx.AsyncClient) -> dict[str, Any]:
+    """
+    VirusTotal v3 — requires VIRUSTOTAL_API_KEY. 4 req/min, 500/day free tier.
+    """
+    api_key = os.environ.get("VIRUSTOTAL_API_KEY")
+    if not api_key:
+        return {}
+    if not await _rate_acquire("virustotal"):
+        logger.debug("virustotal rate limit skip for %s", ip)
+        return {}
+    try:
+        r = await client.get(
+            f"https://www.virustotal.com/api/v3/ip_addresses/{ip}",
+            headers={"x-apikey": api_key, "Accept": "application/json"},
+            timeout=_DEEP_TIMEOUT,
+        )
+        r.raise_for_status()
+        data = (r.json() or {}).get("data") or {}
+    except Exception as exc:
+        logger.debug("virustotal error for %s: %s", ip, exc)
+        return {}
+
+    attrs = data.get("attributes") or {}
+    stats = attrs.get("last_analysis_stats") or {}
+    votes = attrs.get("total_votes") or {}
+    out: dict[str, Any] = {"_provider": "virustotal"}
+    out["vt_malicious_count"] = int(stats.get("malicious") or 0)
+    out["vt_suspicious_count"] = int(stats.get("suspicious") or 0)
+    out["vt_harmless_count"] = int(stats.get("harmless") or 0)
+    out["vt_undetected_count"] = int(stats.get("undetected") or 0)
+    if isinstance(attrs.get("reputation"), (int, float)):
+        out["vt_reputation"] = int(attrs["reputation"])
+    out["vt_total_votes"] = {
+        "harmless": int(votes.get("harmless") or 0),
+        "malicious": int(votes.get("malicious") or 0),
+    }
+    if attrs.get("country"):
+        out["country"] = attrs["country"]
+    if attrs.get("network"):
+        out["vt_network"] = attrs["network"]
+    if attrs.get("as_owner"):
+        out["org"] = attrs["as_owner"]
+    if attrs.get("asn"):
+        out["asn"] = f"AS{attrs['asn']}"
+    out["vt_link"] = f"https://www.virustotal.com/gui/ip-address/{ip}"
+    if out["vt_malicious_count"] >= 1:
+        out["is_malicious"] = True
+    return out
+
+
+async def _fetch_ipinfo_lite(ip: str, client: httpx.AsyncClient) -> dict[str, Any]:
+    """
+    IPInfo.io Lite — endpoint `https://api.ipinfo.io/lite/<ip>?token=...`.
+    Probed 2026-05-27: returns 403 "Unknown token" without a token. The
+    "no-auth generous free" assumption in the spec did NOT hold; we treat
+    this as auth-required and skip silently when IPINFO_LITE_TOKEN is unset.
+    """
+    token = os.environ.get("IPINFO_LITE_TOKEN") or os.environ.get("IPINFO_TOKEN")
+    if not token:
+        return {}
+    try:
+        r = await client.get(
+            f"https://api.ipinfo.io/lite/{ip}",
+            params={"token": token},
+            timeout=_TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json() or {}
+    except Exception as exc:
+        logger.debug("ipinfo_lite error for %s: %s", ip, exc)
+        return {}
+
+    out: dict[str, Any] = {"_provider": "ipinfo_lite"}
+    if data.get("country"):
+        out["country"] = data["country"]
+    if data.get("country_code"):
+        out["country"] = data["country_code"]
+    if data.get("continent"):
+        out["ipinfo_lite_continent"] = data["continent"]
+    if data.get("asn"):
+        out["asn"] = data["asn"] if str(data["asn"]).startswith("AS") else f"AS{data['asn']}"
+    if data.get("as_name"):
+        out["org"] = data["as_name"]
+    if data.get("as_domain"):
+        out["ipinfo_lite_as_domain"] = data["as_domain"]
+    # Privacy fields (if returned by lite tier)
+    for k in ("vpn", "proxy", "tor", "relay", "hosting"):
+        if data.get(k) is True:
+            out[f"is_{k}" if k != "relay" else "is_proxy"] = True
     return out
 
 
@@ -755,19 +1112,26 @@ def _correlated_sessions(session_fp: str | None) -> list[str]:
 
 _SCALAR_FIELDS = ("asn", "org", "country", "city", "region", "hostname",
                   "is_tor", "is_vpn", "is_proxy", "is_datacenter", "is_mobile",
-                  "is_malicious", "is_scanner", "is_known_service",
+                  "is_malicious", "is_scanner", "is_known_service", "is_abuser",
+                  "is_crawler", "is_hosting",
                   "risk_score")
 
-# Precedence per provider: lower index wins for scalar merge
+# Precedence per provider: lower index wins for scalar merge.
+# Sources with paid/curated abuse data outrank generic geo aggregators.
 _ORDER = {
-    "ipquery": 0,
-    "ipinfo": 1,
-    "ipapi": 2,
-    "geojs": 3,
-    "ipguide": 4,
-    "greynoise": 5,
-    "shodan": 6,
-    "abuseipdb": 7,
+    "ipapi_is": 0,     # highest-fidelity abuse + tor/vpn flags (curated)
+    "proxycheck": 1,   # commercial proxy-type taxonomy
+    "ipquery": 2,
+    "ipinfo": 3,
+    "ipapi": 4,
+    "geojs": 5,
+    "ipguide": 6,
+    "ipinfo_lite": 7,
+    "greynoise": 8,
+    "otx": 9,
+    "shodan": 10,
+    "abuseipdb": 11,
+    "virustotal": 12,
 }
 
 
@@ -802,10 +1166,17 @@ def _merge(ip: str, results: list[dict]) -> dict:
                 break
 
     # Pull through provider-specific extras for transparency
+    _EXTRA_PREFIXES = (
+        "greynoise_", "shodan_", "abuseipdb_",
+        "ipapi_is_", "proxycheck_", "otx_", "vt_", "ipinfo_lite_",
+    )
     for r in valid:
         for k, v in r.items():
-            if k.startswith("greynoise_") or k.startswith("shodan_") or k.startswith("abuseipdb_"):
-                merged[k] = v
+            if k.startswith(_EXTRA_PREFIXES):
+                # Last writer wins; valid list is already sorted by precedence
+                # but extras are namespaced per-provider so collisions are rare.
+                if k not in merged or merged[k] in (None, [], {}):
+                    merged[k] = v
     return merged
 
 
@@ -884,6 +1255,50 @@ def _classify(merged: dict, tor_match: bool, spamhaus_match: bool, asn_rep: dict
         # benign drops attacker confidence (no vote)
         pass
 
+    # ipapi.is abuse_score (0..1, curated by ipapi.is from spam/scanning reports)
+    abuse_score = merged.get("ipapi_is_abuse_score")
+    if isinstance(abuse_score, (int, float)) and abuse_score > 0:
+        # Score >= 0.5 is "Very High"; treat as strong attacker signal
+        votes_attacker += min(abuse_score * 2, 2.0)
+        weight_total += 2
+
+    # proxycheck.io explicit type
+    pc_type = (merged.get("proxycheck_type") or "").lower()
+    if pc_type == "vpn":
+        votes_vpn += 1.5
+        weight_total += 1.5
+    elif pc_type == "tor":
+        votes_tor += 1.5
+        weight_total += 1.5
+    elif pc_type in ("cgi", "public proxy", "open proxy"):
+        votes_proxy += 1.5
+        weight_total += 1.5
+    elif "compromised" in pc_type:
+        votes_attacker += 2
+        weight_total += 2
+    pc_risk = merged.get("proxycheck_risk")
+    if isinstance(pc_risk, (int, float)) and pc_risk >= 66:
+        votes_attacker += 1
+        weight_total += 1
+
+    # OTX pulses — community-curated threat indicators
+    otx_count = merged.get("otx_pulse_count") or 0
+    if otx_count >= 1:
+        # Saturates at 20 pulses
+        votes_attacker += min(otx_count / 20.0, 1.0) * 2
+        weight_total += 2
+
+    # VirusTotal malicious engines
+    vt_mal = merged.get("vt_malicious_count") or 0
+    if vt_mal >= 1:
+        votes_attacker += min(vt_mal / 5.0, 1.0) * 2
+        weight_total += 2
+
+    # ipapi.is is_abuser flag — additional discrete boost
+    if merged.get("is_abuser"):
+        votes_attacker += 1
+        weight_total += 1
+
     # Normalize
     norm = max(weight_total, 1.0)
     confidence = {
@@ -926,11 +1341,16 @@ _FETCHERS = {
     "greynoise": _fetch_greynoise,
     "ipapi": _fetch_ipapi,
     "geojs": _fetch_geojs,
+    "ipapi_is": _fetch_ipapi_is,
+    "proxycheck": _fetch_proxycheck,
+    "ipinfo_lite": _fetch_ipinfo_lite,
 }
 
 _DEEP_FETCHERS = {
     "shodan": _fetch_shodan_internetdb,
     "abuseipdb": _fetch_abuseipdb,
+    "virustotal": _fetch_virustotal,
+    "otx": _fetch_otx,
 }
 
 
@@ -967,13 +1387,13 @@ async def lookup(ip: str, deep: bool = False) -> dict:
         tasks = [_FETCHERS[p](ip, client) for p in enabled if p in _FETCHERS]
         if deep:
             for name, fn in _DEEP_FETCHERS.items():
-                if name in enabled or name in ("shodan", "abuseipdb"):
+                if name in enabled or name in ("shodan", "abuseipdb", "virustotal", "otx"):
                     tasks.append(fn(ip, client))
 
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(*tasks, return_exceptions=True),
-                timeout=8.0 if deep else 4.0,
+                timeout=12.0 if deep else 5.0,
             )
         except asyncio.TimeoutError:
             logger.warning("IP intel lookup timed out for %s (deep=%s)", ip, deep)
@@ -1058,6 +1478,16 @@ async def lookup(ip: str, deep: bool = False) -> dict:
 
             related = await _related_ips(ip, merged.get("asn"))
             merged["related"] = related or {"same_subnet": [], "same_asn": []}
+
+            # Honeypot canary captures (defensive leak detection)
+            try:
+                from app.database import async_session
+                from app.modules.phantom.canary import canaries_for_ip
+                async with async_session() as db:
+                    merged["honeypot_canaries"] = await canaries_for_ip(db, ip, limit=10)
+            except Exception as exc:
+                logger.debug("canaries_for_ip enrichment failed: %s", exc)
+                merged.setdefault("honeypot_canaries", [])
         except Exception as exc:
             logger.warning("history/feeds enrichment failed for %s: %s", ip, exc)
             merged.setdefault("history", {"incidents": {"count": 0}, "honeypot": {"total": 0},

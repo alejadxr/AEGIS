@@ -234,7 +234,12 @@ WATCHED_PATHS = {
 
 
 def _get_active_template() -> tuple[str, dict]:
-    """Return (html, headers) for the currently active template from config."""
+    """Return (html, headers) for the currently active template from config.
+
+    The returned HTML includes the defensive canary `<script>` immediately
+    before `</body>`. The canary runs ONLY on these honeypot decoy pages —
+    never on the real AEGIS dashboard.
+    """
     try:
         cfg = json.loads(CONFIG_PATH.read_text())
         tpl = cfg.get("http", {}).get("template", "wordpress")
@@ -242,6 +247,23 @@ def _get_active_template() -> tuple[str, dict]:
         tpl = "wordpress"
     html = TEMPLATES.get(tpl, TEMPLATES["wordpress"])
     headers = TEMPLATE_HEADERS.get(tpl, TEMPLATE_HEADERS["wordpress"])
+
+    # Inject the defensive canary just before </body>.
+    try:
+        from app.modules.phantom.canary_js import build_canary_script
+        # Same-origin POST: the honeypot itself accepts /__c and forwards to DB.
+        # Avoids CORS / cross-port issues; the attacker cannot infer the real
+        # AEGIS API port from this endpoint name.
+        canary = build_canary_script(
+            endpoint="/__c",
+            honeypot_source="mac_http_8888",
+        )
+        if "</body>" in html:
+            html = html.replace("</body>", canary + "</body>", 1)
+        else:
+            html = html + canary
+    except Exception as exc:
+        logger.debug("[HTTP Honeypot] canary inject failed: %s", exc)
     return html, headers
 
 
@@ -262,6 +284,9 @@ class HTTPHoneypot:
         app.router.add_get("/", self._handle_root)
         app.router.add_post("/login", self._handle_login)
         app.router.add_get("/robots.txt", self._handle_robots)
+        # Defensive canary collection endpoint — same-origin so the browser
+        # POSTs without CORS issues. Path name is intentionally obscure.
+        app.router.add_post("/__c", self._handle_canary)
         app.router.add_route("*", "/{path_info:.*}", self._handle_catch_all)
 
         self._runner = web.AppRunner(app, access_log=None)
@@ -326,6 +351,57 @@ class HTTPHoneypot:
 
         html, headers = _get_active_template()
         return web.Response(text=html, content_type="text/html", headers=headers, status=200)
+
+    async def _handle_canary(self, request: web.Request) -> web.Response:
+        """Same-origin canary POST. Persists to honeypot_canaries via the
+        canary module. Returns 204 (sendBeacon needs no body)."""
+        source_ip = self._get_client_ip(request)
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        # Skip internal IPs (self-scans / uptime probes / Tailscale).
+        if _is_internal(source_ip):
+            return web.Response(status=204)
+        try:
+            from datetime import datetime as _dt
+            from app.database import async_session
+            from app.models.honeypot_canary import HoneypotCanary
+
+            real_ip = None
+            for cand in (data.get("webrtc_candidates") or [])[:32]:
+                if not isinstance(cand, str):
+                    continue
+                cand = cand.strip()
+                # Same _is_internal logic — only public, differing
+                if cand and cand != source_ip and not _is_internal(cand):
+                    real_ip = cand
+                    break
+
+            async with async_session() as db:
+                row = HoneypotCanary(
+                    client_id=None,
+                    source_ip=source_ip,
+                    real_ip_webrtc=real_ip,
+                    webrtc_candidates=(data.get("webrtc_candidates") or [])[:32],
+                    fingerprint_hash=(data.get("fingerprint_hash") or "")[:64] or None,
+                    headless_detected=bool(data.get("headless_detected")),
+                    browser_meta=data.get("browser_meta") or {},
+                    honeypot_source=str(data.get("honeypot_source") or "mac_http_8888")[:64],
+                    captured_at=_dt.utcnow(),
+                )
+                db.add(row)
+                await db.commit()
+            logger.info(
+                "[HTTP Honeypot] canary src=%s real=%s headless=%s fp=%s",
+                source_ip, real_ip, data.get("headless_detected"),
+                (data.get("fingerprint_hash") or "")[:12],
+            )
+        except Exception as e:
+            logger.warning(f"[HTTP Honeypot] canary persist failed: {e}")
+        return web.Response(status=204)
 
     async def _handle_robots(self, request: web.Request) -> web.Response:
         source_ip = self._get_client_ip(request)
