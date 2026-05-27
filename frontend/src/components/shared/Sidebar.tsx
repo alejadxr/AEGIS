@@ -20,6 +20,13 @@ import { cn } from '@/lib/utils';
 
 type IconComponent = React.ComponentType<{ className?: string; size?: number }>;
 
+interface NavItem {
+  label: string;
+  href: string;
+  icon: string;
+  sublabel?: string;
+}
+
 const iconMap: Record<string, IconComponent> = {
   DashboardSquare01Icon: DashboardSquare01Icon as IconComponent,
   Radar01Icon: Radar01Icon as IconComponent,
@@ -40,7 +47,7 @@ const iconMap: Record<string, IconComponent> = {
   BookOpen: BookOpen as IconComponent,
 };
 
-const NAV_SECTIONS = [
+const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'OVERVIEW',
     items: [
@@ -52,8 +59,8 @@ const NAV_SECTIONS = [
     items: [
       { label: 'Surface', href: '/dashboard/surface', icon: 'Radar01Icon' },
       { label: 'Response', href: '/dashboard/response', icon: 'SecurityCheckIcon' },
-      { label: 'Phantom', href: '/dashboard/phantom', icon: 'Ghost' },
-      { label: 'Deception', href: '/dashboard/deception', icon: 'Sparkles' },
+      { label: 'Phantom', href: '/dashboard/phantom', icon: 'Ghost', sublabel: 'Honeypots' },
+      { label: 'Deception', href: '/dashboard/deception', icon: 'Sparkles', sublabel: 'Decoy campaigns · Enterprise' },
       { label: 'Firewall', href: '/dashboard/firewall', icon: 'ShieldCheck' },
       { label: 'EDR / XDR', href: '/dashboard/edr', icon: 'GitFork' },
       { label: 'Antivirus', href: '/dashboard/antivirus', icon: 'ShieldAlert' },
@@ -168,8 +175,15 @@ export function Sidebar({ onCollapsedChange, mobileOpen, onMobileClose }: Sideba
                         />
                       )}
                       {!collapsed && (
-                        <span className={cn('flex-1 truncate', isActive && 'font-medium')}>
-                          {item.label}
+                        <span className="flex-1 min-w-0 flex flex-col">
+                          <span className={cn('truncate', isActive && 'font-medium')}>
+                            {item.label}
+                          </span>
+                          {item.sublabel && (
+                            <span className="truncate text-[10px] text-muted-foreground/50 font-normal leading-tight mt-[1px]">
+                              {item.sublabel}
+                            </span>
+                          )}
                         </span>
                       )}
                     </Link>

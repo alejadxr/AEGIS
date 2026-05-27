@@ -57,6 +57,7 @@ from app.api import updates as updates_router
 from app.api import firewall as firewall_router
 from app.api import ransomware as ransomware_router
 from app.api import deception as deception_router
+from app.api import intel as intel_router
 from app.api import edr as edr_router
 from app.api import antivirus as antivirus_router
 from app.services.signature_updater import signature_updater
@@ -657,6 +658,7 @@ app.include_router(deception_router.router, prefix="/api/v1")
 app.include_router(edr_router.router, prefix="/api/v1")
 app.include_router(antivirus_router.router, prefix="/api/v1")
 app.include_router(threat_intel_hub_router.router, prefix="/api/v1")
+app.include_router(intel_router.router, prefix="/api/v1/intel", tags=["ip-intel"])
 app.include_router(admin.router, prefix="/api/v1")
 
 
