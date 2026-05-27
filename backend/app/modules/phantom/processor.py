@@ -13,6 +13,7 @@ from app.models.honeypot import HoneypotInteraction, Honeypot
 from app.models.attacker_profile import AttackerProfile
 from app.models.threat_intel import ThreatIntel
 from app.core.events import event_bus
+from app.modules.phantom.safety import should_skip_profile
 
 logger = logging.getLogger("cayde6.phantom.processor")
 
@@ -153,6 +154,11 @@ class InteractionProcessor:
             try:
                 protocol = data.get("protocol", "unknown")
                 source_ip = data.get("source_ip", "unknown")
+
+                # Skip safe/doc IPs — prevents synthetic profiles from accumulating
+                if should_skip_profile(source_ip):
+                    return
+
                 user_agent = data.get("headers", {}).get("User-Agent", "") if data.get("headers") else ""
                 commands = data.get("commands", [])
                 path = data.get("path", "")
