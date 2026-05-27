@@ -24,6 +24,57 @@ type Behavioral = {
   session_fingerprint?: string;
 };
 
+type HistoryIncidents = {
+  count: number;
+  first?: string | null;
+  last?: string | null;
+  severities?: Record<string, number>;
+  statuses?: Record<string, number>;
+  mitre_top?: string[];
+};
+type HistoryHoneypot = {
+  total: number;
+  protocols?: Record<string, number>;
+  last?: string | null;
+  first?: string | null;
+  commands?: string[];
+  creds?: string[];
+};
+type HistoryProfile = {
+  sophistication?: string | null;
+  tools_used?: string[];
+  techniques?: string[];
+  ai_assessment?: string | null;
+  total_interactions?: number;
+  first_seen?: string | null;
+  last_seen?: string | null;
+} | null;
+type HistoryAction = {
+  type: string;
+  target?: string | null;
+  status?: string | null;
+  reasoning?: string | null;
+  created_at?: string | null;
+  executed_at?: string | null;
+};
+type ExternalFeed = {
+  feed: string;
+  threat_type?: string | null;
+  confidence?: number | null;
+  last_seen?: string | null;
+  tags?: string[];
+};
+type AISummary = {
+  text: string;
+  _provenance?: {
+    kind?: string;
+    source?: string;
+    tokens_used?: number;
+    cost_usd?: number;
+    latency_ms?: number;
+  };
+} | null;
+
 type IPIntel = {
   ip: string;
   asn?: string;
@@ -67,6 +118,15 @@ type IPIntel = {
   spamhaus_match?: boolean;
   behavioral?: Behavioral;
   correlated_sessions?: string[];
+  history?: {
+    incidents?: HistoryIncidents;
+    honeypot?: HistoryHoneypot;
+    profile?: HistoryProfile;
+    actions?: HistoryAction[];
+  };
+  external_feeds?: ExternalFeed[];
+  related?: { same_subnet?: string[]; same_asn?: string[] };
+  ai_summary?: AISummary;
 };
 
 const RECENT_KEY = 'aegis.ipIntel.recent';
@@ -129,14 +189,59 @@ function ConfidencePill({ label, value }: { label: string; value: number }) {
   );
 }
 
-function renderIntelCard(intel: IPIntel) {
+// RFC5737 documentation ranges that should NEVER appear in real traffic.
+const RFC5737_RANGES: Array<[number, number, number, number]> = [
+  [192, 0, 2, 24],     // TEST-NET-1
+  [198, 51, 100, 24],  // TEST-NET-2
+  [203, 0, 113, 24],   // TEST-NET-3
+];
+
+function classifyInternal(ip: string): { label: string; hint: string } {
+  // IPv4 only — IPv6 uses string match on common prefixes.
+  const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const [a, b, c] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    for (const [ra, rb, rc] of RFC5737_RANGES) {
+      if (a === ra && b === rb && c === rc) {
+        return {
+          label: 'RFC 5737 documentation range',
+          hint: 'TEST-NET — reserved for examples. Should never appear in real traffic. If you see it in incidents, it is a synthetic test artifact.',
+        };
+      }
+    }
+    if (a === 127) return { label: 'Loopback', hint: 'Localhost — traffic from this machine itself.' };
+    if (a === 10) return { label: 'RFC 1918 private', hint: '10.0.0.0/8 — private network.' };
+    if (a === 172 && b >= 16 && b <= 31) return { label: 'RFC 1918 private', hint: '172.16.0.0/12 — private network.' };
+    if (a === 192 && b === 168) return { label: 'RFC 1918 private', hint: '192.168.0.0/16 — private network.' };
+    if (a === 100 && b >= 64 && b <= 127) return { label: 'Tailscale CGNAT', hint: '100.64.0.0/10 — Carrier-Grade NAT, used by Tailscale.' };
+    if (a === 169 && b === 254) return { label: 'Link-local', hint: 'Self-assigned address.' };
+  }
+  if (ip.toLowerCase().startsWith('fe80:')) return { label: 'IPv6 link-local', hint: 'Self-assigned address.' };
+  if (ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd')) return { label: 'IPv6 ULA', hint: 'Unique local address — private IPv6.' };
+  if (ip === '::1') return { label: 'Loopback', hint: 'Localhost.' };
+  return { label: 'Reserved / non-routable', hint: 'Public intel not applicable.' };
+}
+
+function renderIntelCard(
+  intel: IPIntel,
+  onRelatedClick: (ip: string) => void = () => {},
+) {
   if (intel.internal) {
+    const c = classifyInternal(intel.ip);
     return (
       <div className="bg-card border border-border rounded-2xl p-6">
-        <p className="text-[13px] text-foreground font-mono mb-1">{intel.ip}</p>
-        <p className="text-[12px] text-muted-foreground">
-          Internal / private / Tailscale CGNAT address — no public intel available.
-        </p>
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1">Address</p>
+        <p className="text-[18px] text-foreground font-mono mb-3">{intel.ip}</p>
+        <div className="flex items-center gap-2 mb-2">
+          <span className={cn(
+            'text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border',
+            TONE_CLASS.muted,
+          )}>
+            {c.label}
+          </span>
+          <span className="text-[9px] font-mono text-muted-foreground/40">[algorithm:safe_net_filter]</span>
+        </div>
+        <p className="text-[12px] text-muted-foreground">{c.hint}</p>
       </div>
     );
   }
@@ -343,6 +448,194 @@ function renderIntelCard(intel: IPIntel) {
         </div>
       )}
 
+      {intel.external_feeds && intel.external_feeds.length > 0 && (
+        <div className="bg-background border border-border rounded-xl p-3">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 flex items-center gap-2">
+            External feeds
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:threat_feeds]</span>
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {intel.external_feeds.map((f) => (
+              <span
+                key={`${f.feed}-${f.threat_type}`}
+                className={cn(
+                  'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border font-mono',
+                  TONE_CLASS.red,
+                )}
+                title={`last_seen=${f.last_seen ?? '?'} · conf=${f.confidence ?? '?'}`}
+              >
+                {f.feed}{f.threat_type ? ` · ${f.threat_type}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {intel.history && (
+        intel.history.incidents?.count ||
+        intel.history.honeypot?.total ||
+        intel.history.profile ||
+        (intel.history.actions && intel.history.actions.length > 0)
+      ) && (
+        <div className="bg-background border border-border rounded-xl p-3 space-y-3">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 flex items-center gap-2">
+            Internal observations
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:incidents_table]</span>
+          </p>
+
+          {intel.history.incidents && intel.history.incidents.count > 0 && (
+            <div className="space-y-1">
+              <p className="text-[11px] text-foreground font-mono">
+                {intel.history.incidents.count} incidents
+                {intel.history.incidents.first ? ` · first ${intel.history.incidents.first.slice(0, 10)}` : ''}
+                {intel.history.incidents.last ? ` · last ${intel.history.incidents.last.slice(0, 10)}` : ''}
+              </p>
+              {intel.history.incidents.severities && (
+                <p className="text-[11px] text-muted-foreground">
+                  severities: {Object.entries(intel.history.incidents.severities).map(([k, v]) => `${k}=${v}`).join(' · ')}
+                </p>
+              )}
+              {intel.history.incidents.mitre_top && intel.history.incidents.mitre_top.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  MITRE: {intel.history.incidents.mitre_top.join(', ')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {intel.history.honeypot && intel.history.honeypot.total > 0 && (
+            <div className="space-y-1 pt-2 border-t border-border/40">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 flex items-center gap-2">
+                Honeypot interactions
+                <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:phantom_processor]</span>
+              </p>
+              <p className="text-[11px] text-foreground font-mono">
+                {intel.history.honeypot.total} sessions
+                {intel.history.honeypot.protocols && ` · ${Object.entries(intel.history.honeypot.protocols).map(([k, v]) => `${k}=${v}`).join(' · ')}`}
+              </p>
+              {intel.history.honeypot.commands && intel.history.honeypot.commands.length > 0 && (
+                <p className="text-[11px] text-muted-foreground truncate" title={intel.history.honeypot.commands.join(' | ')}>
+                  commands: {intel.history.honeypot.commands.slice(0, 4).join(' | ')}
+                </p>
+              )}
+              {intel.history.honeypot.creds && intel.history.honeypot.creds.length > 0 && (
+                <p className="text-[11px] text-muted-foreground truncate" title={intel.history.honeypot.creds.join(', ')}>
+                  creds tried: {intel.history.honeypot.creds.slice(0, 5).join(', ')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {intel.history.profile && (
+            <div className="space-y-1 pt-2 border-t border-border/40">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 flex items-center gap-2">
+                Attacker profile
+                <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:phantom_profiler]</span>
+              </p>
+              {intel.history.profile.sophistication && (
+                <p className="text-[11px] text-foreground">sophistication: {intel.history.profile.sophistication}</p>
+              )}
+              {intel.history.profile.tools_used && intel.history.profile.tools_used.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">tools: {intel.history.profile.tools_used.join(', ')}</p>
+              )}
+              {intel.history.profile.techniques && intel.history.profile.techniques.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">techniques: {intel.history.profile.techniques.join(', ')}</p>
+              )}
+            </div>
+          )}
+
+          {intel.history.actions && intel.history.actions.length > 0 && (
+            <div className="space-y-1 pt-2 border-t border-border/40">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 flex items-center gap-2">
+                Actions taken
+                <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:auto_responder]</span>
+              </p>
+              <ul className="space-y-0.5">
+                {intel.history.actions.slice(0, 6).map((a, i) => (
+                  <li key={i} className="text-[11px] font-mono text-foreground">
+                    <span className="text-muted-foreground/70">{a.created_at?.slice(0, 16) ?? '?'}</span>
+                    {' · '}
+                    <span className={a.status === 'executed' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>
+                      {a.type}
+                    </span>
+                    {a.target ? ` · ${a.target}` : ''}
+                    {a.status ? ` · ${a.status}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {intel.related && (intel.related.same_subnet?.length || intel.related.same_asn?.length) ? (
+        <div className="bg-background border border-border rounded-xl p-3">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 flex items-center gap-2">
+            Related infrastructure
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:internal_correlation]</span>
+          </p>
+          {intel.related.same_subnet && intel.related.same_subnet.length > 0 && (
+            <div className="mb-2">
+              <p className="text-[10px] text-muted-foreground/60 mb-1">Same /24 (incidents)</p>
+              <div className="flex flex-wrap gap-1">
+                {intel.related.same_subnet.map((rip) => (
+                  <button
+                    key={rip}
+                    type="button"
+                    onClick={() => onRelatedClick(rip)}
+                    className="text-[11px] font-mono bg-card border border-border hover:border-primary/40 text-foreground rounded px-1.5 py-0.5 transition-colors"
+                  >
+                    {rip}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {intel.related.same_asn && intel.related.same_asn.length > 0 && (
+            <div>
+              <p className="text-[10px] text-muted-foreground/60 mb-1">Same ASN</p>
+              <div className="flex flex-wrap gap-1">
+                {intel.related.same_asn.map((rip) => (
+                  <button
+                    key={rip}
+                    type="button"
+                    onClick={() => onRelatedClick(rip)}
+                    className="text-[11px] font-mono bg-card border border-border hover:border-primary/40 text-foreground rounded px-1.5 py-0.5 transition-colors"
+                  >
+                    {rip}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {intel.deep && (
+        <div className="bg-background border border-border rounded-xl p-3">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 flex items-center gap-2">
+            Threat brief
+            {intel.ai_summary?._provenance?.source && (
+              <span className={cn(
+                'text-[9px] font-mono normal-case tracking-normal px-1.5 py-0.5 rounded border',
+                TONE_CLASS.cyan,
+              )}>
+                [agent:{intel.ai_summary._provenance.source}]
+              </span>
+            )}
+          </p>
+          {intel.ai_summary?.text ? (
+            <p className="text-[12px] text-foreground leading-relaxed whitespace-pre-wrap">
+              {intel.ai_summary.text}
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground/60 italic">
+              AI summary requires AEGIS_AI_MODE=full.
+            </p>
+          )}
+        </div>
+      )}
+
       {intel.correlated_sessions && intel.correlated_sessions.length > 0 && (
         <div className="bg-background border border-border rounded-xl p-3">
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1 flex items-center gap-2">
@@ -513,7 +806,7 @@ export default function IPIntelPage() {
         )}
       </form>
 
-      {intel && renderIntelCard(intel)}
+      {intel && renderIntelCard(intel, (ip) => { setQuery(ip); lookup(ip); })}
 
       {!intel && !error && !loading && (
         <div className="bg-card border border-border rounded-2xl p-6 text-center">
