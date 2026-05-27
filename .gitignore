@@ -76,6 +76,7 @@ CLAUDE.md
 AEGIS_CONTEXT.md
 AEGIS_MARKETING.md
 ARCHITECTURE.md
+marketing AEGIS/
 langgraph_pentest.py
 deepagent_pentest.py
 deepagent_pentest_v2.py

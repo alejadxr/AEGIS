@@ -1,9 +1,9 @@
 import asyncio
 import logging
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Optional, Set
 
-from sqlalchemy import select
+from sqlalchemy import select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
@@ -11,7 +11,9 @@ from app.core.firewall_client import firewall_client
 from app.models.attacker_profile import AttackerProfile
 from app.models.threat_intel import ThreatIntel
 from app.models.incident import Incident
+from app.models.action import Action
 from app.models.client import Client
+from app.config import settings
 
 logger = logging.getLogger("aegis.firewall_sync")
 
@@ -197,6 +199,64 @@ async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
     return count
 
 
+RECONCILE_GRACE_MINUTES = 10  # don't auto-resolve incidents younger than this
+
+
+async def _reconcile_incidents(db: AsyncSession, pi_blocked_ips: Set[str]) -> int:
+    """
+    Auto-resolve incidents whose source_ip has been removed from the Pi blocklist.
+
+    Conditions for auto-resolution:
+      - Incident status is 'open' or 'investigating'
+      - Incident has a related Action with action_type='block_ip' (i.e. was actively blocked)
+      - Incident source_ip is NOT currently in the Pi blocklist
+      - Incident is older than RECONCILE_GRACE_MINUTES (avoids resolving during transient gaps)
+
+    The resolution note is stored in ai_analysis['resolution_note'] because the
+    Incident model has no dedicated text column for it.
+    """
+    grace_cutoff = datetime.utcnow() - timedelta(minutes=RECONCILE_GRACE_MINUTES)
+
+    stmt = (
+        select(Incident)
+        .where(
+            Incident.status.in_(("open", "investigating")),
+            Incident.source_ip.is_not(None),
+            Incident.detected_at < grace_cutoff,
+            exists().where(
+                Action.incident_id == Incident.id,
+                Action.action_type == "block_ip",
+            ),
+        )
+    )
+    result = await db.execute(stmt)
+    candidates = result.scalars().all()
+
+    reconciled = 0
+    for incident in candidates:
+        if incident.source_ip in pi_blocked_ips:
+            # IP is still enforced — leave the incident alone
+            continue
+
+        # IP is gone from Pi blocklist: auto-resolve
+        note = (
+            "Auto-resolved: IP no longer in firewall blocklist "
+            "(likely manually unblocked or TTL expired)."
+        )
+        incident.status = "resolved"
+        incident.resolved_at = datetime.utcnow()
+        # Merge note into ai_analysis without overwriting existing keys
+        existing_analysis = incident.ai_analysis or {}
+        existing_analysis["resolution_note"] = note
+        incident.ai_analysis = existing_analysis
+        reconciled += 1
+
+    if reconciled > 0:
+        await db.commit()
+
+    return reconciled
+
+
 async def run_sync():
     async with async_session() as db:
         try:
@@ -208,9 +268,20 @@ async def run_sync():
             attackers_synced = await _sync_attackers(db, client_id)
             blocked_synced = await _sync_blocked_ips(db)
             events_synced = await _sync_auto_response_events(db, client_id)
+
+            reconciled = 0
+            if settings.AEGIS_AUTO_RECONCILE_INCIDENTS:
+                # Re-fetch the current Pi blocklist as a set for O(1) lookup
+                pi_blocked: list = await firewall_client.get_blocked() or []
+                pi_blocked_set: Set[str] = set(filter(None, pi_blocked))
+                reconciled = await _reconcile_incidents(db, pi_blocked_set)
+                if reconciled:
+                    logger.info(f"Reconciled {reconciled} incidents (auto-resolved)")
+
             logger.info(
                 f"Firewall sync: {attackers_synced} attackers, "
-                f"{blocked_synced} blocked IPs, {events_synced} new incidents"
+                f"{blocked_synced} blocked IPs, {events_synced} new incidents, "
+                f"{reconciled} reconciled"
             )
         except Exception as e:
             logger.error(f"Firewall sync failed: {e}", exc_info=True)

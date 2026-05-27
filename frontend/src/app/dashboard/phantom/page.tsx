@@ -167,7 +167,7 @@ export default function PhantomPage() {
     { key: 'last_seen', label: 'Last Seen', sortable: true, render: (row: AttackerItem) => <span className="text-muted-foreground text-[11px] font-mono">{formatRelativeTime(row.last_seen as string)}</span> },
   ];
 
-  if (loading) return <LoadingState message="Loading Phantom deception network..." />;
+  if (loading) return <LoadingState message="Loading Phantom honeypot network..." />;
 
   const interactionHeatmap = buildInteractionHeatmap(interactions);
   const hasInteractions = interactions.length > 0;
@@ -178,7 +178,7 @@ export default function PhantomPage() {
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight">Phantom Network</h1>
-          <p className="text-sm text-muted-foreground mt-1 hidden sm:block">Honeypot orchestration, attacker profiling, and deception intelligence</p>
+          <p className="text-sm text-muted-foreground mt-1 hidden sm:block">Live honeypot interactions and attacker profiling</p>
         </div>
         <Button
           variant="outline"
