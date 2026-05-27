@@ -480,6 +480,30 @@ export const api = {
     exportFeed: () => request<Blob>('/threats/feed'),
     sharingStats: () =>
       request<{ iocs_shared: number; iocs_received: number; auto_blocked: number }>('/threats/sharing/stats'),
+    campaigns: (params?: { limit?: number; window_hours?: number; min_distinct_ips?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.limit) qs.set('limit', String(params.limit));
+      if (params?.window_hours) qs.set('window_hours', String(params.window_hours));
+      if (params?.min_distinct_ips) qs.set('min_distinct_ips', String(params.min_distinct_ips));
+      const q = qs.toString();
+      return request<{
+        campaigns: Array<{
+          cluster_id: string;
+          ttp_fingerprint: string;
+          mitre_technique: string | null;
+          mitre_tactic: string | null;
+          distinct_ips: number;
+          total_incidents: number;
+          first_seen: string | null;
+          last_seen: string | null;
+          sample_ips: string[];
+          window_hours: number;
+        }>;
+        count: number;
+        window_hours: number;
+        min_distinct_ips: number;
+      }>(`/threats/campaigns${q ? '?' + q : ''}`);
+    },
   },
 
   // IP Intelligence (free public providers — no AI involved)
