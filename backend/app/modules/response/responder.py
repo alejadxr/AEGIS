@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import log_audit
+from app.core.attack_detector import _is_safe_ip
 from app.core.events import event_bus
 from app.core.ip_blocker import ip_blocker_service
 from app.core.firewall_client import firewall_client
@@ -15,6 +16,9 @@ import app.services.firewall_local as firewall_local
 logger = logging.getLogger("cayde6.responder")
 fw_logger = logging.getLogger("aegis.responder.fw")
 
+# Action types whose target is an IP and which must be guarded by AEGIS_SAFE_IPS.
+_IP_TARGET_ACTIONS = frozenset({"block_ip", "firewall_rule", "isolate_host", "network_segment"})
+
 
 class ActiveResponder:
     """Execute response actions (block IP, isolate host, etc.)."""
@@ -23,6 +27,32 @@ class ActiveResponder:
         """Execute an approved response action."""
         if action.status not in ("approved",):
             return {"success": False, "error": "Action not approved"}
+
+        # SAFE-IP GUARD: never execute IP-targeted actions against safe IPs
+        # (Googlebot ranges, Tailscale CGNAT, RFC1918, etc.). Even auto-approved
+        # actions go through this check. See AEGIS_SAFE_IPS env var.
+        if action.action_type in _IP_TARGET_ACTIONS and action.target and _is_safe_ip(action.target):
+            logger.warning(
+                f"RESPONDER: Refusing to execute {action.action_type} on safe IP "
+                f"{action.target} (matches AEGIS_SAFE_IPS). action_id={action.id}"
+            )
+            action.status = "skipped_safe_ip"
+            action.result = {"success": False, "skipped": "safe_ip", "target": action.target}
+            action.executed_at = datetime.utcnow()
+            if action.client_id:
+                await log_audit(
+                    db, f"action_{action.action_type}_skipped",
+                    f"{action.action_type} on {action.target} SKIPPED (safe IP)",
+                    client_id=action.client_id,
+                )
+            await db.commit()
+            await event_bus.publish("action_skipped_safe_ip", {
+                "action_id": action.id,
+                "client_id": action.client_id,
+                "action_type": action.action_type,
+                "target": action.target,
+            })
+            return action.result
 
         executor = self._get_executor(action.action_type)
         result = await executor(action.target, action.parameters)
@@ -101,6 +131,12 @@ class ActiveResponder:
         if not target:
             logger.warning("RESPONSE: block_ip called with empty target, skipping")
             return {"success": False, "action": "block_ip", "target": target, "error": "No target IP"}
+
+        # Defense in depth: even if a caller bypasses execute_action() guard,
+        # never block a safe IP at the _block_ip level.
+        if _is_safe_ip(target):
+            logger.warning(f"RESPONSE: Refusing to block safe IP {target} (AEGIS_SAFE_IPS)")
+            return {"success": False, "action": "block_ip", "target": target, "skipped": "safe_ip"}
 
         logger.warning(f"RESPONSE: Blocking IP {target} — executing real block")
 
