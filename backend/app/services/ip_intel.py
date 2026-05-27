@@ -1714,6 +1714,16 @@ async def lookup(ip: str, deep: bool = False) -> dict:
             related = await _related_ips(ip, merged.get("asn"))
             merged["related"] = related or {"same_subnet": [], "same_asn": []}
 
+            # JA4 TLS fingerprints captured at the honeypot (table populated
+            # by app.modules.phantom.tls_honeypot). Always returns a list,
+            # empty when no observations.
+            try:
+                from app.services.ip_intel_history import tls_fingerprints_for_ip
+                merged["tls_fingerprints"] = await tls_fingerprints_for_ip(ip)
+            except Exception as exc:
+                logger.debug("tls_fingerprints lookup failed for %s: %s", ip, exc)
+                merged["tls_fingerprints"] = []
+
             # Honeypot canary captures (defensive leak detection)
             try:
                 from app.database import async_session

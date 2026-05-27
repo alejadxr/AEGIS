@@ -155,6 +155,18 @@ type IPIntel = {
   vt_network?: string;
   ipinfo_lite_continent?: string;
   ipinfo_lite_as_domain?: string;
+  // JA4 TLS fingerprints captured at the AEGIS TLS honeypot (port 8889)
+  tls_fingerprints?: Array<{
+    ja4: string;
+    known_tool?: string | null;
+    category?: string | null;
+    confidence?: number | null;
+    sni?: string | null;
+    source?: string | null;
+    first_seen?: string | null;
+    last_seen?: string | null;
+    count?: number | null;
+  }>;
   // Honeypot canary leak captures (slice 3+)
   honeypot_canaries?: Array<{
     id: string;
@@ -630,6 +642,45 @@ function renderIntelCard(
             {intel.ipinfo_lite_continent && <>continent: {intel.ipinfo_lite_continent}{' · '}</>}
             {intel.ipinfo_lite_as_domain && <>as_domain: {intel.ipinfo_lite_as_domain}</>}
           </p>
+        </div>
+      )}
+
+      {intel.tls_fingerprints && intel.tls_fingerprints.length > 0 && (
+        <div className="bg-background border border-border rounded-xl p-3 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 flex items-center gap-2">
+            JA4 TLS fingerprints
+            <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">[algorithm:ja4]</span>
+          </p>
+          <ul className="space-y-1.5">
+            {intel.tls_fingerprints.slice(0, 5).map((t, idx) => (
+              <li key={`${t.ja4}-${idx}`} className="text-[11px] font-mono text-foreground flex flex-wrap items-center gap-2">
+                <span className="text-[var(--accent)]">{t.ja4}</span>
+                {t.known_tool && (
+                  <span
+                    className={cn(
+                      'text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border',
+                      t.category === 'attacker'
+                        ? TONE_CLASS.red
+                        : t.category === 'tool'
+                        ? TONE_CLASS.amber
+                        : t.category === 'browser'
+                        ? TONE_CLASS.cyan
+                        : TONE_CLASS.muted,
+                    )}
+                    title={`confidence ${t.confidence ?? '?'}`}
+                  >
+                    {t.known_tool}
+                  </span>
+                )}
+                {t.sni && (
+                  <span className="text-muted-foreground">SNI: {t.sni}</span>
+                )}
+                {typeof t.count === 'number' && t.count > 1 && (
+                  <span className="text-muted-foreground/70">×{t.count}</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
