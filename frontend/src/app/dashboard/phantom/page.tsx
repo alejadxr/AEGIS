@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { CommandLineIcon, UserIcon } from 'hugeicons-react';
-import { Ghost, Plus, RotateCw, Trash2 } from 'lucide-react';
+import { Ghost, Plus, RotateCw, Trash2, AlertCircle } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -91,8 +91,11 @@ const typeIcons: Record<string, string> = {
 
 const sophisticationColors: Record<string, string> = {
   script_kiddie: 'text-[var(--success)]',
+  low: 'text-[var(--success)]',
   intermediate: 'text-[var(--warning)]',
+  medium: 'text-[var(--warning)]',
   advanced: 'text-[var(--danger)]',
+  high: 'text-[var(--danger)]',
   apt: 'text-[var(--chart-5)]',
 };
 
@@ -101,48 +104,64 @@ export default function PhantomPage() {
   const [interactions, setInteractions] = useState<InteractionItem[]>([]);
   const [attackers, setAttackers] = useState<AttackerItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deployError, setDeployError] = useState<string | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState('ssh');
   const [newPort, setNewPort] = useState(2222);
   const [tab, setTab] = useState<string>('grid');
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [h, i, a] = await Promise.allSettled([
-          api.phantom.honeypots(),
-          api.phantom.interactions(),
-          api.phantom.attackers(),
-        ]);
-        setHoneypots(h.status === 'fulfilled' ? h.value : []);
-        setInteractions(i.status === 'fulfilled' ? i.value : []);
-        setAttackers(a.status === 'fulfilled' ? a.value as AttackerItem[] : []);
-      } finally {
-        setLoading(false);
-      }
+  const load = async () => {
+    try {
+      const [h, i, a] = await Promise.allSettled([
+        api.phantom.honeypots(),
+        api.phantom.interactions(),
+        api.phantom.attackers(),
+      ]);
+      setHoneypots(h.status === 'fulfilled' ? h.value : []);
+      setInteractions(i.status === 'fulfilled' ? i.value : []);
+      setAttackers(a.status === 'fulfilled' ? a.value as AttackerItem[] : []);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleDeploy = async () => {
     if (!newName.trim()) return;
+    setDeployError(null);
     try {
       await api.phantom.deployHoneypot({ name: newName, honeypot_type: newType, port: newPort });
-    } catch {
-      // best effort
+      setShowDeployModal(false);
+      setNewName('');
+      await load();
+    } catch (e) {
+      setDeployError(e instanceof Error ? e.message : 'Deploy failed');
     }
-    setShowDeployModal(false);
-    setNewName('');
   };
 
   const handleRotate = async (id: string) => {
+    setHoneypots(honeypots.map((h) => h.id === id ? { ...h, status: 'rotating' } : h));
     try {
       await api.phantom.rotateHoneypot(id);
     } catch {
       // best effort
     }
-    setHoneypots(honeypots.map((h) => h.id === id ? { ...h, status: 'rotating' } : h));
+    await load();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Remove this honeypot?')) return;
+    try {
+      await api.phantom.deleteHoneypot(id);
+    } catch {
+      // best effort
+    }
+    await load();
   };
 
   const attackerColumns = [
@@ -165,6 +184,7 @@ export default function PhantomPage() {
     },
     { key: 'total_interactions', label: 'Interactions', sortable: true, render: (row: AttackerItem) => <span className="font-mono text-foreground text-[13px]">{row.total_interactions}</span> },
     { key: 'last_seen', label: 'Last Seen', sortable: true, render: (row: AttackerItem) => <span className="text-muted-foreground text-[11px] font-mono">{formatRelativeTime(row.last_seen as string)}</span> },
+    { key: 'ai_assessment', label: 'AI Assessment', render: (row: AttackerItem) => <span className="text-[11px] text-muted-foreground italic">{(row.ai_assessment as string) || '—'}</span> },
   ];
 
   if (loading) return <LoadingState message="Loading Phantom honeypot network..." />;
@@ -299,7 +319,7 @@ export default function PhantomPage() {
                       <RotateCw className={cn('w-3 h-3', hp.status === 'rotating' && 'animate-spin')} />
                       Rotate
                     </Button>
-                    <Button variant="outline" size="icon-sm" className="text-muted-foreground hover:text-[var(--danger)]">
+                    <Button variant="outline" size="icon-sm" className="text-muted-foreground hover:text-[var(--danger)]" onClick={() => handleDelete(hp.id)} title="Remove honeypot">
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   </div>
@@ -404,8 +424,14 @@ export default function PhantomPage() {
               className="font-mono"
             />
           </div>
+          {deployError && (
+            <div className="flex items-center gap-2 text-[12px] text-[var(--danger)] bg-[var(--danger)]/10 border border-[var(--danger)]/20 rounded-lg px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {deployError}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={() => setShowDeployModal(false)}>
+            <Button variant="ghost" onClick={() => { setShowDeployModal(false); setDeployError(null); }}>
               Cancel
             </Button>
             <Button onClick={handleDeploy} className="bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B]">
