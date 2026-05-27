@@ -92,6 +92,7 @@ type IPIntel = {
   is_scanner?: boolean | null;
   is_known_service?: boolean | null;
   risk_score?: number | null;
+  consensus_risk?: number | null;
   providers?: string[];
   cached?: boolean;
   internal?: boolean;
@@ -257,6 +258,59 @@ function classifyInternal(ip: string): { label: string; hint: string } {
   return { label: 'Reserved / non-routable', hint: 'Public intel not applicable.' };
 }
 
+/**
+ * Build a `mailto:` link to the network's abuse contact, pre-filled with the
+ * IP, ASN, and AEGIS's detection evidence. Caller is responsible for ensuring
+ * `intel.ipapi_is_abuse_contact` is non-empty.
+ */
+function buildAbuseMailto(intel: IPIntel): string {
+  const to = intel.ipapi_is_abuse_contact || '';
+  const ip = intel.ip;
+  const subject = `Abuse report: malicious activity from ${ip}`;
+  const lines: string[] = [
+    `Hello,`,
+    ``,
+    `We are reporting abusive activity originating from an IP under your network management.`,
+    ``,
+    `IP:           ${ip}`,
+  ];
+  if (intel.asn) lines.push(`ASN:          ${intel.asn}` + (intel.asn_reputation_owner ? ` (${intel.asn_reputation_owner})` : ''));
+  if (intel.org) lines.push(`Organization: ${intel.org}`);
+  if (intel.country) lines.push(`Country:      ${intel.country}`);
+  if (intel.hostname) lines.push(`Reverse DNS:  ${intel.hostname}`);
+  lines.push(``);
+  lines.push(`AEGIS detection evidence:`);
+  if (intel.classification) lines.push(`  classification: ${intel.classification}`);
+  if (intel.confidence) {
+    const c = intel.confidence;
+    lines.push(`  confidence:     tor=${c.tor} vpn=${c.vpn} proxy=${c.proxy} dc=${c.datacenter} attacker=${c.attacker}`);
+  }
+  if (typeof intel.consensus_risk === 'number') lines.push(`  consensus_risk: ${intel.consensus_risk}/100`);
+  if (intel.tor_list_match) lines.push(`  tor_list_match: yes (verified Tor exit)`);
+  if (intel.spamhaus_match) lines.push(`  spamhaus:       on DROP list`);
+  if (intel.abuseipdb_score !== undefined && intel.abuseipdb_score !== null)
+    lines.push(`  abuseipdb:      ${intel.abuseipdb_score}/100`);
+  if (intel.external_feeds && intel.external_feeds.length > 0) {
+    lines.push(`  external_feeds:`);
+    intel.external_feeds.slice(0, 5).forEach((f) =>
+      lines.push(`    - ${f.feed || 'feed'} (${f.threat_type || 'n/a'})`),
+    );
+  }
+  const inc = intel.history?.incidents;
+  if (inc && (inc as { count?: number }).count) {
+    const ic = inc as { count?: number; first_seen?: string; last_seen?: string };
+    lines.push(`  aegis_history:  ${ic.count} incidents` +
+      (ic.first_seen ? ` (first ${ic.first_seen}` : '') +
+      (ic.last_seen ? `, last ${ic.last_seen})` : (ic.first_seen ? ')' : '')));
+  }
+  lines.push(``);
+  lines.push(`Please investigate and take appropriate action. Thank you.`);
+  lines.push(``);
+  lines.push(`— Reported by an AEGIS-defended network`);
+  const body = lines.join('\n');
+  return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 function renderIntelCard(
   intel: IPIntel,
   onRelatedClick: (ip: string) => void = () => {},
@@ -341,11 +395,27 @@ function renderIntelCard(
               {t.label}
             </span>
           ))}
-          {typeof intel.risk_score === 'number' && (
-            <span className="text-[10px] font-mono text-muted-foreground/70 ml-1">
-              risk score: {intel.risk_score}
-            </span>
-          )}
+          {(() => {
+            // Prefer consensus_risk (max across providers + signals).
+            // Fall back to legacy single-provider risk_score for older API responses.
+            const cr = typeof intel.consensus_risk === 'number'
+              ? intel.consensus_risk
+              : (typeof intel.risk_score === 'number' ? intel.risk_score : null);
+            if (cr === null) return null;
+            const tone: keyof typeof TONE_CLASS =
+              cr > 70 ? 'red' : cr > 40 ? 'amber' : cr > 10 ? 'cyan' : 'muted';
+            return (
+              <span
+                className={cn(
+                  'text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border ml-1',
+                  TONE_CLASS[tone],
+                )}
+                title="Consensus across providers (max of normalized risk signals)"
+              >
+                Consensus risk: {cr}/100
+              </span>
+            );
+          })()}
         </div>
       )}
 
@@ -462,9 +532,27 @@ function renderIntelCard(
               </span>
             </div>
             {intel.ipapi_is_abuse_contact && (
-              <p className="text-[11px] text-muted-foreground/70 mt-1 font-mono">
-                abuse contact: {intel.ipapi_is_abuse_contact}
-              </p>
+              <div className="mt-1 flex items-center gap-2 flex-wrap">
+                <p className="text-[11px] text-muted-foreground/70 font-mono">
+                  abuse contact: {intel.ipapi_is_abuse_contact}
+                </p>
+                <a
+                  href={buildAbuseMailto(intel)}
+                  className={cn(
+                    'inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider',
+                    'px-2 py-0.5 rounded border border-border text-muted-foreground',
+                    'hover:text-foreground hover:border-foreground/40 transition-colors',
+                  )}
+                  title={`Email abuse@${intel.ipapi_is_abuse_contact} a pre-filled report`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                    <polyline points="22,6 12,13 2,6" />
+                  </svg>
+                  Report abuse
+                </a>
+              </div>
             )}
           </div>
         );
