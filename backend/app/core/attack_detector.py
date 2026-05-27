@@ -42,7 +42,10 @@ _BLOCKED_BODY = b'{"detail":"blocked"}'
 _BLOCKED_MEDIA = "application/json"
 
 # IPs that must NEVER be blocked — configured via AEGIS_SAFE_IPS env var
+# Entries may be single IPs ("127.0.0.1") OR CIDR ranges ("66.249.0.0/16").
 # Auto-detect the host's own IPs + Tailscale/private ranges
+import ipaddress as _ipaddress
+
 _safe_ips_str = os.getenv("AEGIS_SAFE_IPS", "127.0.0.1,::1,localhost")
 _auto_ips: set[str] = set()
 try:
@@ -51,19 +54,30 @@ try:
         _auto_ips.add(info[4][0])
 except Exception:
     pass
-SAFE_IPS = frozenset(ip.strip() for ip in _safe_ips_str.split(",") if ip.strip()) | _auto_ips
 
 # Private/internal IP ranges that should never be blocked (RFC1918 + CGNAT + Tailscale)
-import ipaddress as _ipaddress
-_SAFE_NETWORKS = [
+_SAFE_NETWORKS: list = [
     _ipaddress.ip_network("10.0.0.0/8"),
     _ipaddress.ip_network("172.16.0.0/12"),
     _ipaddress.ip_network("192.168.0.0/16"),
     _ipaddress.ip_network("100.64.0.0/10"),   # CGNAT / Tailscale range
 ]
 
+# Parse AEGIS_SAFE_IPS: literal IPs go to SAFE_IPS set; CIDR entries go to _SAFE_NETWORKS.
+_safe_literals: set[str] = set()
+for _entry in (e.strip() for e in _safe_ips_str.split(",") if e.strip()):
+    if "/" in _entry:
+        try:
+            _SAFE_NETWORKS.append(_ipaddress.ip_network(_entry, strict=False))
+        except (ValueError, TypeError):
+            logger.warning(f"AEGIS_SAFE_IPS: ignoring invalid CIDR {_entry!r}")
+    else:
+        _safe_literals.add(_entry)
+SAFE_IPS = frozenset(_safe_literals) | _auto_ips
+
+
 def _is_safe_ip(ip: str) -> bool:
-    """Check if an IP is in SAFE_IPS set or in a private/Tailscale range."""
+    """Check if an IP is in SAFE_IPS set or in a private/Tailscale/configured range."""
     if ip in SAFE_IPS:
         return True
     try:
