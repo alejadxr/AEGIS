@@ -417,6 +417,107 @@ export default function ResponsePage() {
                         </div>
                       )}
 
+                      {/* IP Intel — populated by incident_enrichment hook */}
+                      {(() => {
+                        const intel = (incident.ai_analysis as Record<string, unknown> | null)?.ip_intel as
+                          | {
+                              asn?: string;
+                              org?: string;
+                              country?: string;
+                              city?: string;
+                              region?: string;
+                              hostname?: string;
+                              is_tor?: boolean | null;
+                              is_vpn?: boolean | null;
+                              is_proxy?: boolean | null;
+                              is_datacenter?: boolean | null;
+                              risk_score?: number | null;
+                              providers?: string[];
+                              cached?: boolean;
+                            }
+                          | undefined;
+                        if (!intel) return null;
+                        const hostnameLooksTor = !!intel.hostname && /(tor|exit)/i.test(intel.hostname);
+                        const isTor = intel.is_tor === true || hostnameLooksTor;
+                        const tags: Array<{ label: string; tone: 'amber' | 'red' | 'cyan' | 'muted' }> = [];
+                        if (isTor) tags.push({ label: 'TOR EXIT', tone: 'red' });
+                        if (intel.is_vpn) tags.push({ label: 'VPN', tone: 'amber' });
+                        if (intel.is_proxy) tags.push({ label: 'PROXY', tone: 'amber' });
+                        if (intel.is_datacenter) tags.push({ label: 'DATACENTER', tone: 'cyan' });
+                        if (intel.cached) tags.push({ label: 'CACHED', tone: 'muted' });
+                        const toneClass: Record<string, string> = {
+                          red: 'bg-red-500/10 text-red-400 border-red-500/30',
+                          amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                          cyan: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+                          muted: 'bg-muted/40 text-muted-foreground border-border',
+                        };
+                        const locParts = [intel.city, intel.region, intel.country].filter(Boolean);
+                        return (
+                          <div className="mt-4">
+                            <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2 flex items-center gap-2">
+                              IP Intel
+                              {intel.providers && intel.providers.length > 0 && (
+                                <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">
+                                  · {intel.providers.join(', ')}
+                                </span>
+                              )}
+                            </p>
+                            <div className="bg-background border border-border rounded-xl p-4 space-y-3">
+                              {tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {tags.map((t) => (
+                                    <span
+                                      key={t.label}
+                                      className={cn(
+                                        'text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border',
+                                        toneClass[t.tone],
+                                      )}
+                                    >
+                                      {t.label}
+                                    </span>
+                                  ))}
+                                  {typeof intel.risk_score === 'number' && (
+                                    <span className="text-[9px] font-mono text-muted-foreground/70">
+                                      risk: {intel.risk_score}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                                {intel.asn && (
+                                  <div>
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-0.5">ASN</p>
+                                    <p className="font-mono text-foreground">{intel.asn}</p>
+                                  </div>
+                                )}
+                                {intel.org && (
+                                  <div>
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-0.5">Org</p>
+                                    <p className="text-foreground truncate" title={intel.org}>
+                                      {intel.org}
+                                    </p>
+                                  </div>
+                                )}
+                                {locParts.length > 0 && (
+                                  <div>
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-0.5">Location</p>
+                                    <p className="text-foreground">{locParts.join(', ')}</p>
+                                  </div>
+                                )}
+                                {intel.hostname && (
+                                  <div className="col-span-2">
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-0.5">Hostname</p>
+                                    <p className="font-mono text-foreground truncate" title={intel.hostname}>
+                                      {intel.hostname}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {actions.filter((a) => a.incident_id === incident.id).length > 0 && (
                         <div className="mt-4">
                           <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">Response Actions</p>
