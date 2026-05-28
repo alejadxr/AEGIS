@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search01Icon } from 'hugeicons-react';
-import { Plus, Download, Filter, Globe, Hash, Link, Mail, Monitor } from 'lucide-react';
+import { Plus, Download, Filter, Globe, Hash, Link, Mail, Monitor, CheckCircle } from 'lucide-react';
 import { DataTable } from '@/components/shared/DataTable';
 import { Modal } from '@/components/shared/Modal';
 import { LoadingState } from '@/components/shared/LoadingState';
+import { Panel } from '@/components/aegis/Panel';
 import { api } from '@/lib/api';
 import { cn, formatDate } from '@/lib/utils';
 import { IOC_TYPES } from '@/lib/constants';
@@ -55,18 +56,23 @@ const typeColors: Record<string, string> = {
 export default function ThreatsPage() {
   const [iocs, setIocs] = useState<IOCRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isDemo, setIsDemo] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newIOC, setNewIOC] = useState({ ioc_type: 'ip', ioc_value: '', threat_type: '', source: 'manual', tags: '' });
+  const [exportDone, setExportDone] = useState(false);
+  const exportDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
         const data = await api.threats.intel();
         setIocs(data as IOCRow[]);
+        setIsDemo(false);
       } catch {
         setIocs(DEMO_IOCS);
+        setIsDemo(true);
       } finally {
         setLoading(false);
       }
@@ -98,6 +104,37 @@ export default function ThreatsPage() {
     }
     setShowAddModal(false);
     setNewIOC({ ioc_type: 'ip', ioc_value: '', threat_type: '', source: 'manual', tags: '' });
+  };
+
+  const handleExport = () => {
+    const rows = typeFilter === 'all' ? iocs : iocs.filter((i) => i.ioc_type === typeFilter);
+    const headers = ['type', 'value', 'threat_type', 'confidence', 'source', 'tags', 'first_seen', 'last_seen'];
+    const csvLines = [
+      headers.join(','),
+      ...rows.map((r) =>
+        [
+          r.ioc_type,
+          `"${r.ioc_value}"`,
+          `"${r.threat_type}"`,
+          (r.confidence * 100).toFixed(0) + '%',
+          r.source,
+          `"${(r.tags as string[]).join(';')}"`,
+          r.first_seen,
+          r.last_seen,
+        ].join(',')
+      ),
+    ];
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `aegis-threats-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExportDone(true);
+    if (exportDoneTimerRef.current) clearTimeout(exportDoneTimerRef.current);
+    exportDoneTimerRef.current = setTimeout(() => setExportDone(false), 2500);
   };
 
   const filtered = typeFilter === 'all' ? iocs : iocs.filter((i) => i.ioc_type === typeFilter);
@@ -180,17 +217,33 @@ export default function ThreatsPage() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 bg-white/[0.05] hover:bg-white/[0.08] text-foreground/80 border border-border font-medium px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]"
+            disabled={isDemo}
+            title={isDemo ? 'Disabled in demo mode — backend unreachable' : undefined}
+            className="flex items-center gap-1.5 bg-white/[0.05] hover:bg-white/[0.08] text-foreground/80 border border-border font-medium px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Add IOC</span>
           </button>
-          <button className="flex items-center gap-1.5 bg-[var(--brand)] hover:bg-[var(--brand)] text-background font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]">
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export</span>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1.5 bg-[var(--brand)] hover:bg-[var(--brand)] text-background font-semibold px-3 sm:px-4 py-2.5 rounded-xl transition-colors text-[13px]"
+          >
+            {exportDone ? <CheckCircle className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+            <span className="hidden sm:inline">{exportDone ? 'Exported!' : 'Export'}</span>
           </button>
         </div>
       </div>
+
+      {isDemo && (
+        <Panel variant="warning" padding="sm" as="div">
+          <p className="text-[13px] text-[var(--warning)] font-medium">
+            Demo mode — showing sample data. Backend unreachable; new IOCs will not persist.
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Add IOC is disabled until the API is reachable.
+          </p>
+        </Panel>
+      )}
 
       {/* Search Bar */}
       <div className="flex items-center gap-2 sm:gap-3">
