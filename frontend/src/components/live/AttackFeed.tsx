@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { subscribeTopic } from '@/lib/ws';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { mitreLabel } from '@/lib/mitre';
 
 interface AttackEvent {
   id: string;
@@ -172,7 +173,7 @@ export function AttackFeed() {
                     <span className="text-[10px] text-muted-foreground font-mono tabular-nums">{ev.source_ip}</span>
                   )}
                   {ev.mitre_technique && (
-                    <span className="text-[10px] text-primary font-mono">{ev.mitre_technique}</span>
+                    <span className="text-[10px] text-primary font-mono">{mitreLabel(ev.mitre_technique)}</span>
                   )}
                   {ev.status && (
                     <span className={cn('text-[9px] font-mono uppercase tracking-widest', statusColor(ev.status))}>
