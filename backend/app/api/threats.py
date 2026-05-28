@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.core.auth import AuthContext, require_analyst, require_viewer
+from fastapi import Query
 from app.core.events import event_bus
 from app.models.client import Client
 from app.models.threat_intel import ThreatIntel
@@ -393,3 +394,53 @@ async def list_ttp_campaigns(
         "window_hours": window_hours,
         "min_distinct_ips": min_distinct_ips,
     }
+
+
+@router.get("/campaigns/{cluster_id}")
+async def get_campaign_detail_endpoint(
+    cluster_id: str,
+    window_hours: int = Query(168, ge=1, le=24 * 30),
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Drill-down view for a single TTP cluster.
+
+    Returns the full member-incident list, distinct attacker IPs with a brief
+    IP-intel enrichment (country, ASN, classification, blocked-status), MITRE
+    technique expansion, severity distribution, active flag, and a
+    plain-language recommended action. Backwards-compatible with the
+    listing endpoint: the listing's `cluster_id` is the path param here.
+    """
+    from app.services.ttp_clustering import get_campaign_detail
+    detail = await get_campaign_detail(
+        db=db,
+        cluster_id=cluster_id,
+        window_hours=max(1, min(window_hours, 24 * 30)),
+        client_id=auth.client.id,
+    )
+    if detail is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No campaign with cluster_id={cluster_id} in the last {window_hours}h",
+        )
+    return detail
+
+
+@router.post("/campaigns/{cluster_id}/investigated")
+async def mark_campaign_investigated_endpoint(
+    cluster_id: str,
+    auth: AuthContext = Depends(require_analyst),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a campaign as investigated. Stored on the client's settings JSON."""
+    from app.services.ttp_clustering import mark_campaign_investigated
+    result = await mark_campaign_investigated(
+        db=db,
+        cluster_id=cluster_id,
+        client_id=auth.client.id,
+        user_id=getattr(auth, "user_id", None),
+        user_email=getattr(auth, "user_email", None),
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "failed"))
+    return result
