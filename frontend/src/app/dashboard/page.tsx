@@ -1,77 +1,58 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Bug01Icon, SecurityCheckIcon, Radar01Icon } from 'hugeicons-react';
-import { Server, Ghost } from 'lucide-react';
-import { StatCard } from '@/components/shared/StatCard';
+import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import { Download, Radar } from 'lucide-react';
 import { LoadingState } from '@/components/shared/LoadingState';
-import { GlobalThreatMap, type ThreatMapEntry } from '@/components/shared/GlobalThreatMap';
-import { AttackFeed } from '@/components/live/AttackFeed';
-import { EventsPerSecChart } from '@/components/live/EventsPerSecChart';
-import { Top10Table, type Top10Row } from '@/components/live/Top10Table';
-import { RawLogStream } from '@/components/live/RawLogStream';
-import { NodeHeartbeatGrid } from '@/components/live/NodeHeartbeatGrid';
-import { MetricsSummaryBar } from '@/components/live/MetricsSummaryBar';
-import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
+import { KPITile } from '@/components/dashboard/KPITile';
+import { IncidentTimeline } from '@/components/dashboard/IncidentTimeline';
+import { AISuggestedActions } from '@/components/dashboard/AISuggestedActions';
+import { ThreatDetectionChart } from '@/components/dashboard/ThreatDetectionChart';
+import { LoginAttemptsHeatmap } from '@/components/dashboard/LoginAttemptsHeatmap';
+import { AssetRiskTable, type AssetRiskRow } from '@/components/dashboard/AssetRiskTable';
 import { api } from '@/lib/api';
+import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
 import { cn } from '@/lib/utils';
-import { Card } from '@/components/ui/card';
 
-interface Overview {
-  total_assets: number;
-  open_vulnerabilities: number;
-  active_incidents: number;
-  honeypot_interactions: number;
-  assets_trend: number;
-  vulns_trend: number;
-  incidents_trend: number;
-  interactions_trend: number;
-}
+// Lazy-load the (heavy) world map for CLS budget
+const GlobalThreatMap = dynamic(
+  () => import('@/components/shared/GlobalThreatMap').then((m) => m.GlobalThreatMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[360px] grid place-items-center text-[11px] text-muted-foreground/60">
+        Loading global map…
+      </div>
+    ),
+  },
+);
 
-interface LiveMetricsResponse {
-  top_attackers: Top10Row[];
-  top_targets: Top10Row[];
-  top_attack_types: Top10Row[];
-  incidents_open: number;
-  honeypot_hits_24h: number;
-  blocked_actions_24h: number;
-  ai_decisions_24h: number;
-  generated_at: string;
-}
-
-const EMPTY_OVERVIEW: Overview = {
-  total_assets: 0,
-  open_vulnerabilities: 0,
-  active_incidents: 0,
-  honeypot_interactions: 0,
-  assets_trend: 0,
-  vulns_trend: 0,
-  incidents_trend: 0,
-  interactions_trend: 0,
+type Incident = {
+  id: string;
+  title: string;
+  severity: string;
+  status: string;
+  source_ip: string | null;
+  mitre_technique: string | null;
+  ai_analysis: Record<string, unknown> | null;
+  detected_at: string;
+  source: string;
 };
+type Action = {
+  id: string;
+  incident_id: string;
+  action_type: string;
+  target: string;
+  status: string;
+  requires_approval: boolean;
+  ai_reasoning: string | null;
+  created_at: string;
+};
+type Interaction = { id: string; timestamp: string; source_ip: string };
+type ThreatMapEntry = { country: string; country_code: string; count: number };
 
-function apiBase(): string {
-  return (
-    (typeof window !== 'undefined' && localStorage.getItem('aegis_api_url')) ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:8000/api/v1'
-  );
-}
-
-async function fetchLiveMetrics(): Promise<LiveMetricsResponse | null> {
-  try {
-    const apiKey = typeof window !== 'undefined' ? localStorage.getItem('aegis_api_key') : null;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('aegis_jwt_token') : null;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    else if (apiKey) headers['X-API-Key'] = apiKey;
-    const r = await fetch(`${apiBase()}/dashboard/live-metrics`, { headers, cache: 'no-store' });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch {
-    return null;
-  }
-}
+const MONITORED_APPS = ['sable', 'wilabia-frontend', 'wilabia-backend', 'sid-wilab', 'landing-wilab'];
 
 function StatusPill({ status }: { status: WSStatus }) {
   const cfg: Record<WSStatus, { label: string; pill: string }> = {
@@ -91,202 +72,278 @@ function StatusPill({ status }: { status: WSStatus }) {
   );
 }
 
-/* Section header — consistent across all dashboard widgets */
-function SectionHeader({ title, icon: Icon, right }: {
-  title: string;
-  icon?: React.ComponentType<{ className?: string; size?: number }>;
-  right?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-      <div className="flex items-center gap-2">
-        {Icon && <Icon className="text-muted-foreground/50" size={14} />}
-        <span className="text-[12px] font-medium text-muted-foreground">{title}</span>
-      </div>
-      {right}
-    </div>
-  );
+function shortId(id: string): string {
+  // Render an incident id as a short uppercase token (#INC-2050 style)
+  const m = id.match(/(\d+)/);
+  if (m) return m[1].slice(-4).padStart(4, '0');
+  return id.slice(0, 6).toUpperCase();
+}
+
+function severityBadgeColor(sev?: string): string {
+  switch ((sev || '').toLowerCase()) {
+    case 'critical': return 'var(--danger)';
+    case 'high':     return 'var(--brand-accent)';
+    case 'medium':   return 'var(--warning)';
+    case 'low':      return 'var(--chart-5, #22D3EE)';
+    default:         return 'var(--muted-foreground)';
+  }
+}
+
+function relativeTime(iso?: string): string {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '—';
+  const diff = (Date.now() - t) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 export default function DashboardPage() {
-  const [overview, setOverview] = useState<Overview | null>(null);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [actions, setActions] = useState<Action[]>([]);
+  const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [threatMap, setThreatMap] = useState<ThreatMapEntry[]>([]);
-  const [metrics, setMetrics] = useState<LiveMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [wsStatus, setWsStatus] = useState<WSStatus>('idle');
+  const [refreshKey, setRefreshKey] = useState(0);
 
+  // Initial load
   useEffect(() => {
+    let mounted = true;
     async function load() {
-      try {
-        const [ov, tm] = await Promise.allSettled([
-          api.dashboard.overview(),
-          api.dashboard.threatMap(),
-        ]);
-        setOverview(ov.status === 'fulfilled' ? ov.value : null);
-        setThreatMap(tm.status === 'fulfilled' ? tm.value : []);
-      } finally {
-        setLoading(false);
-      }
+      const [inc, act, ints, tm] = await Promise.allSettled([
+        api.response.incidents(),
+        api.response.actions(),
+        api.phantom.interactions({ limit: '200' }),
+        api.dashboard.threatMap(),
+      ]);
+      if (!mounted) return;
+      if (inc.status === 'fulfilled') setIncidents(inc.value as Incident[]);
+      if (act.status === 'fulfilled') setActions(act.value as Action[]);
+      if (ints.status === 'fulfilled') setInteractions(ints.value as Interaction[]);
+      if (tm.status === 'fulfilled') setThreatMap(tm.value as ThreatMapEntry[]);
+      setLoading(false);
     }
     load();
-  }, []);
+    return () => { mounted = false; };
+  }, [refreshKey]);
 
+  // Live WS status + soft re-pull on incident/action events
   useEffect(() => {
     const ws = getLiveWS();
     const offStatus = ws.onStatus(setWsStatus);
-    const topics = [
-      'incidents.new',
-      'attackers.geo',
-      'metrics.events_per_sec',
-      'metrics.top_attackers',
-      'metrics.top_targets',
-      'metrics.top_attack_types',
-      'logs.stream',
-      'nodes.status',
-      'honeypot.interactions',
-      'actions.new',
-    ];
-    const offs = topics.map((t) => subscribeTopic(t, () => {}));
+    const offIncidents = subscribeTopic('incidents.new', () => setRefreshKey((k) => k + 1));
+    const offActions = subscribeTopic('actions.new', () => setRefreshKey((k) => k + 1));
+    const offHoneypot = subscribeTopic('honeypot.interactions', () => setRefreshKey((k) => k + 1));
     return () => {
       offStatus();
-      offs.forEach((f) => f());
+      offIncidents();
+      offActions();
+      offHoneypot();
     };
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-    async function poll() {
-      const [m, tm] = await Promise.all([fetchLiveMetrics(), api.dashboard.threatMap().catch(() => [] as ThreatMapEntry[])]);
-      if (!mounted) return;
-      if (m) setMetrics(m);
-      if (tm && tm.length > 0) setThreatMap(tm);
-    }
-    poll();
-    const interval = window.setInterval(poll, 2000);
-    return () => {
-      mounted = false;
-      window.clearInterval(interval);
-    };
-  }, []);
+  // Derived
+  const openIncidents = useMemo(
+    () => incidents.filter((i) => (i.status || '').toLowerCase() !== 'resolved'),
+    [incidents],
+  );
 
-  useEffect(() => {
-    const off = subscribeTopic('attackers.geo', (data) => {
-      if (!data || typeof data !== 'object') return;
-      const r = data as Record<string, unknown>;
-      const cc = String(r.country_code ?? '').toUpperCase();
-      if (!cc) return;
-      setThreatMap((prev) => {
-        const idx = prev.findIndex((e) => e.country_code === cc);
-        if (idx < 0) {
-          return [...prev, { country: String(r.country ?? cc), country_code: cc, count: 1 }];
-        }
-        const next = [...prev];
-        next[idx] = { ...next[idx], count: next[idx].count + 1 };
-        return next;
+  const latest = openIncidents[0]; // backend already returns newest-first
+  const pendingActions = useMemo(
+    () => actions.filter((a) => (a.status || '').toLowerCase() === 'pending').slice(0, 5),
+    [actions],
+  );
+
+  const assetRows: AssetRiskRow[] = useMemo(() => {
+    const rows: AssetRiskRow[] = MONITORED_APPS.map((app) => {
+      const appIncs = incidents.filter((i) => {
+        const hay = `${i.source} ${i.title}`.toLowerCase();
+        return hay.includes(app);
       });
+      const resolved = appIncs.filter((i) => (i.status || '').toLowerCase() === 'resolved').length;
+      const open = appIncs.length - resolved;
+      // Risk: weight open critical/high heavily
+      const crit = appIncs.filter((i) => i.severity?.toLowerCase() === 'critical').length;
+      const high = appIncs.filter((i) => i.severity?.toLowerCase() === 'high').length;
+      const score = Math.min(10, crit * 3 + high * 1.5 + open * 0.4);
+      return {
+        asset: app,
+        account: 'aegis-monitored',
+        totalThreats: appIncs.length,
+        resolved,
+        riskScore: score,
+      };
     });
-    return off;
-  }, []);
+    return rows.sort((a, b) => b.riskScore - a.riskScore);
+  }, [incidents]);
+
+  // Hero KPIs
+  const latestIp = latest?.source_ip ?? incidents.find((i) => !!i.source_ip)?.source_ip ?? '—';
+  const mitre = latest?.mitre_technique ?? '—';
+  const affectedAsset = useMemo(() => {
+    if (!latest) return '—';
+    const hay = `${latest.source} ${latest.title}`.toLowerCase();
+    return MONITORED_APPS.find((a) => hay.includes(a)) ?? (latest.source || 'unknown');
+  }, [latest]);
+  const confidence = useMemo(() => {
+    if (!latest?.ai_analysis) return '—';
+    const c = (latest.ai_analysis as Record<string, unknown>).confidence;
+    if (typeof c === 'number') return `${Math.round(c * (c <= 1 ? 100 : 1))}%`;
+    return '—';
+  }, [latest]);
 
   if (loading) return <LoadingState message="Loading dashboard..." />;
-  const stats = overview || EMPTY_OVERVIEW;
-
-  const externalMetrics = metrics
-    ? { incidentsOpen: metrics.incidents_open, honeypotHits: metrics.honeypot_hits_24h }
-    : undefined;
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex items-end justify-between gap-4 pt-1">
+    <div className="space-y-4 animate-fade-in pb-6">
+      {/* HERO greeting + status + download */}
+      <div className="flex items-start justify-between gap-4 pt-1">
         <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-[-0.02em] leading-none">
-              Security Overview
-            </h1>
-            <span className="hidden sm:inline-block text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/50 px-2 py-1 border border-border rounded-md">
-              v1.6.2
-            </span>
-          </div>
-          <p className="text-[13px] text-muted-foreground mt-1.5">
-            Real-time monitoring · threat intelligence · autonomous response
+          <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60 font-mono mb-2">
+            AEGIS Command · {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
           </p>
-        </div>
-        <StatusPill status={wsStatus} />
-      </div>
-
-      {/* Stat Cards — 4 clean cards with big monospace numbers */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
-        <StatCard title="Total Assets" value={stats.total_assets} trend={stats.assets_trend || 0} icon={Server} color="accent" />
-        <StatCard title="Vulnerabilities" value={stats.open_vulnerabilities} trend={stats.vulns_trend || 0} icon={Bug01Icon} color="warning" />
-        <StatCard title="Active Incidents" value={stats.active_incidents} trend={stats.incidents_trend || 0} icon={SecurityCheckIcon} color="danger" />
-        <StatCard title="Honeypot Hits" value={stats.honeypot_interactions} trend={stats.interactions_trend || 0} icon={Ghost} color="orange" />
-      </div>
-
-      {/* Row 2: Attack Feed + Global Threat Map */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="min-h-[400px]">
-          <AttackFeed />
-        </div>
-
-        <Card className="rounded-xl py-0 gap-0 shadow-none overflow-hidden">
-          <SectionHeader
-            title="Global Threat Map"
-            icon={Radar01Icon}
-            right={threatMap.length > 0 ? (
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                <span className="text-[10px] text-muted-foreground/60 font-mono">{threatMap.length} sources</span>
-              </div>
-            ) : undefined}
-          />
-          <div className="relative h-[360px]">
-            <GlobalThreatMap data={threatMap} />
+          <h1 className="text-[26px] sm:text-[34px] lg:text-[40px] font-semibold tracking-[-0.025em] leading-none text-foreground">
+            {latest ? (
+              <>
+                <span className="text-muted-foreground/70">Hello,</span>{' '}
+                <Link
+                  href={`/dashboard/response`}
+                  className="inline-flex items-center gap-2 text-[var(--brand-accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)]/60 rounded-md"
+                >
+                  #INC-{shortId(latest.id)}
+                </Link>
+              </>
+            ) : (
+              <>
+                <span className="text-muted-foreground/70">All</span>{' '}
+                <span className="text-foreground">quiet</span>
+              </>
+            )}
+          </h1>
+          <div className="flex items-center gap-3 mt-3 text-[12px] text-muted-foreground">
+            {latest ? (
+              <>
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: severityBadgeColor(latest.severity) }}
+                    aria-hidden
+                  />
+                  <span className="uppercase tracking-wider text-[10px] font-mono"
+                    style={{ color: severityBadgeColor(latest.severity) }}>
+                    {latest.severity}
+                  </span>
+                </span>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="truncate max-w-[60ch]">{latest.title}</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="font-mono text-[11px]">{relativeTime(latest.detected_at)}</span>
+              </>
+            ) : (
+              <span>No open incidents · last attack {relativeTime(incidents[0]?.detected_at)}</span>
+            )}
           </div>
-        </Card>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <StatusPill status={wsStatus} />
+          <button
+            type="button"
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md',
+              'bg-card border border-border text-[12px] text-foreground/90',
+              'hover:bg-white/[0.04] hover:border-white/[0.12]',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+              'transition-colors',
+            )}
+            onClick={() => {
+              // Navigate to reports page for now (export center)
+              window.location.href = '/dashboard/reports';
+            }}
+            aria-label="Download report"
+          >
+            <Download size={13} />
+            <span>Download</span>
+          </button>
+        </div>
       </div>
 
-      {/* Row 3: Metrics bar (full width compact) */}
-      <MetricsSummaryBar external={externalMetrics} />
+      {/* KPI TILES */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
+        <KPITile
+          label="Affected Asset"
+          value={affectedAsset}
+          sub={latest ? `source: ${latest.source}` : 'no active incidents'}
+          tone={latest ? 'accent' : 'neutral'}
+          warm
+        />
+        <KPITile
+          label="MITRE Technique"
+          value={mitre}
+          sub={latest?.mitre_technique ? 'view campaign cluster' : '—'}
+          href="/dashboard/threats/campaigns"
+          tone={latest?.mitre_technique ? 'warning' : 'neutral'}
+        />
+        <KPITile
+          label="Source IP"
+          value={latestIp}
+          sub={latestIp !== '—' ? 'click for IP intel' : '—'}
+          href={latestIp !== '—' ? `/dashboard/ip-intel?ip=${encodeURIComponent(latestIp)}` : undefined}
+          tone={latestIp !== '—' ? 'danger' : 'neutral'}
+          warm
+        />
+        <KPITile
+          label="Confidence"
+          value={confidence}
+          sub={`${openIncidents.length} open · ${pendingActions.length} pending`}
+          tone={confidence !== '—' ? 'success' : 'neutral'}
+        />
+      </div>
 
-      {/* Row 4: Events/sec chart + Node Heartbeats */}
+      {/* INCIDENT TIMELINE — signature feature */}
+      <IncidentTimeline incidents={openIncidents.length > 0 ? openIncidents : incidents} days={14} />
+
+      {/* Row: AI Actions (2/3) + Login Attempts (1/3 narrow) + Threat Detection (1/3) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-9 h-48">
-          <EventsPerSecChart />
+        <div className="lg:col-span-5">
+          <AISuggestedActions
+            actions={pendingActions}
+            onChanged={() => setRefreshKey((k) => k + 1)}
+          />
         </div>
-        <div className="lg:col-span-3 h-48">
-          <NodeHeartbeatGrid />
+        <div className="lg:col-span-3">
+          <LoginAttemptsHeatmap interactions={interactions} hours={24} columns={10} />
+        </div>
+        <div className="lg:col-span-4">
+          <ThreatDetectionChart incidents={incidents} days={7} />
         </div>
       </div>
 
-      {/* Row 5: Raw Log Stream (full width, tall) */}
-      <div className="h-72">
-        <RawLogStream />
-      </div>
-
-      {/* Row 6: Top-10 Tables */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="h-56">
-          <Top10Table
-            title="Top Attackers"
-            rows={metrics?.top_attackers ?? []}
-            accent="var(--danger)"
-            monoLabel
-          />
+      {/* Row: Asset Risk Table + Global Threat Map */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+        <div className="lg:col-span-8">
+          <AssetRiskTable rows={assetRows} />
         </div>
-        <div className="h-56">
-          <Top10Table
-            title="Top Targets"
-            rows={metrics?.top_targets ?? []}
-            accent="var(--brand-accent)"
-          />
-        </div>
-        <div className="h-56">
-          <Top10Table
-            title="Attack Types"
-            rows={metrics?.top_attack_types ?? []}
-            accent="var(--chart-5)"
-          />
+        <div className="lg:col-span-4">
+          <div className="bg-card border border-border rounded-2xl overflow-hidden h-full flex flex-col">
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Radar size={13} className="text-muted-foreground/60" />
+                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Global Threat Map
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-muted-foreground/50">
+                {threatMap.length} sources
+              </span>
+            </div>
+            <div className="flex-1 min-h-[360px] relative">
+              <GlobalThreatMap data={threatMap} />
+            </div>
+          </div>
         </div>
       </div>
     </div>
