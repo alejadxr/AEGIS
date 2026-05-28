@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/shared/LoadingState';
 import { api } from '@/lib/api';
 import { cn, formatRelativeTime, formatDate } from '@/lib/utils';
 import { buildAbuseMailto, abuseContactOf } from '@/lib/abuse-mailto';
+import { mitreLabel } from '@/lib/mitre';
 import {
   BarChart,
   Bar,
@@ -407,7 +408,7 @@ export default function ResponsePage() {
                             <span className="text-[11px] text-muted-foreground font-mono">{incident.source_ip}</span>
                           )}
                           {incident.mitre_technique && (
-                            <Badge variant="outline" className="text-[10px] text-[var(--chart-5)] bg-[color-mix(in_oklab,var(--chart-5)_12%,transparent)] border-[color-mix(in_oklab,var(--chart-5)_25%,transparent)] px-1.5 py-0.5 h-auto font-mono font-medium">{incident.mitre_technique}</Badge>
+                            <Badge variant="outline" className="text-[10px] text-[var(--chart-5)] bg-[color-mix(in_oklab,var(--chart-5)_12%,transparent)] border-[color-mix(in_oklab,var(--chart-5)_25%,transparent)] px-1.5 py-0.5 h-auto font-mono font-medium">{mitreLabel(incident.mitre_technique)}</Badge>
                           )}
                         </div>
                       </div>
@@ -466,7 +467,7 @@ export default function ResponsePage() {
                                   {triage.mitre_technique && (
                                     <div className="flex items-center gap-2 mt-2">
                                       <Badge variant="outline" className="text-[9px] text-[var(--chart-5)] bg-[color-mix(in_oklab,var(--chart-5)_12%,transparent)] border-[color-mix(in_oklab,var(--chart-5)_25%,transparent)] px-1.5 py-0.5 h-auto font-mono">
-                                        {`${triage.mitre_technique}`}
+                                        {mitreLabel(`${triage.mitre_technique}`)}
                                       </Badge>
                                       {triage.mitre_tactic && (
                                         <span className="text-[10px] text-muted-foreground">{`${triage.mitre_tactic}`}</span>

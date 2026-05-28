@@ -15,6 +15,7 @@ import { Panel, SectionHeader } from '@/components/aegis';
 import { api } from '@/lib/api';
 import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
 import { cn } from '@/lib/utils';
+import { mitreLabel, mitreInfo } from '@/lib/mitre';
 
 // Lazy-load the (heavy) world map for CLS budget
 const GlobalThreatMap = dynamic(
@@ -284,7 +285,7 @@ export default function DashboardPage() {
         <KPITile
           label="MITRE Technique"
           value={mitre}
-          sub={latest?.mitre_technique ? 'view campaign cluster' : '—'}
+          sub={latest?.mitre_technique ? (mitreInfo(latest.mitre_technique)?.plain ?? 'view campaign cluster') : '—'}
           href="/dashboard/threats/campaigns"
           tone={latest?.mitre_technique ? 'warning' : 'neutral'}
         />
