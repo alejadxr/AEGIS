@@ -114,7 +114,7 @@ export function ThreatDetectionChart({ incidents, days = 7 }: ThreatDetectionCha
               }}
               labelStyle={{ color: 'var(--muted-foreground)' }}
               itemStyle={{ color: 'var(--foreground)' }}
-              formatter={(v: number) => [v, 'incidents']}
+              formatter={(v) => [String(v), 'incidents']}
             />
             <Area
               type="monotone"
