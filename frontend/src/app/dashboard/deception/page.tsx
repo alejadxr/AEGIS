@@ -7,6 +7,8 @@ import { cn, formatRelativeTime } from '@/lib/utils';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { CampaignBuilder } from '@/components/deception/CampaignBuilder';
 import { BreadcrumbHits } from '@/components/deception/BreadcrumbHits';
+import { Panel } from '@/components/aegis/Panel';
+import { EmptyState } from '@/components/aegis/EmptyState';
 
 const STATUS_COLORS: Record<string, string> = {
   running: 'text-[var(--success)] bg-[color-mix(in_oklab,var(--success)_12%,transparent)] border-[color-mix(in_oklab,var(--success)_25%,transparent)]',
@@ -115,14 +117,19 @@ export default function DeceptionPage() {
       )}
 
       {enterpriseGated && (
-        <div className="bg-[color-mix(in_oklab,var(--warning)_8%,transparent)] border border-[color-mix(in_oklab,var(--warning)_25%,transparent)] rounded-2xl px-6 py-8 text-center">
-          <Lock className="w-8 h-8 text-[var(--warning)] mx-auto mb-3" />
-          <p className="text-[15px] font-semibold text-[var(--warning)] mb-1">Enterprise tier required</p>
-          <p className="text-[13px] text-muted-foreground">
-            Honey-AI Deception at Scale is available on the Enterprise plan.{' '}
-            <a href="mailto:sales@aegis.ai" className="text-[var(--warning)] hover:underline">Contact us</a> to unlock.
+        <Panel variant="warning" padding="lg" as="div" className="text-center">
+          <Lock className="w-10 h-10 text-[var(--warning)] mx-auto mb-4" />
+          <h2 className="text-[16px] font-semibold text-[var(--warning)] mb-2">Honey-AI Deception</h2>
+          <p className="text-[13px] text-muted-foreground max-w-md mx-auto mb-4">
+            Active deception campaigns require AEGIS Enterprise tier. Contact sales for activation.
           </p>
-        </div>
+          <a
+            href="mailto:sales@aegis.ai"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold border border-[color-mix(in_oklab,var(--warning)_35%,transparent)] text-[var(--warning)] hover:bg-[color-mix(in_oklab,var(--warning)_10%,transparent)] transition-colors"
+          >
+            Contact Sales
+          </a>
+        </Panel>
       )}
 
       {/* Summary stats — hidden when enterprise-gated (all zeros would be misleading) */}
@@ -146,20 +153,18 @@ export default function DeceptionPage() {
 
       {/* Campaign list */}
       {!enterpriseGated && (
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <Panel>
         <div className="px-4 sm:px-6 py-4 border-b border-border">
           <span className="text-[14px] font-semibold text-foreground">
             Campaigns
           </span>
         </div>
         {campaigns.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className="text-muted-foreground text-[13px]">
-              No campaigns yet. Click{' '}
-              <span className="text-[var(--brand-accent)] font-medium">New Campaign</span>{' '}
-              to deploy fake infrastructure.
-            </p>
-          </div>
+          <EmptyState
+            title="No campaigns yet"
+            description={<>Click <span className="text-[var(--brand-accent)] font-medium">New Campaign</span> to deploy fake infrastructure.</>}
+            size="md"
+          />
         ) : (
           <div className="divide-y divide-white/[0.04]">
             {campaigns.map((c) => (
@@ -244,7 +249,7 @@ export default function DeceptionPage() {
             ))}
           </div>
         )}
-      </div>
+      </Panel>
       )}
 
       {/* Breadcrumb hits — only shown when not enterprise-gated */}
@@ -270,7 +275,7 @@ function StatCard({
   tone?: 'default' | 'danger';
 }) {
   return (
-    <div className="bg-card border border-border rounded-2xl px-4 py-4">
+    <Panel padding="sm" as="div">
       <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
         {label}
       </div>
@@ -282,6 +287,6 @@ function StatCard({
       >
         {value.toLocaleString()}
       </div>
-    </div>
+    </Panel>
   );
 }
