@@ -10,6 +10,8 @@ import { RuleEditor, RuleFormValues } from '@/components/firewall/RuleEditor';
 import { RuleTester } from '@/components/firewall/RuleTester';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Panel } from '@/components/aegis/Panel';
+import { EmptyState } from '@/components/aegis/EmptyState';
 
 interface FirewallRule {
   id: string;
@@ -234,7 +236,13 @@ export default function FirewallPage() {
             <FileText className="w-4 h-4" />
             <span className="hidden sm:inline">Templates</span>
           </Button>
-          <Button variant="outline" onClick={handleCreate} className="gap-1.5 text-[13px]">
+          <Button
+            variant="outline"
+            onClick={handleCreate}
+            disabled={isDemo}
+            title={isDemo ? 'Disabled in demo mode — backend unreachable' : undefined}
+            className="gap-1.5 text-[13px]"
+          >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">New rule</span>
           </Button>
@@ -242,9 +250,14 @@ export default function FirewallPage() {
       </div>
 
       {isDemo && (
-        <div className="text-[var(--brand-accent)] rounded-xl px-4 py-3 text-[13px]" style={{ backgroundColor: 'color-mix(in oklab,var(--brand-accent) 6%,transparent)', border: '1px solid color-mix(in oklab,var(--brand-accent) 20%,transparent)' }}>
-          Running in demo mode — the backend did not respond, so a sample rule is shown. Rules you create will not persist until the API is reachable.
-        </div>
+        <Panel variant="warning" padding="sm" as="div">
+          <p className="text-[13px] text-[var(--warning)] font-medium">
+            Demo mode — showing sample data. Backend unreachable; new rules will not persist.
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Mutations (Create / Update / Delete) are disabled until the API is reachable.
+          </p>
+        </Panel>
       )}
 
       {/* Summary tiles */}
@@ -267,9 +280,11 @@ export default function FirewallPage() {
         </div>
 
         {sorted.length === 0 && (
-          <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">
-            No firewall rules yet. Start from a template or create one from scratch.
-          </div>
+          <EmptyState
+            title="No firewall rules yet"
+            description="Start from a template or create one from scratch."
+            size="md"
+          />
         )}
 
         {sorted.map((rule) => (
@@ -313,13 +328,13 @@ export default function FirewallPage() {
               <Button variant="ghost" size="icon-xs" onClick={() => handleTest(rule)} title="Test rule" className="text-muted-foreground hover:text-[var(--brand)]">
                 <Beaker className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon-xs" onClick={() => handleEdit(rule)} title="Edit" className="text-muted-foreground hover:text-foreground">
+              <Button variant="ghost" size="icon-xs" onClick={() => handleEdit(rule)} disabled={isDemo} title={isDemo ? 'Disabled in demo mode' : 'Edit'} className="text-muted-foreground hover:text-foreground">
                 <Pencil className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon-xs" onClick={() => handleToggle(rule)} title={rule.enabled ? 'Disable' : 'Enable'} className="text-muted-foreground hover:text-[var(--brand-accent)]">
+              <Button variant="ghost" size="icon-xs" onClick={() => handleToggle(rule)} disabled={isDemo} title={isDemo ? 'Disabled in demo mode' : (rule.enabled ? 'Disable' : 'Enable')} className="text-muted-foreground hover:text-[var(--brand-accent)]">
                 <Power className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon-xs" onClick={() => handleDelete(rule)} title="Delete" className="text-muted-foreground hover:text-[var(--danger)]">
+              <Button variant="ghost" size="icon-xs" onClick={() => handleDelete(rule)} disabled={isDemo} title={isDemo ? 'Disabled in demo mode' : 'Delete'} className="text-muted-foreground hover:text-[var(--danger)]">
                 <Trash2 className="w-4 h-4" />
               </Button>
             </div>
@@ -349,10 +364,10 @@ export default function FirewallPage() {
         </div>
 
         {blockError && (
-          <div className="text-[var(--danger)] rounded-xl px-4 py-3 text-[13px]" style={{ backgroundColor: 'color-mix(in oklab,var(--danger) 8%,transparent)', border: '1px solid color-mix(in oklab,var(--danger) 25%,transparent)' }}>
-            {blockError}
-            <button onClick={() => setBlockError(null)} className="ml-3 underline text-[11px]">Dismiss</button>
-          </div>
+          <Panel variant="danger" padding="sm" as="div">
+            <span className="text-[13px] text-[var(--danger)]">{blockError}</span>
+            <button onClick={() => setBlockError(null)} className="ml-3 underline text-[11px] text-[var(--danger)]">Dismiss</button>
+          </Panel>
         )}
 
         <Card className="rounded-xl">
@@ -367,9 +382,11 @@ export default function FirewallPage() {
           )}
 
           {!blockedLoading && blockedIPs.length === 0 && (
-            <div className="px-4 py-10 text-center text-[13px] text-muted-foreground max-w-md mx-auto">
-              No IPs currently blocked. Either no attacks have been detected, or all blocks have expired/been manually cleared.
-            </div>
+            <EmptyState
+              title="No IPs currently blocked"
+              description="Either no attacks have been detected, or all blocks have expired or been manually cleared."
+              size="md"
+            />
           )}
 
           {blockedIPs.map((item) => (
