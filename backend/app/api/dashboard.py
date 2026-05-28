@@ -35,10 +35,36 @@ class TimelineEvent(BaseModel):
     timestamp: str
 
 
+# ISO 3166-1 alpha-2 → country name map for common countries.
+# Fallback: use country_code as name for anything not listed.
+_COUNTRY_NAMES: dict[str, str] = {
+    "US": "United States", "CN": "China", "RU": "Russia", "DE": "Germany",
+    "GB": "United Kingdom", "FR": "France", "NL": "Netherlands", "BR": "Brazil",
+    "IN": "India", "UA": "Ukraine", "KR": "South Korea", "JP": "Japan",
+    "CA": "Canada", "AU": "Australia", "SG": "Singapore", "HK": "Hong Kong",
+    "TR": "Turkey", "VN": "Vietnam", "IT": "Italy", "ES": "Spain",
+    "PL": "Poland", "IR": "Iran", "RO": "Romania", "SE": "Sweden",
+    "NO": "Norway", "FI": "Finland", "DK": "Denmark", "CH": "Switzerland",
+    "AT": "Austria", "BE": "Belgium", "PH": "Philippines", "ID": "Indonesia",
+    "TH": "Thailand", "MY": "Malaysia", "MX": "Mexico", "AR": "Argentina",
+    "ZA": "South Africa", "EG": "Egypt", "NG": "Nigeria", "IL": "Israel",
+    "SA": "Saudi Arabia", "AE": "UAE", "PK": "Pakistan", "BD": "Bangladesh",
+    "CZ": "Czech Republic", "HU": "Hungary", "PT": "Portugal", "GR": "Greece",
+    "BG": "Bulgaria", "SK": "Slovakia", "HR": "Croatia", "RS": "Serbia",
+    "BY": "Belarus", "KZ": "Kazakhstan", "TW": "Taiwan", "HN": "Honduras",
+    "PA": "Panama", "BO": "Bolivia", "CL": "Chile", "CO": "Colombia",
+    "PE": "Peru", "VE": "Venezuela", "CU": "Cuba", "EC": "Ecuador",
+    "TZ": "Tanzania", "KE": "Kenya", "GH": "Ghana", "ET": "Ethiopia",
+    "MA": "Morocco", "TN": "Tunisia", "DZ": "Algeria", "LY": "Libya",
+    "SY": "Syria", "IQ": "Iraq", "AF": "Afghanistan", "MM": "Myanmar",
+    "KH": "Cambodia", "LK": "Sri Lanka", "NP": "Nepal", "NZ": "New Zealand",
+}
+
+
 class ThreatMapEntry(BaseModel):
-    source_ip: str
+    country: str
+    country_code: str
     count: int
-    last_seen: str
 
 
 @router.get("/overview", response_model=OverviewStats)
@@ -296,24 +322,74 @@ async def get_threat_map(
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get threat geography data from honeypot interactions."""
+    """Get threat geography data grouped by country.
+
+    Resolves attacker IPs to countries via offline GeoIP and returns
+    {country, country_code, count} so the GlobalThreatMap component can
+    render geographical data. Falls back to country_code='??' for unknown IPs.
+
+    Data sources (merged, deduped by country):
+      - Honeypot interactions
+      - Incidents with a source_ip
+    """
+    from app.services import offline_geoip
+
     client = auth.client
-    result = await db.execute(
+
+    # Collect attacker IPs from honeypot interactions
+    hp_result = await db.execute(
         select(
             HoneypotInteraction.source_ip,
             func.count(HoneypotInteraction.id).label("count"),
-            func.max(HoneypotInteraction.timestamp).label("last_seen"),
         )
         .where(HoneypotInteraction.client_id == client.id)
         .group_by(HoneypotInteraction.source_ip)
         .order_by(func.count(HoneypotInteraction.id).desc())
-        .limit(100)
+        .limit(200)
     )
+
+    # Collect attacker IPs from incidents
+    inc_result = await db.execute(
+        select(
+            Incident.source_ip,
+            func.count(Incident.id).label("count"),
+        )
+        .where(
+            Incident.client_id == client.id,
+            Incident.source_ip.is_not(None),
+        )
+        .group_by(Incident.source_ip)
+        .order_by(func.count(Incident.id).desc())
+        .limit(200)
+    )
+
+    # Aggregate count per IP (combine both sources)
+    ip_counts: dict[str, int] = {}
+    for row in hp_result.all():
+        ip = row[0]
+        if ip:
+            ip_counts[ip] = ip_counts.get(ip, 0) + int(row[1] or 0)
+    for row in inc_result.all():
+        ip = row[0]
+        if ip:
+            ip_counts[ip] = ip_counts.get(ip, 0) + int(row[1] or 0)
+
+    # Resolve IPs to countries and aggregate count per country
+    country_counts: dict[str, int] = {}
+    for ip, count in ip_counts.items():
+        geo = offline_geoip.lookup(ip)
+        country_code = (geo or {}).get("country", "??")
+        if not country_code:
+            country_code = "??"
+        country_counts[country_code] = country_counts.get(country_code, 0) + count
+
+    # Build response sorted by count descending, top 50 countries
     entries = []
-    for row in result.all():
+    for cc, count in sorted(country_counts.items(), key=lambda x: -x[1])[:50]:
+        country_name = _COUNTRY_NAMES.get(cc, cc if cc != "??" else "Unknown")
         entries.append(ThreatMapEntry(
-            source_ip=row[0],
-            count=row[1],
-            last_seen=row[2].isoformat() if row[2] else "",
+            country=country_name,
+            country_code=cc,
+            count=count,
         ))
     return entries
