@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.core.guardrails import guardrail_engine, DEFAULT_GUARDRAILS
 from app.models.client import Client
 from app.models.incident import Incident
 from app.models.action import Action
+from app.models.audit_log import AuditLog
 from app.services.ai_engine import ai_engine
 from app.services.counter_attack import counter_attack_engine, COUNTER_ATTACK_ACTIONS
 from app.modules.response.ingestion import alert_ingestion
@@ -59,6 +60,10 @@ class ActionOut(BaseModel):
     result: dict | None = None
     executed_at: str | None = None
     created_at: str | None = None
+
+
+class RejectActionRequest(BaseModel):
+    reason: str | None = None
 
 
 class GuardrailConfig(BaseModel):
@@ -246,6 +251,57 @@ async def approve_action(
 
     exec_result = await active_responder.execute_action(action, db)
     return {"action_id": action_id, "status": action.status, "result": exec_result}
+
+
+@router.post("/actions/{action_id}/reject")
+async def reject_action(
+    action_id: str,
+    body: RejectActionRequest = Body(default=RejectActionRequest()),
+    auth: AuthContext = Depends(require_analyst),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reject a pending action. Preserves the row for audit; sets status='rejected'.
+
+    Optional body: {reason: string} — appended to ai_reasoning for audit trail.
+    Analyst or admin only.
+    """
+    client = auth.client
+    result = await db.execute(
+        select(Action).where(
+            Action.id == action_id,
+            Action.client_id == client.id,
+        )
+    )
+    action = result.scalar_one_or_none()
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    if action.status != "pending":
+        raise HTTPException(status_code=400, detail=f"Action is already {action.status}")
+
+    action.status = "rejected"
+    action.requires_approval = False
+
+    # Append reason to ai_reasoning for audit trail
+    if body.reason:
+        existing = action.ai_reasoning or ""
+        action.ai_reasoning = f"{existing}\n[Rejected by {auth.email or client.name}]: {body.reason}".strip()
+
+    # Create audit log entry
+    rejected_by = auth.email or client.name
+    reason_str = body.reason or ""
+    audit = AuditLog(
+        id=str(__import__("uuid").uuid4()),
+        client_id=client.id,
+        action=f"reject_action:{action.action_type}",
+        decision=f"rejected by {rejected_by}",
+        input_summary=f"action_id={action_id} target={action.target} reason={reason_str}",
+        timestamp=datetime.utcnow(),
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(action)
+
+    return {"action_id": action_id, "status": action.status, "rejected_by": rejected_by}
 
 
 @router.post("/actions/{action_id}/rollback")

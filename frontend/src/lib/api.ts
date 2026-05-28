@@ -387,6 +387,11 @@ export const api = {
       }>>('/response/actions'),
     approveAction: (id: string) =>
       request(`/response/actions/${id}/approve`, { method: 'POST' }),
+    rejectAction: (id: string, reason?: string) =>
+      request(`/response/actions/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason ?? null }),
+      }),
     guardrails: () =>
       request<Record<string, boolean | string | number>>('/response/guardrails'),
     updateGuardrails: (config: Record<string, boolean | string | number>) =>

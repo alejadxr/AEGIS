@@ -72,6 +72,45 @@ class NotificationService:
             lines.append(f"Target: `{payload['target']}`")
         return "\n".join(lines)
 
+    async def notify_critical_event(self, event_type: str, details: dict) -> None:
+        """Send a critical-event notification using the first available client's channels.
+
+        This is a convenience wrapper called by log_watcher (and similar
+        infrastructure code that does not hold a Client ORM object). It fetches
+        the first Client from the database and delegates to notify().
+
+        Args:
+            event_type: Pattern/event name (e.g. 'path_traversal').
+            details: Dict with at least 'severity', 'source_ip', 'message'.
+        """
+        try:
+            from app.database import async_session
+            from sqlalchemy import select as _select
+
+            async with async_session() as db:
+                result = await db.execute(_select(Client).limit(1))
+                client = result.scalar_one_or_none()
+                if not client:
+                    logger.warning("notify_critical_event: no client found, skipping notification")
+                    return
+
+            severity = details.get("severity", "high")
+            source_ip = details.get("source_ip", "unknown")
+            message = details.get("message", "")
+            title = f"{severity.upper()}: {event_type.replace('_', ' ').title()} detected"
+
+            payload = {
+                "event_type": event_type,
+                "title": title,
+                "severity": severity,
+                "message": message,
+                "target": source_ip,
+                **{k: v for k, v in details.items() if k not in ("severity", "source_ip", "message")},
+            }
+            await self.notify(client, payload)
+        except Exception as exc:
+            logger.error(f"notify_critical_event failed: {exc}")
+
     async def notify(self, client: Client, payload: dict) -> None:
         """Dispatch notifications based on client settings."""
         settings_map = client.settings or {}
