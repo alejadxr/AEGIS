@@ -1,9 +1,14 @@
+import asyncio
+import json
+import subprocess
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
+from app.config import settings
 from app.database import get_db
 from app.core.auth import AuthContext, require_viewer
 from app.models.client import Client
@@ -393,3 +398,115 @@ async def get_threat_map(
             count=count,
         ))
     return entries
+
+
+# ---------------------------------------------------------------------------
+# Monitored Apps
+# ---------------------------------------------------------------------------
+
+class MonitoredAppOut(BaseModel):
+    name: str
+    status: str
+    open_incidents: int
+    last_activity: Optional[str] = None
+    resolved_count: int
+
+
+class MonitoredAppsOut(BaseModel):
+    apps: list[MonitoredAppOut]
+    count: int
+
+
+def _get_pm2_statuses() -> dict[str, str]:
+    """
+    Try to read PM2 process list. Returns {name: status} dict.
+    Falls back to empty dict on any error (pm2 not installed, not in PATH, etc).
+    Never uses lsof.
+    """
+    try:
+        result = subprocess.run(
+            ["pm2", "jlist"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return {}
+        procs = json.loads(result.stdout)
+        return {
+            p.get("name", ""): (p.get("pm2_env", {}) or {}).get("status", "unknown")
+            for p in procs
+            if p.get("name")
+        }
+    except Exception:
+        return {}
+
+
+@router.get("/monitored-apps", response_model=MonitoredAppsOut)
+async def get_monitored_apps(
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return the list of apps monitored by AEGIS log_watcher.
+
+    Source: AEGIS_MONITORED_APPS env var (comma-separated app names).
+    If the env var is unset, returns an empty list rather than guessing.
+
+    Each entry is enriched with:
+    - status: PM2 process status (online/stopped/errored/unknown) — best-effort
+    - open_incidents: count of open/investigating incidents whose source matches the app
+    - last_activity: ISO timestamp of the most recent related incident
+    - resolved_count: count of resolved incidents for the app
+    """
+    client = auth.client
+
+    # Parse from pydantic settings (loaded from .env at startup)
+    raw_env = (settings.AEGIS_MONITORED_APPS or "").strip()
+    app_names: list[str] = [a.strip() for a in raw_env.split(",") if a.strip()] if raw_env else []
+
+    # Best-effort PM2 status (runs in thread pool so it doesn't block the loop)
+    loop = asyncio.get_event_loop()
+    pm2_statuses: dict[str, str] = await loop.run_in_executor(None, _get_pm2_statuses)
+
+    apps: list[MonitoredAppOut] = []
+    cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+
+    for name in app_names:
+        # Open incidents: match on source field or title containing the app name
+        open_count: int = await db.scalar(
+            select(func.count(Incident.id)).where(
+                Incident.client_id == client.id,
+                Incident.status.in_(["open", "investigating"]),
+                Incident.source == name,
+            )
+        ) or 0
+
+        resolved_count: int = await db.scalar(
+            select(func.count(Incident.id)).where(
+                Incident.client_id == client.id,
+                Incident.status == "resolved",
+                Incident.source == name,
+            )
+        ) or 0
+
+        # Last activity: most recent incident for this source
+        last_incident = await db.scalar(
+            select(func.max(Incident.detected_at)).where(
+                Incident.client_id == client.id,
+                Incident.source == name,
+            )
+        )
+        last_activity = last_incident.isoformat() if last_incident else None
+
+        status = pm2_statuses.get(name, "unknown")
+
+        apps.append(MonitoredAppOut(
+            name=name,
+            status=status,
+            open_incidents=int(open_count),
+            last_activity=last_activity,
+            resolved_count=int(resolved_count),
+        ))
+
+    return MonitoredAppsOut(apps=apps, count=len(apps))
