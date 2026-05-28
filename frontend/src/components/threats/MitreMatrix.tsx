@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Panel, SectionHeader } from '@/components/aegis';
 import { LayoutGrid } from 'lucide-react';
 import { MITRE_TACTICS, resolveTactic, tacticHeatColor } from './mitreTactics';
+import { mitreLabel } from '@/lib/mitre';
 
 export interface MatrixCampaign {
   cluster_id: string;
@@ -116,7 +117,7 @@ export default function MitreMatrix({ campaigns, selectedTactic, onSelectTactic 
                           key={`${t.id}:${cell.technique}`}
                           className="rounded-md border border-border min-h-[44px] px-2 py-1 cursor-default"
                           style={{ background: tacticHeatColor(intensity) }}
-                          title={`${cell.technique} · ${cell.totalIncidents} incidents across ${cell.campaigns.length} cluster(s)`}
+                          title={`${mitreLabel(cell.technique)} · ${cell.totalIncidents} incidents across ${cell.campaigns.length} cluster(s)`}
                           tabIndex={0}
                           role="gridcell"
                         >
