@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { Panel, SectionHeader, EmptyState, StatusBadge } from '@/components/aegis';
 
 export interface AssetRiskRow {
   asset: string;
@@ -14,28 +14,21 @@ interface AssetRiskTableProps {
   rows: AssetRiskRow[];
 }
 
-function riskTone(score: number): { color: string; label: string } {
-  if (score >= 7) return { color: 'var(--danger)', label: 'critical' };
-  if (score >= 5) return { color: 'var(--brand-accent)', label: 'high' };
-  if (score >= 3) return { color: 'var(--warning)', label: 'medium' };
-  return { color: 'var(--success)', label: 'low' };
+function riskTone(score: number): { variant: 'danger' | 'accent' | 'warning' | 'success'; color: string; label: string } {
+  if (score >= 7) return { variant: 'danger', color: 'var(--danger)', label: 'critical' };
+  if (score >= 5) return { variant: 'accent', color: 'var(--brand-accent)', label: 'high' };
+  if (score >= 3) return { variant: 'warning', color: 'var(--warning)', label: 'medium' };
+  return { variant: 'success', color: 'var(--success)', label: 'low' };
 }
 
 /**
- * AssetRiskTable — image 2 style risk-per-app summary.
- * Columns: Asset · Total Threats · Account · Solving Progress · Risk Score.
+ * AssetRiskTable — image-2 style risk-per-app summary.
+ * Refactored: uses <Panel> + <SectionHeader> + <StatusBadge> + <EmptyState>.
  */
 export function AssetRiskTable({ rows }: AssetRiskTableProps) {
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-border">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-          View Results By Asset
-        </span>
-        <span className="text-[10px] font-mono text-muted-foreground/50">
-          {rows.length} apps
-        </span>
-      </div>
+    <Panel>
+      <SectionHeader title="View Results By Asset" count={`${rows.length} apps`} />
 
       <div className="overflow-x-auto">
         <table className="w-full text-[12px]">
@@ -51,8 +44,8 @@ export function AssetRiskTable({ rows }: AssetRiskTableProps) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-muted-foreground/60 text-[12px]">
-                  No assets being monitored yet.
+                <td colSpan={5} className="px-5 py-8">
+                  <EmptyState size="sm" title="No assets being monitored yet" />
                 </td>
               </tr>
             )}
@@ -85,10 +78,7 @@ export function AssetRiskTable({ rows }: AssetRiskTableProps) {
                       <div className="flex-1 h-1.5 rounded-full bg-muted/60 overflow-hidden">
                         <div
                           className="h-full rounded-full transition-[width] duration-500"
-                          style={{
-                            width: `${progress}%`,
-                            background: tone.color,
-                          }}
+                          style={{ width: `${progress}%`, background: tone.color }}
                           aria-hidden
                         />
                       </div>
@@ -98,19 +88,14 @@ export function AssetRiskTable({ rows }: AssetRiskTableProps) {
                     </div>
                   </td>
                   <td className="px-4 sm:px-5 py-3 text-right">
-                    <div className="inline-flex items-center gap-1.5">
-                      <span
-                        className={cn('w-1.5 h-1.5 rounded-full')}
-                        style={{ background: tone.color }}
-                        aria-hidden
-                      />
-                      <span
-                        className="font-semibold tabular-nums"
-                        style={{ color: tone.color }}
+                    <div className="inline-flex">
+                      <StatusBadge
+                        variant={tone.variant}
+                        size="sm"
                         aria-label={`Risk score ${r.riskScore.toFixed(1)}, ${tone.label}`}
                       >
-                        {r.riskScore.toFixed(1)}
-                      </span>
+                        <span className="tabular-nums">{r.riskScore.toFixed(1)}</span>
+                      </StatusBadge>
                     </div>
                   </td>
                 </tr>
@@ -119,6 +104,6 @@ export function AssetRiskTable({ rows }: AssetRiskTableProps) {
           </tbody>
         </table>
       </div>
-    </div>
+    </Panel>
   );
 }

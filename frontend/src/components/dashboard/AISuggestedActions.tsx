@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Shield, AlertCircle, Lock, Flame } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { Panel, SectionHeader, DataRow, EmptyState } from '@/components/aegis';
 
 interface PendingAction {
   id: string;
@@ -68,7 +69,6 @@ export function AISuggestedActions({ actions, onChanged }: AISuggestedActionsPro
   }
 
   function reject(id: string) {
-    // No backend reject endpoint yet — client-side dismiss + audit toast.
     setDismissed((d) => new Set(d).add(id));
     setToast('Action dismissed locally · pending backend reject endpoint');
     setTimeout(() => setToast(null), 3000);
@@ -76,40 +76,70 @@ export function AISuggestedActions({ actions, onChanged }: AISuggestedActionsPro
   }
 
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-accent)] animate-pulse" aria-hidden />
-          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            AI Suggested Actions
-          </span>
-        </div>
-        <span className="text-[10px] font-mono text-muted-foreground/50">
-          {visible.length} pending
-        </span>
-      </div>
+    <Panel className="h-full flex flex-col">
+      <SectionHeader
+        title="AI Suggested Actions"
+        live
+        count={`${visible.length} pending`}
+      />
 
-      <div className="flex-1 overflow-y-auto divide-y divide-border">
+      <div className="flex-1 overflow-y-auto">
         {visible.length === 0 && (
-          <div className="px-5 py-10 text-center">
-            <span className="text-[12px] text-muted-foreground/60">
-              No pending approvals · AEGIS is on auto-pilot
-            </span>
-          </div>
+          <EmptyState
+            size="md"
+            title="No pending approvals"
+            description="AEGIS is on auto-pilot"
+          />
         )}
 
-        {visible.map((a) => {
+        {visible.map((a, idx) => {
           const Icon = iconFor(a.action_type);
           const state = busy[a.id];
           return (
-            <div
+            <DataRow
               key={a.id}
-              className="px-4 sm:px-5 py-3.5 flex items-center gap-3 group hover:bg-white/[0.02] transition-colors"
+              borderless={idx === 0}
+              density="compact"
+              leading={
+                <div className="w-8 h-8 shrink-0 rounded-md bg-[var(--brand-accent)]/10 border border-[var(--brand-accent)]/20 flex items-center justify-center text-[var(--brand-accent)]">
+                  <Icon size={15} />
+                </div>
+              }
+              trailing={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => reject(a.id)}
+                    disabled={!!state}
+                    aria-label={`Reject ${describe(a)}`}
+                    className={cn(
+                      'px-3 py-1.5 rounded-md text-[11px] font-medium uppercase tracking-wider',
+                      'border border-white/[0.08] text-muted-foreground',
+                      'hover:bg-white/[0.04] hover:text-foreground',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
+                      'disabled:opacity-40 disabled:cursor-not-allowed transition-colors',
+                    )}
+                  >
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => approve(a.id)}
+                    disabled={!!state}
+                    aria-label={`Approve ${describe(a)}`}
+                    className={cn(
+                      'px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider',
+                      'bg-[var(--brand-accent)] text-black',
+                      'hover:bg-[var(--brand-accent)]/90',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                      'disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
+                    )}
+                  >
+                    {state === 'approve' ? '...' : 'Approve'}
+                  </button>
+                </>
+              }
             >
-              <div className="w-8 h-8 shrink-0 rounded-md bg-[var(--brand-accent)]/10 border border-[var(--brand-accent)]/20 flex items-center justify-center text-[var(--brand-accent)]">
-                <Icon size={15} />
-              </div>
-
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] text-foreground truncate" title={a.ai_reasoning ?? undefined}>
                   {describe(a)}
@@ -118,40 +148,7 @@ export function AISuggestedActions({ actions, onChanged }: AISuggestedActionsPro
                   {timeAgo(a.created_at)}
                 </p>
               </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => reject(a.id)}
-                  disabled={!!state}
-                  aria-label={`Reject ${describe(a)}`}
-                  className={cn(
-                    'px-3 py-1.5 rounded-md text-[11px] font-medium uppercase tracking-wider',
-                    'border border-white/[0.08] text-muted-foreground',
-                    'hover:bg-white/[0.04] hover:text-foreground',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
-                    'disabled:opacity-40 disabled:cursor-not-allowed transition-colors',
-                  )}
-                >
-                  Reject
-                </button>
-                <button
-                  type="button"
-                  onClick={() => approve(a.id)}
-                  disabled={!!state}
-                  aria-label={`Approve ${describe(a)}`}
-                  className={cn(
-                    'px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider',
-                    'bg-[var(--brand-accent)] text-black',
-                    'hover:bg-[var(--brand-accent)]/90',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                    'disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
-                  )}
-                >
-                  {state === 'approve' ? '...' : 'Approve'}
-                </button>
-              </div>
-            </div>
+            </DataRow>
           );
         })}
       </div>
@@ -165,6 +162,6 @@ export function AISuggestedActions({ actions, onChanged }: AISuggestedActionsPro
           {toast}
         </div>
       )}
-    </div>
+    </Panel>
   );
 }

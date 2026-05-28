@@ -9,18 +9,16 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { Panel, SectionHeader } from '@/components/aegis';
 
 interface ThreatDetectionChartProps {
-  /** Array of incidents with detected_at ISO timestamps. */
   incidents: Array<{ detected_at: string; severity: string }>;
   days?: number;
 }
 
 /**
- * ThreatDetectionChart — gradient area chart inspired by image 1.
- * Buckets incidents by day, renders an orange→amber→cyan gradient area.
- * Rules: gridline-subtle, contrast-data, trend-emphasis, axis-readability,
- * tooltip-on-interact, screen-reader-summary.
+ * ThreatDetectionChart — gradient area chart.
+ * Refactored to use <Panel> + <SectionHeader>.
  */
 export function ThreatDetectionChart({ incidents, days = 7 }: ThreatDetectionChartProps) {
   const { data, peak, total } = useMemo(() => {
@@ -52,29 +50,23 @@ export function ThreatDetectionChart({ incidents, days = 7 }: ThreatDetectionCha
     return { data: bins, peak: peakVal, total: totalIn };
   }, [incidents, days]);
 
+  const action = (
+    <div className="flex items-center gap-3">
+      <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70">
+        total
+      </span>
+      <span className="text-[14px] font-semibold tabular-nums text-foreground">{total}</span>
+      {peak > 0 && (
+        <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--brand-accent)]">
+          peak {peak}
+        </span>
+      )}
+    </div>
+  );
+
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            Threat Detection
-          </span>
-          <span className="text-[10px] font-mono text-muted-foreground/50">· {days}d</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70">
-            total
-          </span>
-          <span className="text-[14px] font-semibold tabular-nums text-foreground">
-            {total}
-          </span>
-          {peak > 0 && (
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--brand-accent)]">
-              peak {peak}
-            </span>
-          )}
-        </div>
-      </div>
+    <Panel className="h-full flex flex-col">
+      <SectionHeader title="Threat Detection" subtitle={`· ${days}d`} action={action} />
 
       <div
         className="flex-1 px-2 pt-2 pb-2 min-h-[180px]"
@@ -128,6 +120,6 @@ export function ThreatDetectionChart({ incidents, days = 7 }: ThreatDetectionCha
           </AreaChart>
         </ResponsiveContainer>
       </div>
-    </div>
+    </Panel>
   );
 }

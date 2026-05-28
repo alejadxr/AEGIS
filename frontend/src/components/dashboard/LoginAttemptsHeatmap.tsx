@@ -1,24 +1,17 @@
 'use client';
 
 import { useMemo } from 'react';
+import { Panel, SectionHeader } from '@/components/aegis';
 
 interface LoginAttemptsHeatmapProps {
-  /** Honeypot interactions with timestamps. */
   interactions: Array<{ timestamp: string; source_ip?: string }>;
-  /** Hours of history to render. Default 24. */
   hours?: number;
-  /** Grid columns. Default 12 (so rows = hours/cols * scale). */
   columns?: number;
 }
 
 /**
- * LoginAttemptsHeatmap — dot grid honeypot intensity matching image 1.
- *
- * Buckets interactions into time slots of (hours*60 / cells) minutes. Each cell's
- * orange intensity scales with bucket density. CSS grid of divs (no svg).
- *
- * Rules: color-not-only (also size scale), chart-loading skeleton n/a (cheap),
- * tooltip-on-interact via title attr.
+ * LoginAttemptsHeatmap — dot grid honeypot intensity.
+ * Refactored to use <Panel> + <SectionHeader>.
  */
 export function LoginAttemptsHeatmap({
   interactions,
@@ -46,19 +39,13 @@ export function LoginAttemptsHeatmap({
 
   const peak = Math.max(1, ...matrix);
 
+  const action = (
+    <span className="text-[14px] font-semibold tabular-nums text-foreground">{total}</span>
+  );
+
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            Login Attempts
-          </span>
-          <span className="text-[10px] font-mono text-muted-foreground/50">· {hours}h</span>
-        </div>
-        <span className="text-[14px] font-semibold tabular-nums text-foreground">
-          {total}
-        </span>
-      </div>
+    <Panel className="h-full flex flex-col">
+      <SectionHeader title="Login Attempts" subtitle={`· ${hours}h`} action={action} />
 
       <div
         className="flex-1 p-4 sm:p-5 flex items-center justify-center"
@@ -74,7 +61,6 @@ export function LoginAttemptsHeatmap({
         >
           {matrix.map((c, idx) => {
             const intensity = c / peak; // 0..1
-            // Use both opacity AND scale so colorblind users still see hot cells.
             const size = 0.55 + intensity * 0.45;
             const op = c === 0 ? 0.08 : 0.25 + intensity * 0.75;
             return (
@@ -100,6 +86,6 @@ export function LoginAttemptsHeatmap({
           })}
         </div>
       </div>
-    </div>
+    </Panel>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
+import { Panel, SectionHeader, EmptyState } from '@/components/aegis';
 
 interface TimelineIncident {
   id: string;
@@ -24,14 +25,8 @@ const SEV_COLOR: Record<string, string> = {
 };
 
 /**
- * IncidentTimeline — horizontal time-scrubber from image 1.
- *
- * X-axis: last N days with day-of-month ticks; current time marked by a vertical
- * cursor + pulsing dot. Incidents render as severity-coloured chips positioned
- * proportionally by detected_at.
- *
- * Rules applied: motion-meaning (pulse = "now"), color-not-only (severity also
- * in label + dot), tooltip-on-interact (title attr), large-dataset (clamp 24).
+ * IncidentTimeline — horizontal time-scrubber. Refactored to use <Panel> +
+ * <SectionHeader> + <EmptyState> from the AEGIS primitive library.
  */
 export function IncidentTimeline({ incidents, days = 14 }: IncidentTimelineProps) {
   const { ticks, items, nowPct } = useMemo(() => {
@@ -71,34 +66,37 @@ export function IncidentTimeline({ incidents, days = 14 }: IncidentTimelineProps
   // Distribute chips into 2 rows alternately for legibility
   const rowOf = (idx: number) => idx % 2;
 
+  const legend = (
+    <div className="flex items-center gap-3">
+      {(['critical', 'high', 'medium', 'low'] as const).map((s) => (
+        <span
+          key={s}
+          className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70"
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: SEV_COLOR[s] }}
+            aria-hidden
+          />
+          {s}
+        </span>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            Incident Timeline
-          </span>
-          <span className="text-[10px] font-mono text-muted-foreground/50">
-            · last {days}d
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          {(['critical', 'high', 'medium', 'low'] as const).map((s) => (
-            <span key={s} className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: SEV_COLOR[s] }} aria-hidden />
-              {s}
-            </span>
-          ))}
-        </div>
-      </div>
+    <Panel>
+      <SectionHeader
+        title="Incident Timeline"
+        subtitle={`· last ${days}d`}
+        action={legend}
+      />
 
       {/* Track */}
       <div className="relative px-4 sm:px-6 py-6">
         {/* Background grid line */}
         <div className="absolute left-4 right-4 top-1/2 h-px bg-border" aria-hidden />
 
-        {/* Day ticks */}
         <div className="relative h-32">
           {ticks.map((t, i) => (
             <div
@@ -114,7 +112,6 @@ export function IncidentTimeline({ incidents, days = 14 }: IncidentTimelineProps
             </div>
           ))}
 
-          {/* Incident chips */}
           {items.map((it, idx) => {
             const row = rowOf(idx);
             const top = row === 0 ? '6%' : '64%';
@@ -139,11 +136,8 @@ export function IncidentTimeline({ incidents, days = 14 }: IncidentTimelineProps
                     style={{ background: it.color }}
                     aria-hidden
                   />
-                  <span className="text-[10px] text-foreground/90 truncate">
-                    {it.title}
-                  </span>
+                  <span className="text-[10px] text-foreground/90 truncate">{it.title}</span>
                 </div>
-                {/* Connector */}
                 <div
                   className="mx-auto w-px"
                   style={{
@@ -174,13 +168,13 @@ export function IncidentTimeline({ incidents, days = 14 }: IncidentTimelineProps
         </div>
 
         {items.length === 0 && (
-          <div className="text-center py-2">
-            <span className="text-[11px] text-muted-foreground/60">
-              No incidents in the last {days} days · system quiet
-            </span>
-          </div>
+          <EmptyState
+            size="sm"
+            title={`No incidents in the last ${days} days`}
+            description="System quiet"
+          />
         )}
       </div>
-    </div>
+    </Panel>
   );
 }
