@@ -5,6 +5,8 @@ import { Search01Icon } from 'hugeicons-react';
 import { cn } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api';
 import { buildAbuseMailto } from '@/lib/abuse-mailto';
+import { Panel } from '@/components/aegis/Panel';
+import { EmptyState } from '@/components/aegis/EmptyState';
 
 type Confidence = {
   tor: number; vpn: number; proxy: number; datacenter: number; attacker: number;
@@ -278,7 +280,7 @@ function renderIntelCard(
   if (intel.internal) {
     const c = classifyInternal(intel.ip);
     return (
-      <div className="bg-card border border-border rounded-2xl p-6">
+      <Panel padding="lg" as="div">
         <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1">Address</p>
         <p className="text-[18px] text-foreground font-mono mb-3">{intel.ip}</p>
         <div className="flex items-center gap-2 mb-2">
@@ -291,7 +293,7 @@ function renderIntelCard(
           <span className="text-[9px] font-mono text-muted-foreground/40">[algorithm:safe_net_filter]</span>
         </div>
         <p className="text-[12px] text-muted-foreground">{c.hint}</p>
-      </div>
+      </Panel>
     );
   }
   const hostnameLooksTor = !!intel.hostname && /(tor|exit)/i.test(intel.hostname);
@@ -316,7 +318,7 @@ function renderIntelCard(
     : null;
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-6 space-y-4 animate-fade-in">
+    <Panel padding="lg" as="div" className="space-y-4 animate-fade-in">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1">Address</p>
@@ -971,7 +973,7 @@ function renderIntelCard(
           </p>
         </div>
       )}
-    </div>
+    </Panel>
   );
 }
 
@@ -1045,7 +1047,8 @@ export default function IPIntelPage() {
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="bg-card border border-border rounded-2xl p-5">
+      <Panel as="div" padding="md">
+      <form onSubmit={onSubmit} className="space-y-0">
         <label htmlFor="ip-input" className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 block">
           Address
         </label>
@@ -1126,17 +1129,19 @@ export default function IPIntelPage() {
           </div>
         )}
       </form>
+      </Panel>
 
       {intel && renderIntelCard(intel, (ip) => { setQuery(ip); lookup(ip); })}
 
       {!intel && !error && !loading && (
-        <div className="bg-card border border-border rounded-2xl p-6 text-center">
-          <Search01Icon size={24} className="mx-auto text-muted-foreground/40 mb-2" />
-          <p className="text-[13px] text-muted-foreground">
-            Enter an IP address to investigate. Same enrichment AEGIS attaches
-            to every incident — manually queryable here.
-          </p>
-        </div>
+        <Panel padding="lg" as="div">
+          <EmptyState
+            icon={<Search01Icon size={32} />}
+            title="Enter an IP address to investigate"
+            description="Same enrichment AEGIS attaches to every incident — manually queryable here."
+            size="md"
+          />
+        </Panel>
       )}
     </div>
   );

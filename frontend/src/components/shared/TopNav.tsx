@@ -255,7 +255,7 @@ export function TopNav() {
                     href={section.href}
                     aria-current={isActive ? 'page' : undefined}
                     className={cn(
-                      'relative inline-flex items-center px-4 text-[13px] font-medium transition-colors duration-150 outline-none',
+                      'relative inline-flex items-center px-4 text-[13px] font-medium motion-safe:transition-colors motion-safe:duration-150 outline-none',
                       'focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--brand-accent)_55%,transparent)] focus-visible:ring-offset-0 rounded-sm',
                       isActive
                         ? 'text-foreground'
@@ -265,7 +265,7 @@ export function TopNav() {
                     {section.label}
                     <span
                       className={cn(
-                        'absolute left-3 right-3 -bottom-px h-[2px] rounded-full transition-opacity duration-150',
+                        'absolute left-3 right-3 -bottom-px h-[2px] rounded-full motion-safe:transition-opacity motion-safe:duration-150',
                         isActive ? 'opacity-100' : 'opacity-0'
                       )}
                       style={{ backgroundColor: 'var(--brand-accent)' }}
@@ -313,6 +313,8 @@ export function TopNav() {
               type="button"
               onClick={openNotifications}
               aria-label="Notifications"
+              aria-haspopup="menu"
+              aria-expanded={showNotifications}
               className="relative w-9 h-9 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--brand-accent)_55%,transparent)]"
             >
               <Notification03Icon size={16} />

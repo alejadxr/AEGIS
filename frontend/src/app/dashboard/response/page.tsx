@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import { SecurityCheckIcon, Clock01Icon, FlashIcon } from 'hugeicons-react';
 import { CheckCircle, ChevronDown, ChevronUp, Shield } from 'lucide-react';
-import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { StatusIndicator } from '@/components/shared/StatusIndicator';
 import { LoadingState } from '@/components/shared/LoadingState';
+import { Panel } from '@/components/aegis/Panel';
+import { SectionHeader } from '@/components/aegis/SectionHeader';
+import { EmptyState } from '@/components/aegis/EmptyState';
 import { api } from '@/lib/api';
 import { cn, formatRelativeTime, formatDate } from '@/lib/utils';
 import { buildAbuseMailto, abuseContactOf } from '@/lib/abuse-mailto';
@@ -280,16 +282,11 @@ export default function ResponsePage() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Threat Tactics Activity Heatmap */}
-        <Card className="overflow-hidden rounded-xl py-0">
-          <CardHeader className="border-b border-border px-4 sm:px-6 py-4">
-            <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Threat Tactics Activity</CardTitle>
-            <CardDescription className="text-[11px] mt-0.5 hidden sm:block">MITRE ATT&CK tactic frequency over the past 7 days</CardDescription>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-6 overflow-x-auto">
+        <Panel>
+          <SectionHeader title="Threat Tactics Activity" subtitle="· MITRE ATT&CK over 7 days" />
+          <div className="p-4 sm:p-6 overflow-x-auto">
             {!hasIncidents ? (
-              <div className="h-40 flex items-center justify-center">
-                <p className="text-muted-foreground/50 text-[13px]">No data yet</p>
-              </div>
+              <EmptyState size="md" title="No data yet" />
             ) : (
               <>
                 <div className="flex mb-2">
@@ -320,20 +317,15 @@ export default function ResponsePage() {
                 </div>
               </>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
 
         {/* Response Status Distribution */}
-        <Card className="overflow-hidden rounded-xl py-0">
-          <CardHeader className="border-b border-border px-4 sm:px-6 py-4">
-            <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Response Status</CardTitle>
-            <CardDescription className="text-[11px] mt-0.5 hidden sm:block">Incident outcomes by day of the week</CardDescription>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-6 h-[200px] sm:h-[240px]">
+        <Panel>
+          <SectionHeader title="Response Status" subtitle="· Incident outcomes by day" />
+          <div className="p-4 sm:p-6 h-[200px] sm:h-[240px]">
             {!hasIncidents ? (
-              <div className="h-full flex items-center justify-center">
-                <p className="text-muted-foreground/50 text-[13px]">No data yet</p>
-              </div>
+              <EmptyState size="md" title="No data yet" />
             ) : (
               <ChartContainer config={statusChartConfig} className="h-full w-full aspect-auto">
                 <BarChart data={statusDistData} barCategoryGap={6}>
@@ -356,8 +348,8 @@ export default function ResponsePage() {
                 </BarChart>
               </ChartContainer>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
       </div>
 
       {/* Tab Section */}
@@ -382,15 +374,20 @@ export default function ResponsePage() {
         <TabsContent value="incidents">
           <div className="space-y-3">
             {incidents.length === 0 ? (
-              <Card className="rounded-xl p-12 text-center">
-                <SecurityCheckIcon size={48} className="text-[var(--success)] mx-auto mb-3 opacity-50" />
-                <p className="text-muted-foreground text-[13px]">No active incidents. Your perimeter is secure.</p>
-              </Card>
+              <Panel padding="lg">
+                <EmptyState
+                  icon={<SecurityCheckIcon size={48} />}
+                  title="No active incidents"
+                  description="Your perimeter is secure."
+                  size="lg"
+                />
+              </Panel>
             ) : (
               incidents.map((incident) => (
-                <Card
+                <Panel
+                  as="article"
                   key={incident.id}
-                  className="overflow-hidden rounded-xl py-0 transition-all duration-200 hover:border-border/80"
+                  className="transition-all duration-200 hover:border-white/[0.12]"
                 >
                   <button
                     onClick={() => setExpandedIncident(expandedIncident === incident.id ? null : incident.id)}
@@ -683,7 +680,7 @@ export default function ResponsePage() {
                       )}
                     </div>
                   )}
-                </Card>
+                </Panel>
               ))
             )}
           </div>
@@ -693,13 +690,16 @@ export default function ResponsePage() {
         <TabsContent value="actions">
           <div className="space-y-3">
             {actions.length === 0 ? (
-              <Card className="rounded-xl p-12 text-center">
-                <FlashIcon size={48} className="text-muted-foreground/50 mx-auto mb-3 opacity-50" />
-                <p className="text-muted-foreground text-[13px]">No response actions recorded yet.</p>
-              </Card>
+              <Panel padding="lg">
+                <EmptyState
+                  icon={<FlashIcon size={48} />}
+                  title="No response actions recorded yet"
+                  size="lg"
+                />
+              </Panel>
             ) : (
               actions.map((action) => (
-                <Card key={action.id} className="rounded-xl p-4 py-4 hover:border-border/80 transition-colors">
+                <Panel as="article" key={action.id} padding="sm" className="hover:border-white/[0.12] transition-colors">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <StatusIndicator status={action.status} />
@@ -727,7 +727,7 @@ export default function ResponsePage() {
                       <p className="text-[13px] text-muted-foreground">{action.ai_reasoning}</p>
                     </div>
                   )}
-                </Card>
+                </Panel>
               ))
             )}
           </div>
@@ -735,17 +735,18 @@ export default function ResponsePage() {
 
         {/* Guardrails Tab */}
         <TabsContent value="guardrails">
-          <Card className="overflow-hidden rounded-xl py-0">
-            <CardHeader className="border-b border-border px-6 py-4">
-              <CardTitle className="text-[13px] font-medium uppercase tracking-wider">Autonomous Response Configuration</CardTitle>
-              <CardDescription className="text-[11px] mt-0.5">Control which actions AEGIS can execute automatically without human approval</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
+          <Panel>
+            <SectionHeader
+              title="Autonomous Response Configuration"
+              subtitle="· control which actions AEGIS executes automatically"
+            />
+            <div>
               {Object.keys(guardrails).length === 0 ? (
-                <div className="p-12 text-center">
-                  <Shield className="w-12 h-12 text-muted-foreground/50 mx-auto mb-3 opacity-50" />
-                  <p className="text-muted-foreground text-[13px]">No guardrails configured yet.</p>
-                </div>
+                <EmptyState
+                  icon={<Shield className="w-12 h-12" />}
+                  title="No guardrails configured yet"
+                  size="lg"
+                />
               ) : (
                 <div>
                   {Object.entries(guardrails).map(([key, enabled], index) => (
@@ -774,8 +775,8 @@ export default function ResponsePage() {
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </Panel>
         </TabsContent>
       </Tabs>
     </div>
