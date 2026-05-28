@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { mitreLabel } from '@/lib/mitre';
 
 interface ChainMatch {
   id: string;
@@ -261,7 +262,7 @@ export default function EdrDashboardPage() {
                       </span>
                       {c.mitre_technique && (
                         <Badge variant="secondary" className="text-[10px] font-mono text-[var(--chart-5)] px-2 py-0.5">
-                          {c.mitre_technique}
+                          {mitreLabel(c.mitre_technique)}
                         </Badge>
                       )}
                     </div>

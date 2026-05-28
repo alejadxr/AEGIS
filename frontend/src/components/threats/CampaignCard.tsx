@@ -15,6 +15,7 @@ import {
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import { resolveTactic, severityTone, countryFlagEmoji } from './mitreTactics';
+import { mitreLabel, mitreInfo } from '@/lib/mitre';
 import type { CampaignSummary } from './KPIStrip';
 
 type Detail = Awaited<ReturnType<typeof api.threats.campaignDetail>>;
@@ -102,7 +103,7 @@ export function CampaignCard({ campaign, defaultOpen = false }: CampaignCardProp
         <div className="flex flex-col min-w-0 sm:flex-row sm:items-center sm:gap-3">
           <span className="text-[11px] font-mono text-muted-foreground">{campaign.cluster_id}</span>
           <span className="text-[13px] sm:text-[14px] font-semibold text-foreground font-mono truncate">
-            {campaign.mitre_technique || 'unspecified'}
+            {campaign.mitre_technique ? mitreLabel(campaign.mitre_technique) : 'unspecified'}
           </span>
           {tactic && (
             <span
@@ -225,6 +226,12 @@ function OverviewTab({ detail }: { detail: Detail }) {
         <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Technique</div>
         <div className="font-mono text-[13px] text-foreground">{detail.technique_detail.id || '—'}</div>
         <div className="text-[13px] text-foreground">{detail.technique_detail.name}</div>
+        {detail.technique_detail.id && (() => {
+          const info = mitreInfo(detail.technique_detail.id);
+          return info ? (
+            <div className="text-[12px] text-muted-foreground italic">{info.plain}</div>
+          ) : null;
+        })()}
         <div className="text-[12px] text-muted-foreground">Tactic: {detail.technique_detail.tactic}</div>
         {detail.technique_detail.url && (
           <a
