@@ -47,6 +47,8 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
@@ -119,8 +121,15 @@ class CanaryOut(BaseModel):
     real_ip_webrtc: Optional[str] = None
     fingerprint_hash: Optional[str] = None
     headless_detected: bool = False
+    browser_meta: Optional[dict] = None
     honeypot_source: Optional[str] = None
     captured_at: str
+
+
+class CanaryListOut(BaseModel):
+    items: list[CanaryOut]
+    count: int
+    total: int
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +226,7 @@ async def submit_canary(
         real_ip_webrtc=canary.real_ip_webrtc,
         fingerprint_hash=canary.fingerprint_hash,
         headless_detected=bool(canary.headless_detected),
+        browser_meta=canary.browser_meta or {},
         honeypot_source=canary.honeypot_source,
         captured_at=canary.captured_at.isoformat(),
     )
@@ -226,30 +236,55 @@ async def submit_canary(
 # GET — analyst read-side (API key required)
 # ---------------------------------------------------------------------------
 
-@router.get("/canaries", response_model=list[CanaryOut])
+@router.get("/canaries", response_model=CanaryListOut)
 async def list_canaries(
+    ip: Optional[str] = Query(None, description="Filter by source IP"),
     limit: int = Query(50, ge=1, le=500),
-    source_ip: Optional[str] = Query(None),
+    hours: int = Query(24, ge=1, le=8760, description="Time window in hours"),
     auth: AuthContext = Depends(require_viewer),  # noqa: ARG001 (auth gate)
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(HoneypotCanary).order_by(desc(HoneypotCanary.captured_at)).limit(limit)
-    if source_ip:
-        q = q.where(HoneypotCanary.source_ip == source_ip)
-    result = await db.execute(q)
+    """
+    List honeypot canary captures.
+
+    Filters:
+    - ip: restrict to a specific source IP
+    - hours: only captures within the last N hours (default 24)
+    - limit: max items to return (default 50)
+
+    Response includes `count` (items returned) and `total` (matching rows before limit).
+    """
+    from sqlalchemy import func
+
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+    base_q = select(HoneypotCanary).where(HoneypotCanary.captured_at >= cutoff)
+    if ip:
+        base_q = base_q.where(HoneypotCanary.source_ip == ip)
+
+    # Total count (before limit)
+    count_q = select(func.count()).select_from(base_q.subquery())
+    total: int = (await db.scalar(count_q)) or 0
+
+    # Paginated rows
+    rows_q = base_q.order_by(desc(HoneypotCanary.captured_at)).limit(limit)
+    result = await db.execute(rows_q)
     rows = result.scalars().all()
-    return [
+
+    items = [
         CanaryOut(
             id=r.id,
             source_ip=r.source_ip,
             real_ip_webrtc=r.real_ip_webrtc,
             fingerprint_hash=r.fingerprint_hash,
             headless_detected=bool(r.headless_detected),
+            browser_meta=r.browser_meta or {},
             honeypot_source=r.honeypot_source,
             captured_at=r.captured_at.isoformat(),
         )
         for r in rows
     ]
+    return CanaryListOut(items=items, count=len(items), total=total)
 
 
 async def canaries_for_ip(db: AsyncSession, ip: str, limit: int = 10) -> list[dict]:
