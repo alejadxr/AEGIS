@@ -3,11 +3,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { hasAuth } from '@/lib/api';
-import { Sidebar } from '@/components/shared/Sidebar';
-import { Header } from '@/components/shared/Header';
+import { TopNav } from '@/components/shared/TopNav';
+import { SectionTabs } from '@/components/nav/SectionTabs';
 import { AskAI } from '@/components/shared/AskAI';
 import { GuideTour } from '@/components/shared/GuideTour';
-import { cn } from '@/lib/utils';
 
 export default function DashboardLayout({
   children,
@@ -16,8 +15,6 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
@@ -36,18 +33,6 @@ export default function DashboardLayout({
     localStorage.setItem('aegis_guide_seen', '1');
   }, []);
 
-  const handleCollapsedChange = useCallback((c: boolean) => {
-    setCollapsed(c);
-  }, []);
-
-  const toggleMobile = useCallback(() => {
-    setMobileOpen((prev) => !prev);
-  }, []);
-
-  const closeMobile = useCallback(() => {
-    setMobileOpen(false);
-  }, []);
-
   if (!ready) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
@@ -58,23 +43,11 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <Sidebar
-        onCollapsedChange={handleCollapsedChange}
-        mobileOpen={mobileOpen}
-        onMobileClose={closeMobile}
-      />
-      <div
-        className={cn(
-          'flex flex-col min-h-screen transition-all duration-200',
-          'pl-0',
-          collapsed ? 'md:pl-[60px]' : 'md:pl-[224px]'
-        )}
-      >
-        <Header onMobileMenuToggle={toggleMobile} />
-        <main className="flex-1 p-4 md:p-5 overflow-auto">
-          {children}
-        </main>
-      </div>
+      <TopNav />
+      <SectionTabs />
+      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {children}
+      </main>
       <AskAI />
       {showGuide && <GuideTour onClose={handleGuideClose} />}
     </div>
