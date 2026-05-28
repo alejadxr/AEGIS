@@ -504,6 +504,55 @@ export const api = {
         min_distinct_ips: number;
       }>(`/threats/campaigns${q ? '?' + q : ''}`);
     },
+    campaignDetail: (clusterId: string, windowHours = 168) =>
+      request<{
+        cluster_id: string;
+        ttp_fingerprint: string;
+        mitre_technique: string | null;
+        mitre_tactic: string | null;
+        technique_detail: {
+          id: string | null;
+          name: string;
+          tactic: string;
+          url: string | null;
+          description: string;
+        };
+        distinct_ips_count: number;
+        total_incidents: number;
+        first_seen: string;
+        last_seen: string;
+        duration_hours: number;
+        is_active: boolean;
+        severity_distribution: Record<string, number>;
+        recommended_action: string;
+        ips: Array<{
+          ip: string;
+          country?: string | null;
+          asn?: string | number | null;
+          org?: string | null;
+          classification?: string | null;
+          is_tor?: boolean | null;
+          is_vpn?: boolean | null;
+          risk_score?: number | null;
+          blocked?: boolean;
+          error?: string;
+        }>;
+        incidents: Array<{
+          id: string;
+          title: string;
+          severity: string;
+          status: string;
+          source_ip: string | null;
+          detected_at: string | null;
+        }>;
+        window_hours: number;
+        investigated: null | { at: string; by_email?: string | null; by_user_id?: string | null };
+      }>(`/threats/campaigns/${encodeURIComponent(clusterId)}?window_hours=${windowHours}`),
+    markCampaignInvestigated: (clusterId: string) =>
+      request<{ ok: boolean; cluster_id: string; entry: { at: string; by_email?: string | null } }>(
+        `/threats/campaigns/${encodeURIComponent(clusterId)}/investigated`,
+        { method: 'POST' },
+      ),
   },
 
   // IP Intelligence (free public providers — no AI involved)
