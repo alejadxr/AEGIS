@@ -284,6 +284,17 @@ export const api = {
         country_code: string;
         count: number;
       }>>('/dashboard/threat-map'),
+    monitoredApps: () =>
+      request<{
+        apps: Array<{
+          name: string;
+          status: string;
+          open_incidents: number;
+          last_activity: string | null;
+          resolved_count: number;
+        }>;
+        count: number;
+      }>('/dashboard/monitored-apps'),
   },
 
   // Surface
@@ -450,6 +461,27 @@ export const api = {
         last_seen: string;
         total_interactions: number;
       }>>('/phantom/attackers'),
+    canaries: (params?: { ip?: string; limit?: number; hours?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.ip) qs.set('ip', params.ip);
+      if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+      if (params?.hours !== undefined) qs.set('hours', String(params.hours));
+      const q = qs.toString();
+      return request<{
+        items: Array<{
+          id: string;
+          source_ip: string;
+          real_ip_webrtc: string | null;
+          fingerprint_hash: string | null;
+          headless_detected: boolean;
+          browser_meta: Record<string, unknown> | null;
+          honeypot_source: string | null;
+          captured_at: string;
+        }>;
+        count: number;
+        total: number;
+      }>(`/phantom/canaries${q ? '?' + q : ''}`);
+    },
   },
 
   // Threats
