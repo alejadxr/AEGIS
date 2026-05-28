@@ -11,6 +11,7 @@ import { AISuggestedActions } from '@/components/dashboard/AISuggestedActions';
 import { ThreatDetectionChart } from '@/components/dashboard/ThreatDetectionChart';
 import { LoginAttemptsHeatmap } from '@/components/dashboard/LoginAttemptsHeatmap';
 import { AssetRiskTable, type AssetRiskRow } from '@/components/dashboard/AssetRiskTable';
+import { Panel, SectionHeader } from '@/components/aegis';
 import { api } from '@/lib/api';
 import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
 import { cn } from '@/lib/utils';
@@ -328,22 +329,16 @@ export default function DashboardPage() {
           <AssetRiskTable rows={assetRows} />
         </div>
         <div className="lg:col-span-4">
-          <div className="bg-card border border-border rounded-2xl overflow-hidden h-full flex flex-col">
-            <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-border">
-              <div className="flex items-center gap-2">
-                <Radar size={13} className="text-muted-foreground/60" />
-                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                  Global Threat Map
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-muted-foreground/50">
-                {threatMap.length} sources
-              </span>
-            </div>
+          <Panel className="h-full flex flex-col">
+            <SectionHeader
+              title="Global Threat Map"
+              icon={<Radar size={13} />}
+              count={`${threatMap.length} sources`}
+            />
             <div className="flex-1 min-h-[360px] relative">
               <GlobalThreatMap data={threatMap} />
             </div>
-          </div>
+          </Panel>
         </div>
       </div>
     </div>
