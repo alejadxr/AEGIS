@@ -515,8 +515,9 @@ export const api = {
         source: string;
       }>>(`/threats/intel/search?q=${encodeURIComponent(query)}`),
     exportFeed: () => request<Blob>('/threats/feed'),
+    // NOTE: sharingStats was pointing at a 404 path. Use api.intel.stats() instead.
     sharingStats: () =>
-      request<{ iocs_shared: number; iocs_received: number; auto_blocked: number }>('/threats/sharing/stats'),
+      request<{ iocs_submitted: number; iocs_received: number; last_sync: string | null; unique_contributors: number; sync_errors: number; sharing_enabled: boolean; share_mode: string; is_hub: boolean; hub_url: string }>('/intel/community/stats'),
     campaigns: (params?: { limit?: number; window_hours?: number; min_distinct_ips?: number }) => {
       const qs = new URLSearchParams();
       if (params?.limit) qs.set('limit', String(params.limit));
@@ -1122,6 +1123,114 @@ export const api = {
       qs.set('limit', String(limit));
       return request<Array<DeceptionBreadcrumbHit>>(`/deception/breadcrumbs?${qs.toString()}`);
     },
+  },
+
+  // Intel Cloud — Community IOC sharing (opt-in, Postgres-backed)
+  intel: {
+    /** GET sharing stats (submitted, received, contributors, errors). */
+    stats: () =>
+      request<{
+        iocs_submitted: number;
+        iocs_received: number;
+        last_sync: string | null;
+        unique_contributors: number;
+        sync_errors: number;
+        sharing_enabled: boolean;
+        share_mode: string;
+        is_hub: boolean;
+        hub_url: string;
+      }>('/intel/community/stats'),
+
+    /** GET current sharing configuration. */
+    config: () =>
+      request<{
+        intel_sharing_enabled: boolean;
+        share_mode: string;
+        hub_url: string;
+        auto_submit: boolean;
+        min_confidence: number;
+      }>('/intel/sharing/config'),
+
+    /** PUT sharing configuration (admin only). */
+    updateConfig: (body: {
+      intel_sharing_enabled?: boolean;
+      share_mode?: string;
+      hub_url?: string;
+      auto_submit?: boolean;
+      min_confidence?: number;
+      cloud_secret?: string;
+    }) =>
+      request<{
+        intel_sharing_enabled: boolean;
+        share_mode: string;
+        hub_url: string;
+        auto_submit: boolean;
+        min_confidence: number;
+      }>('/intel/sharing/config', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+
+    /** POST an IOC to the community (requires sharing enabled + share mode). */
+    shareIoc: (body: {
+      ioc_type: string;
+      ioc_value: string;
+      threat_type: string;
+      confidence?: number;
+      mitre_techniques?: string[];
+      first_seen?: string;
+    }) =>
+      request<{ status: string; ioc_id?: string; report_count?: number; reason?: string }>('/intel/share', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    /** GET paginated community IOCs. */
+    community: (params?: {
+      page?: number;
+      per_page?: number;
+      ioc_type?: string;
+      threat_type?: string;
+      verified_only?: boolean;
+      min_confidence?: number;
+      since?: string;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params?.page) qs.set('page', String(params.page));
+      if (params?.per_page) qs.set('per_page', String(params.per_page));
+      if (params?.ioc_type) qs.set('ioc_type', params.ioc_type);
+      if (params?.threat_type) qs.set('threat_type', params.threat_type);
+      if (params?.verified_only) qs.set('verified_only', 'true');
+      if (params?.min_confidence !== undefined) qs.set('min_confidence', String(params.min_confidence));
+      if (params?.since) qs.set('since', params.since);
+      const q = qs.toString();
+      return request<{
+        iocs: Array<{
+          id: string;
+          ioc_type: string;
+          ioc_value: string;
+          threat_type: string;
+          confidence: number;
+          mitre_techniques: string[];
+          source_hash: string;
+          report_count: number;
+          verified: boolean;
+          first_seen: string | null;
+          last_seen: string | null;
+          expires_at: string | null;
+        }>;
+        total: number;
+        page: number;
+        per_page: number;
+        pages: number;
+      }>(`/intel/community${q ? '?' + q : ''}`);
+    },
+
+    /** POST manual sync with the cloud. */
+    sync: () =>
+      request<{ status: string; new: number; updated: number; decayed: number; errors: number; message?: string }>('/intel/sync', {
+        method: 'POST',
+      }),
   },
 };
 
