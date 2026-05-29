@@ -35,20 +35,6 @@ const COUNTRY_COORDS: Record<string, { lat: number; lng: number; label: string }
   CA: { lat: 56.13, lng: -106.35, label: 'Canada' },
 };
 
-const COUNTRY_FLAGS: Record<string, string> = {
-  CN: 'CN', RU: 'RU', US: 'US', BR: 'BR', IR: 'IR',
-  KP: 'KP', IN: 'IN', DE: 'DE', NL: 'NL', KR: 'KR',
-  GB: 'GB', FR: 'FR', UA: 'UA', TR: 'TR', VN: 'VN',
-  TH: 'TH', PK: 'PK', NG: 'NG', ZA: 'ZA', MX: 'MX',
-  HK: 'HK', JP: 'JP', AU: 'AU', CA: 'CA',
-};
-
-interface TooltipState {
-  entry: ThreatMapEntry;
-  x: number;
-  y: number;
-}
-
 function markerColor(count: number, maxCount: number): string {
   const ratio = count / maxCount;
   if (ratio > 0.66) return 'var(--danger)';
@@ -56,15 +42,24 @@ function markerColor(count: number, maxCount: number): string {
   return 'var(--brand)';
 }
 
+interface TooltipState {
+  entry: ThreatMapEntry;
+  x: number;
+  y: number;
+  color: string;
+}
+
 export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
-  const [zoom, setZoom] = useState(1);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true);
   const maxCount = data.length > 0 ? Math.max(...data.map((d) => d.count)) : 1;
 
   useEffect(() => {
     const check = () => {
-      setIsDark(document.documentElement.getAttribute('data-theme') === 'dark' || document.documentElement.classList.contains('dark'));
+      setIsDark(
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+          document.documentElement.classList.contains('dark'),
+      );
     };
     check();
     const obs = new MutationObserver(check);
@@ -76,185 +71,254 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
   const maps = typeof window !== 'undefined' ? require('react-simple-maps') : null;
   const geoUrl = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 
+  const mapBg = isDark ? '#0D0D0F' : '#F4F4F5';
+  const mapLand = isDark ? '#1A1A1F' : '#D4D4D8';
+  const mapStroke = isDark ? '#2A2A32' : '#A1A1AA';
+  const tooltipBg = isDark ? 'rgba(13,13,15,0.97)' : 'rgba(244,244,245,0.97)';
+  const tooltipText = isDark ? '#FAFAFA' : '#18181B';
+  const tooltipMuted = isDark ? '#52525B' : '#71717A';
+
   if (!maps || data.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
-        <p className="text-[13px] text-muted-foreground/60 font-mono">No threat data yet</p>
+        <p
+          className="text-[11px] text-muted-foreground/60"
+          style={{ fontFamily: 'Azeret Mono, monospace', letterSpacing: '0.15em' }}
+        >
+          // NO THREAT DATA
+        </p>
       </div>
     );
   }
 
-  const activeColor = tooltip ? markerColor(tooltip.entry.count, maxCount) : 'var(--brand)';
-  const activeRatio = tooltip ? tooltip.entry.count / maxCount : 0;
-  const activeSeverity = activeRatio > 0.66 ? 'CRITICAL' : activeRatio > 0.33 ? 'HIGH' : 'LOW';
+  // CRT scanline + dot grid CSS (overlay only — no rewrite of SVG)
+  const scanlineStyle: React.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    pointerEvents: 'none',
+    zIndex: 2,
+    backgroundImage: [
+      // Horizontal scanlines every 3px
+      'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 3px)',
+      // Dot grid every 8px
+      'radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)',
+    ].join(', '),
+    backgroundSize: '100% 3px, 8px 8px',
+    mixBlendMode: 'overlay',
+  };
 
-  const mapLand = isDark ? '#1E1F24' : '#E4E4E7';
-  const mapStroke = isDark ? '#27282F' : '#D4D4D8';
-  const mapHover = isDark ? '#27282F' : '#D4D4D8';
-  const mapBg = isDark ? '#18181B' : '#FFFFFF';
-  const tooltipBg = isDark ? 'rgba(24,24,27,0.95)' : 'rgba(255,255,255,0.95)';
-  const tooltipText = isDark ? '#FAFAFA' : '#18181B';
-  const tooltipMuted = isDark ? '#A1A1AA' : '#71717A';
-  const tooltipDivider = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const vignette: React.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    pointerEvents: 'none',
+    zIndex: 3,
+    background: `radial-gradient(ellipse at center, transparent 50%, ${mapBg}CC 100%)`,
+  };
 
   return (
-    <div className="relative w-full h-full select-none overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 z-[1]"
+    <div
+      className="relative w-full h-full select-none overflow-x-auto overflow-y-hidden"
+      style={{ background: mapBg }}
+    >
+      {/* CRT scanline + dot grid overlay */}
+      <div style={scanlineStyle} aria-hidden />
+      {/* Vignette fade */}
+      <div style={vignette} aria-hidden />
+
+      {/* Pixel map */}
+      <maps.ComposableMap
+        projectionConfig={{ rotate: [-10, 0, 0], scale: 147 }}
+        width={800}
+        height={400}
         style={{
-          background: `radial-gradient(ellipse at center, transparent 55%, ${mapBg} 100%)`,
+          width: '100%',
+          height: '100%',
+          imageRendering: 'pixelated',
         }}
-      />
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-12 z-[1]"
-        style={{ background: `linear-gradient(to right, ${mapBg}, transparent)` }}
-      />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-12 z-[1]"
-        style={{ background: `linear-gradient(to left, ${mapBg}, transparent)` }}
-      />
+      >
+        <maps.Geographies geography={geoUrl}>
+          {({ geographies }: { geographies: Array<{ rsmKey: string }> }) =>
+            geographies.map((geo) => (
+              <maps.Geography
+                key={geo.rsmKey}
+                geography={geo}
+                fill={mapLand}
+                stroke={mapStroke}
+                strokeWidth={0.5}
+                style={{
+                  default: { outline: 'none' },
+                  hover: { fill: mapLand, outline: 'none' },
+                  pressed: { outline: 'none' },
+                }}
+              />
+            ))
+          }
+        </maps.Geographies>
 
-      <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
-        <button
-          onClick={() => setZoom((z) => Math.min(z + 0.5, 4))}
-          className="w-7 h-7 rounded-xl bg-muted/50 hover:bg-muted border border-border text-muted-foreground hover:text-foreground text-sm font-semibold flex items-center justify-center transition-all duration-150 font-mono"
-          aria-label="Zoom in"
-        >
-          +
-        </button>
-        <button
-          onClick={() => setZoom((z) => Math.max(z - 0.5, 1))}
-          disabled={zoom <= 1}
-          className="w-7 h-7 rounded-xl bg-muted/50 hover:bg-muted border border-border text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold flex items-center justify-center transition-all duration-150 font-mono"
-          aria-label="Zoom out"
-        >
-          −
-        </button>
-      </div>
+        {data.map((entry) => {
+          const coords = COUNTRY_COORDS[entry.country_code];
+          if (!coords) return null;
+          const normalized = entry.count / maxCount;
+          // Pixel size: 3–7px square, steps of 2
+          const px = 3 + Math.round(normalized * 2) * 2;
+          const color = markerColor(entry.count, maxCount);
+          const isActive = tooltip?.entry.country_code === entry.country_code;
 
+          return (
+            <maps.Marker
+              key={entry.country_code}
+              coordinates={[coords.lng, coords.lat]}
+              onMouseEnter={(e: React.MouseEvent<SVGElement>) => {
+                const svg = (e.currentTarget as SVGElement).closest('svg');
+                const svgRect = svg?.getBoundingClientRect();
+                const el = (e.currentTarget as SVGElement).getBoundingClientRect();
+                setTooltip({
+                  entry,
+                  x: el.left - (svgRect?.left ?? 0) + el.width / 2,
+                  y: el.top - (svgRect?.top ?? 0),
+                  color,
+                });
+              }}
+              onMouseLeave={() => setTooltip(null)}
+            >
+              {/* Outer pixel glow ring — square */}
+              {isActive && (
+                <rect
+                  x={-px * 2}
+                  y={-px * 2}
+                  width={px * 4}
+                  height={px * 4}
+                  fill={color}
+                  opacity={0.12}
+                  style={{ shapeRendering: 'crispEdges' }}
+                />
+              )}
+              {/* Pulse ring — square, animated */}
+              <rect
+                x={-px * 1.5}
+                y={-px * 1.5}
+                width={px * 3}
+                height={px * 3}
+                fill="none"
+                stroke={color}
+                strokeWidth={0.8}
+                opacity={0}
+                style={{ shapeRendering: 'crispEdges' }}
+              >
+                <animate attributeName="opacity" values="0.5;0;0.5" dur="2.5s" repeatCount="indefinite" />
+                <animate attributeName="x" values={`${-px * 1.5};${-px * 2};${-px * 1.5}`} dur="2.5s" repeatCount="indefinite" />
+                <animate attributeName="y" values={`${-px * 1.5};${-px * 2};${-px * 1.5}`} dur="2.5s" repeatCount="indefinite" />
+                <animate attributeName="width" values={`${px * 3};${px * 4};${px * 3}`} dur="2.5s" repeatCount="indefinite" />
+                <animate attributeName="height" values={`${px * 3};${px * 4};${px * 3}`} dur="2.5s" repeatCount="indefinite" />
+              </rect>
+              {/* Core pixel square marker */}
+              <rect
+                x={-px / 2}
+                y={-px / 2}
+                width={px}
+                height={px}
+                fill={color}
+                opacity={isActive ? 1 : 0.9}
+                style={{
+                  cursor: 'pointer',
+                  shapeRendering: 'crispEdges',
+                  filter: isActive ? `drop-shadow(0 0 ${px}px ${color})` : undefined,
+                }}
+              />
+              {/* Monospace label — only for high count */}
+              {normalized > 0.33 && (
+                <text
+                  x={px + 3}
+                  y={3}
+                  fontSize={6}
+                  fill={color}
+                  opacity={0.85}
+                  fontFamily="Azeret Mono, monospace"
+                  style={{ userSelect: 'none', pointerEvents: 'none' }}
+                >
+                  {entry.count.toString().padStart(3, '0')}
+                </text>
+              )}
+            </maps.Marker>
+          );
+        })}
+      </maps.ComposableMap>
+
+      {/* Tooltip */}
       {tooltip && (
         <div
           className="absolute z-20 pointer-events-none"
-          style={{ left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, calc(-100% - 14px))' }}
+          style={{
+            left: tooltip.x,
+            top: tooltip.y,
+            transform: 'translate(-50%, calc(-100% - 10px))',
+          }}
         >
+          {/* Connector line */}
           <div
             className="absolute left-1/2 -translate-x-px bottom-0 w-px translate-y-full"
-            style={{ height: 14, background: `linear-gradient(to bottom, ${activeColor}80, transparent)` }}
+            style={{ height: 10, background: `linear-gradient(to bottom, ${tooltip.color}90, transparent)` }}
           />
           <div
-            className="rounded-xl px-3 py-2.5 shadow-2xl min-w-[148px] backdrop-blur-sm"
             style={{
               background: tooltipBg,
-              border: `1px solid ${activeColor}35`,
-              boxShadow: `0 8px 32px rgba(0,0,0,0.15), 0 0 0 1px ${activeColor}10, 0 0 24px ${activeColor}15`,
+              border: `1px solid ${tooltip.color}40`,
+              fontFamily: 'Azeret Mono, monospace',
+              boxShadow: `0 0 0 1px ${tooltip.color}18, 0 8px 24px rgba(0,0,0,0.35)`,
+              borderRadius: 4,
+              padding: '8px 10px',
+              minWidth: 120,
             }}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] leading-none shrink-0 font-mono" style={{ color: tooltipMuted }}>
-                {COUNTRY_FLAGS[tooltip.entry.country_code] ?? '--'}
-              </span>
-              <span className="text-[12px] font-semibold tracking-tight truncate" style={{ color: tooltipText }}>
-                {COUNTRY_COORDS[tooltip.entry.country_code]?.label ?? tooltip.entry.country}
-              </span>
+            <div
+              style={{
+                fontSize: 9,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color: tooltipMuted,
+                marginBottom: 4,
+              }}
+            >
+              {tooltip.entry.country_code}
             </div>
-            <div className="w-full h-px mb-2" style={{ background: tooltipDivider }} />
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-widest font-mono" style={{ color: tooltipMuted }}>events</span>
-                <span className="text-[13px] font-bold tabular-nums" style={{ color: activeColor, fontFamily: 'Azeret Mono, monospace' }}>
-                  {tooltip.entry.count.toLocaleString()}
-                </span>
-              </div>
-              <span
-                className="text-[9px] font-bold tracking-widest px-2 py-1 rounded-lg uppercase"
-                style={{ color: activeColor, background: `${activeColor}18`, border: `1px solid ${activeColor}30` }}
-              >
-                {activeSeverity}
+            <div
+              style={{ fontSize: 11, fontWeight: 700, color: tooltipText, marginBottom: 6, letterSpacing: '0.04em' }}
+            >
+              {COUNTRY_COORDS[tooltip.entry.country_code]?.label ?? tooltip.entry.country}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span style={{ fontSize: 16, fontWeight: 900, color: tooltip.color, letterSpacing: '-0.02em' }}>
+                {String(tooltip.entry.count).padStart(4, '0')}
+              </span>
+              <span style={{ fontSize: 9, color: tooltipMuted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                events
               </span>
             </div>
           </div>
         </div>
       )}
 
-      <maps.ComposableMap
-        projectionConfig={{ rotate: [-10, 0, 0], scale: 147 }}
-        width={800}
-        height={400}
-        style={{ width: '100%', height: '100%' }}
+      {/* Legend */}
+      <div
+        className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-2.5 py-1.5"
+        style={{
+          background: isDark ? 'rgba(13,13,15,0.75)' : 'rgba(244,244,245,0.75)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: 3,
+          fontFamily: 'Azeret Mono, monospace',
+        }}
       >
-        <maps.ZoomableGroup zoom={zoom} center={[0, 0]}>
-          <maps.Geographies geography={geoUrl}>
-            {({ geographies }: { geographies: Array<{ rsmKey: string }> }) =>
-              geographies.map((geo) => (
-                <maps.Geography
-                  key={geo.rsmKey}
-                  geography={geo}
-                  fill={mapLand}
-                  stroke={mapStroke}
-                  strokeWidth={0.4}
-                  style={{
-                    default: { outline: 'none' },
-                    hover: { fill: mapHover, outline: 'none' },
-                    pressed: { outline: 'none' },
-                  }}
-                />
-              ))
-            }
-          </maps.Geographies>
-
-          {data.map((entry) => {
-            const coords = COUNTRY_COORDS[entry.country_code];
-            if (!coords) return null;
-            const normalized = entry.count / maxCount;
-            const r = Math.max(3.5, Math.min(13, 3.5 + normalized * 9.5));
-            const color = markerColor(entry.count, maxCount);
-            const isActive = tooltip?.entry.country_code === entry.country_code;
-
-            return (
-              <maps.Marker
-                key={entry.country_code}
-                coordinates={[coords.lng, coords.lat]}
-                onMouseEnter={(e: React.MouseEvent<SVGElement>) => {
-                  const svg = (e.currentTarget as SVGElement).closest('svg');
-                  const svgRect = svg?.getBoundingClientRect();
-                  const el = (e.currentTarget as SVGElement).getBoundingClientRect();
-                  setTooltip({
-                    entry,
-                    x: el.left - (svgRect?.left ?? 0) + el.width / 2,
-                    y: el.top - (svgRect?.top ?? 0),
-                  });
-                }}
-                onMouseLeave={() => setTooltip(null)}
-              >
-                <circle r={r * 3.2} fill={color} opacity={0}>
-                  <animate attributeName="r" values={`${r * 2.2};${r * 3.8};${r * 2.2}`} dur="4s" begin="0s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0;0.12;0" dur="4s" begin="0s" repeatCount="indefinite" />
-                </circle>
-                <circle r={r * 2} fill={color} opacity={0}>
-                  <animate attributeName="r" values={`${r};${r * 2.4};${r}`} dur="2.5s" begin="0.5s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.18;0;0.18" dur="2.5s" begin="0.5s" repeatCount="indefinite" />
-                </circle>
-                <circle
-                  r={isActive ? r * 1.45 : r}
-                  fill={color}
-                  opacity={isActive ? 1 : 0.88}
-                  stroke={isActive ? color : 'none'}
-                  strokeWidth={isActive ? 1.5 : 0}
-                  strokeOpacity={0.35}
-                  style={{ cursor: 'pointer', filter: isActive ? `drop-shadow(0 0 ${r * 1.5}px ${color})` : 'none', transition: 'r 0.15s ease, opacity 0.15s ease' }}
-                />
-              </maps.Marker>
-            );
-          })}
-        </maps.ZoomableGroup>
-      </maps.ComposableMap>
-
-      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-2.5 py-1.5 rounded-xl bg-muted/40 border border-border">
         {([
-          { label: 'Critical', color: 'var(--danger)' },
-          { label: 'High', color: 'var(--brand-accent)' },
-          { label: 'Low', color: 'var(--brand)' },
+          { label: 'CRIT', color: 'var(--danger)' },
+          { label: 'HIGH', color: 'var(--brand-accent)' },
+          { label: 'LOW', color: 'var(--brand)' },
         ] as const).map(({ label, color }) => (
           <div key={label} className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}` }} />
-            <span className="text-[10px] text-muted-foreground font-mono tracking-wide">{label}</span>
+            {/* Square pixel dot for legend */}
+            <svg width="6" height="6" viewBox="0 0 6 6" style={{ shapeRendering: 'crispEdges', flexShrink: 0 }}>
+              <rect x="0" y="0" width="6" height="6" fill={color} />
+            </svg>
+            <span style={{ fontSize: 9, color: 'var(--muted-foreground)', letterSpacing: '0.12em' }}>{label}</span>
           </div>
         ))}
       </div>
