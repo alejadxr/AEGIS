@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
+import { MinusCircle, PlusCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Panel, SectionHeader, EmptyState } from '@/components/aegis';
 
@@ -11,9 +12,40 @@ interface TimelineIncident {
   detected_at: string;     // ISO
 }
 
+// Range options in days
+const RANGE_OPTIONS: { label: string; days: number }[] = [
+  { label: '24h', days: 1 },
+  { label: '3d', days: 3 },
+  { label: '7d', days: 7 },
+  { label: '14d', days: 14 },
+  { label: '30d', days: 30 },
+  { label: '90d', days: 90 },
+];
+
+const RANGE_KEY_MAP: Record<string, number> = {
+  '1d': 1, '3d': 3, '7d': 7, '14d': 14, '30d': 30, '90d': 90,
+};
+
+function parseRangeParam(): number {
+  if (typeof window === 'undefined') return 14;
+  const sp = new URLSearchParams(window.location.search);
+  const r = sp.get('range');
+  if (r && RANGE_KEY_MAP[r] !== undefined) return RANGE_KEY_MAP[r];
+  return 14;
+}
+
+function setRangeParam(days: number) {
+  if (typeof window === 'undefined') return;
+  const sp = new URLSearchParams(window.location.search);
+  const key = Object.entries(RANGE_KEY_MAP).find(([, v]) => v === days)?.[0] ?? `${days}d`;
+  sp.set('range', key);
+  const newUrl = `${window.location.pathname}?${sp.toString()}`;
+  window.history.replaceState(null, '', newUrl);
+}
+
 interface IncidentTimelineProps {
   incidents: TimelineIncident[];
-  /** Days of history to show. Default 14. */
+  /** Initial days of history to show. Default 14. Overridden by ?range= URL param. */
   days?: number;
 }
 
@@ -25,22 +57,54 @@ const SEV_COLOR: Record<string, string> = {
 };
 
 /**
- * IncidentTimeline — horizontal time-scrubber. Refactored to use <Panel> +
- * <SectionHeader> + <EmptyState> from the AEGIS primitive library.
+ * IncidentTimeline — horizontal time-scrubber with range selector pills
+ * and zoom in/out controls.
  */
-export function IncidentTimeline({ incidents, days = 14 }: IncidentTimelineProps) {
+export function IncidentTimeline({ incidents, days: propDays = 14 }: IncidentTimelineProps) {
+  const [days, setDays] = useState<number>(propDays);
+
+  // Sync initial value from URL param on mount (client-only)
+  useEffect(() => {
+    const fromUrl = parseRangeParam();
+    setDays(fromUrl);
+  }, []);
+
+  const setDaysAndUrl = useCallback((d: number) => {
+    setDays(d);
+    setRangeParam(d);
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    setDays((d) => {
+      const next = Math.max(1, Math.round(d / 2));
+      setRangeParam(next);
+      return next;
+    });
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setDays((d) => {
+      const next = Math.min(90, d * 2);
+      setRangeParam(next);
+      return next;
+    });
+  }, []);
+
   const { ticks, items, nowPct } = useMemo(() => {
     const now = Date.now();
     const start = now - days * 24 * 60 * 60 * 1000;
     const span = now - start;
 
+    // Adaptive tick count based on range
+    const tickCount = days <= 3 ? days * 24 : days <= 14 ? days : Math.ceil(days / 3);
     const ticksArr: { pct: number; label: string }[] = [];
-    for (let i = 0; i <= days; i++) {
-      const t = new Date(start + (i / days) * span);
-      ticksArr.push({
-        pct: (i / days) * 100,
-        label: String(t.getDate()).padStart(2, '0'),
-      });
+    for (let i = 0; i <= tickCount; i++) {
+      const t = new Date(start + (i / tickCount) * span);
+      // Show hours label for short ranges, date for longer
+      const label = days <= 3
+        ? `${String(t.getHours()).padStart(2, '0')}h`
+        : String(t.getDate()).padStart(2, '0');
+      ticksArr.push({ pct: (i / tickCount) * 100, label });
     }
 
     const itemsArr = incidents
@@ -88,12 +152,67 @@ export function IncidentTimeline({ incidents, days = 14 }: IncidentTimelineProps
     <Panel>
       <SectionHeader
         title="Incident Timeline"
-        subtitle={`· last ${days}d`}
+        subtitle={`· last ${days === 1 ? '24h' : `${days}d`}`}
         action={legend}
       />
 
+      {/* Range selector + zoom controls */}
+      <div className="flex items-center gap-2 px-4 sm:px-6 pt-0 pb-2">
+        <div className="flex items-center gap-1 flex-wrap">
+          {RANGE_OPTIONS.map((opt) => {
+            const active = days === opt.days;
+            return (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => setDaysAndUrl(opt.days)}
+                className={cn(
+                  'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md border transition-colors',
+                  active
+                    ? 'bg-[color-mix(in_oklab,var(--brand-accent)_12%,transparent)] text-[var(--brand-accent)] border-[color-mix(in_oklab,var(--brand-accent)_30%,transparent)]'
+                    : 'border-border bg-card hover:bg-muted/40 text-muted-foreground',
+                )}
+                aria-pressed={active}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-1 ml-auto shrink-0">
+          <button
+            type="button"
+            onClick={zoomIn}
+            disabled={days <= 1}
+            className={cn(
+              'p-1 rounded-md text-muted-foreground transition-colors',
+              'hover:text-foreground hover:bg-muted/40',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)]/60',
+              'disabled:opacity-30 disabled:cursor-not-allowed',
+            )}
+            aria-label="Zoom in"
+          >
+            <PlusCircle size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={zoomOut}
+            disabled={days >= 90}
+            className={cn(
+              'p-1 rounded-md text-muted-foreground transition-colors',
+              'hover:text-foreground hover:bg-muted/40',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)]/60',
+              'disabled:opacity-30 disabled:cursor-not-allowed',
+            )}
+            aria-label="Zoom out"
+          >
+            <MinusCircle size={14} />
+          </button>
+        </div>
+      </div>
+
       {/* Track */}
-      <div className="relative px-4 sm:px-6 py-6">
+      <div className="relative px-4 sm:px-6 py-6 pt-2">
         {/* Background grid line */}
         <div className="absolute left-4 right-4 top-1/2 h-px bg-border" aria-hidden />
 
@@ -170,7 +289,7 @@ export function IncidentTimeline({ incidents, days = 14 }: IncidentTimelineProps
         {items.length === 0 && (
           <EmptyState
             size="sm"
-            title={`No incidents in the last ${days} days`}
+            title={`No incidents in the last ${days === 1 ? '24 hours' : `${days} days`}`}
             description="System quiet"
           />
         )}
