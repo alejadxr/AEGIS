@@ -15,7 +15,7 @@ import { Panel, SectionHeader } from '@/components/aegis';
 import { api } from '@/lib/api';
 import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
 import { cn } from '@/lib/utils';
-import { mitreLabel, mitreInfo } from '@/lib/mitre';
+import { mitreInfo } from '@/lib/mitre';
 
 // Lazy-load the (heavy) world map for CLS budget
 const GlobalThreatMap = dynamic(
@@ -54,7 +54,13 @@ type Action = {
 type Interaction = { id: string; timestamp: string; source_ip: string };
 type ThreatMapEntry = { country: string; country_code: string; count: number };
 
-const MONITORED_APPS = ['sable', 'wilabia-frontend', 'wilabia-backend', 'sid-wilab', 'landing-wilab'];
+// Fallback if backend monitored-apps fetch fails
+const FALLBACK_MONITORED_APPS = ['sable', 'wilabia-frontend', 'wilabia-backend', 'sid-wilab', 'landing-wilab', 'sid', 'sid-backend', 'landing-wilab', 'contable-rd', 'cayde6-api', 'cayde6-frontend'];
+
+function toTitleCase(s: string): string {
+  // Turn "wilabia-backend" → "Wilabia Backend", "sable" → "Sable"
+  return s.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function StatusPill({ status }: { status: WSStatus }) {
   const cfg: Record<WSStatus, { label: string; pill: string }> = {
@@ -107,6 +113,7 @@ export default function DashboardPage() {
   const [actions, setActions] = useState<Action[]>([]);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [threatMap, setThreatMap] = useState<ThreatMapEntry[]>([]);
+  const [monitoredApps, setMonitoredApps] = useState<string[]>(FALLBACK_MONITORED_APPS);
   const [loading, setLoading] = useState(true);
   const [wsStatus, setWsStatus] = useState<WSStatus>('idle');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -115,17 +122,23 @@ export default function DashboardPage() {
   useEffect(() => {
     let mounted = true;
     async function load() {
-      const [inc, act, ints, tm] = await Promise.allSettled([
+      const [inc, act, ints, tm, apps] = await Promise.allSettled([
         api.response.incidents(),
         api.response.actions(),
         api.phantom.interactions({ limit: '200' }),
         api.dashboard.threatMap(),
+        api.dashboard.monitoredApps(),
       ]);
       if (!mounted) return;
       if (inc.status === 'fulfilled') setIncidents(inc.value as Incident[]);
       if (act.status === 'fulfilled') setActions(act.value as Action[]);
       if (ints.status === 'fulfilled') setInteractions(ints.value as Interaction[]);
       if (tm.status === 'fulfilled') setThreatMap(tm.value as ThreatMapEntry[]);
+      if (apps.status === 'fulfilled') {
+        const appData = apps.value as { apps: Array<{ name: string }>; count: number };
+        const names = appData.apps.map((a) => a.name).filter(Boolean);
+        if (names.length > 0) setMonitoredApps(names);
+      }
       setLoading(false);
     }
     load();
@@ -160,7 +173,7 @@ export default function DashboardPage() {
   );
 
   const assetRows: AssetRiskRow[] = useMemo(() => {
-    const rows: AssetRiskRow[] = MONITORED_APPS.map((app) => {
+    const rows: AssetRiskRow[] = monitoredApps.map((app) => {
       const appIncs = incidents.filter((i) => {
         const hay = `${i.source} ${i.title}`.toLowerCase();
         return hay.includes(app);
@@ -180,21 +193,48 @@ export default function DashboardPage() {
       };
     });
     return rows.sort((a, b) => b.riskScore - a.riskScore);
-  }, [incidents]);
+  }, [incidents, monitoredApps]);
 
   // Hero KPIs
   const latestIp = latest?.source_ip ?? incidents.find((i) => !!i.source_ip)?.source_ip ?? '—';
-  const mitre = latest?.mitre_technique ?? '—';
+
+  // MITRE: prefer incident-level field, then triage sub-object
+  const mitre = useMemo(() => {
+    if (!latest) return '—';
+    if (latest.mitre_technique) return latest.mitre_technique;
+    const a = latest.ai_analysis as Record<string, unknown> | null;
+    const triage = a?.triage as Record<string, unknown> | undefined;
+    const fromTriage = triage?.mitre_technique as string | undefined;
+    if (fromTriage) return fromTriage;
+    return '—';
+  }, [latest]);
+
+  // Affected Asset: use backend-sourced app list, search incident title + description + ai_analysis fields
   const affectedAsset = useMemo(() => {
     if (!latest) return '—';
-    const hay = `${latest.source} ${latest.title}`.toLowerCase();
-    return MONITORED_APPS.find((a) => hay.includes(a)) ?? (latest.source || 'unknown');
-  }, [latest]);
+    const a = latest.ai_analysis as Record<string, unknown> | null;
+    const triage = a?.triage as Record<string, unknown> | undefined;
+    // Try explicit app field from AI analysis first
+    const fromAI = (a?.app ?? triage?.app ?? (a as Record<string, unknown> | null)?.affected_asset) as string | undefined;
+    if (fromAI && typeof fromAI === 'string') return toTitleCase(fromAI);
+    // Search in title + description against known app names
+    const hay = `${latest.title} ${latest.source}`.toLowerCase();
+    const matched = monitoredApps.find((app) => hay.includes(app.toLowerCase()));
+    if (matched) return toTitleCase(matched);
+    // Do NOT fall back to source (log_watcher, correlation_engine, etc.)
+    return '—';
+  }, [latest, monitoredApps]);
+
+  // Confidence: try triage.confidence first, then top-level
   const confidence = useMemo(() => {
     if (!latest?.ai_analysis) return '—';
-    const c = (latest.ai_analysis as Record<string, unknown>).confidence;
-    if (typeof c === 'number') return `${Math.round(c * (c <= 1 ? 100 : 1))}%`;
-    return '—';
+    const a = latest.ai_analysis as Record<string, unknown>;
+    const triage = a?.triage as Record<string, unknown> | undefined;
+    let c: number | string | undefined = triage?.confidence as number | string | undefined;
+    if (c === undefined) c = a?.confidence as number | string | undefined;
+    if (typeof c === 'string') c = parseFloat(c);
+    if (typeof c !== 'number' || isNaN(c)) return '—';
+    return c <= 1 ? `${Math.round(c * 100)}%` : `${Math.round(c)}%`;
   }, [latest]);
 
   if (loading) return <LoadingState message="Loading dashboard..." />;
@@ -285,9 +325,9 @@ export default function DashboardPage() {
         <KPITile
           label="MITRE Technique"
           value={mitre}
-          sub={latest?.mitre_technique ? (mitreInfo(latest.mitre_technique)?.plain ?? 'view campaign cluster') : '—'}
+          sub={mitre !== '—' ? (mitreInfo(mitre)?.plain ?? 'view campaign cluster') : '—'}
           href="/dashboard/threats/campaigns"
-          tone={latest?.mitre_technique ? 'warning' : 'neutral'}
+          tone={mitre !== '—' ? 'warning' : 'neutral'}
         />
         <KPITile
           label="Source IP"
