@@ -15,6 +15,7 @@ const SUB_TABS: Record<string, SubTab[]> = {
     { label: 'Incidents', href: '/dashboard/response' },
     { label: 'Threats', href: '/dashboard/threats' },
     { label: 'Campaigns', href: '/dashboard/threats/campaigns' },
+    { label: 'Sharing', href: '/dashboard/threats/sharing' },
     { label: 'IP Intel', href: '/dashboard/ip-intel' },
   ],
   defense: [
