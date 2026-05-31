@@ -683,8 +683,21 @@ class LogWatcher:
             from sqlalchemy import select
 
             async with async_session() as db:
-                result = await db.execute(select(Client).limit(1))
-                client = result.scalar_one_or_none()
+                # BUG-5 fix: deterministic client lookup. The previous
+                # `select(Client).limit(1)` had no ORDER BY, so log_watcher
+                # could write incidents under a different client than the
+                # one the API key resolves to (-> campaigns API returned
+                # empty for the auth-resolved client).
+                # Order: AEGIS_CLIENT_ID env override -> oldest by created_at.
+                aegis_client_id = os.environ.get("AEGIS_CLIENT_ID", "").strip()
+                client = None
+                if aegis_client_id:
+                    client = await db.get(Client, aegis_client_id)
+                if not client:
+                    result = await db.execute(
+                        select(Client).order_by(Client.created_at.asc()).limit(1)
+                    )
+                    client = result.scalar_one_or_none()
                 if not client:
                     logger.warning("No client found - cannot create incident")
                     return
