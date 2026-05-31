@@ -6,6 +6,17 @@ Designed to be the firewall backend for AEGIS (Mac Pro).
 Port: 8765
 Persistence: /etc/aegis/blocked_ips.json
 Requires: sudo access to /usr/sbin/iptables (via sudoers.d/aegis-iptables)
+
+Deployment note (BUG-3 fix, 2026-05-31):
+    Set AEGIS_SAFE_IPS env var on the Pi systemd unit
+    (/etc/systemd/system/aegis-firewall.service) so the Pi rejects block
+    requests for safe CIDRs (Googlebot 66.249.0.0/16, Starlink 74.244.193.0/24,
+    etc.) even if AEGIS forwards them incorrectly. Example:
+
+        Environment="AEGIS_SAFE_IPS=66.249.0.0/16,74.244.193.0/24,127.0.0.1"
+
+    Then: sudo systemctl daemon-reload && sudo systemctl restart aegis-firewall
+    Not deployed automatically — apply manually on Pi when ready.
 """
 
 import ipaddress
@@ -49,6 +60,27 @@ _SAFE_NETWORKS = [
     ipaddress.ip_network("fe80::/10"),
 ]
 
+# Extra safe IPs from AEGIS_SAFE_IPS env var (comma-separated). Accepts both
+# literal IPs (auto-wrapped as /32 or /128) and CIDR ranges (e.g.
+# "66.249.0.0/16,74.244.193.0/24,127.0.0.1"). Mirrors the parser used by
+# backend/app/core/attack_detector.py so the Pi agent refuses to block any
+# CIDR AEGIS itself considers safe even if AEGIS forwards the request.
+_EXTRA_SAFE_IPS: set[str] = set()
+_safe_ips_env = os.getenv("AEGIS_SAFE_IPS", "")
+for _entry in (e.strip() for e in _safe_ips_env.split(",") if e.strip()):
+    try:
+        if "/" in _entry:
+            _SAFE_NETWORKS.append(ipaddress.ip_network(_entry, strict=False))
+        else:
+            # Treat literal IPs as both an exact match and a /32 (or /128) net
+            _EXTRA_SAFE_IPS.add(_entry)
+            _SAFE_NETWORKS.append(
+                ipaddress.ip_network(_entry, strict=False)
+            )
+    except (ValueError, TypeError):
+        # Logger is configured below; defer warning to module-init via print
+        print(f"[aegis-firewall] AEGIS_SAFE_IPS: ignoring invalid entry {_entry!r}")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -84,6 +116,8 @@ def _is_safe_ip(ip: str) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return True  # Invalid = don't block
+    if ip in _EXTRA_SAFE_IPS:
+        return True
     if addr.is_loopback or addr.is_link_local or addr.is_multicast:
         return True
     for net in _SAFE_NETWORKS:
