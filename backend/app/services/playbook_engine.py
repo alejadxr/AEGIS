@@ -358,6 +358,25 @@ class PlaybookEngine:
 
     async def _block_via_firewall(self, ip: str) -> dict:
         """Block IP via Firewall (Pi firewall). Fire-and-forget."""
+        # BUG-4 fix: enforce the same safe-IP CIDR check that
+        # guardrails.evaluate_action() applies. Playbooks bypass the normal
+        # guardrails flow (no client/db context), so we apply the safe-IP
+        # short-circuit directly here.
+        try:
+            from app.core.attack_detector import _is_safe_ip as _safe_ip_check
+            if _safe_ip_check(ip):
+                logger.warning(
+                    f"GUARDRAIL (playbook): Refusing block_ip via firewall on "
+                    f"safe IP {ip} (AEGIS_SAFE_IPS)"
+                )
+                return {
+                    "action": "block_ip",
+                    "via": "firewall",
+                    "status": "skipped_safe_ip",
+                    "ip": ip,
+                }
+        except Exception:
+            pass
         try:
             from app.core.firewall_client import firewall_client
             result = await firewall_client.block_ip(ip)
@@ -373,6 +392,22 @@ class PlaybookEngine:
 
     def _block_via_local(self, ip: str) -> dict:
         """Block IP via local IP blocker."""
+        # BUG-4 fix: enforce safe-IP CIDR guardrail before local block too.
+        try:
+            from app.core.attack_detector import _is_safe_ip as _safe_ip_check
+            if _safe_ip_check(ip):
+                logger.warning(
+                    f"GUARDRAIL (playbook): Refusing local block_ip on "
+                    f"safe IP {ip} (AEGIS_SAFE_IPS)"
+                )
+                return {
+                    "action": "block_ip",
+                    "via": "local",
+                    "status": "skipped_safe_ip",
+                    "ip": ip,
+                }
+        except Exception:
+            pass
         try:
             from app.core.ip_blocker import ip_blocker_service
             result = ip_blocker_service.block_ip(ip)
