@@ -54,6 +54,15 @@ _KNOWN_SAFE_IPS = frozenset({
 # Shared semantics with correlation_engine._ATTACKER_IPS ? same env var.
 from app.config import settings as _settings
 
+# Import the canonical safe-IP checker that respects AEGIS_SAFE_IPS env var
+# (including CIDR ranges like 66.249.0.0/16 for Googlebot, 74.244.193.0/24 Starlink).
+# _is_private_ip below only knows RFC1918+CGNAT; we chain both checks.
+try:
+    from app.core.attack_detector import _is_safe_ip as _attack_detector_is_safe_ip
+except Exception:  # pragma: no cover - defensive
+    def _attack_detector_is_safe_ip(ip: str) -> bool:
+        return False
+
 _ATTACKER_IPS: set[str] = {
     ip.strip()
     for ip in (_settings.AEGIS_ATTACKER_IPS or "").split(",")
@@ -525,6 +534,12 @@ class LogWatcher:
         if ip and (ip in INTERNAL_IPS or _is_private_ip(ip)):
             return
 
+        # Respect AEGIS_SAFE_IPS (covers public CIDRs like Googlebot 66.249.0.0/16,
+        # Starlink 74.244.193.0/24). _is_private_ip above only knows RFC1918+CGNAT.
+        if ip and _attack_detector_is_safe_ip(ip):
+            logger.debug(f"log_watcher: skipping safe IP {ip} (AEGIS_SAFE_IPS)")
+            return
+
         # Honey-AI breadcrumb scan ? if this log line contains a UUID that
         # was planted in a deception campaign we raise a CRITICAL incident.
         try:
@@ -646,6 +661,11 @@ class LogWatcher:
         # Skip private/Tailscale/internal IPs ? these are NEVER attackers
         if _is_private_ip(source_ip) or source_ip in INTERNAL_IPS:
             logger.debug(f'Skipping incident for internal IP {source_ip}: {pattern_name}')
+            return
+
+        # Also honor AEGIS_SAFE_IPS CIDRs (Googlebot, Starlink, etc.)
+        if _attack_detector_is_safe_ip(source_ip):
+            logger.debug(f'Skipping incident for safe IP {source_ip} (AEGIS_SAFE_IPS): {pattern_name}')
             return
 
         # Incident deduplication: don't spam incidents for the same IP + threat type
