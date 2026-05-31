@@ -2,7 +2,13 @@ id: sigma_auth_account_lockout
 name: Account Lockout Detected
 kind: sigma
 severity: medium
-enabled: true
+# BUG-6 (2026-05-31): disabled to stop duplicate-incident generation on
+# auth_failure events. `brute_force_ssh` is the canonical T1110 rule and
+# is referenced by playbook_engine + chain rules. Both fired on the same
+# event, doubling incident count for every brute-force cadence tick.
+# Re-enable only if account-lockout signal is split off from auth_failure
+# (e.g. dedicated `account_locked` event type).
+enabled: false
 tactics:
 - CredentialAccess
 techniques:
