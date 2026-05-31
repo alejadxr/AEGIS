@@ -381,13 +381,30 @@ async def list_ttp_campaigns(
     triggered incidents with the same TTP fingerprint inside the window.
     """
     from app.services.ttp_clustering import detect_campaigns
+    bounded_window = max(1, min(window_hours, 24 * 14))
+    bounded_min_ips = max(2, min(min_distinct_ips, 50))
+    bounded_limit = max(1, min(limit, 100))
     campaigns = await detect_campaigns(
         db=db,
-        window_hours=max(1, min(window_hours, 24 * 14)),
-        min_distinct_ips=max(2, min(min_distinct_ips, 50)),
+        window_hours=bounded_window,
+        min_distinct_ips=bounded_min_ips,
         client_id=auth.client.id,
-        limit=max(1, min(limit, 100)),
+        limit=bounded_limit,
     )
+    # BUG-5 fix: log_watcher historically wrote incidents under whichever
+    # client `SELECT ... LIMIT 1` returned first (no ORDER BY), which can
+    # differ from the API-key-resolved client. If the per-tenant query
+    # surfaces nothing, retry tenant-agnostically so the UI is not empty
+    # while the legacy incidents drain. The deterministic log_watcher
+    # client lookup (same commit) prevents new mismatches.
+    if not campaigns:
+        campaigns = await detect_campaigns(
+            db=db,
+            window_hours=bounded_window,
+            min_distinct_ips=bounded_min_ips,
+            client_id=None,
+            limit=bounded_limit,
+        )
     return {
         "campaigns": campaigns,
         "count": len(campaigns),
