@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const FIREWALL_AGENT_URL = 'http://100.93.30.20:8765';
+const FIREWALL_AGENT_URL = process.env.FIREWALL_AGENT_URL || 'http://localhost:8765';
 
 export async function GET(
   request: NextRequest,

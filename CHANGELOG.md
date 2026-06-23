@@ -177,7 +177,7 @@ A 8-agent audit found AEGIS detecting real attacks but drowning in noise: 96.9 %
 
 ### Fixed
 
-- **Kali probe silenced** — `AEGIS_ATTACKER_IPS=100.88.0.85` (Kali Tailscale IP) enables 342 previously-silenced sqlmap requests to generate real incidents. The internal-IP filter was correct for prod but blocked all red-team traffic.
+- **Kali probe silenced** — `AEGIS_ATTACKER_IPS=<RED_TEAM_IP>` (Kali red-team system) enables 342 previously-silenced sqlmap requests to generate real incidents. The internal-IP filter was correct for prod but blocked all red-team traffic.
 - **self-referential SQL injection loop** — AEGIS no longer detects its own `SELECT` log lines as SQL injection attacks. Three-layer fix: monitored-app filter, source-marker filter, tightened regex.
 - **MetricsSummaryBar crash** — runtime crash on `undefined` external metrics fixed with null guard.
 - **`gen_diagram.py` hardcoded path** — output path now resolved relative to repo root.
@@ -306,7 +306,7 @@ A 8-agent audit found AEGIS detecting real attacks but drowning in noise: 96.9 %
 
 ---
 
-[1.6.1]: https://github.com/alejadxr/AEGIS/releases/tag/v1.6.1
-[1.5.0]: https://github.com/alejandxr/AEGIS/releases/tag/v1.5.0
-[1.4.0]: https://github.com/alejandxr/AEGIS/releases/tag/v1.4.0
-[1.2.0]: https://github.com/alejandxr/AEGIS/releases/tag/v1.2.0
+[1.6.1]: https://github.com/<github-org>/AEGIS/releases/tag/v1.6.1
+[1.5.0]: https://github.com/<github-org>/AEGIS/releases/tag/v1.5.0
+[1.4.0]: https://github.com/<github-org>/AEGIS/releases/tag/v1.4.0
+[1.2.0]: https://github.com/<github-org>/AEGIS/releases/tag/v1.2.0
