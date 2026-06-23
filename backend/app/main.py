@@ -560,6 +560,16 @@ async def lifespan(app: FastAPI):
     scheduled_scanner.start()
     logger.info('Scheduled scanner started')
 
+    # v1.6.2: retention service — bounds incidents/attackers/honeypot table growth
+    # to AEGIS_RETENTION_DAYS rolling (default 90). Auto-closes stuck-investigating
+    # incidents whose source_ip is already in threat_intel. Honors
+    # AEGIS_RETENTION_DRY_RUN=1 for safe first-deploy preview.
+    try:
+        from app.services import retention as retention_service
+        await retention_service.start()
+    except Exception as exc:
+        logger.error(f"retention service failed to start: {exc}")
+
     # Start host self-monitor (EDR telemetry via psutil — no external agent needed)
     try:
         await host_monitor.start()
@@ -588,6 +598,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     await host_monitor.stop()
+    try:
+        from app.services import retention as retention_service
+        await retention_service.stop()
+    except Exception:
+        pass
     scheduled_scanner.stop()
     await log_watcher.stop()
     await behavioral_engine.stop()
@@ -619,7 +634,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.1",
+    version="1.6.2",
     lifespan=lifespan,
 )
 
@@ -726,7 +741,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.1",
+        "version": "1.6.2",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -738,7 +753,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.1",
+        "version": "1.6.2",
         "ai_mode": _ai_mode.value,
     }
 
