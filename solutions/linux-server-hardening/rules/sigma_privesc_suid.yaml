@@ -1,0 +1,25 @@
+id: sigma_privesc_suid
+name: SUID Binary Exploitation
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1548.001
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    suid: true
+    path_contains:
+    - find
+    - vim
+    - nmap
+    - python
+    - perl
+entityMappings:
+- type: IP
+  field: source_ip
+description: Execution of uncommon SUID binary suggesting privilege escalation.

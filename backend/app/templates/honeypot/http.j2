@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html>
+<head><title>{{ service_name | default('Web Server') }}</title></head>
+<body>
+<h1>Welcome to {{ service_name | default('Internal Web Portal') }}</h1>
+<p>Server: {{ banner | default('Apache/2.4.57 (Ubuntu)') }}</p>
+<p>Version: {{ version | default('2.4.57') }}</p>
+<p>Please <a href="/login">login</a> to continue.</p>
+<!-- TODO: migrate to new auth system -->
+</body>
+</html>

@@ -1,0 +1,113 @@
+id: ransomware
+name: Ransomware Containment and Recovery
+description: >
+  Seven-step automated playbook for ransomware incidents.
+  Triggered by canary file modification, mass extension changes, VSS/shadow
+  deletion, or a fired ransomware chain rule. Isolates the host immediately,
+  tears down the attack chain, protects shadow copies, snapshots the disk,
+  blocks known C2 IPs, notifies the admin, and writes a postmortem stub.
+triggers:
+  - ransomware_chain
+  - ransomware_canary_modified
+  - ransomware_extension_mass_change
+  - ransomware_vss_delete
+  - ransomware_shadow_copy_delete
+  - ransomware_bcdedit_recovery_disable
+  - ransomware_wbadmin_delete
+  - ransomware_note_dropped
+severity: critical
+steps:
+  - id: isolate_host
+    name: Isolate Host
+    description: >
+      Immediately cut the infected host from all network segments except the
+      AEGIS management VLAN. Prevents further lateral movement and C2 beaconing.
+    action_type: block
+    guardrail: auto_approve
+    params:
+      allow_management_access: true
+      isolation_mode: full
+
+  - id: kill_chain_processes
+    name: Kill Chain Processes
+    description: >
+      Terminate processes matching known ransomware LOLBin patterns:
+      certutil.exe, rundll32.exe spawned by unusual parents, wscript, cscript.
+      Uses the process list captured by the triggering sigma rule.
+    action_type: block
+    guardrail: auto_approve
+    params:
+      target: process_list_from_alert
+      signal: SIGKILL
+
+  - id: deny_shadow_delete
+    name: Deny Shadow Copy Deletion
+    description: >
+      Apply a local policy or SELinux/AppArmor rule denying vssadmin.exe,
+      wbadmin.exe, and bcdedit.exe from executing further shadow-copy or
+      recovery-environment modifications.
+    action_type: block
+    guardrail: auto_approve
+    params:
+      deny_binaries:
+        - vssadmin.exe
+        - wbadmin.exe
+        - bcdedit.exe
+
+  - id: trigger_snapshot
+    name: Trigger Emergency Snapshot
+    description: >
+      Call the snapshot_manager service to create an emergency volume snapshot
+      of all monitored disks on the affected host before any further encryption
+      can complete.
+    action_type: snapshot
+    guardrail: auto_approve
+    params:
+      snapshot_type: emergency
+      retention_days: 30
+
+  - id: block_c2_ips
+    name: Block C2 IPs
+    description: >
+      Push all IPs extracted from the alert (beacon destinations, exfil targets)
+      into the local iptables/pfctl block list and the AEGIS blocked_ips.txt
+      persistence file. Also enriches against the RaaS intel feed.
+    action_type: block
+    guardrail: auto_approve
+    params:
+      source: alert_extracted_ips
+      enrich_raas_feed: true
+      persistence: true
+
+  - id: notify_admin
+    name: Notify Admin
+    description: >
+      Send a CRITICAL severity notification to all configured admin channels
+      (email, webhook, Slack). Include host name, alert ID, triggered rule,
+      and a link to the AEGIS ransomware dashboard.
+    action_type: notify
+    guardrail: auto_approve
+    params:
+      severity: critical
+      channels:
+        - email
+        - webhook
+      include_fields:
+        - host
+        - alert_id
+        - triggered_rule
+        - snapshot_id
+        - dashboard_url
+
+  - id: write_postmortem
+    name: Write Postmortem Stub
+    description: >
+      Generate a structured incident postmortem document (Markdown) with
+      timeline, affected assets, triggered rules, actions taken, and
+      open questions. Requires human review before closing the incident.
+    action_type: log
+    guardrail: require_approval
+    params:
+      template: postmortem_ransomware_v1
+      output_path: /var/aegis/postmortems/
+      auto_close: false

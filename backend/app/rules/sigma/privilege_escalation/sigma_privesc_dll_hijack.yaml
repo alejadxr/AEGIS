@@ -1,0 +1,22 @@
+id: sigma_privesc_dll_hijack
+name: DLL Hijacking Attempt
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1574.001
+data_sources:
+- edr
+condition:
+  event_type: dll_load
+  filter:
+    path_contains:
+    - \Temp\
+    - \Downloads\
+    - \AppData\
+entityMappings:
+- type: IP
+  field: source_ip
+description: DLL loaded from unexpected path suggesting DLL hijacking.

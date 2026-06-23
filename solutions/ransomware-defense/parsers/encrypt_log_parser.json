@@ -1,0 +1,22 @@
+{
+  "name": "encrypt_log_parser",
+  "description": "Regex patterns for detecting ransomware activity in system and application logs",
+  "regexes": {
+    "mass_rename": "(?i)(MoveFile|RenameFile|NtSetInformationFile).*\\.(locked|encrypted|enc|crypt|ransom|crypted|pay|pay2decrypt|\\w{4,8})$",
+    "extension_change": "(?i)\\.(docx?|xlsx?|pptx?|pdf|jpg|png|mp4|sql|mdb|bak|zip)\\s+->\\s+\\.\\w{4,16}",
+    "shadow_copy_delete": "(?i)(vssadmin|wmic\\s+shadowcopy|wbadmin).*?(delete|remove|destroy|purge)",
+    "bcdedit_recovery": "(?i)bcdedit(\\.exe)?.*?(recoveryenabled|bootstatuspolicy|no|ignoreallfailures)",
+    "certutil_decode": "(?i)certutil(\\.exe)?.*?(-decode|-urlcache|-f).*?(http|\\\\\\\\|\\.\\.)",
+    "rundll32_suspicious": "(?i)rundll32(\\.exe)?.*?(javascript:|shell32\\.dll,ShellExec_RunDLL|url\\.dll,FileProtocolHandler)",
+    "ransom_note_drop": "(?i)(README|HOW_TO_DECRYPT|DECRYPT_INSTRUCTION|YOUR_FILES|RECOVERY|!!!|_HELP_).*?\\.(txt|html|hta|url)$",
+    "high_entropy_write": "ENTROPY_THRESHOLD_EXCEEDED.*write_rate=(\\d+).*entropy=([0-9.]+)",
+    "canary_access": "(?i)(AEGIS_CANARY|canary_share|\\.canary\\.).*?(modified|opened|read|written|renamed|deleted)",
+    "c2_beacon": "(?i)(POST|GET)\\s+https?://[^/]+/(gate\\.php|panel|submit|upload|check|beacon|ping|report)",
+    "smb_mass_write": "(?i)SMB.*?Write.*?(\\d{3,})\\s+files.*?in\\s+(\\d+)\\s+seconds",
+    "winrm_exec": "(?i)(wsmprovhost|winrm).*?(powershell|cmd|wscript|cscript|mshta)",
+    "source_host": "^(HOSTNAME|ComputerName|host):\\s*([\\w\\-.]+)",
+    "event_id": "EventID:\\s*(\\d+)",
+    "process_id": "(?:PID|ProcessId):\\s*(\\d+)",
+    "parent_process": "(?i)ParentImage:\\s*([^\\s]+)"
+  }
+}
