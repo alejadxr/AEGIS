@@ -123,9 +123,24 @@ async def _sync_blocked_ips(db: AsyncSession) -> int:
     if not blocked:
         return 0
 
+    # v1.6.4: gate threat_intel writes against AEGIS_SAFE_IPS so crawler /
+    # CDN / monitoring IPs that the Pi may have transiently blocked don't
+    # accumulate in threat_intel forever. Without this, every cosmetic SQL
+    # purge of FPs recurs on the next sync cycle.
+    try:
+        from app.core.attack_detector import _is_safe_ip
+    except Exception:  # pragma: no cover - defensive
+        def _is_safe_ip(_ip: str) -> bool:
+            return False
+
     count = 0
+    skipped_safe = 0
     for ip in blocked:
         if not ip:
+            continue
+
+        if _is_safe_ip(ip):
+            skipped_safe += 1
             continue
 
         result = await db.execute(
@@ -155,6 +170,10 @@ async def _sync_blocked_ips(db: AsyncSession) -> int:
         count += 1
 
     await db.commit()
+    if skipped_safe:
+        logger.info(
+            f"_sync_blocked_ips: skipped {skipped_safe} safelisted IPs (AEGIS_SAFE_IPS)"
+        )
     return count
 
 

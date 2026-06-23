@@ -349,8 +349,13 @@ export const api = {
 
   // Response
   response: {
-    incidents: () =>
-      request<Array<{
+    incidents: (opts?: { since?: '24h' | '7d' | '30d' | 'all'; limit?: number; status?: string }) => {
+      const params = new URLSearchParams();
+      if (opts?.since) params.set('since', opts.since);
+      if (opts?.limit != null) params.set('limit', String(opts.limit));
+      if (opts?.status) params.set('status', opts.status);
+      const qs = params.toString();
+      return request<Array<{
         id: string;
         title: string;
         description: string;
@@ -362,7 +367,8 @@ export const api = {
         source_ip: string | null;
         ai_analysis: Record<string, unknown> | null;
         detected_at: string;
-      }>>('/response/incidents'),
+      }>>(`/response/incidents${qs ? `?${qs}` : ''}`);
+    },
     incident: (id: string) =>
       request<{
         id: string;
