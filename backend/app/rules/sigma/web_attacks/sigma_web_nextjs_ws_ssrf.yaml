@@ -1,0 +1,25 @@
+id: sigma_web_nextjs_ws_ssrf
+name: Next.js WebSocket Upgrade SSRF (CVE-2026-44578)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+- T1090
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains_all:
+    - 'Upgrade: websocket'
+    - 'GET http'
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: GET with Upgrade websocket header and absolute-form URI â€” SSRF via Next.js WS handler.

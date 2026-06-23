@@ -1,0 +1,41 @@
+# Daily Security Report
+
+**Date:** {{ report_date | default('N/A') }}
+**Period:** {{ period | default('Last 24 hours') }}
+
+## Executive Summary
+
+During the reporting period, AEGIS monitored {{ total_events | default(0) }} events and identified {{ total_incidents | default(0) }} incidents.
+
+## Key Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total Events | {{ total_events | default(0) }} |
+| Incidents Created | {{ total_incidents | default(0) }} |
+| Critical | {{ critical_count | default(0) }} |
+| High | {{ high_count | default(0) }} |
+| Medium | {{ medium_count | default(0) }} |
+| Low | {{ low_count | default(0) }} |
+| IPs Blocked | {{ ips_blocked | default(0) }} |
+
+## Top Threats
+
+{% for threat in top_threats | default([]) %}
+- **{{ threat.type }}**: {{ threat.count }} events from {{ threat.source_ips | default(1) }} IPs
+{% else %}
+No significant threats detected.
+{% endfor %}
+
+## Honeypot Activity
+
+- SSH interactions: {{ honeypot_ssh | default(0) }}
+- HTTP interactions: {{ honeypot_http | default(0) }}
+
+## Recommended Actions
+
+{% for rec in recommendations | default([]) %}
+{{ loop.index }}. {{ rec }}
+{% else %}
+Continue monitoring. No immediate actions required.
+{% endfor %}

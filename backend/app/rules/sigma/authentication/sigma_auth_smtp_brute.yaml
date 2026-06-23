@@ -1,0 +1,22 @@
+id: sigma_auth_smtp_brute
+name: SMTP Authentication Brute Force
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1110.001
+data_sources:
+- auth_log
+condition:
+  event_type: auth_failure
+  count_threshold: 10
+  time_window_seconds: 600
+  group_by: source_ip
+  filter:
+    service: smtp
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple failed SMTP authentication attempts.
