@@ -22,6 +22,14 @@ logger = logging.getLogger("aegis.firewall_sync")
 
 SYNC_INTERVAL_SECONDS = 300  # 5 minutes
 
+# v1.6.2: track when each local_only IP first appeared so we can auto-evict
+# entries that have been "local-only" for > AEGIS_STALE_LOCAL_EVICT_HOURS
+# (default 24). Without this, IPs blocked manually or via legacy paths sit in
+# blocked_ips.txt forever, generating warning logs every sync cycle.
+import os as _os_v162
+_LOCAL_ONLY_FIRST_SEEN: dict[str, datetime] = {}
+_STALE_LOCAL_EVICT_HOURS = int(_os_v162.environ.get("AEGIS_STALE_LOCAL_EVICT_HOURS", "24"))
+
 
 async def _get_demo_client_id(db: AsyncSession) -> Optional[str]:
     # Get the first (primary) client — works for single-tenant and multi-tenant
@@ -288,13 +296,40 @@ async def _pull_blocklist_from_pi() -> dict:
         added += 1
 
     local_only = local_blocked - pi_set
+    now = datetime.utcnow()
+    evicted = 0
     if local_only:
-        logger.warning(
-            f"firewall_sync pull: {len(local_only)} IPs in local file but not on Pi "
-            f"(not removed): {sorted(local_only)[:10]}"
-        )
+        # v1.6.2: first-seen tracking + auto-eviction after grace window.
+        for ip in local_only:
+            _LOCAL_ONLY_FIRST_SEEN.setdefault(ip, now)
+        cutoff = now - timedelta(hours=_STALE_LOCAL_EVICT_HOURS)
+        for ip in list(local_only):
+            first_seen = _LOCAL_ONLY_FIRST_SEEN.get(ip, now)
+            if first_seen < cutoff:
+                try:
+                    ip_blocker_service.unblock_ip(ip)
+                    _LOCAL_ONLY_FIRST_SEEN.pop(ip, None)
+                    evicted += 1
+                    logger.info(
+                        f"firewall_sync pull: auto-evicted stale local-only IP "
+                        f"{ip} (first seen {first_seen.isoformat()}, threshold "
+                        f"{_STALE_LOCAL_EVICT_HOURS}h)"
+                    )
+                except Exception as exc:
+                    logger.warning(f"firewall_sync pull: failed to evict {ip}: {exc}")
+        # Clear tracker entries for IPs no longer local_only
+        for ip in list(_LOCAL_ONLY_FIRST_SEEN.keys()):
+            if ip not in local_only:
+                _LOCAL_ONLY_FIRST_SEEN.pop(ip, None)
+        remaining = {ip for ip in local_only if _LOCAL_ONLY_FIRST_SEEN.get(ip, now) >= cutoff}
+        if remaining:
+            logger.info(
+                f"firewall_sync pull: {len(remaining)} IP(s) in local file but not "
+                f"on Pi (within {_STALE_LOCAL_EVICT_HOURS}h grace window): "
+                f"{sorted(remaining)[:10]}"
+            )
 
-    return {"added": added, "skipped_safe": skipped_safe, "local_only": len(local_only)}
+    return {"added": added, "skipped_safe": skipped_safe, "local_only": len(local_only), "evicted": evicted}
 
 
 async def run_sync():
