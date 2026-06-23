@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.1] - 2026-06-23 (patch)
+
+Operator-facing UX + FP-reduction patch on top of v1.6.3. Same evening, no breaking changes.
+
+### Added
+
+#### ASCII retro CRT-style threat map
+- **`frontend/src/components/shared/AsciiThreatMap.tsx`** (NEW) — embedded 84×22 ASCII world map rendered in a `<pre>` block with monospace font (Azeret Mono). Threat markers are absolutely-positioned coloured glyphs at the (col, row) centroid of each country, sized 6–14 px by activity ratio. Top-3 severity tier pulses (cyan/orange/red glow), bottom-right legend shows top-8 countries + total counts. Coverage: 240+ ISO-3166 alpha-2 codes mapped to centroids. Fallback: countries without a centroid render at a discreet (col 1, row 21) bucket so totals stay correct.
+- **`frontend/src/components/shared/GlobalThreatMap.tsx`** — thinned to a re-export from `AsciiThreatMap`, preserving the existing `import { GlobalThreatMap }` call sites in the dashboard. No dynamic-import or prop-contract change required at consumers.
+- Removed dependency on `react-simple-maps` SVG path data + 50 KB world topojson. Bundle effect: dashboard route shrinks by ~38 KB gzipped.
+
+#### Benign User-Agent safelist (BENIGN_UAS)
+- **`backend/app/core/attack_detector.py`** — new `BENIGN_UAS` frozenset of ~30 known-good crawler/monitor UA substrings (search engines, social link-unfurl bots, RSS readers, uptime services, self-identifying security scanners). New `_check_benign_ua()` helper + middleware hook at the top of the detection pipeline (after `_is_safe_ip`, before `_check_scanner_ua`): matching requests pass through with zero tracking. Operators extend at runtime via `AEGIS_BENIGN_UAS=foo,bar` (substring, case-insensitive).
+- **`backend/app/services/log_watcher.py`** — `_is_internal_line()` now extracts the last quoted segment of `[HTTP] ...` log lines and short-circuits to internal when the UA matches `_check_benign_ua()`. Prevents incidents from firing on stdout log lines where the source IP is public but the UA is a benign crawler (e.g. Twitterbot fetching from a non-Twitter CIDR).
+
+#### Threat detection chart — full week window
+- **`backend/app/api/response.py`** — `/api/v1/response/incidents` now accepts `?since=24h|7d|30d|all`. When `since` is set without an explicit small limit, the implicit `limit=100` cap is raised to 10 000 so the full window returns in a single page.
+- **`frontend/src/lib/api.ts`** — `api.response.incidents()` now accepts `{ since, limit, status }` opts and serializes to query string. Default behavior unchanged.
+- **`frontend/src/app/dashboard/page.tsx`** — main dashboard fetch passes `{ since: '7d', limit: 10000 }` so the Threat Detection gradient-area chart shows the full week instead of just the most-recent 100 rows (which all fell in today on a busy day).
+
+### Fixed
+
+#### Durable safelist gate on firewall_sync (root cause of recurring FP purges)
+- **`backend/app/services/firewall_sync.py`** — `_sync_blocked_ips()` now gates `INSERT INTO threat_intel` against `attack_detector._is_safe_ip()`. Previously, safelisted IPs that the Pi had transiently blocked (e.g. Twitter/X 199.16.157.x, Bingbot 157.55.39.x, Googlebot 192.178.6.x) were re-inserted into `threat_intel` on every 5-minute sync cycle, so each cosmetic SQL purge recurred immediately. This is the durable fix the v1.6.2 audit predicted.
+- Telemetry: new `skipped_safe` counter in the `_pull_blocklist_from_pi` return dict + INFO log line per cycle.
+
+### Changed
+
+#### AEGIS_SAFE_IPS expanded — 17 → 133 CIDRs (2 094 chars)
+Research by 4 parallel Sonnet agents (~1.1 M tokens) collected published IP CIDRs for legitimate scanners/crawlers/monitors that were previously triggering false positives. The new env value extends the prior safelist (Twitter/X, Meta, LinkedIn, Bing, Googlebot, Starlink, Tailscale, RFC1918):
+- **Uptime/monitoring (~46 CIDRs)** — Pingdom, UptimeRobot, BetterStack, Datadog Synthetics, New Relic, Checkly, Freshping.
+- **Security scanners (~43 CIDRs)** — Censys, Shodan (registered netblocks), Rapid7 Project Sonar, Shadowserver Foundation, BitSight, Alpha Strike Labs.
+- **Search/social crawlers (~24 CIDRs)** — Applebot, Telegram link preview, Archive.org (Wayback), Qwantbot.
+- **Audit-discovered gaps (2 CIDRs)** — `192.178.0.0/15` (Googlebot's newer block, not in 66.249/16), `52.167.144.0/24` (Bingbot's Azure block).
+
+#### One-shot Postgres purge (operational)
+- `DELETE FROM threat_intel WHERE source='firewall' AND ioc_value IN (...)` removed 18 PTR-verified FPs: 5 Googlebot + 4 Bingbot + 9 Twitter/X. Tor exits explicitly excluded (`185.220.101.42/221/252` are real). 10 Flipboard proxy IPs left in place pending dedicated Flipboard safelist.
+
+### Operational
+- All changes deployed to Mac Pro production (`~/Cayde-6/backend/`, `~/Cayde-6/frontend/`) via SFTP + `npm run build` + `pm2 restart cayde6-api cayde6-frontend`.
+- `/health` reports `version: 1.6.3.1`.
+- E2E verified: request with `Twitterbot/1.0` UA from a fresh public IP returns 200 with zero detection events; control request with `sqlmap/1.7.2` UA still triggers `scanner_detect` WARNING. Both expected.
+
+### Versions
+- `backend/app/__init__.py`, `backend/app/main.py` (3 sites), `frontend/package.json` — all `1.6.3` → `1.6.3.1`.
+
+---
+
 ## [1.6.3] - 2026-06-23 (late)
 
 ### Added — June 2026 threat-intel detection pack + frontend completeness

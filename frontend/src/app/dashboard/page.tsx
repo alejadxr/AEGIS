@@ -123,9 +123,12 @@ export default function DashboardPage() {
     let mounted = true;
     async function load() {
       const [inc, act, ints, tm, apps] = await Promise.allSettled([
-        api.response.incidents(),
+        // v1.6.3: pull 7 days of incidents so the Threat Detection chart shows
+        // the full week instead of just the most-recent 100 rows (which all
+        // fell within today on a busy day).
+        api.response.incidents({ since: '7d', limit: 10000 }),
         api.response.actions(),
-        api.phantom.interactions({ limit: '200' }),
+        api.phantom.interactions({ limit: '500' }),
         api.dashboard.threatMap(),
         api.dashboard.monitoredApps(),
       ]);

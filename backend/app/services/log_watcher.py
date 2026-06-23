@@ -322,6 +322,18 @@ def _is_internal_line(line: str) -> bool:
     stripped = re.sub(r'^\S+\s+\S+\s+', '', line).strip()
     if not stripped or stripped in ("-", "--", "---"):
         return True
+    # v1.6.4: lines whose User-Agent matches a known-good crawler/monitor.
+    # Sable middleware logs `[HTTP] METHOD PATH STATUS IP "UA"` so the UA
+    # is the last quoted field. Treat as internal/benign so they never
+    # generate detection events even if path looks suspicious.
+    try:
+        from app.core.attack_detector import _check_benign_ua
+        # Extract last quoted segment (the UA) from the log line.
+        m = re.search(r'"([^"]+)"\s*$', line)
+        if m and _check_benign_ua(m.group(1)):
+            return True
+    except Exception:  # pragma: no cover - defensive
+        pass
     return False
 
 
