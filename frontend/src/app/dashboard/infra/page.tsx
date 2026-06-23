@@ -440,10 +440,16 @@ function EnrollmentModal({ open, onClose, onEnrolled }: { open: boolean; onClose
                   Download the AEGIS Node app on the target machine
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {['Windows', 'macOS', 'Linux'].map((os) => (
+                  {([
+                    ['Windows', 'https://github.com/alejadxr/AEGIS/releases/latest/download/AEGIS_x64-setup.exe'],
+                    ['macOS', 'https://github.com/alejadxr/AEGIS/releases/latest/download/AEGIS_aarch64.dmg'],
+                    ['Linux', 'https://github.com/alejadxr/AEGIS/releases/latest/download/AEGIS_amd64.AppImage'],
+                  ] as const).map(([os, url]) => (
                     <a
                       key={os}
-                      href="#"
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-border text-[11px] text-muted-foreground font-medium hover:bg-white/[0.08] hover:text-foreground transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" />

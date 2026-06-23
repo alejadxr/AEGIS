@@ -1,0 +1,25 @@
+id: sigma_ai_litellm_bearer_sqli
+name: LiteLLM Proxy Pre-Auth SQLi via Bearer Quote (CVE-2026-42208)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains_all:
+    - /chat/completions
+    - 'Bearer '
+    - "'"
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: POST /chat/completions with single quote in Bearer token â€” pre-auth SQLi.

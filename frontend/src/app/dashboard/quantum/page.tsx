@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Atom, AlertTriangle, CheckCircle, XCircle, Info, Loader2, Crown, Lock, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
@@ -143,7 +142,6 @@ function responseNeedsUpgrade(data: unknown): boolean {
 type GatedSection = 'timeline' | 'assessments' | 'entropy';
 
 export default function QuantumPage() {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const router = useRouter();
   const [readiness, setReadiness] = useState<QuantumReadiness>(FALLBACK_READINESS);
   const [timeline, setTimeline] = useState<CryptoTimelineEntry[]>(FALLBACK_TIMELINE);
@@ -589,7 +587,7 @@ export default function QuantumPage() {
             <button
               onClick={() => {
                 setShowUpgradeModal(false);
-                router.push('/dashboard/settings');
+                router.push('/dashboard/settings#billing');
               }}
               className="w-full bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[var(--brand)]/20 active:scale-[0.98] flex items-center justify-center gap-2"
             >

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 const notoSans = Noto_Sans({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://aegis.somoswilab.com'),
   title: 'AEGIS | Open-Source Ransomware Defense and EDR Platform',
   description: 'Self-hosted autonomous defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms with 134 Sigma rules. Offline-capable. No cloud AI required. Free, AGPL-3.0.',
   keywords: [
