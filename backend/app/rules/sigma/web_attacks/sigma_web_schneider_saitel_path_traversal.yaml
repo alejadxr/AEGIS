@@ -1,0 +1,26 @@
+id: sigma_web_schneider_saitel_path_traversal
+name: Schneider EasyLogic T150 / Saitel DP Path Traversal (CVE-2026-6865)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+- Discovery
+techniques:
+- T1190
+- T1083
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains_all:
+    - saitel
+    - ../
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Path traversal sequences targeting Schneider Saitel/EasyLogic device endpoints.

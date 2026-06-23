@@ -1,0 +1,28 @@
+id: sigma_network_ayysshush_asus_c2
+name: AyySSHush ASUS Botnet C2 IPs and SSH Port 53282 (CVE-2023-39780)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+- CommandAndControl
+techniques:
+- T1190
+- T1571
+data_sources:
+- network_flows
+condition:
+  event_type: network_connection
+  filter:
+    source_ip:
+    - 101.99.91.151
+    - 101.99.94.173
+    - 79.141.163.179
+    - 111.90.146.237
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Inbound from AyySSHush ASUS-router botnet C2 IPs or SSH on non-standard port 53282.

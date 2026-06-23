@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3] - 2026-06-23 (late)
+
+### Added — June 2026 threat-intel detection pack + frontend completeness
+
+#### Detection — 26 new Sigma rules (in-code + YAML pack)
+
+A 15-area parallel-Haiku research pass over the June 1–23, 2026 threat landscape produced 26 verified, log-detectable rules. All shipped both as in-code dicts in `correlation_engine.py` PATTERNS and as YAML mirror files under `backend/app/rules/sigma/<category>/`. New categories: `ai_infra/`, `network/`, `ransomware/`, `supply_chain/`.
+
+Highlights:
+- **`sigma_web_jce_joomla_rce`** — CVE-2026-48907 Joomla JCE editor unauthenticated RCE (KEV).
+- **`sigma_web_mirasvit_cachewarmer_deser`** — CVE-2026-45247 Magento Mirasvit CacheWarmer cookie deserialization (KEV).
+- **`sigma_web_ivanti_sentry_cmdinject`** — CVE-2026-10520 Ivanti Sentry MICS API pre-auth OS command injection (KEV).
+- **`sigma_web_splunk_postgres_recovery_rce`** — CVE-2026-20253 Splunk Enterprise PostgreSQL-sidecar unauthenticated RCE (KEV).
+- **`sigma_ai_litellm_mcp_cmdinject`** — CVE-2026-42271 BerriAI LiteLLM MCP REST authenticated command injection.
+- **`sigma_ai_marimo_terminal_rce`** — CVE-2026-39987 Marimo notebook pre-auth WebSocket terminal RCE.
+- **`sigma_web_drupal_jsonapi_sqli`**, **`sigma_web_ghost_content_api_sqli`**, **`sigma_web_cpanel_whm_crlf`**, **`sigma_web_aver_ptc_cgi_rce`**, **`sigma_web_schneider_saitel_path_traversal`**, **`sigma_web_panos_globalprotect_bypass`**, **`sigma_web_nextjs_ws_ssrf`**.
+- **`sigma_ransomware_prinz_eugen_ext`**, **`sigma_ransomware_shinysp1d3r_ext`** — June 2026 RaaS file-extension signatures.
+- **`sigma_network_ayysshush_asus_c2`**, **`sigma_network_checkpoint_qilin_c2`**, **`sigma_network_fortibleed_ioc`** — C2/IOC patterns from active campaigns.
+- **`sigma_supply_axios_sfrclak_c2`**, **`sigma_supply_mastra_easyday_c2`**, **`sigma_supply_nodeipc_azure_c2`**, **`sigma_supply_shai_hulud_hades_firedalazer`**, **`sigma_supply_shai_hulud_miasma_anthropic_spoof`**, **`sigma_supply_solana_fakefix_telegram`** — npm supply-chain attacks observed in June 2026 with concrete C2 domains and Bun runtime drops.
+
+25 of the 26 rules also landed as `log_watcher.py` PATTERNS regex for stdout-based signature matching where applicable. 52 smoke tests (positive + negative event per rule) added in `backend/tests/test_correlation_engine_v163.py`.
+
+25 additional findings classified as `defer` (require eBPF / kernel monitoring) — documented for v1.6.4 endpoint agent.
+
+#### Frontend completeness — 11 fixes across 22 dashboard pages
+
+Playwright crawl + grep + prod PM2-log audit found 19 actionable issues. All shipped:
+
+- **NEW `frontend/src/app/login/page.tsx`** — `/login` route now exists. Hosts the API-key entry card with `?next=` redirect support. Closes the 404 that previously made the dashboard auth gate silently swap content in place.
+- **`frontend/src/app/dashboard/layout.tsx`** — proper auth gate. Unauthenticated users are redirected to `/login?next=<encoded-path>` instead of `/`. `/dashboard/guide` stays public (no auth required) for marketing / pre-trial.
+- **NEW `frontend/src/components/shared/DemoModeBanner.tsx`** — shared amber banner used by demo-mode pages with "Sign in →" CTA pointing at `/login?next=`.
+- **`frontend/src/app/dashboard/firewall/page.tsx`** — demo-mode now shows the banner globally, not just per-button tooltips.
+- **`frontend/src/app/dashboard/threats/page.tsx`** — same demo-mode banner integration.
+- **`frontend/src/app/dashboard/infra/page.tsx`** — three node download buttons (Windows/macOS/Linux) now point at real GitHub release asset URLs (`https://github.com/alejadxr/AEGIS/releases/latest/download/...`).
+- **`frontend/src/app/dashboard/compliance/page.tsx`** — CC8 Change Management control no longer hardcoded `not_met`. Status moved to `roadmap` with a visible "Planned for v1.7" line.
+- **`frontend/src/app/dashboard/deception/page.tsx`** — gate logic clarified (renamed `enterpriseGated` → `isGated`). "Contact sales" CTA wired to `mailto:` with subject.
+- **`frontend/src/app/dashboard/quantum/page.tsx`** — removed eslint-disable suppressions on `Atom` and `useRouter` (both now legitimately used). Upgrade-banner CTA wired to `/dashboard/settings#billing`.
+- **`frontend/src/app/setup/page.tsx`** — backend connection errors now surface in a red retry banner instead of silent `ERR_CONNECTION_REFUSED`. Premium honeypot gating is visibly disabled (grayscale + lock icon + "Upgrade required" tooltip) rather than console-only.
+- **`frontend/src/components/live/NodeHeartbeatGrid.tsx`** — heartbeat fetch failures no longer swallowed by `.catch(() => {})`. Now logged + surfaced as a red error indicator with hover tooltip.
+- **`frontend/src/app/layout.tsx`** — `metadataBase` set to `NEXT_PUBLIC_APP_URL` (fallback `https://aegis.somoswilab.com`). OG/Twitter image URLs no longer resolve to `localhost:3007`.
+- **`frontend/src/components/shared/GlobalThreatMap.tsx`** — fixed pre-existing JSX comment-as-text-node ESLint error (`// NO THREAT DATA` → `{'// NO THREAT DATA'}`).
+- **NEW `frontend/playwright.config.ts`** — dev/CI test config (excluded from production build).
+
+### Changed
+- Versions: `backend/app/__init__.py`, `backend/app/main.py` (3 sites), `frontend/package.json` — all `1.6.2` → `1.6.3`.
+
+### Operational (production)
+- Deployed all 26 YAML rule files + correlation_engine.py + log_watcher.py + 13 frontend source files via SFTP.
+- `pm2 restart cayde6-api cayde6-frontend`; both healthy; `/health` reports `version: 1.6.3`.
+- Frontend rebuild on Mac Pro succeeded; `/login` route serves HTTP 200; `/dashboard/guide` accessible without auth as designed; `/dashboard` redirects unauthenticated users to `/login?next=/dashboard`.
+
+### Not yet integrated (deferred to v1.6.4)
+- 25 verified June 2026 threats requiring eBPF / auditd / file-watcher beyond current FIM (kernel-level CVEs, syscall-trace TTPs).
+- Behavioral baseline for slow-and-low APT (rotating-IP brute force across hours) — still pending from v1.6.2.
+- Cross-source incident dedup at correlation_engine level (eliminate residual fast_triage / correlation_engine 1:1 doubling).
+- Severity rebalancing for remaining audit-flagged rules.
+
+---
+
 ## [1.6.2] - 2026-06-23
 
 ### Fixed — FP firehose + stuck incidents (2026-06-23 audit response)

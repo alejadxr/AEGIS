@@ -1,0 +1,26 @@
+id: sigma_ai_sglang_rerank_ssti
+name: SGLang /v1/rerank Jinja2 SSTI RCE (CVE-2026-5760)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+- Execution
+techniques:
+- T1190
+- T1059
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains_all:
+    - /v1/rerank
+    - '{{'
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: POST /v1/rerank with Jinja2 SSTI payload â€” RCE via malicious GGUF model.

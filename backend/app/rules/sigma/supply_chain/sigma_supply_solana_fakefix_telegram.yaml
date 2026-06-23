@@ -1,0 +1,26 @@
+id: sigma_supply_solana_fakefix_telegram
+name: Solana FakeFix PyPI Telegram Exfil
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- Exfiltration
+- CommandAndControl
+techniques:
+- T1567
+- T1071.001
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains_all:
+    - api.telegram.org
+    - /bot
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: HTTP POST to api.telegram.org/bot* from server â€” Solana FakeFix PyPI exfil.

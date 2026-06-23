@@ -185,8 +185,50 @@ export default function SetupWizard() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // Backend connectivity error UX
+  const [backendError, setBackendError] = useState<string>('');
+  const retryActionRef = useRef<(() => void) | null>(null);
+
   // Dynamic AI providers — fetched from API, with fallback
   const [aiProviders, setAiProviders] = useState(FALLBACK_PROVIDERS);
+
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+
+  // Detect network/connection failures (ERR_CONNECTION_REFUSED, DNS failures, CORS, offline)
+  // fetch() throws TypeError on network errors; ApiError has a .status
+  const isNetworkError = (err: unknown): boolean => {
+    if (!err) return false;
+    if (err instanceof TypeError) return true;
+    if (err instanceof Error) {
+      const msg = err.message.toLowerCase();
+      return (
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('load failed') ||
+        msg.includes('err_connection') ||
+        msg.includes('err_network')
+      );
+    }
+    return false;
+  };
+
+  const reportBackendDown = (retry: () => void) => {
+    setBackendError(
+      `Cannot reach AEGIS API at ${API_BASE}. Make sure cayde6-api is running.`
+    );
+    retryActionRef.current = retry;
+  };
+
+  const clearBackendError = () => {
+    setBackendError('');
+    retryActionRef.current = null;
+  };
+
+  const handleRetry = () => {
+    const action = retryActionRef.current;
+    clearBackendError();
+    if (action) action();
+  };
 
   const [state, setState] = useState<SetupState>({
     authMethod: 'register',
@@ -217,26 +259,32 @@ export default function SetupWizard() {
     setTimeout(() => setMounted(true), 50);
 
     // Fetch available AI providers from API
-    const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-    fetch(`${BASE}/ai/providers`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((p: { name: string; display_name?: string; active?: boolean }) => ({
-            id: p.name,
-            label: p.display_name || p.name.charAt(0).toUpperCase() + p.name.slice(1),
-            description: p.active ? 'Currently active' : 'Available',
-            icon: PROVIDER_ICONS[p.name] || Cpu,
-          }));
-          // Add skip option at the end
-          mapped.push({ id: 'skip', label: 'Skip for now', description: 'Configure AI later', icon: ChevronRight });
-          setAiProviders(mapped);
-          // Auto-select the active provider
-          const active = data.find((p: { active?: boolean }) => p.active);
-          if (active) update({ aiProvider: active.name });
-        }
-      })
-      .catch(() => { /* Use fallback providers */ });
+    const loadProviders = () => {
+      const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+      fetch(`${BASE}/ai/providers`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            const mapped = data.map((p: { name: string; display_name?: string; active?: boolean }) => ({
+              id: p.name,
+              label: p.display_name || p.name.charAt(0).toUpperCase() + p.name.slice(1),
+              description: p.active ? 'Currently active' : 'Available',
+              icon: PROVIDER_ICONS[p.name] || Cpu,
+            }));
+            // Add skip option at the end
+            mapped.push({ id: 'skip', label: 'Skip for now', description: 'Configure AI later', icon: ChevronRight });
+            setAiProviders(mapped);
+            // Auto-select the active provider
+            const active = data.find((p: { active?: boolean }) => p.active);
+            if (active) update({ aiProvider: active.name });
+          }
+        })
+        .catch((err) => {
+          if (isNetworkError(err)) reportBackendDown(loadProviders);
+        });
+    };
+    loadProviders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -330,8 +378,12 @@ export default function SetupWizard() {
         update({ loginMode: true });
       } else if (isApiError && (err as { status: number }).status === 401 && state.loginMode) {
         setError('Invalid credentials. Please try again.');
+      } else if (isNetworkError(err)) {
+        reportBackendDown(handleStep1);
+        setLoading(false);
+        return;
       } else {
-        // Backend unavailable — allow continuing for setup flow
+        // Other backend errors — allow continuing for setup flow
         if (state.authMethod === 'apikey') {
           setApiKey(state.apiKey.trim());
         }
@@ -365,12 +417,21 @@ export default function SetupWizard() {
             config.api_key = state.aiProviderKey.trim();
           }
           await api.ai.configure(state.aiProvider, config);
-        } catch {
-          // Silently continue if AI config fails (401 or network error)
+        } catch (err) {
+          if (isNetworkError(err)) {
+            reportBackendDown(handleStep2);
+            setLoading(false);
+            return;
+          }
+          // Silently continue if AI config fails (401 etc.)
         }
       }
-    } catch {
-      // Continue even if AI config fails
+    } catch (err) {
+      if (isNetworkError(err)) {
+        reportBackendDown(handleStep2);
+        setLoading(false);
+        return;
+      }
     }
     setLoading(false);
     markCompleted(2);
@@ -417,8 +478,13 @@ export default function SetupWizard() {
           }
         }
       }
-    } catch {
-      // Continue even if honeypot config fails
+    } catch (err) {
+      if (isNetworkError(err)) {
+        reportBackendDown(handleStep4Honeypots);
+        setLoading(false);
+        return;
+      }
+      // Continue even if honeypot config fails for other reasons
     }
     setLoading(false);
     markCompleted(4);
@@ -485,8 +551,12 @@ export default function SetupWizard() {
         }
       }
       setError('Scan timed out. Try adding assets manually.');
-    } catch {
-      setError('Scan failed or backend unavailable. You can add assets manually.');
+    } catch (err) {
+      if (isNetworkError(err)) {
+        reportBackendDown(handleDiscover);
+      } else {
+        setError('Scan failed or backend unavailable. You can add assets manually.');
+      }
     } finally {
       setScanning(false);
     }
@@ -545,8 +615,13 @@ export default function SetupWizard() {
           })),
         }),
       });
-    } catch {
-      // Continue even if registration fails
+    } catch (err) {
+      if (isNetworkError(err)) {
+        reportBackendDown(handleRegisterAssets);
+        setLoading(false);
+        return;
+      }
+      // Continue even if registration fails for other reasons
     }
     setLoading(false);
     markCompleted(3);
@@ -579,12 +654,21 @@ export default function SetupWizard() {
       if (Object.keys(data).length > 0) {
         try {
           await api.settings.updateNotifications(data);
-        } catch {
-          // Continue even if notification config fails
+        } catch (err) {
+          if (isNetworkError(err)) {
+            reportBackendDown(handleStep5Alerts);
+            setLoading(false);
+            return;
+          }
+          // Continue even if notification config fails for other reasons
         }
       }
-    } catch {
-      // Continue
+    } catch (err) {
+      if (isNetworkError(err)) {
+        reportBackendDown(handleStep5Alerts);
+        setLoading(false);
+        return;
+      }
     }
     setLoading(false);
     markCompleted(5);
@@ -598,12 +682,21 @@ export default function SetupWizard() {
       if (state.intelSharingEnabled) {
         try {
           await api.settings.patchClient({ settings: { intel_sharing_enabled: true } });
-        } catch {
-          // Continue even if setting fails
+        } catch (err) {
+          if (isNetworkError(err)) {
+            reportBackendDown(handleStep6Intel);
+            setLoading(false);
+            return;
+          }
+          // Continue even if setting fails for other reasons
         }
       }
-    } catch {
-      // Continue
+    } catch (err) {
+      if (isNetworkError(err)) {
+        reportBackendDown(handleStep6Intel);
+        setLoading(false);
+        return;
+      }
     }
     setLoading(false);
     markCompleted(6);
@@ -687,6 +780,31 @@ export default function SetupWizard() {
       <div className={`relative w-full max-w-2xl z-10 transition-all duration-700 ease-out ${
         mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
       }`}>
+        {/* Backend connectivity banner */}
+        {backendError && (
+          <div className="mb-6 rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-[var(--danger)] flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-[var(--danger)]">Backend unreachable</div>
+              <div className="text-xs text-zinc-300 mt-1 break-all">{backendError}</div>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={handleRetry}
+                className="px-3 py-1.5 rounded-lg bg-[var(--danger)]/20 border border-[var(--danger)]/30 text-[var(--danger)] text-xs font-semibold hover:bg-[var(--danger)]/30 transition-all"
+              >
+                Retry
+              </button>
+              <button
+                onClick={clearBackendError}
+                className="px-2 py-1.5 rounded-lg text-zinc-500 hover:text-white transition-colors"
+                aria-label="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
         {/* Step Indicator */}
         <div className="flex items-center justify-center gap-2 mb-10">
           {STEPS.map((s, i) => (
@@ -1278,27 +1396,26 @@ export default function SetupWizard() {
                 <div className="grid grid-cols-3 gap-2">
                   {SMART_HONEYPOT_TYPES.map(hp => {
                     const Icon = hp.icon;
-                    const isSelected = state.selectedHoneypots.includes(hp.id);
                     return (
                       <button
                         key={hp.id}
                         onClick={() => toggleHoneypot(hp.id, true)}
-                        className={`relative p-3 rounded-xl border text-left transition-all duration-200 ${
-                          isSelected
-                            ? 'border-[var(--brand-accent)]/30 bg-[var(--brand-accent)]/5'
-                            : 'border-white/[0.06] hover:border-[var(--brand-accent)]/20 hover:bg-white/[0.02]'
-                        }`}
+                        title="Premium feature — upgrade required"
+                        aria-disabled="true"
+                        className="relative p-3 rounded-xl border border-white/[0.04] bg-white/[0.01] text-left transition-all duration-200 opacity-50 cursor-not-allowed hover:opacity-60 hover:border-[var(--brand-accent)]/20 grayscale"
                       >
-                        <div className="absolute top-2 right-2">
+                        <div className="absolute top-2 right-2 flex items-center gap-1">
                           <Crown className="w-3.5 h-3.5 text-[var(--brand-accent)]" />
+                          <Lock className="w-3 h-3 text-zinc-500" />
                         </div>
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${
-                          isSelected ? 'bg-[var(--brand-accent)]/10' : 'bg-white/[0.04]'
-                        }`}>
-                          <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-[var(--brand-accent)]' : 'text-zinc-500'}`} />
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-2 bg-white/[0.02]">
+                          <Icon className="w-3.5 h-3.5 text-zinc-600" />
                         </div>
-                        <div className="text-xs font-medium text-white mb-0.5">{hp.name}</div>
-                        <div className="text-[10px] text-zinc-500 leading-tight">{hp.description}</div>
+                        <div className="text-xs font-medium text-zinc-400 mb-0.5">{hp.name}</div>
+                        <div className="text-[10px] text-zinc-600 leading-tight">{hp.description}</div>
+                        <div className="mt-2 text-[9px] font-semibold uppercase tracking-wider text-[var(--brand-accent)]/70">
+                          Upgrade required
+                        </div>
                       </button>
                     );
                   })}

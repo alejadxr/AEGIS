@@ -1,0 +1,25 @@
+id: sigma_web_mirasvit_cachewarmer_deser
+name: Magento Mirasvit CacheWarmer Deserialization (CVE-2026-45247)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains:
+    - CacheWarmer=Tz
+    - CacheWarmer=Qz
+    - CacheWarmer=YT
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: CacheWarmer cookie with base64-prefixed PHP serialized object (Tz=O:, Qz=C:, YT=a:).

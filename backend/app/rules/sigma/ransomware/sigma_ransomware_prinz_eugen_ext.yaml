@@ -1,0 +1,23 @@
+id: sigma_ransomware_prinz_eugen_ext
+name: Prinz Eugen Ransomware Extension
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Impact
+techniques:
+- T1486
+data_sources:
+- fim
+condition:
+  event_type: file_create
+  filter:
+    path_contains:
+    - .prinzeugen
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: File
+  field: file_path
+description: File creation with .prinzeugen extension â€” Prinz Eugen ransomware marker.

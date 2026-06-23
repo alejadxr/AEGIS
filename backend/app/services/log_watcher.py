@@ -156,6 +156,106 @@ PATTERNS = [
         "regex": re.compile(r"/terminal/ws|/marimo/terminal"),
     },
     {
+    "name": "jce_joomla_rce", "severity": "critical", "threat_type": "rce",
+    "regex": re.compile(r"option=com_jce&task=(?:profiles\.import|plugin\.rpc)"),
+},
+    {
+    "name": "mirasvit_cachewarmer_deser", "severity": "critical", "threat_type": "deserialization",
+    "regex": re.compile(r"CacheWarmer=(?:Tz|Qz|YT)[A-Za-z0-9+/=]+"),
+},
+    {
+    "name": "ivanti_sentry_cmdinject", "severity": "critical", "threat_type": "rce",
+    "regex": re.compile(r"/mics/api/v2/sentry/mics-config/handleMessage.*commandexec", re.IGNORECASE | re.DOTALL),
+},
+    {
+    "name": "litellm_mcp_cmdinject", "severity": "high", "threat_type": "rce",
+    "regex": re.compile(r"/mcp-rest/test/(?:connection|tools/list).*stdio.*\"command\"", re.DOTALL),
+},
+    {
+    "name": "splunk_postgres_recovery_rce", "severity": "critical", "threat_type": "rce",
+    "regex": re.compile(r"/splunkd/__raw/v1/postgres/recovery/"),
+},
+    {
+    "name": "sglang_rerank_ssti", "severity": "critical", "threat_type": "rce",
+    "regex": re.compile(r"/v1/rerank.*(?:\{\{|__import__|subprocess)", re.DOTALL),
+},
+    {
+    "name": "mastra_easyday_c2", "severity": "critical", "threat_type": "supply_chain",
+    "regex": re.compile(r"23\.254\.164\.(?:92|123)"),
+},
+    {
+    "name": "nodeipc_azure_c2", "severity": "high", "threat_type": "supply_chain",
+    "regex": re.compile(r"sh\.azurestaticprovider\.net|37\.16\.75\.69"),
+},
+    {
+    "name": "shai_hulud_miasma_anthropic_spoof", "severity": "critical", "threat_type": "supply_chain",
+    "regex": re.compile(r"api\.anthropic\.com/v1/api(?:[/?\s\"]|$)"),
+},
+    {
+    "name": "solana_fakefix_telegram", "severity": "critical", "threat_type": "supply_chain",
+    "regex": re.compile(r"api\.telegram\.org/bot[0-9A-Za-z:_-]+"),
+},
+    {
+    "name": "fortibleed_ioc_ip", "severity": "high", "threat_type": "reconnaissance",
+    "regex": re.compile(r"\b85\.11\.187\.8\b"),
+},
+    {
+    "name": "litellm_bearer_sqli", "severity": "critical", "threat_type": "sql_injection",
+    "regex": re.compile(r"Authorization:\s*Bearer\s+[A-Za-z0-9+/=._-]*'"),
+},
+    {
+    "name": "shai_hulud_hades_firedalazer", "severity": "critical", "threat_type": "supply_chain",
+    "regex": re.compile(r"github\.com/search/commits[^\s]*firedalazer"),
+},
+    {
+    "name": "prinz_eugen_ransomware", "severity": "high", "threat_type": "ransomware",
+    "regex": re.compile(r"\.prinzeugen\b"),
+},
+    {
+    "name": "shinysp1d3r_ransomware", "severity": "high", "threat_type": "ransomware",
+    "regex": re.compile(r"\.shinysp1d3r\b"),
+},
+    {
+    "name": "aver_ptc_cgi_rce", "severity": "critical", "threat_type": "rce",
+    "regex": re.compile(r"cgi-bin/[^\s]+.*bash\s+-i", re.DOTALL),
+},
+    {
+    "name": "panos_globalprotect_bypass", "severity": "critical", "threat_type": "auth_bypass",
+    "regex": re.compile(r"/ssl-vpn/(?:hipreport|getconfig)\.esp"),
+},
+    {
+    "name": "checkpoint_qilin_c2", "severity": "critical", "threat_type": "c2",
+    "regex": re.compile(r"\b(?:45\.77\.149\.152|209\.182\.225\.136|38\.60\.157\.139)\b"),
+},
+    {
+    "name": "ayysshush_asus_c2", "severity": "high", "threat_type": "c2",
+    "regex": re.compile(r"\b(?:101\.99\.91\.151|101\.99\.94\.173|79\.141\.163\.179|111\.90\.146\.237)\b|:53282\b"),
+},
+    {
+    "name": "axios_sfrclak_c2", "severity": "critical", "threat_type": "supply_chain",
+    "regex": re.compile(r"sfrclak\.com|142\.11\.206\.73"),
+},
+    {
+    "name": "cpanel_whm_crlf", "severity": "critical", "threat_type": "header_injection",
+    "regex": re.compile(r"whostmgrsession=[^\s;]*(?:\\r\\n|%0[dD]%0[aA])"),
+},
+    {
+    "name": "drupal_jsonapi_sqli", "severity": "critical", "threat_type": "sql_injection",
+    "regex": re.compile(r"/jsonapi/[^\s]*(?:UNION\s+SELECT|information_schema|pg_)", re.IGNORECASE),
+},
+    {
+    "name": "ghost_content_api_sqli", "severity": "critical", "threat_type": "sql_injection",
+    "regex": re.compile(r"/ghost/api/[^\s]*slug:[^\s]*(?:UNION|SELECT|information_schema|--|OR\s+1=1)", re.IGNORECASE),
+},
+    {
+    "name": "nextjs_ws_ssrf", "severity": "high", "threat_type": "ssrf",
+    "regex": re.compile(r'"GET\s+https?://[^\s"]+\s+HTTP/[\d.]+".*Upgrade:\s*websocket', re.IGNORECASE | re.DOTALL),
+},
+    {
+    "name": "schneider_saitel_traversal", "severity": "high", "threat_type": "path_traversal",
+    "regex": re.compile(r"saitel[^\s]*\.\./", re.IGNORECASE),
+},
+    {
         "name": "cmd_injection", "severity": "critical", "threat_type": "rce",
         "regex": re.compile(r"(?i)(;\s*cat\s+/etc|\|\s*whoami|&&\s*id\b|`id`|\$\(id\)|;\s*ls\s|\|\s*cat\s|\bexec\s*\()"),
     },

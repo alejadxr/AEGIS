@@ -1,0 +1,27 @@
+id: sigma_network_checkpoint_qilin_c2
+name: Check Point IKEv1 Bypass / Qilin Payload IPs (CVE-2026-50751)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+- CommandAndControl
+techniques:
+- T1190
+- T1105
+data_sources:
+- network_flows
+condition:
+  event_type: network_connection
+  filter:
+    source_ip:
+    - 45.77.149.152
+    - 209.182.225.136
+    - 38.60.157.139
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Inbound from Qilin / Check Point CVE-2026-50751 payload-hosting IPs.

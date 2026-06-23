@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Search01Icon } from 'hugeicons-react';
 import { Plus, Download, Filter, Globe, Hash, Link, Mail, Monitor, CheckCircle } from 'lucide-react';
 import { DataTable } from '@/components/shared/DataTable';
+import { DemoModeBanner } from '@/components/shared/DemoModeBanner';
 import { Modal } from '@/components/shared/Modal';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { Panel } from '@/components/aegis/Panel';
@@ -208,6 +209,7 @@ export default function ThreatsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {isDemo && <DemoModeBanner feature="Threat" nextPath="/dashboard/threats" />}
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
