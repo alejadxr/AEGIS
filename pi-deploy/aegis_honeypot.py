@@ -23,7 +23,7 @@ LISTEN_HOST = "0.0.0.0"
 LISTEN_PORT = int(os.environ.get("HONEYPOT_PORT", "8081"))
 LOG_FILE = os.environ.get("HONEYPOT_LOG", "/var/log/aegis/honeypot.log")
 FIREWALL_URL = os.environ.get("AEGIS_LOCAL_FW", "http://127.0.0.1:8765")
-AEGIS_API = os.environ.get("AEGIS_API_URL", "http://100.87.222.58:8000")
+AEGIS_API = os.environ.get("AEGIS_API_URL", "")
 AEGIS_API_KEY = os.environ.get("AEGIS_API_KEY", "")
 
 _SAFE_NETS = [

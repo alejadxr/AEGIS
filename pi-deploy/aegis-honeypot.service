@@ -11,7 +11,7 @@ WorkingDirectory=/home/diego/aegis-honeypot
 Environment=HONEYPOT_PORT=8081
 Environment=HONEYPOT_LOG=/var/log/aegis/honeypot.log
 Environment=AEGIS_LOCAL_FW=http://127.0.0.1:8765
-Environment=AEGIS_API_URL=http://100.87.222.58:8000
+Environment=AEGIS_API_URL=<YOUR_SERVER_IP>:8000
 ExecStart=/usr/bin/python3 /home/diego/aegis-honeypot/aegis_honeypot.py
 Restart=on-failure
 RestartSec=5

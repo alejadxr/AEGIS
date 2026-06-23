@@ -1,6 +1,6 @@
 # How AEGIS Detects and Stops Ransomware — Technical Reference
 
-*Last updated: 2026-05-14 · Version: 1.6.1 · MITRE ATT&CK: T1490 / T1486 / T1105 / T1218 / T1021*
+*Last updated: 2026-06-23 · Version: 1.6.2 · MITRE ATT&CK: T1490 / T1486 / T1105 / T1218 / T1021*
 
 ---
 

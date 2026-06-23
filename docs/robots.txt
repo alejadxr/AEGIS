@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://diego1128256-cmd.github.io/AEGIS/sitemap.xml
+Sitemap: https://<github-org>.github.io/AEGIS/sitemap.xml

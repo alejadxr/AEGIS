@@ -74,7 +74,7 @@ export default function RootLayout({
                   "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 134 Sigma rules. Offline-capable. No cloud AI required.",
                   "applicationCategory": "SecurityApplication",
                   "operatingSystem": "Linux, macOS, Windows",
-                  "softwareVersion": "1.6.1",
+                  "softwareVersion": "1.6.2",
                   "datePublished": "2026-05-01",
                   "license": "https://www.gnu.org/licenses/agpl-3.0.html",
                   "url": "https://github.com/alejadxr/AEGIS",
