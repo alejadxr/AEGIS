@@ -1,0 +1,33 @@
+id: ransomware_chain
+name: Ransomware kill-chain
+kind: chain
+severity: critical
+enabled: true
+tactics:
+- Impact
+techniques:
+- T1490
+- T1486
+data_sources:
+- correlation
+description: 'Same host: LOLBin staging (certutil) -> shadow copy deletion -> mass file extension change'
+condition:
+  event_type: __chain__
+sequence:
+- ransomware_lolbin_certutil
+- ransomware_vss_delete
+- ransomware_extension_mass_change
+max_window_seconds: 7200
+group_by: source_ip
+chain:
+- sigma_rule: ransomware_lolbin_certutil
+  within: 3600
+- sigma_rule: ransomware_vss_delete
+  within: 1800
+- sigma_rule: ransomware_extension_mass_change
+  within: 1200
+entityMappings:
+- type: Host
+  field: hostname
+- type: IP
+  field: source_ip

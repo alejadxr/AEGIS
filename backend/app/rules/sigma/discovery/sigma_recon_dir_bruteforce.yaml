@@ -1,0 +1,22 @@
+id: sigma_recon_dir_bruteforce
+name: Web Directory Brute Force
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1083
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 100
+  time_window_seconds: 60
+  group_by: source_ip
+  unique_field: path
+entityMappings:
+- type: IP
+  field: source_ip
+description: Rapid requests to many different paths indicating directory enumeration.

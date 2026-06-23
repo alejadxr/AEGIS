@@ -1,0 +1,21 @@
+id: sigma_recon_fast_scan
+name: Fast Port Scan Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1046
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 50
+  time_window_seconds: 30
+  group_by: source_ip
+  unique_field: target_port
+entityMappings:
+- type: IP
+  field: source_ip
+description: Rapid port scanning of single target (SYN scan pattern).

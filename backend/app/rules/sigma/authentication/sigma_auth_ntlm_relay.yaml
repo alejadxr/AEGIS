@@ -1,0 +1,22 @@
+id: sigma_auth_ntlm_relay
+name: NTLM Relay Attack Detected
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1557.001
+data_sources:
+- auth_log
+condition:
+  event_type: ntlm_auth
+  count_threshold: 3
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    target_type: internal
+entityMappings:
+- type: IP
+  field: source_ip
+description: NTLM authentication from unexpected source suggesting relay.

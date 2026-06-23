@@ -1,0 +1,19 @@
+id: sigma_lateral_wmi_exec
+name: WMI Remote Execution
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1047
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    parent_process: wmiprvse.exe
+entityMappings:
+- type: IP
+  field: source_ip
+description: Remote process creation via WMI detected.

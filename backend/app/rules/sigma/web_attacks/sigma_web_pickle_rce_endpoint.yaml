@@ -1,0 +1,35 @@
+id: sigma_web_pickle_rce_endpoint
+name: Pickle/Deserialization RCE Endpoint Probe (CVE-2026-26215, generic)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+- Execution
+techniques:
+- T1190
+- T1059
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /simple_execute/
+    - /execute/__
+    - /api/execute_method
+    - /pickle_load
+    - /api/v1/deserialize
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  Probe of pickle/dynamic-method-execute endpoints exposed by ML
+  services. Pattern from CVE-2026-26215 (manga-image-translator)
+  and similar — any framework that exposes /execute/{method_name}
+  with pickle body. Single hit indicates targeted RCE attempt
+  on an exposed deserialization endpoint.

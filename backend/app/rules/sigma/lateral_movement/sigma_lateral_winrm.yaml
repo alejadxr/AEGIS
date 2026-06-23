@@ -1,0 +1,19 @@
+id: sigma_lateral_winrm
+name: WinRM Lateral Movement
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- LateralMovement
+techniques:
+- T1021.006
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    parent_process: wsmprovhost.exe
+entityMappings:
+- type: IP
+  field: source_ip
+description: Remote command execution via WinRM/PowerShell Remoting.

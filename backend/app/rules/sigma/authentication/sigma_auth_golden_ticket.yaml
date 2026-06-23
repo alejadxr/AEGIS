@@ -1,0 +1,19 @@
+id: sigma_auth_golden_ticket
+name: Golden Ticket Usage Suspected
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1558.001
+data_sources:
+- auth_log
+condition:
+  event_type: kerberos_auth
+  filter:
+    ticket_lifetime_gt: 36000
+entityMappings:
+- type: IP
+  field: source_ip
+description: Kerberos TGT with abnormally long lifetime detected.

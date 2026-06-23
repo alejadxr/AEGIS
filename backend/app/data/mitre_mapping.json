@@ -1,0 +1,102 @@
+{
+  "brute_force": {
+    "tactic": "Credential Access",
+    "technique": "T1110",
+    "technique_name": "Brute Force"
+  },
+  "sql_injection": {
+    "tactic": "Initial Access",
+    "technique": "T1190",
+    "technique_name": "Exploit Public-Facing Application"
+  },
+  "xss": {
+    "tactic": "Initial Access",
+    "technique": "T1190",
+    "technique_name": "Exploit Public-Facing Application"
+  },
+  "path_traversal": {
+    "tactic": "Discovery",
+    "technique": "T1083",
+    "technique_name": "File and Directory Discovery"
+  },
+  "command_injection": {
+    "tactic": "Execution",
+    "technique": "T1059",
+    "technique_name": "Command and Scripting Interpreter"
+  },
+  "rce": {
+    "tactic": "Execution",
+    "technique": "T1059",
+    "technique_name": "Command and Scripting Interpreter"
+  },
+  "port_scan": {
+    "tactic": "Discovery",
+    "technique": "T1046",
+    "technique_name": "Network Service Discovery"
+  },
+  "scanner": {
+    "tactic": "Discovery",
+    "technique": "T1046",
+    "technique_name": "Network Service Discovery"
+  },
+  "lateral_movement": {
+    "tactic": "Lateral Movement",
+    "technique": "T1021",
+    "technique_name": "Remote Services"
+  },
+  "c2_beacon": {
+    "tactic": "Command and Control",
+    "technique": "T1071",
+    "technique_name": "Application Layer Protocol"
+  },
+  "c2_communication": {
+    "tactic": "Command and Control",
+    "technique": "T1071",
+    "technique_name": "Application Layer Protocol"
+  },
+  "ransomware": {
+    "tactic": "Impact",
+    "technique": "T1486",
+    "technique_name": "Data Encrypted for Impact"
+  },
+  "malware": {
+    "tactic": "Execution",
+    "technique": "T1204",
+    "technique_name": "User Execution"
+  },
+  "phishing": {
+    "tactic": "Initial Access",
+    "technique": "T1566",
+    "technique_name": "Phishing"
+  },
+  "credential_dumping": {
+    "tactic": "Credential Access",
+    "technique": "T1003",
+    "technique_name": "OS Credential Dumping"
+  },
+  "web_shell": {
+    "tactic": "Persistence",
+    "technique": "T1505.003",
+    "technique_name": "Server Software Component: Web Shell"
+  },
+  "privilege_escalation": {
+    "tactic": "Privilege Escalation",
+    "technique": "T1068",
+    "technique_name": "Exploitation for Privilege Escalation"
+  },
+  "data_exfiltration": {
+    "tactic": "Exfiltration",
+    "technique": "T1041",
+    "technique_name": "Exfiltration Over C2 Channel"
+  },
+  "dos": {
+    "tactic": "Impact",
+    "technique": "T1498",
+    "technique_name": "Network Denial of Service"
+  },
+  "unknown": {
+    "tactic": "",
+    "technique": "",
+    "technique_name": ""
+  }
+}
