@@ -608,7 +608,10 @@ class LogWatcher:
                 # Extra guard: skip auth_failure from internal/private IPs
                 if pattern["name"] == "auth_failure" and ip and (ip in INTERNAL_IPS or _is_private_ip(ip)):
                     return
-                alert_key = f"{pattern['name']}:{line[:80]}"
+                # v1.6.2: dedup on (ip, pattern, threat_type) so URL query-string
+                # variation (e.g. ?id=1 vs ?id=2) collapses into one incident per
+                # 5-minute window instead of inflating the table 10× per attacker.
+                alert_key = f"{pattern['name']}:{ip or 'noip'}:{pattern['threat_type']}"
                 if alert_key not in self._recent_alerts:
                     self._recent_alerts.append(alert_key)
                     await self._create_incident_from_log(
@@ -667,6 +670,23 @@ class LogWatcher:
         if _attack_detector_is_safe_ip(source_ip):
             logger.debug(f'Skipping incident for safe IP {source_ip} (AEGIS_SAFE_IPS): {pattern_name}')
             return
+
+        # v1.6.2: Tor exit doing scanner_detect / reconnaissance is one of the
+        # highest-signal threat classes (Tor-exit recon → exploit pipeline).
+        # Escalate severity and force-block regardless of original pattern tier.
+        if source_ip and threat_type in {"reconnaissance", "brute_force"}:
+            try:
+                from app.services.ip_intel import _load_tor_exits
+                if source_ip in _load_tor_exits():
+                    severity = "high"
+                    description = f"[Tor exit] {description}"
+                    try:
+                        from app.core.ip_blocker import ip_blocker_service
+                        ip_blocker_service.block_ip(source_ip)
+                    except Exception as exc:
+                        logger.debug(f"Tor exit auto-block failed for {source_ip}: {exc}")
+            except Exception as exc:
+                logger.debug(f"Tor exit lookup failed for {source_ip}: {exc}")
 
         # Incident deduplication: don't spam incidents for the same IP + threat type
         cooldown_key = f"{source_ip}:{threat_type}"

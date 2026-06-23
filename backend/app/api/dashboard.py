@@ -202,18 +202,31 @@ class LiveMetrics(BaseModel):
 
 @router.get("/live-metrics", response_model=LiveMetrics)
 async def get_live_metrics(
+    window: str = "24h",
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Cached aggregates for the Live SOC dashboard:
+    """Cached aggregates for the Live SOC dashboard.
+
+    v1.6.2: configurable ?window=24h|7d|30d|all so operators can see slow-burn
+    campaigns that the previous hard-coded 24h cutoff hid.
+
+    Returns:
       - Top 10 attacker IPs (by incident count)
       - Top 10 targets (assets by incident count)
       - Top 10 attack types (by mitre_technique count)
       - Rolling counters (open incidents, hits, blocks, decisions)
     """
     client = auth.client
-    cutoff = datetime.utcnow() - timedelta(hours=24)
+    # v1.6.2: configurable window. "all" disables the time filter.
+    _WINDOW_MAP = {
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+        "all": None,
+    }
+    delta = _WINDOW_MAP.get(window, timedelta(hours=24))
+    cutoff = datetime.utcnow() - delta if delta else datetime(1970, 1, 1)
 
     # Top 10 attacker IPs
     attackers_result = await db.execute(
@@ -324,49 +337,66 @@ async def get_live_metrics(
 
 @router.get("/threat-map", response_model=list[ThreatMapEntry])
 async def get_threat_map(
+    window: str = "all",
+    limit_per_source: int = 2000,
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
     """Get threat geography data grouped by country.
 
-    Resolves attacker IPs to countries via offline GeoIP and returns
-    {country, country_code, count} so the GlobalThreatMap component can
-    render geographical data. Falls back to country_code='??' for unknown IPs.
+    v1.6.2: adds ?window=24h|7d|30d|all (default: all — full history) and
+    ?limit_per_source=N (default 2000, was 200 hard-coded). The previous
+    LIMIT 200 per leg caused a single high-volume attacker to crowd out the
+    long-tail of historical attackers. The [:50] country cap is also removed
+    so every ISO-3166 code with any activity is returned.
 
-    Data sources (merged, deduped by country):
-      - Honeypot interactions
-      - Incidents with a source_ip
+    Resolves attacker IPs to countries via offline GeoIP and returns
+    {country, country_code, count} for the GlobalThreatMap component.
     """
     from app.services import offline_geoip
 
     client = auth.client
 
+    # v1.6.2: configurable window
+    _WINDOW_MAP = {
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+        "all": None,
+    }
+    delta = _WINDOW_MAP.get(window, None)
+    cutoff = datetime.utcnow() - delta if delta else None
+
     # Collect attacker IPs from honeypot interactions
-    hp_result = await db.execute(
-        select(
-            HoneypotInteraction.source_ip,
-            func.count(HoneypotInteraction.id).label("count"),
-        )
-        .where(HoneypotInteraction.client_id == client.id)
-        .group_by(HoneypotInteraction.source_ip)
+    hp_q = select(
+        HoneypotInteraction.source_ip,
+        func.count(HoneypotInteraction.id).label("count"),
+    ).where(HoneypotInteraction.client_id == client.id)
+    if cutoff:
+        hp_q = hp_q.where(HoneypotInteraction.timestamp >= cutoff)
+    hp_q = (
+        hp_q.group_by(HoneypotInteraction.source_ip)
         .order_by(func.count(HoneypotInteraction.id).desc())
-        .limit(200)
+        .limit(limit_per_source)
     )
+    hp_result = await db.execute(hp_q)
 
     # Collect attacker IPs from incidents
-    inc_result = await db.execute(
-        select(
-            Incident.source_ip,
-            func.count(Incident.id).label("count"),
-        )
-        .where(
-            Incident.client_id == client.id,
-            Incident.source_ip.is_not(None),
-        )
-        .group_by(Incident.source_ip)
-        .order_by(func.count(Incident.id).desc())
-        .limit(200)
+    inc_q = select(
+        Incident.source_ip,
+        func.count(Incident.id).label("count"),
+    ).where(
+        Incident.client_id == client.id,
+        Incident.source_ip.is_not(None),
     )
+    if cutoff:
+        inc_q = inc_q.where(Incident.detected_at >= cutoff)
+    inc_q = (
+        inc_q.group_by(Incident.source_ip)
+        .order_by(func.count(Incident.id).desc())
+        .limit(limit_per_source)
+    )
+    inc_result = await db.execute(inc_q)
 
     # Aggregate count per IP (combine both sources)
     ip_counts: dict[str, int] = {}
@@ -388,9 +418,10 @@ async def get_threat_map(
             country_code = "??"
         country_counts[country_code] = country_counts.get(country_code, 0) + count
 
-    # Build response sorted by count descending, top 50 countries
+    # Build response sorted by count descending — v1.6.2: removed [:50] cap so
+    # every ISO-3166 code with activity is returned to the frontend.
     entries = []
-    for cc, count in sorted(country_counts.items(), key=lambda x: -x[1])[:50]:
+    for cc, count in sorted(country_counts.items(), key=lambda x: -x[1]):
         country_name = _COUNTRY_NAMES.get(cc, cc if cc != "??" else "Unknown")
         entries.append(ThreatMapEntry(
             country=country_name,
