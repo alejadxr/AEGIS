@@ -37,9 +37,9 @@ export default function DeceptionPage() {
       setCampaigns(c.status === 'fulfilled' ? c.value : []);
       setHits(h.status === 'fulfilled' ? h.value : []);
       if (c.status === 'rejected') {
-        const isEnterprise =
+        const isGated =
           c.reason instanceof ApiError && c.reason.status === 403;
-        if (isEnterprise) {
+        if (isGated) {
           setEnterpriseGated(true);
         } else {
           const msg =
@@ -124,7 +124,9 @@ export default function DeceptionPage() {
             Active deception campaigns require AEGIS Enterprise tier. Contact sales for activation.
           </p>
           <a
-            href="mailto:sales@aegis.ai"
+            href="mailto:sales@somoswilab.com?subject=AEGIS%20Deception%20Inquiry"
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold border border-[color-mix(in_oklab,var(--warning)_35%,transparent)] text-[var(--warning)] hover:bg-[color-mix(in_oklab,var(--warning)_10%,transparent)] transition-colors"
           >
             Contact Sales

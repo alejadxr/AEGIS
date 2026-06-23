@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, AlertTriangle, ChevronDown, ChevronRight, FileCheck, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, ChevronDown, ChevronRight, FileCheck, Loader2, Calendar, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ControlStatus = 'met' | 'partial' | 'not_met';
+type ControlStatus = 'met' | 'partial' | 'not_met' | 'in_progress' | 'roadmap';
 
 interface Control {
   id: string;
@@ -15,6 +15,7 @@ interface Control {
   module: string;
   status: ControlStatus;
   evidence: string;
+  roadmap?: string;
 }
 
 interface Framework {
@@ -78,7 +79,7 @@ const FALLBACK_FRAMEWORKS: Framework[] = [
       { id: 'CC5', name: 'Control Activities', module: 'Response Module', status: 'met', evidence: 'Automated response actions, approval workflows, dual-layer IP blocking' },
       { id: 'CC6', name: 'Logical & Physical Access', module: 'Auth / RBAC', status: 'met', evidence: 'API key auth, JWT sessions, role-based access, middleware enforcement' },
       { id: 'CC7', name: 'System Operations', module: 'Infra / Scheduled Scanner', status: 'met', evidence: 'PM2 process management, scheduled scanning, system health monitoring' },
-      { id: 'CC8', name: 'Change Management', module: '-', status: 'not_met', evidence: 'Formal change management process not implemented in AEGIS' },
+      { id: 'CC8', name: 'Change Management', module: 'Roadmap', status: 'in_progress', evidence: 'Change management foundations in place via Git history and PM2 deployment audit; formal workflow under active development', roadmap: 'Planned for v1.7 — git-commit-signing audit integration' },
       { id: 'CC9', name: 'Risk Mitigation', module: 'Response / Firewall', status: 'met', evidence: 'Automated IP blocking via external firewall integration + local blocklist, AI-driven remediation' },
       { id: 'A1', name: 'Availability', module: 'Infra / PM2', status: 'partial', evidence: 'PM2 auto-restart, health checks, but no formal SLA or redundancy' },
       { id: 'PI1', name: 'Processing Integrity', module: 'AI Engine', status: 'met', evidence: 'Multi-step AI pipeline with verification step, audit logging for all actions' },
@@ -90,7 +91,7 @@ const FALLBACK_FRAMEWORKS: Framework[] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function calculateFrameworkScore(framework: Framework): number {
-  const weights: Record<ControlStatus, number> = { met: 1, partial: 0.5, not_met: 0 };
+  const weights: Record<ControlStatus, number> = { met: 1, partial: 0.5, in_progress: 0.3, roadmap: 0.2, not_met: 0 };
   const total = framework.controls.reduce((sum, c) => sum + weights[c.status], 0);
   return Math.round((total / framework.controls.length) * 100);
 }
@@ -98,18 +99,22 @@ function calculateFrameworkScore(framework: Framework): number {
 function statusIcon(status: ControlStatus) {
   if (status === 'met') return <CheckCircle size={14} className="text-[var(--success)]" />;
   if (status === 'partial') return <AlertTriangle size={14} className="text-[var(--warning)]" />;
+  if (status === 'in_progress' || status === 'roadmap') return <Clock size={14} className="text-[var(--brand)]" />;
   return <XCircle size={14} className="text-[var(--danger)]" />;
 }
 
 function statusLabel(status: ControlStatus): string {
   if (status === 'met') return 'Met';
   if (status === 'partial') return 'Partial';
+  if (status === 'in_progress') return 'In Progress';
+  if (status === 'roadmap') return 'Roadmap';
   return 'Not Met';
 }
 
 function statusBadgeStyle(status: ControlStatus): string {
   if (status === 'met') return 'bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20';
   if (status === 'partial') return 'bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/20';
+  if (status === 'in_progress' || status === 'roadmap') return 'bg-[var(--brand)]/10 text-[var(--brand)] border-[var(--brand)]/20';
   return 'bg-[var(--danger)]/10 text-[var(--danger)] border-[var(--danger)]/20';
 }
 
@@ -327,6 +332,12 @@ export default function CompliancePage() {
                       </td>
                       <td className="py-3 max-w-[320px]">
                         <span className="text-[12px] text-muted-foreground leading-relaxed">{c.evidence}</span>
+                        {(c.status === 'in_progress' || c.status === 'roadmap') && c.roadmap && (
+                          <div className="mt-1.5 flex items-start gap-1.5 text-muted-foreground/60 italic">
+                            <Calendar size={11} className="mt-[2px] shrink-0" />
+                            <span className="text-[11px] leading-relaxed">{c.roadmap}</span>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -313,7 +313,7 @@ export function GlobalThreatMap({ data }: { data: ThreatMapEntry[] }) {
           className="text-[11px] text-muted-foreground/60"
           style={{ fontFamily: 'Azeret Mono, monospace', letterSpacing: '0.15em' }}
         >
-          // NO THREAT DATA
+          {'// NO THREAT DATA'}
         </p>
       </div>
     );

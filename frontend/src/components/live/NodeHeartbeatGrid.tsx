@@ -26,6 +26,7 @@ function statusDot(s: string) {
 
 export function NodeHeartbeatGrid() {
   const [nodes, setNodes] = useState<NodeStatus[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.nodes.list().then((list) => {
@@ -37,7 +38,12 @@ export function NodeHeartbeatGrid() {
           last_heartbeat: n.last_heartbeat,
         }))
       );
-    }).catch(() => {});
+      setError(null);
+    }).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[NodeHeartbeatGrid] heartbeat fetch failed:', err);
+      setError(msg);
+    });
 
     const off = subscribeTopic('nodes.status', (data) => {
       if (!data || typeof data !== 'object') return;
@@ -68,7 +74,16 @@ export function NodeHeartbeatGrid() {
   return (
     <div className="aegis-card overflow-hidden flex flex-col h-full">
       <div className="aegis-section-header shrink-0">
-        <span className="text-[13px] font-semibold text-foreground tracking-tight">Node Heartbeats</span>
+        <span className="text-[13px] font-semibold text-foreground tracking-tight flex items-center gap-1.5">
+          Node Heartbeats
+          {error && (
+            <span
+              title={`heartbeat fetch failed: ${error}`}
+              className="inline-block w-2 h-2 rounded-full bg-[var(--danger)] shadow-[0_0_6px_color-mix(in_oklab,var(--danger)_60%,transparent)]"
+              aria-label={`heartbeat fetch failed: ${error}`}
+            />
+          )}
+        </span>
         <span className="text-[11px] font-mono tabular-nums">
           <span className="text-[var(--success)]">{online}</span>
           <span className="text-muted-foreground/60"> / {nodes.length}</span>
