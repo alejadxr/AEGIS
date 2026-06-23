@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -96,18 +96,40 @@ async def ingest_alert(
 async def list_incidents(
     status: Optional[str] = None,
     severity: Optional[str] = None,
+    since: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
-    """List incidents."""
+    """List incidents.
+
+    v1.6.3: ?since=24h|7d|30d|all narrows the time window so callers can fetch
+    the last N days of incidents for charts/dashboards without paginating.
+    When since is set, the implicit limit cap is also raised to 10_000 so the
+    full window is returned (callers can still pass an explicit limit).
+    """
     client = auth.client
     query = select(Incident).where(Incident.client_id == client.id)
     if status:
         query = query.where(Incident.status == status)
     if severity:
         query = query.where(Incident.severity == severity)
+    # v1.6.3: time-window filter
+    _WINDOW_MAP = {
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+        "all": None,
+    }
+    if since is not None:
+        delta = _WINDOW_MAP.get(since)
+        if delta is not None:
+            cutoff = datetime.utcnow() - delta
+            query = query.where(Incident.detected_at >= cutoff)
+        # When since is set without an explicit small limit, allow up to 10k rows.
+        if limit == 100:
+            limit = 10000
     query = query.order_by(Incident.detected_at.desc()).offset(offset).limit(limit)
 
     result = await db.execute(query)

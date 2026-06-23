@@ -222,6 +222,80 @@ SCANNER_UAS = frozenset({
     "morfeus", "zmeu", "w3af",
 })
 
+
+# v1.6.4: known-good User-Agent substrings. When a request matches ANY of
+# these (case-insensitive substring), the middleware skips ALL detection
+# paths for that request — same effect as if the source IP were in
+# AEGIS_SAFE_IPS. Used for crawlers / monitoring bots that publish stable
+# UAs but rotate IPs, so CIDR safelisting is impractical.
+#
+# Sources (June 2026 research):
+#   - Search engines without published CIDRs: DuckDuckBot, Yandex, Baidu,
+#     Sogou, 360Spider, Naver Yeti, Common Crawl, Seznam
+#   - Social link unfurl: Discordbot, Slackbot, Mastodon, Vercelbot,
+#     facebookexternalhit (WhatsApp), Twitterbot
+#   - RSS readers: Feedly, FeedlyBot, NewsBlur, Inoreader
+#   - Monitoring services where IPs rotate: Pingdom, UptimeRobot,
+#     BetterStack ("Better Uptime"), Checkly, Freshping, Datadog Synthetics
+#   - Security scanners that self-identify: Censys (CensysInspect),
+#     BitSightBot, archive.org_bot
+#
+# Operators can extend at runtime via AEGIS_BENIGN_UAS (comma-separated,
+# substring match, case-insensitive).
+_BENIGN_UAS_DEFAULTS = frozenset({
+    # Search engine crawlers
+    "duckduckbot",
+    "yandexbot", "yandeximages", "yandexvideo", "yandexnews",
+    "baiduspider",
+    "sogou web spider", "sogou pic spider", "sogou inst spider",
+    "360spider", "haosouspider",
+    "yeti/",  # Naver Yeti
+    "ccbot/", "commoncrawl",
+    "seznambot",
+    "applebot",
+    "googlebot",  # redundant with 66.249/16 CIDR but cheaper UA check
+    "bingbot", "msnbot", "adidxbot",
+    "twitterbot",
+    "linkedinbot",
+    "facebookexternalhit",  # also WhatsApp link preview
+    "facebookcatalog",
+    # Social / messaging link unfurl
+    "discordbot",
+    "slackbot",   # also matches "Slackbot-LinkExpanding"
+    "telegrambot",
+    "mastodon/", "akkoma/",
+    "vercelbot",
+    "qwantbot",
+    # RSS / news readers
+    "feedly",  # matches Feedly/1.0 and FeedlyBot/1.0
+    "newsblur",
+    "inoreader",
+    # Uptime / monitoring services
+    "pingdom",
+    "uptimerobot",
+    "better uptime",  # BetterStack
+    "checkly/",
+    "freshpingbot",
+    "datadogsynthetics", "synthetic-test-monitor",
+    "newrelic-synthetics",
+    # Self-identifying security scanners (research/benign)
+    "censysinspect",
+    "bitsightbot",
+    "archive.org_bot",
+    "shadowserver",
+})
+
+
+def _load_benign_uas_env() -> frozenset[str]:
+    """Merge AEGIS_BENIGN_UAS env extensions with the built-in defaults."""
+    raw = (os.environ.get("AEGIS_BENIGN_UAS") or "").lower()
+    extras = {part.strip() for part in raw.split(",") if part.strip()}
+    return frozenset(_BENIGN_UAS_DEFAULTS | extras)
+
+
+# Resolved at import time; restart picks up env changes.
+BENIGN_UAS = _load_benign_uas_env()
+
 # Breadcrumb trap credentials (static indicators)
 BREADCRUMB_INDICATORS = (
     "Tr4p_P4ssw0rd_2026",
@@ -306,6 +380,18 @@ def _check_scanner_ua(user_agent: str) -> bool:
     """Fast scanner UA detection using frozenset substring matching."""
     ua_lower = user_agent.lower()
     return any(s in ua_lower for s in SCANNER_UAS)
+
+
+def _check_benign_ua(user_agent: str) -> bool:
+    """v1.6.4: True if UA matches a known-good crawler/monitor.
+
+    Substring match against `BENIGN_UAS` (defaults + AEGIS_BENIGN_UAS env).
+    Called before any threat detection so legitimate bots don't trip rules.
+    """
+    if not user_agent:
+        return False
+    ua_lower = user_agent.lower()
+    return any(marker in ua_lower for marker in BENIGN_UAS)
 
 
 def _blocked_response() -> Response:
@@ -499,8 +585,15 @@ class AttackDetectorMiddleware(BaseHTTPMiddleware):
         if _is_safe_ip(ip):
             return await call_next(request)
 
-        # ---- OPTIMIZATION 5: Scanner UA via frozenset (no regex) ----
+        # v1.6.4: Skip benign-UA bots entirely (crawlers / monitors with
+        # rotating IPs that publish stable UAs). Equivalent to a safelist
+        # bypass but matched by User-Agent instead of source IP.
         user_agent = request.headers.get("user-agent", "")
+        if user_agent and _check_benign_ua(user_agent):
+            _record_timing(time.perf_counter_ns() - t0)
+            return await call_next(request)
+
+        # ---- OPTIMIZATION 5: Scanner UA via frozenset (no regex) ----
         if user_agent and _check_scanner_ua(user_agent):
             should_block = _record_attack(ip, "scanner")
             logger.warning(
