@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Power, Trash2, Pencil, Beaker, FileText, ShieldOff, RefreshCw } from 'lucide-react';
+import { Plus, Power, Trash2, Pencil, Beaker, FileText, ShieldOff, RefreshCw, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn, formatDate } from '@/lib/utils';
 import { LoadingState } from '@/components/shared/LoadingState';
@@ -221,6 +221,27 @@ export default function FirewallPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Demo mode banner — must appear BEFORE rule controls */}
+      {isDemo && (
+        <div className="flex items-start gap-3 rounded-xl border bg-amber-500/10 border-amber-500/30 px-4 py-3.5">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-semibold text-amber-300">
+              Demo mode enabled
+            </div>
+            <p className="text-[12.5px] text-amber-100/80 mt-0.5">
+              Read-only preview. Rule changes are disabled. Sign in with a production API key to manage firewall rules.
+            </p>
+          </div>
+          <a
+            href="/login?next=/dashboard/firewall"
+            className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 px-3 py-1.5 text-[12.5px] font-semibold text-amber-200 transition-colors"
+          >
+            Sign in →
+          </a>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
@@ -248,17 +269,6 @@ export default function FirewallPage() {
           </Button>
         </div>
       </div>
-
-      {isDemo && (
-        <Panel variant="warning" padding="sm" as="div">
-          <p className="text-[13px] text-[var(--warning)] font-medium">
-            Demo mode — showing sample data. Backend unreachable; new rules will not persist.
-          </p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            Mutations (Create / Update / Delete) are disabled until the API is reachable.
-          </p>
-        </Panel>
-      )}
 
       {/* Summary tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

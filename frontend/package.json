@@ -1,6 +1,6 @@
 {
   "name": "aegis-next",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "type": "module",
   "private": true,
   "scripts": {
@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/postcss": "^4.2.1",
     "@types/node": "^22",
     "@types/react": "^19",

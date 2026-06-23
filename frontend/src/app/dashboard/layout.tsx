@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { hasAuth } from '@/lib/api';
 import { TopNav } from '@/components/shared/TopNav';
 import { SectionTabs } from '@/components/nav/SectionTabs';
 import { AskAI } from '@/components/shared/AskAI';
 import { GuideTour } from '@/components/shared/GuideTour';
+
+// v1.6.3: routes accessible without an API key (public guide / docs).
+const PUBLIC_DASHBOARD_PATHS = new Set<string>(['/dashboard/guide']);
 
 export default function DashboardLayout({
   children,
@@ -14,19 +17,27 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname() || '';
   const [ready, setReady] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
+    // v1.6.3: redirect to /login (not /) with ?next= so user lands on the
+    // page they intended after sign-in. /dashboard/guide stays public.
+    if (PUBLIC_DASHBOARD_PATHS.has(pathname)) {
+      setReady(true);
+      return;
+    }
     if (!hasAuth()) {
-      router.push('/');
+      const next = encodeURIComponent(pathname || '/dashboard');
+      router.replace(`/login?next=${next}`);
     } else {
       setReady(true);
       if (!localStorage.getItem('aegis_guide_seen')) {
         setShowGuide(true);
       }
     }
-  }, [router]);
+  }, [router, pathname]);
 
   const handleGuideClose = useCallback(() => {
     setShowGuide(false);
