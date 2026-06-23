@@ -33,7 +33,7 @@ logger = logging.getLogger("cayde6.attack_detector")
 # Constants
 # ---------------------------------------------------------------------------
 
-BLOCK_THRESHOLD = 3          # attacks before auto-block
+BLOCK_THRESHOLD = 20         # v1.6.2: raised 3→20. The previous threshold guaranteed auto-block of legitimate GitHub Actions runners, Homebrew installers, and monitoring agents that use python-requests/curl/wget UAs. Pentest tools (sqlmap, nikto) below still hit threshold quickly via SCANNER_UAS path.
 BLOCK_WINDOW    = 300         # seconds (5 min)
 FIREWALL_URL    = os.getenv("AEGIS_FIREWALL_URL", "")
 
@@ -211,10 +211,14 @@ _SEVERITY_MAP = {
 # ---------------------------------------------------------------------------
 
 SCANNER_UAS = frozenset({
+    # v1.6.2: trimmed to genuine offensive-tool signatures. Removed:
+    #   python-requests, go-http-client, libcurl, wget/, httpie, scrapy
+    # — those are also used by GitHub Actions runners, Homebrew updaters,
+    # PM2 heartbeats, prometheus exporters, etc. (3-strike auto-block on those
+    # produced FP outages of legitimate clients per 2026-06-23 audit).
     "nmap", "nikto", "sqlmap", "masscan", "gobuster", "dirbuster",
     "wfuzz", "nuclei", "zgrab", "hydra", "burpsuite", "acunetix",
-    "nessus", "openvas", "arachni", "python-requests", "go-http-client",
-    "libcurl", "wget/", "httpie", "httrack", "scrapy",
+    "nessus", "openvas", "arachni", "httrack",
     "morfeus", "zmeu", "w3af",
 })
 

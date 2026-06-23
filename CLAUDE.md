@@ -2,16 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What is AEGIS (v1.5)
+## What is AEGIS (v1.6.2)
 
-Autonomous cybersecurity defense platform with four modules: Surface (attack surface management), Response (autonomous incident response), Phantom (live honeypot operations), and Deception (Honey-AI campaign decoys, Enterprise tier). Deployed on Mac Pro (YOUR_SERVER_IP) as the **sole defense brain**, protecting real services. AEGIS owns iptables locally — there is no external firewall agent in production.
+Autonomous cybersecurity defense platform with four modules: Surface (attack surface management), Response (autonomous incident response), Phantom (live honeypot operations), and Deception (Honey-AI campaign decoys, Enterprise tier). Deployed on Mac Pro (YOUR_SERVER_IP) as the **detection + decision brain**, protecting real services. Block enforcement is delegated to the Pi-side `aegis-firewall.service` via `firewall_client` (Rasputin-style remote executor).
 
 v1.5 key additions: AI-offline mode (`AEGIS_AI_MODE=offline`), real firewall execution (`AEGIS_REAL_FW=1`), 122 Sigma rules + 5 chain rules hot-reload, unified design system.
 
-### Topology
-- **Raspberry Pi 5 + Hailo-10H** (`100.93.30.20`) = network gateway for the Mac Pro (Tailscale relay + routing). The Pi is part of the perimeter, not a separate defense node.
-- **Mac Pro** = AEGIS brain (`cayde6-api`, `cayde6-frontend` via PM2). Owns detection, response, blocking, deception, threat intel.
-- The optional `firewall-agent/` directory in this repo is a portable iptables service (port 8765). It is **not deployed**; AEGIS_FIREWALL_URL is intentionally unset so AEGIS handles iptables in-process.
+v1.6.x adds: cloud-native CVE Sigma pack, supply-chain worm patterns, expanded FIM, Pi-side firewall executor restored (`AEGIS_FIREWALL_URL=http://100.93.30.20:8765`).
+
+v1.6.2 adds: incident dedup hardening (10× table-growth reduction), startup safelist purge, APScheduler retention service (90d default), stuck-incident auto-closer, Tor-exit auto-block, /29 campaign correlation rule, dashboard ?window= parameter, full ISO-3166 country coverage in the threat map.
+
+### Topology (v1.6.1+)
+- **Raspberry Pi 5 + Hailo-10H** (`100.93.30.20`) = network gateway for Mac Pro AND **remote firewall executor**. Runs `aegis-firewall.service:8765` (FastAPI block agent) + `aegis-iptables-init.service` (oneshot, creates `AEGIS_BLOCK` iptables chain idempotently and links INPUT/FORWARD).
+- **Mac Pro** = AEGIS brain (`cayde6-api`, `cayde6-frontend` via PM2). Owns detection, response decision, deception, threat intel. Delegates block enforcement to the Pi via `firewall_client` when `AEGIS_FIREWALL_URL` is set (which it is in prod since 2026-05-10).
+- The `firewall-agent/` directory in this repo is the source of `aegis-firewall.service` deployed on the Pi.
+- The local `firewall_local.py` (pfctl on Mac / iptables on Linux) remains as a defense-in-depth third blocking layer, gated by `AEGIS_REAL_FW=1`. With the Pi executor enabled it is redundant but harmless.
 
 ## Commands
 
@@ -47,9 +52,11 @@ curl -X POST -H "X-API-Key: YOUR_API_KEY" http://YOUR_SERVER_IP:8000/api/v1/surf
 
 ### Operational notes
 ```bash
-# AEGIS owns iptables on Mac Pro directly. There is no external firewall agent.
-# AEGIS_FIREWALL_URL is intentionally unset; firewall_sync stays off.
-# (Retired: Rasputin on Pi was the previous external firewall agent — not used anymore.)
+# v1.6.1+: AEGIS_FIREWALL_URL=http://100.93.30.20:8765 is ACTIVE in prod.
+# AEGIS pushes every block to the Pi firewall executor (aegis-firewall.service:8765);
+# firewall_sync runs every 5 min reconciling Mac Pro ↔ Pi blocklists.
+# The local pfctl/iptables in firewall_local.py acts as a third defense-in-depth layer.
+# (Historical: `rasputin.service` codebase is retired — its role is filled by aegis-firewall.service.)
 
 # NEVER use lsof on Mac Pro — it hangs and creates zombie processes. Use netstat or ps aux instead.
 ```

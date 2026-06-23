@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.2] - 2026-06-23
+
+### Fixed — FP firehose + stuck incidents (2026-06-23 audit response)
+
+A 8-agent audit found AEGIS detecting real attacks but drowning in noise: 96.9 % of 10,469 incidents over 44 days came from a single IP because the `_recent_alerts` dedup key used `line[:80]`, so URL query-string variation created a new dedup slot every request. 50 % of incidents were stuck in `status='investigating'` forever. Eight known-good IPs (Googlebot, Tailscale, RFC5737) persisted in blocklists across restarts. There was zero DB-level retention. The "data disappears after N days" perception was a presentation bug (24h cutoff on `/live-metrics`, `LIMIT 200` on `/threat-map`, 25-of-249 country coverage in `GlobalThreatMap.tsx`), not actual deletion.
+
+#### Detection
+- **`backend/app/services/log_watcher.py`** — `alert_key` for `_recent_alerts` is now `f"{pattern_name}:{ip}:{threat_type}"` instead of `f"{pattern_name}:{line[:80]}"`. Collapses 10× duplicate rows per attacker into one rolling-window incident. **Expected impact: incidents table for the same 44-day window drops from 10,469 → ~300-400.**
+- **`backend/app/services/log_watcher.py`** — Tor exit auto-escalation in `_create_incident_from_log`: when `source_ip` is in `_load_tor_exits()` (1,286 IPs) AND threat_type ∈ {reconnaissance, brute_force}, escalate severity to `high`, prefix description with `[Tor exit]`, and immediately call `ip_blocker_service.block_ip(ip)`. Closes the enforcement gap where Tor-exit recon was enriched but never blocked.
+- **`backend/app/services/correlation_engine.py`** — `sigma_auth_default_credentials` fires on `auth_failure` only (was `auth_success` matching legitimate Pi/cloud-init logins by `pi`/`ubuntu`); usernames `pi` and `ubuntu` removed; severity demoted to `medium`. `sigma_web_xxe` requires multi-token markers like `<!ENTITY SYSTEM` / `<!DOCTYPE` / `PUBLIC "-//"` instead of bare substring `SYSTEM` (which matched legit paths like `/admin/system-info`). `sigma_web_request_smuggling` requires BOTH `Transfer-Encoding:` AND `Content-Length:` headers present (the TE.CL desync signal) instead of either alone (100% FP). NEW rule `sigma_campaign_cidr_cluster` (critical) fires when 3+ source IPs from the same /29 CIDR block hit the same threat_type within 1 hour — catches coordinated VPS/botnet/APT infrastructure campaigns that single-IP rules miss.
+- **`backend/app/core/attack_detector.py`** — `BLOCK_THRESHOLD` raised 3 → 20 (the prior threshold guaranteed auto-block of legitimate GitHub Actions runners, Homebrew updaters, and PM2 heartbeats using `python-requests`/`curl`/`wget` UAs). `SCANNER_UAS` frozenset trimmed: removed `python-requests`, `go-http-client`, `libcurl`, `wget/`, `httpie`, `scrapy`; pentest-tool signatures (`sqlmap`, `nikto`, `nmap`, `masscan`, `nuclei`, `hydra`, `burpsuite`, etc.) retained.
+
+#### Response & retention
+- **`backend/app/core/ip_blocker.py`** — `_load_blocked_ips()` now applies a startup-time safelist purge: any IP matching `AEGIS_SAFE_IPS` CIDRs (via reused `attack_detector._is_safe_ip`) or RFC5737 documentation prefixes (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) is dropped from the in-memory set AND rewritten out of `blocked_ips.txt`. Prevents Googlebot CIDRs and test-injection IPs from persisting across restarts. `BLOCKED_IPS_FILE` now honors env override consistently with `firewall_local`.
+- **`backend/app/services/threat_feeds.py`** — `_persist_blocklist_ips` filters safelisted IPs BEFORE batch insert into `threat_intel`, so third-party feeds (emerging_threats, feodo_tracker, tor_exit_nodes) can't auto-block Googlebot or CDN ranges.
+- **`backend/app/services/firewall_sync.py`** — `_pull_blocklist_from_pi()` now auto-evicts `local_only` IPs (in Mac blocklist but not on Pi) after `AEGIS_STALE_LOCAL_EVICT_HOURS` (default 24h) grace window. Stops the persistent "9 IPs stale_on_mac" warning that fired every 5 min indefinitely.
+- **`backend/app/services/retention.py`** (NEW) — APScheduler-driven retention. Two jobs registered on the global `scheduled_scanner.scheduler`:
+  - `nightly_retention_purge` (cron 03:00) — `DELETE FROM incidents WHERE detected_at < now() - INTERVAL '90d' AND status IN ('resolved','auto_responded')`. Same cutoff for `attacker_profiles` and `honeypot_interactions`.
+  - `hourly_stuck_incident_closer` (interval 1h) — `UPDATE incidents SET status='resolved', resolved_at=now() WHERE status='investigating' AND detected_at < now() - INTERVAL '24h' AND source_ip IN threat_intel`. Closes the 5,240 stuck rows whose IPs are already blocked elsewhere.
+  - Honors `AEGIS_RETENTION_DRY_RUN=1` (logs what would be purged without mutating). All actions appended as JSONL to `~/.aegis/retention-audit.jsonl` so operators can replay or audit.
+  - Configurable: `AEGIS_RETENTION_DAYS` (default 90), `AEGIS_STUCK_CLOSER_HOURS` (default 24).
+- **`backend/app/main.py`** — Lifespan wires `retention_service.start()` after `scheduled_scanner.start()` and `retention_service.stop()` in teardown.
+
+#### Presentation
+- **`backend/app/api/dashboard.py`** — `/live-metrics` accepts `?window=24h|7d|30d|all` (default 24h). `/threat-map` accepts `?window=…&limit_per_source=N` (defaults `all` and 2000, was hard-coded 200), and the response no longer truncates at top-50 countries.
+- **`frontend/src/components/shared/GlobalThreatMap.tsx`** — `COUNTRY_COORDS` expanded from 25 → 249 ISO-3166-1 alpha-2 entries with `{ lat, lng, label }` centroids. Stops silently dropping ~225 countries via the `if (!coords) return null;` guard.
+
+#### Tests (new)
+- `backend/tests/test_log_watcher_dedup.py` — 4 tests: identical attacks collapse, URL variation collapses, different IPs DO create separate incidents, Tor exit annotation.
+- `backend/tests/test_ip_blocker_purge.py` — 4 tests: Googlebot purged, RFC5737 purged, real attacker preserved, file rewritten.
+- `backend/tests/test_retention.py` — 5 tests: old resolved purged, recent kept, dry-run no-op, stuck closer on blocked IPs, JSONL audit log written.
+
+#### Docs
+- `CLAUDE.md` reconciled: removed stale "AEGIS_FIREWALL_URL is intentionally unset" claim (it's active since v1.6.1). Topology now correctly states Pi 5 + Hailo runs `aegis-firewall.service` as remote executor.
+
+### Changed
+- Versions: `backend/app/__init__.py`, `backend/app/main.py` (3 sites), `frontend/package.json` — all `1.6.1` → `1.6.2`.
+
+### Operational (production)
+- One-shot SQL applied to Postgres `cayde6` on Mac Pro: purged `threat_intel` rows matching AEGIS_SAFE_IPS CIDRs + RFC5737 + known FP literals (Googlebot, Kali pentest host, Starlink, Tailscale CGNAT IPs). Rewrote `~/AEGIS/blocked_ips.txt` filtering safelist. Auto-closed `investigating` incidents older than 24h whose `source_ip` was already in threat_intel — ~5,000 rows promoted to `resolved`.
+
+### Not yet integrated (deferred to v1.6.3)
+- Kernel CVE detection (Dirty Frag, Copy Fail, runc escape, systemd-machined) — requires eBPF/auditd endpoint agent.
+- Behavioral baseline for slow-and-low APT (rotating-IP brute force across hours).
+- Cross-source incident dedup at correlation_engine level (eliminate residual 1:1 doubling with fast_triage).
+- Severity tier rebalancing for the remaining 7 audit-flagged rules.
+
+---
+
 ## [1.6.1] - 2026-05-14
 
 ### Added — Ransomware Defense & Cloud-Native CVE Coverage

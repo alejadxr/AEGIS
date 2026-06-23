@@ -442,19 +442,22 @@ BUILT_IN_RULES: list[dict] = [
             "filter": {"logon_type": "network"},
         },
     },
-    # 18 — Default credentials
+    # 18 — Default credentials (v1.6.2: failure-only, removed cloud-init users)
     {
         "id": "sigma_auth_default_credentials",
-        "title": "Default Credentials Usage",
-        "description": "Login attempt using known default credentials.",
-        "severity": "high",
+        "title": "Default Credentials Brute Force Attempt",
+        "description": "Failed login attempt using known default credentials (auth_failure only — successful logins by 'pi'/'ubuntu' are legitimate on Pi/cloud-init hosts).",
+        "severity": "medium",
         "enabled": True,
         "source": "sigma",
         "category": "authentication",
-        "mitre": ["T1078.001"],
+        "mitre": ["T1078.001", "T1110"],
         "condition": {
-            "event_type": "auth_success",
-            "filter": {"username": ["admin", "root", "test", "guest", "default", "pi", "ubuntu"]},
+            "event_type": "auth_failure",  # v1.6.2: success → failure
+            "filter": {"username": ["admin", "root", "test", "guest", "default", "oracle", "postgres", "redis"]},  # v1.6.2: removed pi, ubuntu
+            "count_threshold": 3,
+            "time_window_seconds": 300,
+            "group_by": "source_ip",
         },
     },
     # 19 — SSH key brute force
@@ -794,11 +797,11 @@ BUILT_IN_RULES: list[dict] = [
             "group_by": "source_ip",
         },
     },
-    # 38 — XXE injection
+    # 38 — XXE injection (v1.6.2: multi-token markers, no bare "SYSTEM")
     {
         "id": "sigma_web_xxe",
         "title": "XML External Entity (XXE) Injection",
-        "description": "Detects XXE injection via XML payloads with external entity definitions.",
+        "description": "Detects XXE injection in XML request bodies. v1.6.2: requires multi-token markers (not bare 'SYSTEM') eliminating FPs from legitimate paths like /admin/system-info.",
         "severity": "critical",
         "enabled": True,
         "source": "sigma",
@@ -806,7 +809,7 @@ BUILT_IN_RULES: list[dict] = [
         "mitre": ["T1190"],
         "condition": {
             "event_type": "web_request",
-            "filter": {"path_contains": ["<!ENTITY", "SYSTEM", "file://", "expect://"]},
+            "filter": {"path_contains": ["<!ENTITY SYSTEM", "<!DOCTYPE", "PUBLIC \"-//", "SYSTEM \"file:", "SYSTEM \"http:", "SYSTEM \"expect:"]},
             "count_threshold": 1,
             "time_window_seconds": 60,
             "group_by": "source_ip",
@@ -851,8 +854,8 @@ BUILT_IN_RULES: list[dict] = [
     # 41 — HTTP request smuggling
     {
         "id": "sigma_web_request_smuggling",
-        "title": "HTTP Request Smuggling",
-        "description": "Detects HTTP request smuggling via malformed headers.",
+        "title": "HTTP Request Smuggling (TE.CL desync)",
+        "description": "Detects HTTP request smuggling via conflicting Transfer-Encoding/Content-Length headers. v1.6.2: requires BOTH headers present simultaneously (TE.CL desync signal), not either alone.",
         "severity": "high",
         "enabled": True,
         "source": "sigma",
@@ -860,8 +863,11 @@ BUILT_IN_RULES: list[dict] = [
         "mitre": ["T1190"],
         "condition": {
             "event_type": "web_request",
-            "filter": {"path_contains": ["Transfer-Encoding: chunked", "Content-Length:"]},
-            "count_threshold": 3,
+            # v1.6.2: TE.CL desync requires BOTH headers present in the same request.
+            # The previous filter matched either alone, which is present on every
+            # chunked / fixed-length request (i.e. 100% FP rate).
+            "filter": {"path_contains_all": ["Transfer-Encoding:", "Content-Length:"]},
+            "count_threshold": 1,
             "time_window_seconds": 60,
             "group_by": "source_ip",
         },
@@ -883,6 +889,24 @@ BUILT_IN_RULES: list[dict] = [
             "time_window_seconds": 60,
             "group_by": "source_ip",
             "unique_field": "path",
+        },
+    },
+    # 43 — v1.6.2: Coordinated /29 campaign (3+ sibling IPs from same /29 hitting same threat_type)
+    {
+        "id": "sigma_campaign_cidr_cluster",
+        "title": "Coordinated /29 Campaign Detected",
+        "description": "v1.6.2: 3+ source IPs from the same /29 CIDR block firing the same threat_type within 1 hour. Indicates a coordinated infrastructure campaign (rented VPS cluster, botnet, or APT) rather than single-IP brute force. Auto-escalates to CRITICAL and triggers /29 CIDR blocking.",
+        "severity": "critical",
+        "enabled": True,
+        "source": "sigma",
+        "category": "campaign",
+        "mitre": ["T1583.003", "T1090"],
+        "condition": {
+            "event_type": "incident_emitted",
+            "count_threshold": 3,
+            "time_window_seconds": 3600,
+            "group_by": "source_cidr_29",
+            "unique_field": "source_ip",
         },
     },
 

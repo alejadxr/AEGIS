@@ -240,6 +240,23 @@ class ThreatFeedManager:
         now = datetime.utcnow()
         expires = now + timedelta(hours=24)
 
+        # v1.6.2: filter out safelisted IPs (Googlebot, Tailscale, RFC5737,
+        # AEGIS_SAFE_IPS CIDRs) BEFORE they hit threat_intel. Without this,
+        # third-party feeds occasionally include Googlebot/CDN ranges and we
+        # end up auto-blocking legitimate traffic.
+        try:
+            from app.core.attack_detector import _is_safe_ip
+            filtered = {ip for ip in ips if not _is_safe_ip(ip)}
+            skipped = len(ips) - len(filtered)
+            if skipped:
+                logger.info(
+                    f"threat_feeds[{source}]: skipped {skipped} safelisted IP(s) "
+                    f"before persist"
+                )
+            ips = filtered
+        except Exception as exc:
+            logger.debug(f"threat_feeds[{source}]: safelist filter unavailable: {exc}")
+
         try:
             async with async_session() as db:
                 # Fetch existing IOCs for this source
