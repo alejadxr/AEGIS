@@ -11,6 +11,7 @@ from fastapi import Query
 from app.core.events import event_bus
 from app.models.client import Client
 from app.models.threat_intel import ThreatIntel
+from app.models.incident import Incident
 from app.modules.phantom.intel import threat_intel_generator
 from app.services.threat_intel_hub import threat_intel_hub
 from app.core.mongo_client import is_connected as mongo_connected
@@ -460,4 +461,70 @@ async def mark_campaign_investigated_endpoint(
     )
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "failed"))
+    return result
+
+
+class ThreatEventOut(BaseModel):
+    id: str
+    rule_id: str
+    rule_name: str
+    host: str
+    severity: str
+    triggered_at: Optional[str]
+    process: Optional[str] = None
+    details: Optional[str] = None
+
+
+@router.get("/events", response_model=list[ThreatEventOut])
+async def list_threat_events(
+    type: Optional[str] = Query(None, description="Filter by event type (e.g. 'ransomware')"),
+    limit: int = Query(50, ge=1, le=200),
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return recent threat events, optionally filtered by type.
+
+    Polymorphic-friendly: returns a plain array so the frontend can handle it
+    as either a direct array, json.events, or json.items — it tries all three.
+
+    type=ransomware: filters incidents matching T1486*, source='node-agent-ransomware',
+    or titles containing 'ransom'/'encrypt'.
+    """
+    q = select(Incident).where(Incident.client_id == auth.client_id)
+
+    if type and type.lower() == "ransomware":
+        q = q.where(
+            or_(
+                Incident.mitre_technique.like("T1486%"),
+                Incident.source == "node-agent-ransomware",
+                Incident.title.ilike("%ransom%"),
+                Incident.title.ilike("%encrypt%"),
+            )
+        )
+
+    q = q.order_by(Incident.detected_at.desc()).limit(limit)
+    rows = (await db.execute(q)).scalars().all()
+
+    result = []
+    for inc in rows:
+        process_name: Optional[str] = None
+        if inc.raw_alert and isinstance(inc.raw_alert, dict):
+            process_info = inc.raw_alert.get("process", {})
+            if isinstance(process_info, dict):
+                process_name = process_info.get("name")
+
+        result.append(
+            ThreatEventOut(
+                id=inc.id,
+                rule_id=inc.mitre_technique or inc.source or "unknown",
+                rule_name=inc.title,
+                host=inc.source_ip or "",
+                severity=inc.severity,
+                triggered_at=inc.detected_at.isoformat() if inc.detected_at else None,
+                process=process_name,
+                details=inc.description,
+            )
+        )
+
     return result
