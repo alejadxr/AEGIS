@@ -55,11 +55,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-theme="light" suppressHydrationWarning className={cn("font-sans light", notoSans.variable)}>
+    <html lang="en" data-theme="dark" suppressHydrationWarning className={cn("font-sans dark", notoSans.variable)}>
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('aegis-theme')||'light';var d=document.documentElement;d.setAttribute('data-theme',t);if(t==='dark'){d.classList.add('dark');d.classList.remove('light')}else{d.classList.add('light');d.classList.remove('dark')}var o=new MutationObserver(function(ms){ms.forEach(function(m){if(m.attributeName==='data-theme'){var v=d.getAttribute('data-theme');if(v==='dark'){d.classList.add('dark');d.classList.remove('light')}else{d.classList.add('light');d.classList.remove('dark')}}})});o.observe(d,{attributes:true,attributeFilter:['data-theme']})}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('aegis-theme')||'dark';var d=document.documentElement;d.setAttribute('data-theme',t);if(t==='dark'){d.classList.add('dark');d.classList.remove('light')}else{d.classList.add('light');d.classList.remove('dark')}var o=new MutationObserver(function(ms){ms.forEach(function(m){if(m.attributeName==='data-theme'){var v=d.getAttribute('data-theme');if(v==='dark'){d.classList.add('dark');d.classList.remove('light')}else{d.classList.add('light');d.classList.remove('dark')}}})});o.observe(d,{attributes:true,attributeFilter:['data-theme']})}catch(e){}})();`,
           }}
         />
         <script
