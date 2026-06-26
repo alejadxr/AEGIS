@@ -1,0 +1,22 @@
+id: sigma_auth_vpn_brute
+name: VPN Brute Force Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1110
+data_sources:
+- auth_log
+condition:
+  event_type: auth_failure
+  count_threshold: 8
+  time_window_seconds: 300
+  group_by: source_ip
+  filter:
+    service: vpn
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple failed VPN authentication attempts from same source.

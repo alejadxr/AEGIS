@@ -1,0 +1,19 @@
+id: sigma_evasion_rootkit
+name: Rootkit Behavior Detected
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1014
+data_sources:
+- edr
+condition:
+  event_type: kernel_module_load
+  filter:
+    signed: false
+entityMappings:
+- type: IP
+  field: source_ip
+description: Kernel module loading or syscall hooking detected.

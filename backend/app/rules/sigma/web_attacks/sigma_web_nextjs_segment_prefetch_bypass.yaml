@@ -1,0 +1,36 @@
+id: sigma_web_nextjs_segment_prefetch_bypass
+name: Next.js Segment-Prefetch Middleware Bypass (CVE-2026-44575)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- DefenseEvasion
+- PrivilegeEscalation
+techniques:
+- T1078
+- T1574
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - __RSC_MANIFEST__
+    - /_next/data/
+    - .rsc?
+    - segment-prefetch
+condition_secondary:
+  any_path_must_target_admin: true
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  Next.js App Router middleware bypass via segment-prefetch or RSC
+  manifest path manipulation (CVE-2026-44575). Path-normalization
+  bypass differs from CVE-2025-29927 (header-based). Affects Next.js
+  15.x App Router. Often used to access protected routes that
+  middleware should have gated.
