@@ -660,29 +660,38 @@ class MonitoredAppsOut(BaseModel):
     count: int
 
 
+import time as _time
+_PM2_CACHE: dict = {"ts": 0.0, "data": {}}
+_PM2_CACHE_TTL = 15.0  # seconds
+
+
 def _get_pm2_statuses() -> dict[str, str]:
-    """
-    Try to read PM2 process list. Returns {name: status} dict.
-    Falls back to empty dict on any error (pm2 not installed, not in PATH, etc).
-    Never uses lsof.
-    """
+    """Cached PM2 process list. TTL 15s — PM2 jlist subprocess can take 5+s
+    on a busy box and was the dominant bottleneck on /monitored-apps."""
+    now = _time.monotonic()
+    cached = _PM2_CACHE
+    if cached["data"] and (now - cached["ts"]) < _PM2_CACHE_TTL:
+        return cached["data"]
     try:
         result = subprocess.run(
             ["pm2", "jlist"],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=4,
         )
         if result.returncode != 0 or not result.stdout.strip():
-            return {}
+            return cached["data"] or {}
         procs = json.loads(result.stdout)
-        return {
+        data = {
             p.get("name", ""): (p.get("pm2_env", {}) or {}).get("status", "unknown")
             for p in procs
             if p.get("name")
         }
+        _PM2_CACHE["ts"] = now
+        _PM2_CACHE["data"] = data
+        return data
     except Exception:
-        return {}
+        return cached["data"] or {}
 
 
 @router.get("/monitored-apps", response_model=MonitoredAppsOut)

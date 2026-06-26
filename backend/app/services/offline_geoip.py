@@ -54,7 +54,7 @@ _city_ends: list[int] = []
 _city_data: list[tuple[str, str, str]] = []  # (country, region, city)
 _city_loaded_at: float = 0.0
 
-_LOAD_TTL = 6 * 3600.0  # re-read CSV every 6h in case it was refreshed
+_LOAD_TTL = 24 * 3600.0 * 365  # effectively never re-read on the live process — reload happens on restart
 
 
 def _ip_to_int(ip: str) -> Optional[int]:
@@ -165,8 +165,11 @@ def lookup(ip: str) -> dict | None:
     ip_int = _ip_to_int(ip)
     if ip_int is None:
         return None
-    _load_asn_csv()
-    _load_city_csv()
+    # v1.6.3.3: only trigger CSV load if cache is already populated; never
+    # block the event loop synchronously to parse 8M rows. If unloaded,
+    # return None and let the warmup task fill the cache off-loop.
+    if not _asn_starts:
+        return None
 
     out: dict = {"source": "dbip_offline"}
     a_idx = _lookup_range(_asn_starts, _asn_ends, ip_int)
@@ -175,15 +178,18 @@ def lookup(ip: str) -> dict | None:
         out["asn"] = asn
         out["asn_owner"] = owner
 
-    c_idx = _lookup_range(_city_starts, _city_ends, ip_int)
-    if c_idx is not None:
-        country, region, city = _city_data[c_idx]
-        if country:
-            out["country"] = country
-        if region:
-            out["region"] = region
-        if city:
-            out["city"] = city
+    # City lookup is opportunistic — skip silently when the CSV hasn't been
+    # parsed yet rather than triggering a sync 3-minute parse on the event loop.
+    if _city_starts:
+        c_idx = _lookup_range(_city_starts, _city_ends, ip_int)
+        if c_idx is not None:
+            country, region, city = _city_data[c_idx]
+            if country:
+                out["country"] = country
+            if region:
+                out["region"] = region
+            if city:
+                out["city"] = city
 
     # No useful data? Return None so caller doesn't add an empty feed.
     if "asn" not in out and "country" not in out:
@@ -242,14 +248,12 @@ async def refresh_async(force: bool = False) -> dict:
                     out[kind] = "error: no candidate worked"
         except Exception as exc:
             out[kind] = f"error: {exc}"
-    # Force-invalidate caches so next lookup picks up new data
-    global _asn_loaded_at, _city_loaded_at
-    _asn_loaded_at = 0.0
-    _city_loaded_at = 0.0
-    try:
-        lookup.cache_clear()
-    except Exception:
-        pass
+    # v1.6.3.3: do NOT invalidate in-memory cache here. Doing so causes the
+    # next lookup() to trigger a full 8M-row CSV reparse SYNCHRONOUSLY on the
+    # event loop (3-4 minutes of blocked I/O for the entire process). New CSV
+    # data on disk will be picked up on next process restart. The lru_cache is
+    # also kept warm — values it returned reflect the old CSV but the dataset
+    # changes at most monthly, and stale ASN/country tags are non-blocking.
     return out
 
 
