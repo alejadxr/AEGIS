@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Panel, SectionHeader } from '@/components/aegis';
 import { cn } from '@/lib/utils';
 
@@ -11,52 +11,59 @@ const MONTH_ABBR = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-const SVG_H        = 220;
-const COL_COUNT    = 6;
-const MAX_DOTS     = 25;
-const DOT_R        = 2.5;                                 // radius ≈ 5 px diameter
-const DOT_Y_BOTTOM = SVG_H - 24;                          // 196 – baseline row
-const DOT_Y_TOP    = 28;                                   // ceiling row
-const DOT_AREA_H   = DOT_Y_BOTTOM - DOT_Y_TOP;            // 168 px
-const DOT_SLOT     = DOT_AREA_H / MAX_DOTS;               // 6.72 px per slot
+const SVG_H          = 280;
+const COL_COUNT      = 6;
+const MAX_DOTS       = 18;
+const DOT_R          = 4.5;                              // radius (9 px diameter)
+const COUNT_ZONE_H   = 32;                               // top zone reserved for count label
+const MONTH_ZONE_H   = 26;                               // bottom zone for month label
+const DOT_AREA_H     = SVG_H - COUNT_ZONE_H - MONTH_ZONE_H; // 222 px
+const DOT_Y_TOP      = COUNT_ZONE_H;                     // 32
+const DOT_Y_BOTTOM   = SVG_H - MONTH_ZONE_H;            // 254
+const DOT_SLOT       = DOT_AREA_H / MAX_DOTS;            // ~12.33 px per row
 
-// ─── Pure helpers ──────────────────────────────────────────────────────────
+// Colors
+const COL_PEAK         = '#F97316';  // orange  — peak month
+const COL_ACTIVE       = '#FBBF24';  // amber   — non-zero, non-peak
+const COL_ACTIVE_HOVER = '#FDE68A';  // amber-lighter on hover
+const COL_PEAK_HOVER   = '#FB923C';  // orange-lighter on hover
+const COL_MUTED        = '#3F3F46';  // zinc-700 — zero months
 
-/** Horizontal fraction [0–1] of column ci's centre */
-const colFrac = (ci: number) => (ci + 0.5) / COL_COUNT;
+// Pre-computed column geometry
+const COL_WIDTH_PCT = `${(100 / COL_COUNT).toFixed(2)}%`;
 
-/**
- * Deterministic horizontal jitter in [-9, 9] px.
- * Uses only integer arithmetic — no Math.random.
- */
-const dotJitter = (di: number, ci: number): number =>
-  ((di * 7 + ci * 13) % 19) - 9;
+// ─── Pure helpers (all SSR-safe — no Math.random, no Date.now) ────────────
 
-/** y-centre of dot row di (0 = bottommost row) */
+const colCenterPct = (ci: number): string =>
+  `${(((ci + 0.5) / COL_COUNT) * 100).toFixed(2)}%`;
+
+const colLeftPct = (ci: number): string =>
+  `${((ci / COL_COUNT) * 100).toFixed(2)}%`;
+
+/** y-centre of dot row di (di=0 → bottommost row) */
 const dotCy = (di: number): number =>
   DOT_Y_BOTTOM - (di + 0.5) * DOT_SLOT;
+
+/**
+ * Deterministic horizontal jitter in [-5, 5] px.
+ * Integer-only arithmetic — produces stable output on server and client.
+ */
+const dotJitter = (di: number, ci: number): number =>
+  ((di * 7 + ci * 13) % 11) - 5;
 
 /** Scale count → [1, MAX_DOTS]; returns 0 only when count === 0 */
 const scaleDots = (count: number, peak: number): number =>
   count === 0 ? 0 : Math.max(1, Math.round((count / peak) * MAX_DOTS));
 
-// ─── Static background-grid data (module-level, computed once) ────────────
-
-const GRID_X_FRACS = Array.from({ length: 14 }, (_, i) => (i + 0.5) / 14);
-const GRID_Y_POS = Array.from(
-  { length: Math.ceil((DOT_Y_BOTTOM - DOT_Y_TOP - 8) / 20) },
-  (_, j) => DOT_Y_TOP + 4 + j * 20,
-);
-
 // ─── Props ─────────────────────────────────────────────────────────────────
 
 export interface LoginAttemptsMatrixProps {
-  /** Array of monthly totals. `month` format: "YYYY-MM". */
+  /** Monthly totals. `month` format: "YYYY-MM". */
   data: Array<{ month: string; count: number }>;
-  /** Aggregate total displayed in the header action slot. */
+  /** Aggregate total displayed prominently in the header. */
   total: number;
   /**
-   * Optional "YYYY-MM" key to highlight in orange.
+   * "YYYY-MM" key to highlight in orange.
    * Auto-detected as the highest-count month when omitted.
    */
   peak_month?: string;
@@ -71,6 +78,8 @@ export function LoginAttemptsMatrix({
   peak_month,
   className,
 }: LoginAttemptsMatrixProps) {
+  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
+
   /** 6-month window ending at the current calendar month */
   const months = useMemo(() => {
     const now = new Date();
@@ -102,103 +111,123 @@ export function LoginAttemptsMatrix({
     <Panel className={cn('h-full flex flex-col', className)}>
       <SectionHeader
         title="Login Attempts"
-        subtitle="· 6mo"
+        subtitle="Â· 6mo"
         action={
-          <span className="text-[14px] font-semibold tabular-nums text-foreground font-mono">
-            {total}
+          <span className="text-3xl font-mono font-bold tabular-nums leading-none text-foreground">
+            {total.toLocaleString()}
           </span>
         }
       />
 
       <div
-        className="flex-1 px-2 pt-2 pb-3 min-h-[220px]"
+        className="flex-1 px-1 pt-2 pb-2 min-h-[260px]"
         role="img"
         aria-label={`Login attempts — last 6 months. Total: ${total}.`}
       >
         <svg
           width="100%"
           height={SVG_H}
+          overflow="visible"
           aria-hidden="true"
           style={{ display: 'block' }}
         >
-          {/* Subtle dotted background grid */}
-          <g className="opacity-[0.12] dark:opacity-[0.28]">
-            {GRID_X_FRACS.map((xf, gi) =>
-              GRID_Y_POS.map((gy, gj) => (
-                <circle
-                  key={`g-${gi}-${gj}`}
-                  cx={`${(xf * 100).toFixed(1)}%`}
-                  cy={gy}
-                  r={0.8}
-                  fill="var(--muted-foreground)"
-                />
-              )),
-            )}
-          </g>
-
-          {/* One column per month */}
           {months.map((col, ci) => {
-            const xPct   = `${(colFrac(ci) * 100).toFixed(1)}%`;
-            const isPeak = col.month === peakMonth && col.count > 0;
-            const fill   = isPeak ? '#F97316' : '#3F3F46';
-            const nDots  = scaleDots(col.count, peakCount);
-            // y-centre of the topmost active dot (used to position the count label)
-            const topCy  = nDots > 0 ? dotCy(nDots - 1) : 0;
+            const isPeak    = col.month === peakMonth && col.count > 0;
+            const isHovered = hoveredCol === ci;
+            const nDots     = scaleDots(col.count, peakCount);
+            const cx        = colCenterPct(ci);
+
+            // Fill color per dot state
+            const baseFill = isPeak ? COL_PEAK : col.count > 0 ? COL_ACTIVE : COL_MUTED;
+            const hoverFill = isPeak ? COL_PEAK_HOVER : COL_ACTIVE_HOVER;
+            const activeFill = isHovered && col.count > 0 ? hoverFill : baseFill;
+
+            // Label color
+            const labelFill = col.count > 0 ? baseFill : COL_MUTED;
+            const labelOpacity =
+              col.count > 0
+                ? isHovered ? 1 : 0.85
+                : isHovered ? 0.6 : 0.35;
 
             return (
-              <g key={col.month}>
-                {/* Ghost column — zero-count months get 25 faint dots */}
+              <g
+                key={col.month}
+                onMouseEnter={() => setHoveredCol(ci)}
+                onMouseLeave={() => setHoveredCol(null)}
+                style={{
+                  transform: isHovered ? 'translateY(-3px)' : 'translateY(0px)',
+                  transition: 'transform 0.15s ease',
+                  cursor: 'default',
+                }}
+              >
+                {/* Per-column background track — grid shows ONLY behind each column */}
+                <rect
+                  x={colLeftPct(ci)}
+                  y={DOT_Y_TOP}
+                  width={COL_WIDTH_PCT}
+                  height={DOT_AREA_H}
+                  rx={6}
+                  fill={
+                    isHovered
+                      ? 'rgba(255,255,255,0.06)'
+                      : 'rgba(255,255,255,0.025)'
+                  }
+                  style={{ transition: 'fill 0.15s ease' }}
+                />
+
+                {/* Count label above the dot column */}
+                <text
+                  x={cx}
+                  y={COUNT_ZONE_H - 8}
+                  textAnchor="middle"
+                  fontSize={isHovered ? 12 : 11}
+                  fontWeight={isPeak || isHovered ? 'bold' : 'normal'}
+                  fontFamily="'Azeret Mono', monospace"
+                  fill={labelFill}
+                  opacity={labelOpacity}
+                  style={{ transition: 'opacity 0.15s ease' }}
+                >
+                  {col.count}
+                </text>
+
+                {/* Ghost dots — zero-count month placeholder */}
                 {col.count === 0 &&
                   Array.from({ length: MAX_DOTS }, (_, di) => (
                     <circle
                       key={di}
-                      cx={xPct}
+                      cx={cx}
                       cy={dotCy(di)}
                       r={DOT_R}
                       transform={`translate(${dotJitter(di, ci)}, 0)`}
-                      fill="var(--muted-foreground)"
-                      opacity={0.12}
+                      fill={COL_MUTED}
+                      opacity={isHovered ? 0.28 : 0.14}
                     />
                   ))}
 
-                {/* Active dots — bottom-anchored, grow upward */}
+                {/* Active dots — bottom-anchored, growing upward */}
                 {col.count > 0 &&
                   Array.from({ length: nDots }, (_, di) => (
                     <circle
                       key={di}
-                      cx={xPct}
+                      cx={cx}
                       cy={dotCy(di)}
                       r={DOT_R}
                       transform={`translate(${dotJitter(di, ci)}, 0)`}
-                      fill={fill}
-                      opacity={isPeak ? 1 : 0.7}
+                      fill={activeFill}
+                      opacity={isHovered ? 1 : 0.88}
                     />
                   ))}
 
-                {/* Monthly count label — just above the column top */}
-                {col.count > 0 && (
-                  <text
-                    x={xPct}
-                    y={topCy - DOT_R - 4}
-                    textAnchor="middle"
-                    fontSize={10}
-                    fontFamily="'Azeret Mono', monospace"
-                    fill="var(--foreground)"
-                    opacity={0.85}
-                  >
-                    {col.count}
-                  </text>
-                )}
-
                 {/* Month abbreviation below the dot area */}
                 <text
-                  x={xPct}
-                  y={SVG_H - 5}
+                  x={cx}
+                  y={SVG_H - 6}
                   textAnchor="middle"
-                  fontSize={9}
+                  fontSize={10}
                   fontFamily="'Azeret Mono', monospace"
-                  fill="var(--muted-foreground)"
-                  opacity={0.5}
+                  fill={isHovered ? activeFill : 'var(--muted-foreground)'}
+                  opacity={isHovered ? 0.95 : 0.55}
+                  style={{ transition: 'fill 0.15s ease, opacity 0.15s ease' }}
                 >
                   {col.abbr}
                 </text>
