@@ -114,6 +114,7 @@ export default function DashboardPage() {
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [threatMap, setThreatMap] = useState<ThreatMapEntry[]>([]);
   const [monitoredApps, setMonitoredApps] = useState<string[]>(FALLBACK_MONITORED_APPS);
+  const [dailyCounts, setDailyCounts] = useState<Array<{ day: string; count: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [wsStatus, setWsStatus] = useState<WSStatus>('idle');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -122,11 +123,9 @@ export default function DashboardPage() {
   useEffect(() => {
     let mounted = true;
     async function load() {
-      const [inc, act, ints, tm, apps] = await Promise.allSettled([
-        // v1.6.3: pull 7 days of incidents so the Threat Detection chart shows
-        // the full week instead of just the most-recent 100 rows (which all
-        // fell within today on a busy day).
-        api.response.incidents({ since: '7d', limit: 10000 }),
+      const [inc, daily, act, ints, tm, apps] = await Promise.allSettled([
+        api.response.incidents({ since: '24h', limit: 200 }),
+        api.response.dailyCounts(7),
         api.response.actions(),
         api.phantom.interactions({ limit: '500' }),
         api.dashboard.threatMap(),
@@ -134,6 +133,10 @@ export default function DashboardPage() {
       ]);
       if (!mounted) return;
       if (inc.status === 'fulfilled') setIncidents(inc.value as Incident[]);
+      if (daily.status === 'fulfilled') {
+        const dd = (daily.value as { days: Array<{ day: string; count: number }> }).days || [];
+        setDailyCounts(dd);
+      }
       if (act.status === 'fulfilled') setActions(act.value as Action[]);
       if (ints.status === 'fulfilled') setInteractions(ints.value as Interaction[]);
       if (tm.status === 'fulfilled') setThreatMap(tm.value as ThreatMapEntry[]);
@@ -363,7 +366,7 @@ export default function DashboardPage() {
           <LoginAttemptsHeatmap interactions={interactions} hours={24} columns={10} />
         </div>
         <div className="lg:col-span-4">
-          <ThreatDetectionChart incidents={incidents} days={7} />
+          <ThreatDetectionChart dailyCounts={dailyCounts} days={7} />
         </div>
       </div>
 

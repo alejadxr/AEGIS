@@ -2819,8 +2819,14 @@ def _matches_filter(event: dict, filt: dict) -> bool:
         if isinstance(expected, list):
             # path_contains: any element must be a substring of actual
             if key == "path_contains":
-                path = event.get("path", "")
+                path = event.get("path", "") or event.get("url", "") or ""
                 if not any(fragment in path for fragment in expected):
+                    return False
+                continue
+            # path_contains_all: every element must be a substring
+            if key == "path_contains_all":
+                path = event.get("path", "") or event.get("url", "") or ""
+                if not all(fragment in path for fragment in expected):
                     return False
                 continue
             if actual not in expected:
@@ -3121,6 +3127,10 @@ class CorrelationEngine:
 
         # Cooldown check: avoid re-firing the same rule for the same group too rapidly
         cooldown_key = (rule["id"], str(group_key))
+        # v1.6.3.2: TTL eviction so _fired can't grow unbounded under storms.
+        if len(self._fired) > 2048:
+            stale_cutoff = now - self.COOLDOWN_SECONDS * 4
+            self._fired = {k: v for k, v in self._fired.items() if v >= stale_cutoff}
         last_fired = self._fired.get(cooldown_key, 0)
         if now - last_fired < self.COOLDOWN_SECONDS:
             return False
@@ -3304,6 +3314,15 @@ class CorrelationEngine:
 
     async def _create_incident(self, rule: dict, alert_data: dict) -> None:
         """Open a new incident — tries AI engine first, falls back to direct DB insert."""
+        source_ip = alert_data.get("source_ip")
+        if source_ip:
+            try:
+                from app.core.attack_detector import _is_safe_ip
+                if _is_safe_ip(source_ip):
+                    logger.debug(f"correlation_engine: skipping incident for safe IP {source_ip} (rule={rule.get('id')})")
+                    return
+            except Exception:
+                pass
         try:
             from app.database import async_session
             from app.services.ai_engine import ai_engine
@@ -3311,7 +3330,7 @@ class CorrelationEngine:
             from app.models.client import Client
 
             async with async_session() as db:
-                result = await db.execute(select(Client).limit(1))
+                result = await db.execute(select(Client).order_by(Client.created_at.asc()).limit(1))
                 client = result.scalar_one_or_none()
                 if client is None:
                     logger.error("Correlation engine: no client found, cannot create incident")
@@ -3324,8 +3343,13 @@ class CorrelationEngine:
                     logger.warning(f"AI engine failed, creating incident directly: {ai_err}")
                     from app.models.incident import Incident
                     mitre_list = rule.get("mitre", [])
-                    mitre_technique = mitre_list[0].get("technique") if mitre_list else None
-                    mitre_tactic = mitre_list[0].get("tactic") if mitre_list else None
+                    if mitre_list:
+                        first = mitre_list[0]
+                        mitre_technique = first.get("technique") if isinstance(first, dict) else str(first)
+                        mitre_tactic = first.get("tactic") if isinstance(first, dict) else None
+                    else:
+                        mitre_technique = None
+                        mitre_tactic = None
                     from datetime import datetime as _dt
                     incident = Incident(
                         client_id=client.id,

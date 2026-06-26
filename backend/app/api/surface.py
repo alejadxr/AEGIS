@@ -154,14 +154,26 @@ async def list_assets(
     result = await db.execute(query)
     assets = result.scalars().all()
 
-    out = []
-    for a in assets:
-        vuln_count = await db.scalar(
-            select(func.count(Vulnerability.id)).where(
-                Vulnerability.asset_id == a.id,
+    # v1.6.3.2: single GROUP BY instead of one COUNT() per asset.
+    # Eliminates 101 round-trips for a 100-asset page (now: 2).
+    asset_ids = [a.id for a in assets]
+    vuln_counts: dict = {}
+    if asset_ids:
+        agg = await db.execute(
+            select(
+                Vulnerability.asset_id,
+                func.count(Vulnerability.id).label("cnt"),
+            )
+            .where(
+                Vulnerability.asset_id.in_(asset_ids),
                 Vulnerability.status == "open",
             )
-        ) or 0
+            .group_by(Vulnerability.asset_id)
+        )
+        vuln_counts = {row[0]: int(row[1] or 0) for row in agg.all()}
+
+    out = []
+    for a in assets:
         out.append(AssetOut(
             id=a.id,
             hostname=a.hostname,
@@ -172,7 +184,7 @@ async def list_assets(
             status=a.status,
             risk_score=a.risk_score,
             last_scan_at=a.last_scan_at.isoformat() if a.last_scan_at else None,
-            vulnerability_count=vuln_count,
+            vulnerability_count=vuln_counts.get(a.id, 0),
         ))
     return out
 

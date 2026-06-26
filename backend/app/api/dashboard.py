@@ -79,44 +79,38 @@ async def get_overview(
 ):
     """Get dashboard overview statistics."""
     client = auth.client
-    total_assets = await db.scalar(
-        select(func.count(Asset.id)).where(Asset.client_id == client.id)
-    ) or 0
-
-    open_vulns = await db.scalar(
-        select(func.count(Vulnerability.id)).where(
+    (
+        total_assets, open_vulns, critical_vulns,
+        active_incidents, hp_interactions, actions_taken,
+    ) = await asyncio.gather(
+        db.scalar(select(func.count(Asset.id)).where(Asset.client_id == client.id)),
+        db.scalar(select(func.count(Vulnerability.id)).where(
             Vulnerability.client_id == client.id,
             Vulnerability.status == "open",
-        )
-    ) or 0
-
-    critical_vulns = await db.scalar(
-        select(func.count(Vulnerability.id)).where(
+        )),
+        db.scalar(select(func.count(Vulnerability.id)).where(
             Vulnerability.client_id == client.id,
             Vulnerability.severity == "critical",
             Vulnerability.status == "open",
-        )
-    ) or 0
-
-    active_incidents = await db.scalar(
-        select(func.count(Incident.id)).where(
+        )),
+        db.scalar(select(func.count(Incident.id)).where(
             Incident.client_id == client.id,
             Incident.status.in_(["open", "investigating"]),
-        )
-    ) or 0
-
-    hp_interactions = await db.scalar(
-        select(func.count(HoneypotInteraction.id)).where(
+        )),
+        db.scalar(select(func.count(HoneypotInteraction.id)).where(
             HoneypotInteraction.client_id == client.id,
-        )
-    ) or 0
-
-    actions_taken = await db.scalar(
-        select(func.count(Action.id)).where(
+        )),
+        db.scalar(select(func.count(Action.id)).where(
             Action.client_id == client.id,
             Action.status == "executed",
-        )
-    ) or 0
+        )),
+    )
+    total_assets = total_assets or 0
+    open_vulns = open_vulns or 0
+    critical_vulns = critical_vulns or 0
+    active_incidents = active_incidents or 0
+    hp_interactions = hp_interactions or 0
+    actions_taken = actions_taken or 0
 
     score = critical_vulns * 10 + active_incidents * 5
     if score >= 50:
@@ -228,12 +222,11 @@ async def get_live_metrics(
     delta = _WINDOW_MAP.get(window, timedelta(hours=24))
     cutoff = datetime.utcnow() - delta if delta else datetime(1970, 1, 1)
 
-    # Top 10 attacker IPs
-    attackers_result = await db.execute(
-        select(
-            Incident.source_ip,
-            func.count(Incident.id).label("c"),
-        )
+    # v1.6.3.2: run all 7 queries in parallel via asyncio.gather instead of
+    # sequentially. Previously this endpoint took ~1.1s on a busy DB because
+    # each await blocked the next. Now total time ≈ slowest single query.
+    attackers_q = db.execute(
+        select(Incident.source_ip, func.count(Incident.id).label("c"))
         .where(
             Incident.client_id == client.id,
             Incident.source_ip.is_not(None),
@@ -243,42 +236,16 @@ async def get_live_metrics(
         .order_by(func.count(Incident.id).desc())
         .limit(10)
     )
-    top_attackers = [
-        Top10Row(label=row[0] or "unknown", count=int(row[1] or 0))
-        for row in attackers_result.all()
-    ]
-
-    # Top 10 targets (by asset ip/hostname via incidents)
-    targets_result = await db.execute(
-        select(
-            Asset.hostname,
-            Asset.ip_address,
-            func.count(Incident.id).label("c"),
-        )
+    targets_q = db.execute(
+        select(Asset.hostname, Asset.ip_address, func.count(Incident.id).label("c"))
         .join(Incident, Incident.target_asset_id == Asset.id, isouter=False)
-        .where(
-            Asset.client_id == client.id,
-            Incident.detected_at >= cutoff,
-        )
+        .where(Asset.client_id == client.id, Incident.detected_at >= cutoff)
         .group_by(Asset.hostname, Asset.ip_address)
         .order_by(func.count(Incident.id).desc())
         .limit(10)
     )
-    top_targets = [
-        Top10Row(
-            label=row[0] or row[1] or "unknown",
-            count=int(row[2] or 0),
-            meta=row[1] if row[0] and row[1] else None,
-        )
-        for row in targets_result.all()
-    ]
-
-    # Top 10 attack types (by mitre_technique)
-    types_result = await db.execute(
-        select(
-            Incident.mitre_technique,
-            func.count(Incident.id).label("c"),
-        )
+    types_q = db.execute(
+        select(Incident.mitre_technique, func.count(Incident.id).label("c"))
         .where(
             Incident.client_id == client.id,
             Incident.mitre_technique.is_not(None),
@@ -288,40 +255,59 @@ async def get_live_metrics(
         .order_by(func.count(Incident.id).desc())
         .limit(10)
     )
-    top_attack_types = [
-        Top10Row(label=row[0] or "unknown", count=int(row[1] or 0))
-        for row in types_result.all()
-    ]
-
-    # Counters
-    incidents_open = await db.scalar(
+    open_q = db.scalar(
         select(func.count(Incident.id)).where(
             Incident.client_id == client.id,
             Incident.status.in_(["open", "investigating"]),
         )
-    ) or 0
-
-    honeypot_hits_24h = await db.scalar(
+    )
+    honey_q = db.scalar(
         select(func.count(HoneypotInteraction.id)).where(
             HoneypotInteraction.client_id == client.id,
             HoneypotInteraction.timestamp >= cutoff,
         )
-    ) or 0
-
-    blocked_actions_24h = await db.scalar(
+    )
+    blocked_q = db.scalar(
         select(func.count(Action.id)).where(
             Action.client_id == client.id,
             Action.status == "executed",
             Action.created_at >= cutoff,
         )
-    ) or 0
-
-    ai_decisions_24h = await db.scalar(
+    )
+    decisions_q = db.scalar(
         select(func.count(AuditLog.id)).where(
             AuditLog.client_id == client.id,
             AuditLog.timestamp >= cutoff,
         )
-    ) or 0
+    )
+
+    (
+        attackers_result, targets_result, types_result,
+        incidents_open, honeypot_hits_24h, blocked_actions_24h, ai_decisions_24h,
+    ) = await asyncio.gather(
+        attackers_q, targets_q, types_q, open_q, honey_q, blocked_q, decisions_q,
+    )
+
+    top_attackers = [
+        Top10Row(label=row[0] or "unknown", count=int(row[1] or 0))
+        for row in attackers_result.all()
+    ]
+    top_targets = [
+        Top10Row(
+            label=row[0] or row[1] or "unknown",
+            count=int(row[2] or 0),
+            meta=row[1] if row[0] and row[1] else None,
+        )
+        for row in targets_result.all()
+    ]
+    top_attack_types = [
+        Top10Row(label=row[0] or "unknown", count=int(row[1] or 0))
+        for row in types_result.all()
+    ]
+    incidents_open = incidents_open or 0
+    honeypot_hits_24h = honeypot_hits_24h or 0
+    blocked_actions_24h = blocked_actions_24h or 0
+    ai_decisions_24h = ai_decisions_24h or 0
 
     return LiveMetrics(
         top_attackers=top_attackers,
@@ -379,8 +365,6 @@ async def get_threat_map(
         .order_by(func.count(HoneypotInteraction.id).desc())
         .limit(limit_per_source)
     )
-    hp_result = await db.execute(hp_q)
-
     # Collect attacker IPs from incidents
     inc_q = select(
         Incident.source_ip,
@@ -396,7 +380,7 @@ async def get_threat_map(
         .order_by(func.count(Incident.id).desc())
         .limit(limit_per_source)
     )
-    inc_result = await db.execute(inc_q)
+    hp_result, inc_result = await asyncio.gather(db.execute(hp_q), db.execute(inc_q))
 
     # Aggregate count per IP (combine both sources)
     ip_counts: dict[str, int] = {}
@@ -501,43 +485,45 @@ async def get_monitored_apps(
     pm2_statuses: dict[str, str] = await loop.run_in_executor(None, _get_pm2_statuses)
 
     apps: list[MonitoredAppOut] = []
-    cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+
+    # v1.6.3.2: single GROUP BY query instead of 3×N sequential queries.
+    # Previous loop did open_count + resolved_count + max(detected_at) per app —
+    # 27 queries for 9 monitored apps. Now 1 query returns all rows aggregated.
+    agg_rows = await db.execute(
+        select(
+            Incident.source,
+            Incident.status,
+            func.count(Incident.id).label('c'),
+            func.max(Incident.detected_at).label('last'),
+        )
+        .where(
+            Incident.client_id == client.id,
+            Incident.source.in_(app_names) if app_names else func.false(),
+        )
+        .group_by(Incident.source, Incident.status)
+    )
+    # name -> {open_count, resolved_count, last_activity}
+    stats: dict[str, dict] = {name: {"open": 0, "resolved": 0, "last": None} for name in app_names}
+    for row in agg_rows.all():
+        src, status, cnt, last = row[0], row[1], int(row[2] or 0), row[3]
+        if src not in stats:
+            continue
+        if status in ("open", "investigating"):
+            stats[src]["open"] += cnt
+        elif status == "resolved":
+            stats[src]["resolved"] += cnt
+        if last is not None and (stats[src]["last"] is None or last > stats[src]["last"]):
+            stats[src]["last"] = last
 
     for name in app_names:
-        # Open incidents: match on source field or title containing the app name
-        open_count: int = await db.scalar(
-            select(func.count(Incident.id)).where(
-                Incident.client_id == client.id,
-                Incident.status.in_(["open", "investigating"]),
-                Incident.source == name,
-            )
-        ) or 0
-
-        resolved_count: int = await db.scalar(
-            select(func.count(Incident.id)).where(
-                Incident.client_id == client.id,
-                Incident.status == "resolved",
-                Incident.source == name,
-            )
-        ) or 0
-
-        # Last activity: most recent incident for this source
-        last_incident = await db.scalar(
-            select(func.max(Incident.detected_at)).where(
-                Incident.client_id == client.id,
-                Incident.source == name,
-            )
-        )
-        last_activity = last_incident.isoformat() if last_incident else None
-
+        s = stats[name]
         status = pm2_statuses.get(name, "unknown")
-
         apps.append(MonitoredAppOut(
             name=name,
             status=status,
-            open_incidents=int(open_count),
-            last_activity=last_activity,
-            resolved_count=int(resolved_count),
+            open_incidents=int(s["open"]),
+            last_activity=s["last"].isoformat() if s["last"] else None,
+            resolved_count=int(s["resolved"]),
         ))
 
     return MonitoredAppsOut(apps=apps, count=len(apps))

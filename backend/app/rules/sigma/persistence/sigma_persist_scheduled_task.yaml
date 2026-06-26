@@ -2,7 +2,7 @@ id: sigma_persist_scheduled_task
 name: Scheduled Task Created
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - Persistence
 techniques:

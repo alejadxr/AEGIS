@@ -21,6 +21,7 @@ No external HTTP at lookup time. No PyPI dependency. Pure Python stdlib.
 from __future__ import annotations
 
 import csv
+import functools
 import ipaddress
 import logging
 import os
@@ -154,8 +155,13 @@ def _lookup_range(starts: list[int], ends: list[int], ip_int: int) -> int | None
     return None
 
 
+@functools.lru_cache(maxsize=8192)
 def lookup(ip: str) -> dict | None:
-    """Return {asn, asn_owner, country, region, city, source} or None."""
+    """Return {asn, asn_owner, country, region, city, source} or None.
+
+    Cache is cleared by the refresh job (see refresh_async) so stale ASN
+    owners don't survive a monthly db-ip refresh.
+    """
     ip_int = _ip_to_int(ip)
     if ip_int is None:
         return None
@@ -240,6 +246,10 @@ async def refresh_async(force: bool = False) -> dict:
     global _asn_loaded_at, _city_loaded_at
     _asn_loaded_at = 0.0
     _city_loaded_at = 0.0
+    try:
+        lookup.cache_clear()
+    except Exception:
+        pass
     return out
 
 
