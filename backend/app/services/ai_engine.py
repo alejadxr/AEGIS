@@ -219,13 +219,22 @@ class AIDecisionEngine:
         triage_result: dict,
     ):
         """Create an incident record in the DB (async, non-blocking)."""
+        source_ip = event.get("source_ip")
+        if source_ip:
+            try:
+                from app.core.attack_detector import _is_safe_ip
+                if _is_safe_ip(source_ip):
+                    logger.debug(f"fast_triage: skipping incident for safe IP {source_ip} (threat={threat_type})")
+                    return
+            except Exception:
+                pass
         try:
             from app.database import async_session
             from sqlalchemy import select
 
             async with async_session() as db:
                 result = await db.execute(
-                    select(Client).limit(1)
+                    select(Client).order_by(Client.created_at.asc()).limit(1)
                 )
                 client = result.scalar_one_or_none()
                 if not client:
@@ -383,6 +392,13 @@ class AIDecisionEngine:
 
         # Stage 3: Create incident
         incident = await self._create_incident(alert_data, triage, classification, client, db)
+        if incident is None:
+            source_ip = alert_data.get("source_ip")
+            logger.info(f"process_alert: skipping safelisted source_ip={source_ip}")
+            result["stage"] = "safelisted"
+            result["source_ip"] = source_ip
+            result["summary"] = triage.get("summary")
+            return result
         result["incident_id"] = incident.id
         result["client_id"] = client.id
         result["incident_severity"] = incident.severity
@@ -517,6 +533,15 @@ class AIDecisionEngine:
         client: Client,
         db: AsyncSession,
     ) -> Incident:
+        source_ip = alert_data.get("source_ip")
+        if source_ip:
+            try:
+                from app.core.attack_detector import _is_safe_ip
+                if _is_safe_ip(source_ip):
+                    logger.debug(f"ai_engine: skipping incident for safe IP {source_ip}")
+                    return None
+            except Exception:
+                pass
         threat_type = triage.get("threat_type", "unknown")
         mitre = MITRE_MAPPINGS.get(threat_type, {})
         # Prefer the caller's explicit title (e.g. log_watcher passes

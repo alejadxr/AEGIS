@@ -2,7 +2,7 @@ id: sigma_auth_ntlm_relay
 name: NTLM Relay Attack Detected
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - LateralMovement
 techniques:

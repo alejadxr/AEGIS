@@ -1,6 +1,6 @@
 # What Is AEGIS? — Open-Source Autonomous Cybersecurity Defense Platform
 
-*Last updated: 2026-06-23 · Version: 1.6.2 · License: AGPL-3.0*
+*Last updated: 2026-06-23 · Version: 1.6.3.2 · License: AGPL-3.0*
 
 ---
 
@@ -178,7 +178,7 @@ Full documentation: [README.md](../../README.md) · [Architecture](../../ARCHITE
 - [How AEGIS detects ransomware](ransomware-defense.md)
 - [AEGIS vs Wazuh / OSSEC / Elastic Security](comparison.md)
 - [GitHub repository](https://github.com/alejadxr/AEGIS)
-- [v1.6.2 Release](https://github.com/alejadxr/AEGIS/releases/tag/v1.6.2)
+- [v1.6.3.2 Release](https://github.com/alejadxr/AEGIS/releases/tag/v1.6.3.2)
 
 ---
 

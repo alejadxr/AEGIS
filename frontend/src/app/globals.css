@@ -207,57 +207,61 @@
    ═══════════════════════════════════════════════════════════════ */
 
 .dark {
-    --background: #0A0D12;
-    --foreground: #E8ECF2;
+    /* v1.6.3.2: warmer charcoal palette (Linear/Vercel-style).
+       Replaces the near-black #0A0D12 with #16181D — reads as a soft
+       dark gray, not pure black. WCAG AA contrast maintained on body
+       (#ECEEF2 on #16181D = 13.4:1) and muted (#8E96A6 = 5.6:1). */
+    --background: #16181D;
+    --foreground: #ECEEF2;
 
-    --card: #121621;
-    --card-foreground: #E8ECF2;
+    --card: #1D2027;
+    --card-foreground: #ECEEF2;
 
-    --popover: #151B28;
-    --popover-foreground: #E8ECF2;
+    --popover: #23262E;
+    --popover-foreground: #ECEEF2;
 
     --primary: #22D3EE;
-    --primary-foreground: #0A0D12;
+    --primary-foreground: #16181D;
 
-    --secondary: #1A2030;
-    --secondary-foreground: #E8ECF2;
+    --secondary: #23262E;
+    --secondary-foreground: #ECEEF2;
 
-    --muted: #1A2030;
-    --muted-foreground: #8590A2;
+    --muted: #21242B;
+    --muted-foreground: #8E96A6;
 
-    --accent: #1A2030;
-    --accent-foreground: #E8ECF2;
+    --accent: #23262E;
+    --accent-foreground: #ECEEF2;
 
     --destructive: #F87171;
-    --destructive-foreground: #0A0D12;
+    --destructive-foreground: #16181D;
 
-    --border: rgba(255, 255, 255, 0.07);
-    --input: rgba(255, 255, 255, 0.10);
+    --border: rgba(255, 255, 255, 0.10);
+    --input: rgba(255, 255, 255, 0.12);
     --ring: #22D3EE;
 
-    /* Elevation ladder */
-    --surface: #0F131B;
-    --elevated: #1A2030;
-    --subtle: #151B28;
-    --border-strong: rgba(255, 255, 255, 0.14);
+    /* Elevation ladder — clearer steps between tiers */
+    --surface: #1A1D23;
+    --elevated: #272A33;
+    --subtle: #20232A;
+    --border-strong: rgba(255, 255, 255, 0.18);
 
     /* Brand */
     --brand: #22D3EE;
-    --brand-foreground: #0A0D12;
-    --brand-muted: rgba(34, 211, 238, 0.12);
+    --brand-foreground: #16181D;
+    --brand-muted: rgba(34, 211, 238, 0.14);
     --brand-accent: #F97316;
 
-    /* Status — calibrated for dark */
+    /* Status — recalibrated for warmer bg */
     --success: #34D399;
-    --success-foreground: #0A0D12;
+    --success-foreground: #16181D;
     --warning: #FBBF24;
-    --warning-foreground: #0A0D12;
+    --warning-foreground: #16181D;
     --danger: #F87171;
-    --danger-foreground: #0A0D12;
+    --danger-foreground: #16181D;
     --info: #60A5FA;
-    --info-foreground: #0A0D12;
+    --info-foreground: #16181D;
 
-    /* Charts — slightly brighter for dark bg */
+    /* Charts — kept saturated for visibility on the warmer bg */
     --chart-1: #22D3EE;
     --chart-2: #F97316;
     --chart-3: #34D399;
@@ -265,12 +269,12 @@
     --chart-5: #C084FC;
 
     /* Sidebar */
-    --sidebar: #0C1017;
-    --sidebar-foreground: #E8ECF2;
+    --sidebar: #131519;
+    --sidebar-foreground: #ECEEF2;
     --sidebar-primary: #22D3EE;
-    --sidebar-primary-foreground: #0A0D12;
-    --sidebar-accent: #1A2030;
-    --sidebar-accent-foreground: #E8ECF2;
+    --sidebar-primary-foreground: #16181D;
+    --sidebar-accent: #23262E;
+    --sidebar-accent-foreground: #ECEEF2;
     --sidebar-border: rgba(255, 255, 255, 0.06);
     --sidebar-ring: #22D3EE;
 

@@ -2,7 +2,7 @@ id: sigma_auth_kerberos_abuse
 name: Kerberos Ticket Abuse
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - CredentialAccess
 techniques:

@@ -2,7 +2,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -99,6 +99,7 @@ async def list_incidents(
     since: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
+    include_analysis: bool = False,
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
@@ -127,9 +128,11 @@ async def list_incidents(
         if delta is not None:
             cutoff = datetime.utcnow() - delta
             query = query.where(Incident.detected_at >= cutoff)
-        # When since is set without an explicit small limit, allow up to 10k rows.
+        # v1.6.3.2: when since is set without an explicit small limit, raise
+        # the implicit cap to 1000 (was 10000 — 4 MB payloads kill the dashboard).
         if limit == 100:
-            limit = 10000
+            limit = 1000
+    limit = min(limit, 1000)
     query = query.order_by(Incident.detected_at.desc()).offset(offset).limit(limit)
 
     result = await db.execute(query)
@@ -146,13 +149,51 @@ async def list_incidents(
             mitre_technique=i.mitre_technique,
             mitre_tactic=i.mitre_tactic,
             source_ip=i.source_ip,
-            ai_analysis=i.ai_analysis,
+            ai_analysis=i.ai_analysis if include_analysis else None,
             detected_at=i.detected_at.isoformat() if i.detected_at else None,
             contained_at=i.contained_at.isoformat() if i.contained_at else None,
             resolved_at=i.resolved_at.isoformat() if i.resolved_at else None,
         )
         for i in incidents
     ]
+
+
+@router.get("/incidents/daily-counts")
+async def incidents_daily_counts(
+    days: int = 7,
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """v1.6.3.2: pre-aggregated daily incident counts for chart widgets.
+
+    Returns one row per UTC day for the last N days, including days with zero
+    incidents. Used by the dashboard Threat Detection chart so it doesn't have
+    to download 4 MB of raw incidents to compute 7 daily totals.
+
+    Response shape: {"days": [{"day": "YYYY-MM-DD", "count": N}, ...]}
+    """
+    client = auth.client
+    if days < 1 or days > 90:
+        days = 7
+    cutoff = (datetime.utcnow() - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = await db.execute(
+        select(
+            func.date_trunc('day', Incident.detected_at).label('day'),
+            func.count(Incident.id).label('count'),
+        )
+        .where(
+            Incident.client_id == client.id,
+            Incident.detected_at >= cutoff,
+        )
+        .group_by('day')
+    )
+    by_day = {r[0].date().isoformat(): int(r[1] or 0) for r in rows.all()}
+    out = []
+    for i in range(days):
+        d = (cutoff + timedelta(days=i)).date()
+        key = d.isoformat()
+        out.append({"day": key, "count": by_day.get(key, 0)})
+    return {"days": out}
 
 
 @router.get("/incidents/{incident_id}", response_model=IncidentOut)

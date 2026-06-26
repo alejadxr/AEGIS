@@ -349,6 +349,8 @@ export const api = {
 
   // Response
   response: {
+    dailyCounts: (days = 7) =>
+      request<{ days: Array<{ day: string; count: number }> }>(`/response/incidents/daily-counts?days=${days}`),
     incidents: (opts?: { since?: '24h' | '7d' | '30d' | 'all'; limit?: number; status?: string }) => {
       const params = new URLSearchParams();
       if (opts?.since) params.set('since', opts.since);

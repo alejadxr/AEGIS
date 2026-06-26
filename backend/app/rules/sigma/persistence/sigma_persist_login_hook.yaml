@@ -2,7 +2,7 @@ id: sigma_persist_login_hook
 name: macOS Login Hook Persistence
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - Persistence
 techniques:

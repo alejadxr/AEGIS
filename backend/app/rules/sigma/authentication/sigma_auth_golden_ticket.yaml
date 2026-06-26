@@ -2,7 +2,7 @@ id: sigma_auth_golden_ticket
 name: Golden Ticket Usage Suspected
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - CredentialAccess
 techniques:

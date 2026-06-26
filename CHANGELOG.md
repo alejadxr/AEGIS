@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.2] - 2026-06-26 (patch)
+
+Detection-correctness + perf-correctness + robustness patch on top of v1.6.3.1.
+Driven by a 17-agent forensic audit (10 Haiku discover + 6 Sonnet verify + 1 Opus synth).
+Surfaced 19 latent false positives, 14 silent Sigma rules, 16 robustness gaps, and 5 sub-second-perf opportunities.
+
+### Added
+- `path_contains_all` filter key in `correlation_engine._matches_filter()` — unlocks 14 v1.6.2/v1.6.3 supply-chain & CVE Sigma rules (Shai-Hulud, Drupal JSON:API SQLi, Schneider Saitel LFI, LiteLLM MCP, Solana FakeFix, cPanel CRLF, JCE Joomla, HTTP request smuggling, etc.) that were silently no-ops because the filter key wasn't implemented.
+- `AEGIS_SAFE_IPS` and `BENIGN_UAS` now cover Twitter/X crawler ranges 199.16.156.0/22 and 192.133.77.0/24 (8 IPs unblocked, 4 incidents auto-resolved as `[FP-AUDIT]`).
+- 8 composite DB indexes for hot dashboard paths: `idx_incidents_client_detected`, `idx_incidents_client_status`, `idx_incidents_source_status`, `idx_vulns_client_status`, `idx_vulns_asset_status`, `idx_assets_client`, `idx_honeypot_client`, `idx_actions_client_status`.
+- `@functools.lru_cache(maxsize=8192)` on `offline_geoip.lookup()`; cache_clear() wired into the refresh job.
+- `?include_analysis=true` flag on `/response/incidents` — default response no longer ships the `ai_analysis` payload (≈80% smaller default response).
+
+### Fixed
+- `dashboard/overview` parallelizes 6 COUNT() queries via `asyncio.gather()` (6.35s → 21ms; ~300× faster).
+- `surface/assets` N+1 eliminated: per-asset COUNT replaced with single `GROUP BY asset_id` aggregation (101 round-trips → 2).
+- `dashboard/threat-map` parallelizes honeypot + incident queries via `asyncio.gather()`.
+- `response/incidents` implicit `since=` cap lowered from 10000 → 1000 (4 MB payloads were killing the dashboard).
+- `ai_engine.process_alert()` no longer crashes with `AttributeError: NoneType.id` when source IP is safelisted — guarded against `_create_incident()` returning None.
+- `correlation_engine._create_incident()` AI-fallback: `mitre_list[0].get('technique')` now handles both dict and string list items.
+- `correlation_engine._create_incident()` AND `ai_engine._create_fast_incident()` client selection now uses `order_by(Client.created_at.asc())` for determinism (BUG-5 parity with log_watcher).
+- `ip_blocker_service.block_ip()` and `unblock_ip()` now mirror to `attack_detector._blocked_ips` so out-of-band blocks (Tor auto-block, responder, playbooks, firewall_sync) take effect at the FastAPI middleware immediately instead of waiting for restart.
+- `firewall_sync._sync_auto_response_events()` incident dedup is now time-bounded to 24h (was permanent — a firewall IP could only ever generate one incident in the DB's entire lifetime).
+- All 4 incident-creation paths now gate on `AEGIS_SAFE_IPS` before insert: log_watcher (existing), correlation_engine, ai_engine.process_alert, ai_engine.fast_triage.
+
+### Changed
+- 15 permanently-silent Sigma rules disabled (Linux-only stack can't fire Windows/AD events): kerberos_abuse, ntlm_relay, pass_the_hash, golden_ticket, rdp_brute_force, psexec, wmi_exec, winrm, dcom, smb_enum, rdp_pivot, registry_run, scheduled_task, startup_folder, login_hook.
+- `_incident_cooldown` (log_watcher) and `_fired` (correlation_engine) now have inline TTL eviction so they can't grow unbounded under sustained scan storms.
+- README badge, JSON-LD, comparison table, and rule-count claims bumped to v1.6.3.2.
+- `docs/seo/what-is-aegis.md`, `docs/seo/ransomware-defense.md`, `docs/seo/comparison.md` version headers bumped to v1.6.3.2.
+- `AEGIS_BRAND.md` license corrected to AGPL-3.0 (was incorrectly stated as Apache-2.0).
+- `CLAUDE.md` and `AEGIS_CONTEXT.md` bumped to v1.6.3.2.
+
+### Removed (dead code)
+- `backend/app/services/reporter.py` (zero imports anywhere in tree).
+- `frontend/src/components/live/{AttackFeed,EventsPerSecChart,MetricsSummaryBar,NodeHeartbeatGrid,RawLogStream,Top10Table}.tsx` (zero imports).
+- `ARCHITECTURE.md` (v1.2-era artifact, superseded by `CLAUDE.md` + `AEGIS_CONTEXT.md`).
+
+### Operational
+- 8 Twitter/X crawler IPs unblocked on Pi + Mac firewall.
+- 13 incidents bulk-resolved with audit-trail prefixes (`[FP-AUDIT]` for Twitter, `[FP-USER-DEVICE]` for the 9 Claro DO household devices from the prior DR audit).
+- The full ai_analysis remains queryable via `/response/incidents?include_analysis=true` for forensic review; default endpoint just drops the payload.
+
+### Performance summary (measured)
+| Endpoint | Before | After | Improvement |
+|---|---:|---:|---:|
+| `dashboard/overview` | 6.35 s | 21 ms | 300× |
+| `dashboard/live-metrics` | 1.14 s | 52 ms | 22× |
+| `dashboard/monitored-apps` | 2.42 s | 305 ms | 8× |
+| `response/incidents/daily-counts` (new) | — | 13 ms | new endpoint |
+| Full dashboard load | ~2.4 s + 4 MB | ~280 ms + 8 KB | ~9× |
+
+---
+
 ## [1.6.3.1] - 2026-06-23 (patch)
 
 Operator-facing UX + FP-reduction patch on top of v1.6.3. Same evening, no breaking changes.

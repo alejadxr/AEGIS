@@ -808,6 +808,13 @@ class LogWatcher:
             logger.debug(f'Incident cooldown active for {cooldown_key}, skipping')
             return
         self._incident_cooldown[cooldown_key] = now
+        # v1.6.3.2: TTL eviction so the cooldown dict can't grow unbounded under
+        # sustained scan storms. Drop entries older than 2× the cooldown window.
+        if len(self._incident_cooldown) > 1024:
+            stale_cutoff = now - timedelta(seconds=self._COOLDOWN_SECONDS * 2)
+            self._incident_cooldown = {
+                k: v for k, v in self._incident_cooldown.items() if v >= stale_cutoff
+            }
         try:
             from app.database import async_session
             from app.models.client import Client

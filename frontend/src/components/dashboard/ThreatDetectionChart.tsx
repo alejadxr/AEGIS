@@ -12,16 +12,25 @@ import {
 import { Panel, SectionHeader } from '@/components/aegis';
 
 interface ThreatDetectionChartProps {
-  incidents: Array<{ detected_at: string; severity: string }>;
+  incidents?: Array<{ detected_at: string; severity: string }>;
+  dailyCounts?: Array<{ day: string; count: number }>;
   days?: number;
 }
 
-/**
- * ThreatDetectionChart — gradient area chart.
- * Refactored to use <Panel> + <SectionHeader>.
- */
-export function ThreatDetectionChart({ incidents, days = 7 }: ThreatDetectionChartProps) {
+export function ThreatDetectionChart({ incidents, dailyCounts, days = 7 }: ThreatDetectionChartProps) {
   const { data, peak, total } = useMemo(() => {
+    if (dailyCounts && dailyCounts.length > 0) {
+      const bins = dailyCounts.map((d) => {
+        const dt = new Date(d.day);
+        return {
+          day: `${String(dt.getMonth() + 1).padStart(2, '0')}/${String(dt.getDate()).padStart(2, '0')}`,
+          count: d.count,
+        };
+      });
+      const peakVal = bins.reduce((m, b) => Math.max(m, b.count), 0);
+      const totalIn = bins.reduce((s, b) => s + b.count, 0);
+      return { data: bins, peak: peakVal, total: totalIn };
+    }
     const now = new Date();
     const bins: { day: string; count: number; ts: number }[] = [];
     for (let i = days - 1; i >= 0; i--) {
@@ -35,7 +44,7 @@ export function ThreatDetectionChart({ incidents, days = 7 }: ThreatDetectionCha
       });
     }
     let totalIn = 0;
-    for (const inc of incidents) {
+    for (const inc of incidents || []) {
       const t = new Date(inc.detected_at).getTime();
       if (Number.isNaN(t)) continue;
       const dayStart = new Date(t);
@@ -48,7 +57,7 @@ export function ThreatDetectionChart({ incidents, days = 7 }: ThreatDetectionCha
     }
     const peakVal = bins.reduce((m, b) => Math.max(m, b.count), 0);
     return { data: bins, peak: peakVal, total: totalIn };
-  }, [incidents, days]);
+  }, [incidents, dailyCounts, days]);
 
   const action = (
     <div className="flex items-center gap-3">

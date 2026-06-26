@@ -2,7 +2,7 @@ id: sigma_lateral_dcom
 name: DCOM Remote Execution
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - LateralMovement
 techniques:
