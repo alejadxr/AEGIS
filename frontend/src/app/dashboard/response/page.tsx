@@ -549,35 +549,36 @@ export default function ResponsePage() {
                                 </span>
                               )}
                             </p>
-                            <div className="bg-background border border-border rounded-xl p-4 space-y-3">
+                            <div className="bg-card border border-border rounded-xl p-4 space-y-4">
                               {cls && (
-                                <div className="flex items-center gap-2">
-                                  <span className={cn('text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border', toneClass[cls.tone])}>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={cn('text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded border whitespace-nowrap', toneClass[cls.tone])}>
                                     {cls.label}{intel.asn_reputation_name && (intel.classification === 'known_crawler' || intel.classification === 'known_service') ? ` · ${intel.asn_reputation_name}` : ''}
                                   </span>
                                   <span className="text-[9px] font-mono text-muted-foreground/40">[algorithm:classification]</span>
                                 </div>
                               )}
                               {intel.confidence && (
-                                <div className="flex flex-wrap gap-1.5">
+                                <div className="flex flex-wrap gap-2">
                                   {(['tor','vpn','proxy','datacenter','attacker'] as const).map((k) => {
                                     const v = intel.confidence![k];
                                     const tone: 'red' | 'amber' | 'cyan' | 'muted' = v >= 0.7 ? 'red' : v >= 0.4 ? 'amber' : v >= 0.1 ? 'cyan' : 'muted';
                                     return (
-                                      <span key={k} className={cn('text-[9px] font-mono font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border', toneClass[tone])}>
-                                        {k} {v.toFixed(2)}
+                                      <span key={k} className={cn('text-[10px] font-mono font-semibold uppercase tracking-wider px-2 py-1 rounded-md border whitespace-nowrap inline-flex items-center gap-1.5', toneClass[tone])}>
+                                        <span>{k}</span>
+                                        <span className="opacity-70">{v.toFixed(2)}</span>
                                       </span>
                                     );
                                   })}
                                 </div>
                               )}
                               {tags.length > 0 && (
-                                <div className="flex flex-wrap gap-1.5">
+                                <div className="flex flex-wrap gap-2 items-center">
                                   {tags.map((t) => (
                                     <span
                                       key={t.label}
                                       className={cn(
-                                        'text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border',
+                                        'text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md border whitespace-nowrap',
                                         toneClass[t.tone],
                                       )}
                                     >
@@ -585,37 +586,37 @@ export default function ResponsePage() {
                                     </span>
                                   ))}
                                   {typeof intel.risk_score === 'number' && (
-                                    <span className="text-[9px] font-mono text-muted-foreground/70">
-                                      risk: {intel.risk_score}
+                                    <span className="text-[10px] font-mono text-muted-foreground/80 ml-1">
+                                      risk:&nbsp;<span className="text-foreground font-semibold">{intel.risk_score}</span>
                                     </span>
                                   )}
                                 </div>
                               )}
-                              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[12px] pt-2 border-t border-border/60">
                                 {intel.asn && (
                                   <div>
-                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-0.5">ASN</p>
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-1">ASN</p>
                                     <p className="font-mono text-foreground">{intel.asn}</p>
                                   </div>
                                 )}
                                 {intel.org && (
-                                  <div>
-                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-0.5">Org</p>
+                                  <div className="min-w-0">
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-1">Org</p>
                                     <p className="text-foreground truncate" title={intel.org}>
                                       {intel.org}
                                     </p>
                                   </div>
                                 )}
                                 {locParts.length > 0 && (
-                                  <div>
-                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-0.5">Location</p>
+                                  <div className="col-span-2">
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-1">Location</p>
                                     <p className="text-foreground">{locParts.join(', ')}</p>
                                   </div>
                                 )}
                                 {intel.hostname && (
-                                  <div className="col-span-2">
-                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-0.5">Hostname</p>
-                                    <p className="font-mono text-foreground truncate" title={intel.hostname}>
+                                  <div className="col-span-2 min-w-0">
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-1">Hostname</p>
+                                    <p className="font-mono text-foreground text-[11px] truncate" title={intel.hostname}>
                                       {intel.hostname}
                                     </p>
                                   </div>

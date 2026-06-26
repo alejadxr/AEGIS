@@ -112,6 +112,12 @@ class IPBlockerService:
         already_blocked = ip in self._blocked
         self._blocked.add(ip)
         _save_blocked_ips(self._blocked)
+        try:
+            from app.core import attack_detector as _ad
+            if hasattr(_ad, "_blocked_ips"):
+                _ad._blocked_ips.add(ip)
+        except Exception as exc:
+            logger.debug(f"attack_detector blocklist mirror failed for {ip}: {exc}")
         pf_cmd = f'echo "block drop from {ip} to any" | sudo pfctl -ef -'
         logger.warning(f"BLOCK_IP: {ip} added to block list. pf equivalent: {pf_cmd}")
         return {
@@ -128,6 +134,12 @@ class IPBlockerService:
         self._blocked.discard(ip)
         if was_blocked:
             _save_blocked_ips(self._blocked)
+        try:
+            from app.core import attack_detector as _ad
+            if hasattr(_ad, "_blocked_ips"):
+                _ad._blocked_ips.discard(ip)
+        except Exception:
+            pass
         logger.info(f"UNBLOCK_IP: {ip} removed from block list")
         return {
             "success": True,

@@ -2,7 +2,7 @@ id: sigma_lateral_rdp_pivot
 name: RDP Lateral Pivot
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - LateralMovement
 techniques:
