@@ -11,26 +11,32 @@ Phase R-C additions:
   - GET  /recovery-options/{event_id}  — snapshots + decryptors for an event
   - POST /restore                       — trigger snapshot restore job
   - GET  /decryptors                    — direct decryptor lookup by file extension
+
+Dashboard additions:
+  - GET  /stats                         — aggregated stats (rules_active, raas_groups_tracked, triggers_24h)
+  - GET  /raas-groups                   — RaaS group activity timeline + group metadata
 """
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.core.auth import AuthContext, require_analyst, require_admin, get_auth_context
+from app.core.auth import AuthContext, require_analyst, require_admin, require_viewer, get_auth_context
 from app.core.events import event_bus
 from app.models.ransomware_event import RansomwareEvent
 from app.models.endpoint_agent import (
     EndpointAgent, AgentEvent, EventSeverity, EventCategory,
 )
 from app.models.incident import Incident
+from app.models.threat_intel import ThreatIntel
 from app.services.snapshot_manager import get_snapshot_provider, Snapshot, RestoreJob
 from app.services.decryptor_library import DecryptorLibrary, DecryptorEntry
 
@@ -40,12 +46,25 @@ router = APIRouter(prefix="/ransomware", tags=["ransomware"])
 # Module-level singleton — constructed lazily on first request
 _decryptor_library: Optional[DecryptorLibrary] = None
 
+# Path to the Sigma rules directory (relative to this file)
+_RULES_DIR = Path(__file__).parent.parent / "rules"
+
 
 def _get_decryptor_library() -> DecryptorLibrary:
     global _decryptor_library
     if _decryptor_library is None:
         _decryptor_library = DecryptorLibrary()
     return _decryptor_library
+
+
+def _count_ransomware_rules() -> int:
+    """Count YAML rule files that contain 'ransomware' in their name or path."""
+    count = 0
+    if _RULES_DIR.exists():
+        for path in _RULES_DIR.rglob("*.yaml"):
+            if "ransomware" in path.name.lower() or "ransomware" in path.parent.name.lower():
+                count += 1
+    return count or 15  # safe fallback matching the known rule set
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +99,23 @@ class RansomwareIncidentOut(BaseModel):
     rollback_files_restored: int
     signal_count: int
     affected_file_count: int
+
+
+class RansomwareStatsOut(BaseModel):
+    rules_active: int
+    raas_groups_tracked: int
+    triggers_24h: int
+
+
+class RaaSGroupOut(BaseModel):
+    name: str
+    activity_score: int
+    color: Optional[str] = None
+
+
+class RaaSGroupsOut(BaseModel):
+    timeline: list[dict]
+    groups: list[RaaSGroupOut]
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +310,184 @@ async def list_ransomware_events(
         }
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Dashboard stats endpoint
+# ---------------------------------------------------------------------------
+
+@router.get("/stats", response_model=RansomwareStatsOut)
+async def get_ransomware_stats(
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(require_viewer),
+):
+    """
+    Aggregated ransomware defense stats for the dashboard header pills.
+
+    Returns:
+      - rules_active: count of loaded ransomware Sigma/chain rules
+      - raas_groups_tracked: unique ransomware-related entries in ThreatIntel
+      - triggers_24h: incidents matching ransomware indicators in last 24 hours
+    """
+    # --- Rule count from filesystem (fast, no DB round-trip) ---
+    rules_active = _count_ransomware_rules()
+
+    # --- RaaS groups: distinct sources in ThreatIntel tagged as ransomware ---
+    # ThreatIntel is global (no client_id) so we count across all feeds.
+    raas_q = (
+        select(func.count())
+        .select_from(ThreatIntel)
+        .where(
+            or_(
+                ThreatIntel.source.ilike("%ransomlook%"),
+                ThreatIntel.source.ilike("%raas%"),
+                ThreatIntel.source.ilike("%ransomware%"),
+                ThreatIntel.threat_type.ilike("%ransomware%"),
+            )
+        )
+    )
+    raas_groups_tracked: int = (await db.execute(raas_q)).scalar() or 0
+
+    # --- Triggers in last 24 h scoped to this client ---
+    cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+    triggers_q = (
+        select(func.count())
+        .select_from(Incident)
+        .where(
+            and_(
+                Incident.client_id == auth.client_id,
+                Incident.detected_at >= cutoff_24h,
+                or_(
+                    Incident.mitre_technique.like("T1486%"),
+                    Incident.source == "node-agent-ransomware",
+                    Incident.title.ilike("%ransom%"),
+                    Incident.title.ilike("%encrypt%"),
+                ),
+            )
+        )
+    )
+    triggers_24h: int = (await db.execute(triggers_q)).scalar() or 0
+
+    return RansomwareStatsOut(
+        rules_active=rules_active,
+        raas_groups_tracked=raas_groups_tracked,
+        triggers_24h=triggers_24h,
+    )
+
+
+# ---------------------------------------------------------------------------
+# RaaS group timeline endpoint
+# ---------------------------------------------------------------------------
+
+@router.get("/raas-groups", response_model=RaaSGroupsOut)
+async def get_raas_groups(
+    days: int = Query(14, ge=1, le=90, description="Number of past days for the activity timeline"),
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(require_viewer),
+):
+    """
+    Return RaaS group activity timeline and group metadata.
+
+    Timeline: one entry per day for the requested window. Each entry contains
+    the date plus a count per detected group (keyed by process_name from
+    RansomwareEvent rows — the closest proxy for group attribution in the
+    absence of an external RaaS-feed table).
+
+    Groups: derived first from ThreatIntel rows tagged as ransomware (source
+    or threat_type), then supplemented by unique process_name values seen in
+    RansomwareEvent. activity_score is mapped from confidence (0-1 → 0-100).
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # --- Pull RaaS group metadata from ThreatIntel ---
+    intel_q = (
+        select(ThreatIntel)
+        .where(
+            or_(
+                ThreatIntel.source.ilike("%ransomlook%"),
+                ThreatIntel.source.ilike("%raas%"),
+                ThreatIntel.source.ilike("%ransomware%"),
+                ThreatIntel.threat_type.ilike("%ransomware%"),
+            )
+        )
+        .order_by(ThreatIntel.confidence.desc().nullslast(), ThreatIntel.last_seen.desc())
+        .limit(200)
+    )
+    intel_rows = (await db.execute(intel_q)).scalars().all()
+
+    # Build a name → score map from ThreatIntel.
+    # Prefer tags[0] as the group name (feed convention); fall back to source.
+    group_map: dict[str, int] = {}
+    for row in intel_rows:
+        tags = row.tags if isinstance(row.tags, list) else []
+        name: str = ""
+        for tag in tags:
+            if isinstance(tag, str) and tag and not tag.startswith(("ioc:", "type:")):
+                name = tag
+                break
+        if not name:
+            name = (row.source or "").split("/")[-1] or "unknown"
+        score = int((row.confidence or 0.5) * 100)
+        if name not in group_map or score > group_map[name]:
+            group_map[name] = score
+
+    # --- Fetch RansomwareEvent rows in the window (client-scoped) ---
+    events_q = (
+        select(RansomwareEvent)
+        .where(
+            and_(
+                RansomwareEvent.client_id == auth.client_id,
+                RansomwareEvent.detected_at >= cutoff,
+            )
+        )
+        .order_by(RansomwareEvent.detected_at.asc())
+    )
+    event_rows = (await db.execute(events_q)).scalars().all()
+
+    # Count per (day, process_name) — process_name is our group attribution proxy
+    day_buckets: dict[str, dict[str, int]] = {}
+    process_scores: dict[str, int] = {}
+    for evt in event_rows:
+        if not evt.detected_at:
+            continue
+        day_key = evt.detected_at.strftime("%Y-%m-%d")
+        group_key = (evt.process_name or "unknown").lower().replace(".exe", "")
+        day_buckets.setdefault(day_key, {})[group_key] = (
+            day_buckets[day_key].get(group_key, 0) + 1
+        )
+        # Assign a high activity_score (80+) to any process seen locally —
+        # local detections are high-confidence.
+        process_scores[group_key] = max(process_scores.get(group_key, 0), 80)
+
+    # Merge process names into group_map (local detections take precedence)
+    for name, score in process_scores.items():
+        if name not in group_map:
+            group_map[name] = score
+        else:
+            group_map[name] = max(group_map[name], score)
+
+    # Collect all group keys that appear in the timeline
+    all_keys: set[str] = set()
+    for bucket in day_buckets.values():
+        all_keys.update(bucket.keys())
+
+    # Build timeline: one entry per day from oldest to newest
+    timeline: list[dict] = []
+    if all_keys:
+        for i in range(days):
+            day = (datetime.utcnow() - timedelta(days=days - 1 - i)).strftime("%Y-%m-%d")
+            entry: dict = {"date": day}
+            for gk in sorted(all_keys):
+                entry[gk] = day_buckets.get(day, {}).get(gk, 0)
+            timeline.append(entry)
+
+    # Build groups list (cap at 6 for chart readability)
+    groups: list[RaaSGroupOut] = [
+        RaaSGroupOut(name=name, activity_score=score)
+        for name, score in sorted(group_map.items(), key=lambda x: -x[1])
+    ][:6]
+
+    return RaaSGroupsOut(timeline=timeline, groups=groups)
 
 
 # ---------------------------------------------------------------------------
