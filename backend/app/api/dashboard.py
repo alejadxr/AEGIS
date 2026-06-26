@@ -133,6 +133,234 @@ async def get_overview(
     )
 
 
+# ---------------------------------------------------------------------------
+# Featured Incident
+# ---------------------------------------------------------------------------
+
+class FeaturedIncidentOut(BaseModel):
+    incident_number: Optional[str] = None
+    title: Optional[str] = None
+    severity: Optional[str] = None
+    status: Optional[str] = None
+    detected_at: Optional[str] = None
+    affected_asset: Optional[str] = None
+    mitre_technique: Optional[str] = None
+    mitre_tactic: Optional[str] = None
+    source_ip: Optional[str] = None
+    confidence: Optional[int] = None
+    description: Optional[str] = None
+
+
+def _derive_confidence(ai_analysis, severity: Optional[str]) -> int:
+    """Derive a 0-100 confidence integer from ai_analysis or severity.
+
+    Looks for keys 'confidence' or 'ai_confidence' in the ai_analysis JSON.
+    Handles both fractional (0.0-1.0) and percentage (0-100) formats.
+    Falls back to a severity-based heuristic, then to 75 as a safe default.
+    """
+    if ai_analysis:
+        blob = ai_analysis
+        if isinstance(blob, str):
+            try:
+                blob = json.loads(blob)
+            except Exception:
+                blob = {}
+        if isinstance(blob, dict):
+            for key in ("confidence", "ai_confidence"):
+                val = blob.get(key)
+                if val is not None:
+                    try:
+                        fval = float(val)
+                        # Fractional probability → percentage
+                        if fval <= 1.0:
+                            fval = fval * 100
+                        return max(0, min(100, int(fval)))
+                    except (ValueError, TypeError):
+                        pass
+    _SEVERITY_MAP: dict[str, int] = {
+        "critical": 95,
+        "high": 80,
+        "medium": 60,
+        "low": 40,
+    }
+    return _SEVERITY_MAP.get(severity or "", 75)
+
+
+@router.get("/featured-incident", response_model=FeaturedIncidentOut)
+async def get_featured_incident(
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the most prominent open incident for the dashboard hero widget.
+
+    Priority: most-recent OPEN/INVESTIGATING with severity in [critical, high].
+    Fallback: most-recent OPEN/INVESTIGATING of any severity.
+    Returns HTTP 200 with all-null payload when no open incidents exist — never 404.
+    """
+    client = auth.client
+
+    # 1. Primary: critical or high severity, open/investigating
+    result = await db.execute(
+        select(Incident)
+        .where(
+            Incident.client_id == client.id,
+            Incident.status.in_(["open", "investigating"]),
+            Incident.severity.in_(["critical", "high"]),
+        )
+        .order_by(Incident.detected_at.desc())
+        .limit(1)
+    )
+    incident = result.scalars().first()
+
+    # 2. Fallback: any open/investigating regardless of severity
+    if incident is None:
+        result = await db.execute(
+            select(Incident)
+            .where(
+                Incident.client_id == client.id,
+                Incident.status.in_(["open", "investigating"]),
+            )
+            .order_by(Incident.detected_at.desc())
+            .limit(1)
+        )
+        incident = result.scalars().first()
+
+    # 3. Nothing open at all — return empty payload (200, not 404)
+    if incident is None:
+        return FeaturedIncidentOut()
+
+    # Resolve affected asset from target_asset_id
+    affected_asset = "N/A"
+    if incident.target_asset_id:
+        asset_result = await db.execute(
+            select(Asset).where(Asset.id == incident.target_asset_id)
+        )
+        asset = asset_result.scalars().first()
+        if asset:
+            affected_asset = asset.hostname or asset.ip_address or "N/A"
+
+    # incident_number: first 4 hex chars of id (strip dashes), uppercased, prefixed "INC-"
+    raw_id = str(incident.id).replace("-", "")
+    incident_number = f"INC-{raw_id[:4].upper()}"
+
+    confidence = _derive_confidence(
+        getattr(incident, "ai_analysis", None),
+        incident.severity,
+    )
+
+    description: Optional[str] = None
+    if incident.description:
+        description = incident.description[:280]
+
+    return FeaturedIncidentOut(
+        incident_number=incident_number,
+        title=incident.title,
+        severity=incident.severity,
+        status=incident.status,
+        detected_at=incident.detected_at.isoformat() if incident.detected_at else None,
+        affected_asset=affected_asset,
+        mitre_technique=incident.mitre_technique or "N/A",
+        mitre_tactic=incident.mitre_tactic or None,
+        source_ip=incident.source_ip or "N/A",
+        confidence=confidence,
+        description=description,
+    )
+
+
+class MonthCount(BaseModel):
+    month: str  # "YYYY-MM"
+    count: int
+
+
+class AuthAttemptsMonthlyOut(BaseModel):
+    months: list[MonthCount]
+    total: int
+    peak_month: Optional[str] = None
+
+
+@router.get("/auth-attempts/monthly", response_model=AuthAttemptsMonthlyOut)
+async def get_auth_attempts_monthly(
+    months: int = 6,
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Monthly counts of authentication-failure-like incidents for the last N months.
+
+    Matches incidents by:
+      - mitre_technique starting with T1110 (Brute Force technique group)
+      - title containing 'auth', 'login', or 'brute' (case-insensitive)
+
+    Gap-fills months with zero counts so the caller always receives exactly
+    `months` entries ordered oldest-to-newest.
+
+    Note: Incident model has no dedicated threat_type column; the T1110 MITRE
+    technique and title-keyword filters cover all brute-force/auth-failure
+    incidents created by the correlation engine.
+    """
+    from sqlalchemy import or_
+
+    client = auth.client
+    now = datetime.utcnow()
+
+    # Compute the first day of the oldest month in the window.
+    # e.g. months=6, current=2026-06 → cutoff=2026-01-01
+    cutoff_year = now.year
+    cutoff_month = now.month - (months - 1)
+    while cutoff_month <= 0:
+        cutoff_month += 12
+        cutoff_year -= 1
+    cutoff = datetime(cutoff_year, cutoff_month, 1)
+
+    auth_filter = or_(
+        Incident.mitre_technique.like("T1110%"),
+        func.lower(Incident.title).like("%auth%"),
+        func.lower(Incident.title).like("%login%"),
+        func.lower(Incident.title).like("%brute%"),
+    )
+
+    month_bucket = func.date_trunc("month", Incident.detected_at).label("month_bucket")
+    result = await db.execute(
+        select(
+            month_bucket,
+            func.count(Incident.id).label("cnt"),
+        )
+        .where(
+            Incident.client_id == client.id,
+            Incident.detected_at >= cutoff,
+            auth_filter,
+        )
+        .group_by(month_bucket)
+        .order_by(month_bucket)
+    )
+
+    # Build a "YYYY-MM" → count lookup from DB rows.
+    db_counts: dict[str, int] = {}
+    for row in result.all():
+        bucket: datetime = row[0]
+        db_counts[bucket.strftime("%Y-%m")] = int(row[1] or 0)
+
+    # Walk from cutoff month to current month, filling zeros for missing months.
+    month_list: list[MonthCount] = []
+    y, m = cutoff_year, cutoff_month
+    cur_y, cur_m = now.year, now.month
+    while (y, m) <= (cur_y, cur_m):
+        key = f"{y:04d}-{m:02d}"
+        month_list.append(MonthCount(month=key, count=db_counts.get(key, 0)))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+    total = sum(e.count for e in month_list)
+    peak_month: Optional[str] = (
+        max(month_list, key=lambda e: e.count).month
+        if month_list and total > 0
+        else None
+    )
+
+    return AuthAttemptsMonthlyOut(months=month_list, total=total, peak_month=peak_month)
+
+
 @router.get("/timeline", response_model=list[TimelineEvent])
 async def get_timeline(
     limit: int = 50,
@@ -486,7 +714,7 @@ async def get_monitored_apps(
 
     apps: list[MonitoredAppOut] = []
 
-    # v1.6.3.2: single GROUP BY query instead of 3×N sequential queries.
+    # v1.6.3.2: single GROUP BY query instead of 3Ã—N sequential queries.
     # Previous loop did open_count + resolved_count + max(detected_at) per app —
     # 27 queries for 9 monitored apps. Now 1 query returns all rows aggregated.
     agg_rows = await db.execute(
