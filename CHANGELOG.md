@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.3] - 2026-06-26 (patch)
+
+Operator-facing dashboard redesign. New incident-centric hero replaces the bare
+overview at `/dashboard` — surfaces the highest-priority open incident with its
+MITRE technique, source IP, affected asset and AI confidence as a 4-card hero,
+plus a monthly login-attempts dot-density chart and an inline Reject/Approve
+queue for pending AI-suggested actions.
+
+### Added
+- `GET /api/v1/dashboard/featured-incident` — returns the most-recent OPEN/INVESTIGATING incident with severity in [critical, high] (falls back to any open). Computed fields: `incident_number` (INC-XXXX from first 4 hex of UUID), `affected_asset` (joins to `Asset.hostname`/`ip_address`), `confidence` (parsed from `ai_analysis.confidence|ai_confidence`, falls back to severity-tier heuristic). Returns 200 with all-null payload when no open incidents exist — never 404.
+- `GET /api/v1/dashboard/auth-attempts/monthly?months=6` — pre-aggregated monthly counts of authentication-failure incidents (MITRE T1110.x + title keyword fallback), gap-filled to always return N entries oldest-to-newest. Returns `{months: [{month, count}], total, peak_month}`.
+- `PATCH /api/v1/response/actions/{id}` with `{status: 'approved'|'rejected'}` — wired from new dashboard Approve/Reject buttons.
+- `frontend/src/components/dashboard/FeaturedIncidentHero.tsx` — "Hello, #INC-XXXX" greeting + 4 stat cards (Affected Asset / MITRE Technique / Source IP / Confidence) matching the operator-supplied mockup. Outfit headlines, Azeret Mono for IPs and confidence percentages. Severity color rail by `var(--danger)|var(--brand-accent)|var(--warning)`.
+- `frontend/src/components/dashboard/LoginAttemptsMatrix.tsx` — SVG dot-density chart, 6 monthly columns × up to 25 dots each, peak month highlighted `#F97316` orange, all others `text-muted-foreground/25`. Deterministic horizontal jitter (no `Math.random`) for organic feel without breaking hydration.
+- `frontend/src/components/dashboard/AISuggestedActionsList.tsx` — pending-actions list with Reject (red border) and Approve (orange brand) buttons. Optimistic UI: row fades to 0.5 opacity and buttons disable during await.
+
+### Fixed
+- `dashboard/auth-attempts/monthly` Postgres `GroupingError` — `func.date_trunc('month', col)` was emitted twice (once in SELECT, once in GROUP BY) producing distinct parameterized expressions, which Postgres rejected. Extracted to a single `month_bucket` expression and reused.
+- Em-dash fallback (`"—"`) in `FeaturedIncidentOut` was getting mangled to `"?"` over the SCP transfer chain; replaced with ASCII-safe `"N/A"`.
+- Type-mismatch in `frontend/src/app/dashboard/page.tsx`: `featuredIncident` state was typed as the local `Incident` shape but the backend returns the broader `FeaturedIncidentData` (includes `incident_number`, `affected_asset`, `confidence`). Type re-aligned to imported `FeaturedIncidentData`.
+- `pendingActions` (existing `Action` model) mapped into the new `SuggestedAction` shape inside the dashboard page so the existing actions store keeps working unmodified.
+
+### Removed
+- Stand-alone marketing/release content files removed from the repo to keep it operational-only: `AEGIS_BRAND.md`, `AEGIS_MARKETING.md`, `AEGIS_CONTEXT.md`, `AEGIS_RELEASE_POST_v1.6.md`, `AEGIS_RELEASE_POST_v1.6.2.md`, `AEGIS_RELEASE_POST_v1.6.3.md`, `AEGIS_RELEASE_POST_v1.6.3.1.md`, `docs/seo/comparison.md`, `docs/seo/ransomware-defense.md`, `docs/seo/what-is-aegis.md`. A single consolidated `CHANGES.md` (this release) replaces them.
+
+### Operational
+- Backend `/health` now reports `version=1.6.3.3`.
+- Frontend `/dashboard` route ships the new layout in place of the v1.6.3.2 widgets. Existing widgets (IncidentTimeline, ThreatDetectionChart, AssetRiskTable, GlobalThreatMap) are kept and re-arranged below the new hero so the operator's muscle memory is preserved.
+
+---
+
 ## [1.6.3.2] - 2026-06-26 (patch)
 
 Detection-correctness + perf-correctness + robustness patch on top of v1.6.3.1.

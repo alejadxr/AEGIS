@@ -91,3 +91,4 @@ scripts/setup-wizard.py
 # macOS metadata (never commit)
 ._*
 .DS_Store
+CHANGES.md
