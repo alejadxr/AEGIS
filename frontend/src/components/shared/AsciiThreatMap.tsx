@@ -2,10 +2,6 @@
 
 import { useMemo } from 'react';
 
-// ============================================================================
-// Public API (preserved — do not break callers)
-// ============================================================================
-
 export interface ThreatMapEntry {
   country: string;
   country_code: string;
@@ -26,690 +22,306 @@ export interface AsciiThreatMapProps {
   className?: string;
 }
 
-// ============================================================================
-// Projection grid — mapscii-style 2x4 Braille cells.
-// 240x120 effective pixels -> 120 cols x 30 rows of Braille glyphs (2:1).
-// ============================================================================
-
-const PX_W = 240;
-const PX_H = 120;
-const COLS = PX_W / 2; // 120 braille cells wide
-const ROWS = PX_H / 4; // 30  braille cells tall
-
-// Equirectangular projection (lon: -180..+180 -> 0..PX_W; lat: +90..-90 -> 0..PX_H).
-function lonLatToPx(lon: number, lat: number): [number, number] {
-  const x = ((lon + 180) / 360) * PX_W;
-  const y = ((90 - lat) / 180) * PX_H;
+const VBW = 1000;
+const VBH = 500;
+function project(lon: number, lat: number): [number, number] {
+  const x = ((lon + 180) / 360) * VBW;
+  const y = ((90 - lat) / 180) * VBH;
   return [x, y];
 }
 
-function lonLatToCell(lon: number, lat: number): [number, number] {
-  const [x, y] = lonLatToPx(lon, lat);
-  return [x / 2, y / 4];
-}
-
-type Polygon = Array<[number, number]>;
-
-// ============================================================================
-// Hand-traced coastline polygons.
-// Each polygon is rasterised independently — overlap is harmless (a pixel is
-// LAND if ANY polygon contains it). This lets us add island detail (Sumatra,
-// Madagascar, UK, NZ, ...) without surgery on the main continent outlines.
-// ============================================================================
-
-const CONTINENTS: Polygon[] = [
-  // ── NORTH AMERICA (Alaska -> Pacific -> Mexico -> Central America ->
-  //    Gulf -> Florida -> Eastern Seaboard -> Maritimes -> Hudson -> Arctic)
-  [
-    [-168, 66], [-162, 70], [-158, 71], [-141, 70], [-141, 60], [-138, 59],
-    [-135, 57], [-130, 54], [-126, 50], [-124, 48], [-124, 43], [-123, 39],
-    [-122, 37], [-120, 35], [-117, 33], [-115, 32], [-114, 30], [-112, 26],
-    [-110, 23], [-106, 22], [-101, 18], [-97, 16], [-94, 16], [-91, 14],
-    [-87, 13], [-84, 10], [-81, 8], [-78, 8], [-77, 10], [-83, 13],
-    [-87, 16], [-88, 18], [-88, 21], [-90, 21], [-91, 19], [-95, 19],
-    [-97, 22], [-97, 26], [-94, 29], [-90, 30], [-87, 30], [-84, 30],
-    [-83, 29], [-82, 27], [-81, 25], [-80, 25], [-80, 27], [-81, 31],
-    [-79, 33], [-77, 34], [-75, 38], [-74, 39], [-72, 41], [-70, 43],
-    [-67, 45], [-65, 45], [-60, 46], [-55, 48], [-53, 50], [-56, 52],
-    [-60, 54], [-63, 57], [-67, 60], [-69, 62], [-77, 62], [-79, 60],
-    [-83, 58], [-88, 58], [-92, 57], [-95, 60], [-94, 64], [-95, 68],
-    [-105, 70], [-115, 70], [-125, 71], [-135, 70], [-148, 70], [-156, 71],
-    [-168, 66],
-  ],
-
-  // ── GREENLAND
-  [
-    [-50, 60], [-45, 60], [-38, 64], [-30, 67], [-22, 70], [-22, 75],
-    [-25, 78], [-30, 81], [-45, 83], [-55, 83], [-62, 81], [-65, 78],
-    [-58, 73], [-52, 68], [-50, 60],
-  ],
-
-  // ── ICELAND
-  [
-    [-24, 64], [-21, 66], [-14, 66], [-13, 64], [-19, 63], [-23, 63],
-    [-24, 64],
-  ],
-
-  // ── CUBA
-  [
-    [-84, 22], [-78, 22], [-74, 20], [-77, 21], [-83, 23], [-84, 22],
-  ],
-
-  // ── HISPANIOLA (DR + Haiti)
-  [
-    [-74, 19], [-68, 19], [-68, 18], [-74, 18], [-74, 19],
-  ],
-
-  // ── SOUTH AMERICA
-  [
-    [-78, 12], [-72, 12], [-62, 11], [-55, 6], [-50, 4], [-44, 0],
-    [-39, -4], [-35, -8], [-37, -13], [-39, -18], [-42, -22], [-48, -28],
-    [-55, -33], [-60, -39], [-65, -44], [-68, -49], [-72, -54], [-70, -55],
-    [-67, -53], [-66, -48], [-71, -42], [-72, -36], [-71, -28], [-71, -20],
-    [-73, -16], [-77, -12], [-79, -8], [-80, -4], [-80, 0], [-78, 4],
-    [-77, 8], [-78, 12],
-  ],
-
-  // ── AFRICA (mainland)
-  [
-    [-17, 21], [-13, 27], [-7, 33], [0, 35], [10, 32], [20, 31], [27, 31],
-    [33, 31], [35, 27], [37, 22], [39, 17], [42, 13], [46, 12], [49, 12],
-    [51, 11], [50, 8], [47, 5], [44, 4], [42, 0], [40, -5], [40, -10],
-    [40, -16], [38, -22], [33, -27], [28, -33], [22, -34], [18, -34],
-    [15, -30], [13, -25], [12, -19], [12, -13], [12, -7], [9, -2],
-    [9, 3], [6, 4], [-2, 5], [-7, 5], [-13, 9], [-17, 14], [-17, 21],
-  ],
-
-  // ── MADAGASCAR
-  [
-    [44, -12], [47, -13], [50, -17], [50, -22], [47, -25], [44, -22],
-    [44, -16], [43, -13], [44, -12],
-  ],
-
-  // ── EUROPE: IBERIA
-  [
-    [-10, 36], [-9, 39], [-9, 43], [-3, 43], [3, 43], [3, 38], [-5, 36],
-    [-10, 36],
-  ],
-
-  // ── EUROPE: WESTERN MAINLAND (France/Benelux/Germany/Denmark)
-  [
-    [-5, 43], [-1, 45], [-4, 48], [-1, 49], [3, 51], [6, 53], [9, 54],
-    [11, 54], [12, 56], [10, 57], [9, 56], [9, 54], [6, 51], [5, 50],
-    [4, 48], [6, 46], [8, 45], [6, 44], [-1, 43], [-5, 43],
-  ],
-
-  // ── EUROPE: ITALY (boot)
-  [
-    [7, 44], [10, 45], [13, 46], [13, 44], [15, 41], [17, 41], [18, 40],
-    [17, 38], [15, 39], [14, 38], [11, 41], [10, 42], [7, 44],
-  ],
-
-  // ── EUROPE: BALKANS / GREECE
-  [
-    [13, 46], [17, 47], [22, 46], [27, 44], [28, 42], [25, 38], [22, 37],
-    [21, 38], [19, 40], [17, 42], [14, 45], [13, 46],
-  ],
-
-  // ── EUROPE: SCANDINAVIA
-  [
-    [5, 58], [8, 60], [12, 65], [17, 68], [21, 70], [25, 71], [28, 70],
-    [25, 67], [22, 63], [19, 60], [18, 58], [14, 56], [11, 55], [8, 56],
-    [5, 58],
-  ],
-
-  // ── EUROPE: EASTERN PLAIN + WESTERN RUSSIA
-  [
-    [12, 50], [18, 54], [25, 56], [32, 58], [40, 60], [48, 61], [55, 60],
-    [55, 54], [50, 48], [42, 46], [33, 46], [27, 46], [22, 47], [16, 49],
-    [12, 50],
-  ],
-
-  // ── ASIA: SIBERIAN ARCTIC BELT
-  [
-    [55, 50], [60, 55], [70, 60], [80, 65], [90, 72], [100, 73], [110, 73],
-    [120, 71], [130, 70], [140, 68], [150, 65], [160, 60], [165, 60],
-    [170, 64], [180, 66], [180, 70], [160, 72], [140, 73], [120, 74],
-    [100, 75], [80, 70], [70, 67], [60, 60], [55, 50],
-  ],
-
-  // ── ASIA: SIBERIAN SOUTH BELT (Mongolia / Russian Far East)
-  [
-    [55, 50], [70, 50], [85, 50], [100, 48], [115, 48], [128, 50],
-    [135, 50], [142, 50], [148, 53], [150, 55], [145, 56], [140, 55],
-    [130, 53], [120, 53], [110, 52], [100, 50], [90, 50], [80, 50],
-    [70, 52], [60, 52], [55, 50],
-  ],
-
-  // ── ASIA: CHINA / EAST ASIA SEABOARD
-  [
-    [75, 38], [82, 42], [90, 45], [100, 47], [115, 47], [125, 45],
-    [128, 42], [127, 38], [125, 35], [122, 32], [121, 30], [119, 26],
-    [117, 23], [114, 22], [110, 22], [108, 21], [105, 22], [101, 26],
-    [95, 28], [90, 30], [85, 34], [80, 36], [75, 38],
-  ],
-
-  // ── KOREA
-  [
-    [126, 38], [129, 37], [129, 35], [127, 34], [125, 37], [126, 38],
-  ],
-
-  // ── JAPAN — HONSHU
-  [
-    [131, 33], [134, 34], [137, 35], [140, 38], [141, 40], [140, 41],
-    [137, 38], [134, 35], [131, 33],
-  ],
-
-  // ── JAPAN — HOKKAIDO
-  [
-    [140, 42], [143, 42], [145, 44], [142, 45], [140, 44], [140, 42],
-  ],
-
-  // ── JAPAN — KYUSHU + SHIKOKU
-  [
-    [130, 31], [131, 32], [134, 33], [133, 34], [131, 33], [130, 31],
-  ],
-
-  // ── TAIWAN
-  [
-    [120, 22], [121, 22], [122, 25], [121, 25], [120, 22],
-  ],
-
-  // ── INDIA (subcontinent)
-  [
-    [68, 24], [72, 24], [76, 23], [80, 22], [85, 22], [88, 22], [88, 20],
-    [85, 18], [82, 16], [80, 12], [78, 9], [77, 8], [76, 10], [73, 16],
-    [72, 20], [70, 22], [68, 24],
-  ],
-
-  // ── SRI LANKA
-  [
-    [80, 6], [82, 7], [82, 9], [80, 9], [80, 6],
-  ],
-
-  // ── SE ASIA MAINLAND (Myanmar/Thailand/Cambodia/Vietnam/Malaysia)
-  [
-    [92, 22], [97, 22], [99, 20], [102, 21], [105, 22], [108, 21],
-    [108, 17], [107, 14], [105, 11], [104, 11], [102, 13], [102, 8],
-    [102, 5], [104, 2], [102, 2], [100, 5], [99, 9], [98, 13], [97, 16],
-    [95, 20], [93, 22], [92, 22],
-  ],
-
-  // ── SUMATRA
-  [
-    [95, 5], [99, 4], [103, 0], [105, -3], [102, -5], [99, -3], [96, 1],
-    [95, 5],
-  ],
-
-  // ── JAVA + BALI (slim east-west sliver)
-  [
-    [105, -6], [110, -7], [114, -7], [115, -8], [108, -8], [105, -7],
-    [105, -6],
-  ],
-
-  // ── BORNEO
-  [
-    [109, 5], [115, 6], [119, 3], [119, -2], [114, -4], [109, -1], [109, 5],
-  ],
-
-  // ── SULAWESI
-  [
-    [119, 1], [122, 2], [125, 0], [124, -3], [121, -5], [120, -2], [119, 1],
-  ],
-
-  // ── NEW GUINEA
-  [
-    [131, -1], [138, -2], [144, -4], [150, -7], [148, -10], [142, -10],
-    [136, -9], [132, -7], [131, -1],
-  ],
-
-  // ── PHILIPPINES (single blob)
-  [
-    [120, 12], [122, 8], [125, 7], [126, 10], [125, 14], [122, 16],
-    [120, 14], [120, 12],
-  ],
-
-  // ── AUSTRALIA
-  [
-    [113, -22], [115, -20], [118, -19], [125, -14], [132, -11], [137, -11],
-    [142, -11], [145, -14], [149, -20], [153, -25], [152, -30], [149, -34],
-    [144, -38], [140, -37], [136, -35], [132, -32], [126, -32], [120, -34],
-    [115, -34], [114, -28], [113, -22],
-  ],
-
-  // ── NEW ZEALAND — NORTH ISLAND
-  [
-    [173, -35], [177, -37], [177, -39], [173, -39], [173, -35],
-  ],
-
-  // ── NEW ZEALAND — SOUTH ISLAND
-  [
-    [167, -41], [171, -41], [174, -45], [170, -46], [167, -44], [167, -41],
-  ],
-
-  // ── ARABIAN PENINSULA
-  [
-    [35, 30], [40, 30], [43, 29], [47, 30], [50, 28], [51, 24], [55, 22],
-    [56, 18], [52, 14], [48, 12], [43, 13], [43, 18], [40, 22], [38, 25],
-    [35, 28], [35, 30],
-  ],
-
-  // ── MIDDLE EAST (Turkey/Caucasus/Iran)
-  [
-    [27, 37], [33, 40], [40, 41], [45, 41], [50, 40], [55, 38], [60, 35],
-    [62, 30], [60, 27], [55, 27], [50, 28], [47, 30], [42, 33], [38, 35],
-    [33, 35], [30, 36], [27, 37],
-  ],
-
-  // ── BRITAIN (England + Scotland + Wales)
-  [
-    [-5, 50], [-3, 51], [0, 51], [2, 53], [0, 55], [-2, 57], [-5, 58],
-    [-3, 59], [-6, 58], [-6, 55], [-5, 54], [-5, 50],
-  ],
-
-  // ── IRELAND
-  [
-    [-10, 52], [-7, 54], [-6, 55], [-7, 52], [-10, 52],
-  ],
-
-  // ── CENTRAL ASIA infill (Kazakhstan/Uzbek/Turkmen) — filler between
-  //    Caspian and China block so Central Asia isn't a hole.
-  [
-    [48, 50], [55, 53], [62, 52], [70, 50], [78, 48], [82, 46], [82, 42],
-    [75, 42], [68, 42], [60, 40], [55, 42], [50, 45], [48, 50],
-  ],
-];
-
-// ============================================================================
-// Polygon -> pixel grid -> Braille text rows
-// ============================================================================
-
-function pointInPolygon(x: number, y: number, poly: Polygon): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i];
-    const [xj, yj] = poly[j];
-    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi || 1e-9) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-function rasterize(): boolean[][] {
-  const grid: boolean[][] = Array.from({ length: PX_H }, () => new Array<boolean>(PX_W).fill(false));
-  for (let py = 0; py < PX_H; py++) {
-    const lat = 90 - (py / PX_H) * 180;
-    for (let px = 0; px < PX_W; px++) {
-      const lon = (px / PX_W) * 360 - 180;
-      for (const poly of CONTINENTS) {
-        if (pointInPolygon(lon, lat, poly)) {
-          grid[py][px] = true;
-          break;
-        }
-      }
-    }
-  }
-  return grid;
-}
-
-const BRAILLE_BASE = 0x2800;
-// Each Braille glyph encodes a 2x4 dot matrix.  DOT_BITS[row][col] is the
-// bit set for the dot at that sub-pixel position.
-const DOT_BITS: ReadonlyArray<ReadonlyArray<number>> = [
-  [0x01, 0x08],
-  [0x02, 0x10],
-  [0x04, 0x20],
-  [0x40, 0x80],
-];
-
-export function pixelGridToBraille(grid: boolean[][]): string[] {
-  const h = grid.length;
-  const w = grid[0]?.length ?? 0;
-  const rows = Math.ceil(h / 4);
-  const cols = Math.ceil(w / 2);
-  const out: string[] = [];
-  for (let cr = 0; cr < rows; cr++) {
-    let line = '';
-    for (let cc = 0; cc < cols; cc++) {
-      let code = 0;
-      for (let dy = 0; dy < 4; dy++) {
-        for (let dx = 0; dx < 2; dx++) {
-          const py = cr * 4 + dy;
-          const px = cc * 2 + dx;
-          if (py < h && px < w && grid[py][px]) {
-            code |= DOT_BITS[dy][dx];
-          }
-        }
-      }
-      line += String.fromCharCode(BRAILLE_BASE + code);
-    }
-    out.push(line);
-  }
-  return out;
-}
-
-// Module-scope cache: the world map never changes, so we rasterise once.
-let _brailleMap: string[] | null = null;
-function getBrailleMap(): string[] {
-  if (!_brailleMap) _brailleMap = pixelGridToBraille(rasterize());
-  return _brailleMap;
-}
-
-// ============================================================================
-// ISO-2 -> approximate (lon, lat) centroid for marker placement.
-// Preserved verbatim from the previous implementation (240+ codes).
-// ============================================================================
-
-const CC_TO_LATLON: Readonly<Record<string, [number, number]>> = {
-  US: [-98, 39], CA: [-106, 56], MX: [-102, 23], CU: [-79, 22], BS: [-77, 25], GT: [-90, 15],
-  BZ: [-88, 17], HN: [-86, 15], NI: [-85, 13], CR: [-84, 10], PA: [-80, 9], DO: [-70, 19],
-  HT: [-72, 19], JM: [-77, 18], PR: [-66, 18], TT: [-61, 11], BB: [-59, 13], GL: [-42, 72],
-  CO: [-74, 4], VE: [-66, 8], GY: [-58, 5], SR: [-56, 4], BR: [-53, -10], PE: [-76, -10],
-  EC: [-78, -2], BO: [-65, -17], CL: [-71, -35], AR: [-64, -38], PY: [-58, -23], UY: [-56, -33],
-  FK: [-59, -52],
-  GB: [-2, 54], IE: [-8, 53], FR: [2, 47], ES: [-4, 40], PT: [-8, 40], IT: [12, 43], DE: [10, 51],
-  NL: [5, 52], BE: [4, 50], CH: [8, 47], AT: [14, 47], PL: [19, 52], CZ: [15, 50], SK: [19, 49],
-  HU: [19, 47], RO: [25, 46], BG: [25, 43], GR: [22, 39], TR: [35, 39], NO: [10, 62], SE: [16, 62],
-  FI: [26, 64], DK: [10, 56], IS: [-19, 65], EE: [26, 59], LV: [25, 57], LT: [24, 56], BY: [28, 53],
-  UA: [31, 49], MD: [29, 47], RS: [21, 44], HR: [16, 45], BA: [18, 44], SI: [15, 46], MK: [22, 42],
-  AL: [20, 41], ME: [19, 42], LU: [6, 50], MT: [14, 36], CY: [33, 35], LI: [9, 47], MC: [7, 44],
-  SM: [12, 44], VA: [12, 42], AD: [2, 43], GI: [-5, 36], FO: [-7, 62], AX: [20, 60],
-  RU: [100, 60],
-  KZ: [67, 48], UZ: [64, 41], TM: [59, 39], KG: [75, 41], TJ: [71, 39], AF: [66, 34], PK: [70, 30],
-  IN: [79, 22], NP: [84, 28], BT: [90, 27], BD: [90, 24], LK: [81, 7], MV: [73, 4],
-  CN: [104, 35], MN: [104, 47], JP: [138, 36], KR: [128, 36], KP: [127, 40], TW: [121, 24],
-  HK: [114, 22], MO: [113, 22], VN: [108, 16], LA: [102, 18], TH: [101, 15], KH: [105, 13],
-  MM: [97, 21], MY: [102, 4], SG: [104, 1], ID: [118, -2], BN: [115, 4], PH: [122, 13],
-  TL: [125, -8],
-  SA: [45, 25], YE: [48, 15], OM: [56, 21], AE: [54, 24], QA: [51, 25], BH: [50, 26],
-  KW: [47, 29], JO: [36, 31], IL: [35, 31], LB: [35, 33], SY: [38, 35], IQ: [44, 33],
-  IR: [53, 32], GE: [43, 42], AM: [45, 40], AZ: [47, 40], PS: [35, 32],
-  EG: [30, 27], LY: [17, 27], DZ: [3, 28], TN: [9, 34], MA: [-7, 32], EH: [-13, 25],
-  MR: [-10, 20], ML: [-4, 17], SN: [-15, 14], GM: [-15, 13], GN: [-10, 11], GW: [-15, 12],
-  SL: [-12, 8], LR: [-9, 6], CI: [-5, 8], GH: [-1, 8], TG: [1, 8], BJ: [2, 9],
-  NE: [8, 17], BF: [-2, 12], NG: [8, 10], CM: [12, 6], CF: [21, 7], TD: [19, 15],
-  SD: [30, 16], SS: [31, 7], ER: [39, 15], ET: [40, 9], DJ: [42, 12], SO: [46, 6],
-  KE: [38, 1], UG: [32, 1], RW: [30, -2], BI: [30, -3], TZ: [35, -6], CD: [23, -3],
-  CG: [15, -1], GA: [12, -1], GQ: [10, 2], ST: [7, 1], AO: [18, -12], ZM: [28, -14],
-  ZW: [30, -19], BW: [24, -22], NA: [18, -22], ZA: [25, -29], LS: [28, -29], SZ: [31, -26],
-  MZ: [35, -18], MW: [34, -13], MG: [47, -19], MU: [57, -20], SC: [55, -5], KM: [44, -12],
-  CV: [-24, 16], RE: [56, -21], YT: [45, -13], SH: [-6, -16],
-  AU: [134, -25], NZ: [173, -41], PG: [144, -6], FJ: [178, -17], NC: [165, -21], VU: [167, -16],
-  SB: [160, -10], TO: [-175, -21], WS: [-172, -14], TV: [178, -8], NR: [167, 0], KI: [-168, 1],
-  PW: [134, 7], FM: [150, 7], MH: [171, 7], CK: [-159, -21], NU: [-169, -19], TK: [-172, -9],
-  PF: [-149, -17], WF: [-178, -13], AS: [-170, -14], GU: [144, 13], MP: [145, 15], NF: [167, -29],
-  AG: [-61, 17], DM: [-61, 15], GD: [-61, 12], KN: [-62, 17], LC: [-60, 13], VC: [-61, 13],
-  KY: [-80, 19], AI: [-63, 18], BL: [-62, 17], BM: [-64, 32], BQ: [-68, 12], CW: [-69, 12],
-  MF: [-63, 18], MS: [-62, 16], SX: [-63, 18], TC: [-71, 21], VG: [-64, 18], VI: [-64, 18],
-  AW: [-69, 12], GF: [-53, 3], GP: [-61, 16], MQ: [-61, 14], PM: [-56, 46],
-  GS: [-36, -54], BV: [3, -54], TF: [69, -49], HM: [73, -53], IO: [71, -6], CC: [96, -12],
-  CX: [105, -10], UM: [-176, 19], JE: [-2, 49], GG: [-2, 49], IM: [-4, 54],
-  AQ: [0, -82],
+const CC_TO_LATLON: Record<string, [number, number]> = {
+  AD: [1.6, 42.5], AE: [54.4, 23.4], AF: [67.7, 33.9], AG: [-61.8, 17.1], AL: [20.2, 41.2],
+  AM: [45.0, 40.1], AO: [17.9, -11.2], AR: [-63.6, -38.4], AT: [14.6, 47.5], AU: [133.8, -25.3],
+  AZ: [47.6, 40.1], BA: [17.7, 43.9], BB: [-59.5, 13.2], BD: [90.4, 23.7], BE: [4.5, 50.5],
+  BF: [-1.6, 12.2], BG: [25.5, 42.7], BH: [50.6, 26.0], BI: [29.9, -3.4], BJ: [2.3, 9.3],
+  BN: [114.7, 4.5], BO: [-63.6, -16.3], BR: [-51.9, -14.2], BS: [-77.4, 25.0], BT: [90.4, 27.5],
+  BW: [24.7, -22.3], BY: [27.95, 53.7], BZ: [-88.5, 17.2], CA: [-106.3, 56.1], CD: [21.8, -4.0],
+  CF: [20.9, 6.6], CG: [15.8, -0.2], CH: [8.2, 46.8], CI: [-5.5, 7.5], CL: [-71.5, -35.7],
+  CM: [12.4, 7.4], CN: [104.2, 35.9], CO: [-74.3, 4.6], CR: [-83.8, 9.7], CU: [-77.8, 21.5],
+  CV: [-24.0, 16.0], CY: [33.4, 35.1], CZ: [15.5, 49.8], DE: [10.5, 51.2], DJ: [42.6, 11.8],
+  DK: [9.5, 56.3], DM: [-61.4, 15.4], DO: [-70.2, 18.7], DZ: [1.7, 28.0], EC: [-78.2, -1.8],
+  EE: [25.0, 58.6], EG: [30.8, 26.8], ER: [39.8, 15.2], ES: [-3.7, 40.5], ET: [40.5, 9.1],
+  FI: [25.7, 61.9], FJ: [178.1, -16.6], FR: [2.2, 46.2], GA: [11.6, -0.8], GB: [-3.4, 55.4],
+  GD: [-61.7, 12.1], GE: [43.4, 42.3], GH: [-1.0, 7.9], GL: [-42.6, 71.7], GM: [-15.3, 13.4],
+  GN: [-9.7, 9.9], GQ: [10.3, 1.7], GR: [21.8, 39.0], GT: [-90.2, 15.8], GW: [-15.2, 11.8],
+  GY: [-58.9, 4.9], HK: [114.1, 22.4], HN: [-86.2, 15.2], HR: [15.2, 45.1], HT: [-72.3, 18.9],
+  HU: [19.5, 47.2], ID: [113.9, -0.8], IE: [-8.2, 53.4], IL: [34.8, 31.0], IN: [78.96, 20.59],
+  IQ: [43.7, 33.2], IR: [53.7, 32.4], IS: [-19.0, 64.9], IT: [12.6, 41.9], JM: [-77.3, 18.1],
+  JO: [36.2, 30.6], JP: [138.3, 36.2], KE: [37.9, -0.0], KG: [74.8, 41.2], KH: [104.9, 12.6],
+  KM: [43.9, -11.9], KN: [-62.8, 17.3], KP: [127.5, 40.3], KR: [127.8, 35.9], KW: [47.5, 29.3],
+  KZ: [66.9, 48.0], LA: [102.5, 19.9], LB: [35.9, 33.9], LC: [-61.0, 13.9], LI: [9.5, 47.2],
+  LK: [80.8, 7.9], LR: [-9.4, 6.4], LS: [28.2, -29.6], LT: [23.9, 55.2], LU: [6.1, 49.8],
+  LV: [24.6, 56.9], LY: [17.2, 26.3], MA: [-7.1, 31.8], MC: [7.4, 43.7], MD: [28.4, 47.4],
+  ME: [19.4, 42.7], MG: [46.9, -18.8], MK: [21.7, 41.6], ML: [-3.9, 17.6], MM: [95.9, 21.9],
+  MN: [103.8, 46.9], MO: [113.5, 22.2], MR: [-10.9, 21.0], MT: [14.4, 35.9], MU: [57.5, -20.3],
+  MV: [73.2, 3.2], MW: [34.3, -13.3], MX: [-102.6, 23.6], MY: [101.9, 4.2], MZ: [35.5, -18.7],
+  NA: [18.5, -22.9], NC: [165.6, -20.9], NE: [8.1, 17.6], NG: [8.7, 9.1], NI: [-85.2, 12.9],
+  NL: [5.3, 52.1], NO: [8.5, 60.5], NP: [84.1, 28.4], NZ: [174.9, -40.9], OM: [55.9, 21.5],
+  PA: [-80.8, 8.5], PE: [-75.0, -9.2], PG: [143.9, -6.3], PH: [121.8, 12.9], PK: [69.3, 30.4],
+  PL: [19.1, 51.9], PR: [-66.6, 18.2], PS: [35.2, 31.9], PT: [-8.2, 39.4], PY: [-58.4, -23.4],
+  QA: [51.2, 25.4], RE: [55.5, -21.1], RO: [25.0, 45.9], RS: [21.0, 44.0], RU: [105.3, 61.5],
+  RW: [29.9, -1.9], SA: [45.1, 23.9], SB: [160.2, -9.6], SC: [55.5, -4.7], SD: [30.2, 12.9],
+  SE: [18.6, 60.1], SG: [103.8, 1.4], SI: [14.9, 46.2], SK: [19.7, 48.7], SL: [-11.8, 8.5],
+  SM: [12.5, 43.9], SN: [-14.5, 14.5], SO: [46.2, 5.2], SR: [-56.0, 3.9], SS: [31.3, 6.9],
+  SV: [-88.9, 13.8], SY: [38.0, 34.8], SZ: [31.5, -26.5], TD: [18.7, 15.5], TG: [0.8, 8.6],
+  TH: [100.9, 15.9], TJ: [71.3, 38.9], TL: [125.7, -8.9], TM: [59.6, 38.9], TN: [9.5, 33.9],
+  TR: [35.2, 38.9], TT: [-61.2, 10.7], TW: [121.0, 23.7], TZ: [34.9, -6.4], UA: [31.2, 48.4],
+  UG: [32.3, 1.4], US: [-95.7, 37.1], UY: [-55.8, -32.5], UZ: [64.6, 41.4], VE: [-66.6, 6.4],
+  VN: [108.3, 14.1], YE: [48.5, 15.6], ZA: [22.9, -30.6], ZM: [27.8, -13.1], ZW: [29.2, -19.0],
 };
 
-// ============================================================================
-// Marker tier colours
-//   low  (<33% of peak)  -> cyan,   static
-//   mid  (33-66%)        -> orange, static
-//   high (>66%)          -> red,    pulsing
-// ============================================================================
+function pathFor(coords: Array<[number, number]>): string {
+  return coords.map(([lon, lat], i) => {
+    const [x, y] = project(lon, lat);
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ') + ' Z';
+}
 
-interface MarkerPoint {
+const NORTH_AMERICA: Array<[number, number]> = [
+  [-168, 66], [-156, 71], [-140, 70], [-128, 70], [-110, 73], [-95, 75], [-82, 73],
+  [-70, 70], [-60, 66], [-55, 60], [-58, 52], [-64, 47], [-66, 44], [-70, 42],
+  [-74, 39], [-76, 36], [-80, 32], [-82, 29], [-80, 26], [-83, 25], [-88, 30],
+  [-94, 29], [-97, 26], [-97, 22], [-98, 18], [-95, 16], [-90, 14], [-86, 12],
+  [-83, 9], [-79, 9], [-77, 8], [-83, 11], [-87, 15], [-94, 17], [-105, 20],
+  [-110, 23], [-115, 28], [-118, 33], [-122, 37], [-124, 42], [-124, 48],
+  [-130, 54], [-136, 58], [-145, 60], [-152, 59], [-158, 56], [-162, 58], [-166, 60], [-168, 66],
+];
+const SOUTH_AMERICA: Array<[number, number]> = [
+  [-77, 9], [-72, 10], [-66, 8], [-60, 5], [-52, 2], [-50, -4], [-44, -7], [-38, -10],
+  [-35, -8], [-37, -14], [-40, -22], [-46, -24], [-52, -30], [-58, -34], [-62, -39],
+  [-67, -45], [-71, -52], [-72, -55], [-68, -54], [-65, -50], [-69, -42], [-71, -36],
+  [-73, -30], [-71, -22], [-70, -18], [-72, -14], [-76, -10], [-79, -6], [-80, -2],
+  [-78, 1], [-77, 5], [-77, 9],
+];
+const AFRICA: Array<[number, number]> = [
+  [-17, 14], [-10, 27], [-6, 35], [0, 36], [9, 36], [12, 33], [22, 32], [33, 31],
+  [34, 27], [37, 22], [40, 15], [44, 12], [49, 11], [51, 11], [49, 6], [42, 1],
+  [40, -2], [40, -10], [40, -15], [37, -20], [33, -26], [30, -28], [25, -33],
+  [20, -34], [18, -33], [16, -28], [13, -22], [9, -14], [13, -8], [12, -3],
+  [11, 0], [9, 4], [4, 6], [-4, 5], [-7, 4], [-11, 7], [-14, 11], [-17, 14],
+];
+const EUROPE: Array<[number, number]> = [
+  [-9, 38], [-6, 36], [-2, 36], [3, 39], [9, 40], [12, 38], [16, 38], [20, 40],
+  [24, 36], [26, 36], [28, 36], [30, 37], [40, 37], [40, 43], [38, 46], [33, 48],
+  [27, 52], [22, 55], [16, 58], [10, 59], [5, 58], [-1, 51], [-5, 50], [-9, 53], [-9, 38],
+];
+const RUSSIA: Array<[number, number]> = [
+  [27, 60], [40, 67], [50, 68], [60, 70], [70, 71], [80, 73], [95, 76], [110, 74],
+  [130, 73], [150, 72], [170, 70], [175, 68], [178, 65], [170, 62], [160, 60],
+  [150, 60], [140, 55], [135, 53], [130, 48], [125, 47], [115, 49], [105, 50],
+  [90, 51], [80, 50], [70, 48], [60, 48], [50, 50], [42, 48], [35, 51], [30, 55], [27, 60],
+];
+const MIDDLE_EAST: Array<[number, number]> = [
+  [34, 37], [40, 38], [46, 38], [50, 36], [55, 32], [58, 25], [56, 20], [50, 16],
+  [44, 12], [40, 15], [36, 22], [33, 28], [34, 31], [34, 37],
+];
+const INDIA: Array<[number, number]> = [
+  [68, 35], [75, 34], [80, 30], [85, 27], [90, 26], [92, 22], [88, 21], [82, 19],
+  [80, 15], [78, 11], [76, 8], [73, 13], [70, 17], [70, 23], [68, 28], [68, 35],
+];
+const CHINA: Array<[number, number]> = [
+  [73, 48], [85, 47], [95, 43], [105, 42], [115, 42], [120, 41], [125, 40], [120, 35],
+  [122, 30], [120, 24], [115, 22], [108, 20], [105, 22], [100, 22], [98, 25],
+  [98, 30], [90, 32], [82, 35], [78, 40], [73, 42], [73, 48],
+];
+const SE_ASIA: Array<[number, number]> = [
+  [98, 18], [103, 14], [106, 11], [109, 11], [109, 15], [107, 18], [104, 21], [101, 20], [98, 18],
+];
+const INDONESIA: Array<[number, number]> = [
+  [95, 5], [104, 3], [108, -2], [114, -4], [120, -4], [124, -5], [128, -3], [130, -1],
+  [127, 1], [118, 4], [110, 1], [102, 5], [95, 5],
+];
+const PHILIPPINES: Array<[number, number]> = [
+  [120, 18], [122, 16], [125, 11], [126, 7], [123, 6], [121, 11], [120, 18],
+];
+const JAPAN: Array<[number, number]> = [
+  [130, 32], [134, 33], [138, 35], [141, 39], [142, 43], [145, 44], [144, 41],
+  [140, 38], [136, 35], [132, 33], [130, 32],
+];
+const KOREA: Array<[number, number]> = [
+  [126, 38], [128, 37], [129, 36], [129, 33], [127, 34], [125, 36], [126, 38],
+];
+const AUSTRALIA: Array<[number, number]> = [
+  [114, -22], [122, -19], [130, -13], [135, -12], [142, -10], [146, -18], [150, -25],
+  [153, -28], [151, -34], [144, -38], [138, -36], [133, -32], [128, -32], [120, -34],
+  [115, -34], [113, -27], [114, -22],
+];
+const NZ_NORTH: Array<[number, number]> = [
+  [173, -34], [177, -36], [178, -39], [175, -41], [172, -40], [173, -38], [173, -34],
+];
+const NZ_SOUTH: Array<[number, number]> = [
+  [168, -42], [173, -42], [174, -46], [170, -47], [167, -45], [168, -42],
+];
+const GREENLAND: Array<[number, number]> = [
+  [-55, 83], [-30, 84], [-20, 81], [-22, 75], [-30, 70], [-40, 64], [-50, 62],
+  [-54, 67], [-58, 72], [-60, 78], [-55, 83],
+];
+const ICELAND: Array<[number, number]> = [
+  [-24, 66], [-19, 67], [-14, 66], [-14, 64], [-20, 63], [-23, 64], [-24, 66],
+];
+const UK: Array<[number, number]> = [
+  [-5, 58], [-2, 58], [1, 53], [-1, 51], [-3, 50], [-5, 51], [-5, 55], [-5, 58],
+];
+const IRELAND: Array<[number, number]> = [
+  [-10, 55], [-6, 55], [-6, 52], [-10, 52], [-10, 55],
+];
+const ITALY: Array<[number, number]> = [
+  [7, 46], [13, 46], [15, 42], [18, 40], [16, 39], [14, 37], [12, 38], [9, 41], [7, 44], [7, 46],
+];
+const MADAGASCAR: Array<[number, number]> = [
+  [44, -12], [50, -14], [50, -25], [44, -25], [43, -20], [44, -12],
+];
+const CUBA: Array<[number, number]> = [
+  [-85, 22], [-77, 22], [-75, 20], [-78, 20], [-83, 21], [-85, 22],
+];
+const HISPANIOLA: Array<[number, number]> = [
+  [-74, 19], [-69, 20], [-68, 18], [-71, 18], [-74, 18], [-74, 19],
+];
+const SCANDINAVIA: Array<[number, number]> = [
+  [5, 60], [11, 64], [15, 68], [22, 70], [29, 70], [29, 65], [24, 60], [18, 58], [11, 58], [8, 58], [5, 60],
+];
+
+const ALL_LANDS = [
+  NORTH_AMERICA, SOUTH_AMERICA, AFRICA, EUROPE, RUSSIA, MIDDLE_EAST, INDIA,
+  CHINA, SE_ASIA, INDONESIA, PHILIPPINES, JAPAN, KOREA, AUSTRALIA,
+  NZ_NORTH, NZ_SOUTH, GREENLAND, ICELAND, UK, IRELAND, ITALY,
+  MADAGASCAR, CUBA, HISPANIOLA, SCANDINAVIA,
+];
+
+type MarkerPoint = {
   cc: string;
   count: number;
-  cx: number;
-  cy: number;
+  x: number;
+  y: number;
   ratio: number;
-}
-
-function tierColour(ratio: number): { fill: string; glow: string; pulse: boolean } {
-  if (ratio > 0.66) return { fill: '#F87171', glow: 'rgba(248,113,113,0.55)', pulse: true };
-  if (ratio > 0.33) return { fill: '#F97316', glow: 'rgba(249,115,22,0.45)', pulse: false };
-  return { fill: '#22D3EE', glow: 'rgba(34,211,238,0.40)', pulse: false };
-}
-
-// ============================================================================
-// SVG layout constants — cells deliberately small so the map sits gracefully
-// inside a dashboard card without overpowering the surrounding content.
-// CELL_H = 2 * CELL_W keeps the 2:1 cartographic aspect ratio for the world.
-// ============================================================================
-
-const CELL_W = 6;
-const CELL_H = 12;
-const VIEWBOX_W = COLS * CELL_W; // 720
-const VIEWBOX_H = ROWS * CELL_H; // 360
-
-// ============================================================================
-// Component
-// ============================================================================
+  tier: 'low' | 'med' | 'high';
+  label?: boolean;
+};
 
 export function AsciiThreatMap({ data, sources, className }: AsciiThreatMapProps) {
-  const brailleRows = useMemo(() => getBrailleMap(), []);
-
-  const { points, total, countryCount } = useMemo(() => {
-    const agg = new Map<string, number>();
-    if (sources && sources.length) {
-      for (const s of sources) {
-        if (!s.country) continue;
-        agg.set(s.country, (agg.get(s.country) ?? 0) + (s.attacks || 0));
-      }
-    }
-    if (data && data.length) {
-      for (const e of data) {
-        if (!e.country_code) continue;
-        agg.set(e.country_code, (agg.get(e.country_code) ?? 0) + (e.count || 0));
-      }
-    }
-    let totalCount = 0;
-    let maxC = 0;
-    for (const n of agg.values()) {
-      totalCount += n;
-      if (n > maxC) maxC = n;
-    }
-    const pts: MarkerPoint[] = Array.from(agg.entries())
-      .map(([cc, count]) => {
-        const ll = CC_TO_LATLON[cc];
-        if (!ll) return null;
-        const [col, row] = lonLatToCell(ll[0], ll[1]);
-        const ratio = maxC ? count / maxC : 0;
-        return {
-          cc,
-          count,
-          cx: col * CELL_W + CELL_W / 2,
-          cy: row * CELL_H + CELL_H / 2,
-          ratio,
-        };
-      })
-      .filter((p): p is MarkerPoint => p !== null)
-      .sort((a, b) => a.ratio - b.ratio);
-    return { points: pts, total: totalCount, countryCount: agg.size };
+  const aggregated = useMemo<Map<string, number>>(() => {
+    const m = new Map<string, number>();
+    if (data) for (const r of data) if (r?.country_code) m.set(r.country_code, (m.get(r.country_code) || 0) + r.count);
+    if (sources) for (const s of sources) if (s?.country) m.set(s.country, (m.get(s.country) || 0) + (s.attacks || 0));
+    return m;
   }, [data, sources]);
 
-  // Top-5 markers (highest count first) — used both for the SVG label overlay
-  // and the bottom-right legend list.
-  const topFive = useMemo(() => points.slice().reverse().slice(0, 5), [points]);
+  const total = useMemo(() => { let t = 0; aggregated.forEach((v) => { t += v; }); return t; }, [aggregated]);
+  const peak = useMemo(() => { let p = 0; aggregated.forEach((v) => { if (v > p) p = v; }); return p || 1; }, [aggregated]);
 
-  // Build label geometry: anchor on the right of the dot by default; if the
-  // dot sits in the right ~18% of the canvas, flip the label to the left so
-  // it doesn't overflow.  Deterministic — no randomness, SSR-safe.
-  const labels = useMemo(
-    () =>
-      topFive.map((p) => {
-        const flipX = p.cx > VIEWBOX_W * 0.82;
-        const flipY = p.cy < 18;
-        const offsetX = 7;
-        const offsetY = flipY ? 12 : -6;
-        const lx = flipX ? p.cx - offsetX : p.cx + offsetX;
-        const ly = p.cy + offsetY;
-        return {
-          cc: p.cc,
-          cx: p.cx,
-          cy: p.cy,
-          lx,
-          ly,
-          textAnchor: flipX ? ('end' as const) : ('start' as const),
-        };
-      }),
-    [topFive],
-  );
+  const points: MarkerPoint[] = useMemo(() => {
+    const out: MarkerPoint[] = [];
+    aggregated.forEach((count, cc) => {
+      const coords = CC_TO_LATLON[cc];
+      if (!coords) return;
+      const [x, y] = project(coords[0], coords[1]);
+      const ratio = Math.min(1, count / peak);
+      const tier: 'low' | 'med' | 'high' = ratio > 0.66 ? 'high' : ratio > 0.33 ? 'med' : 'low';
+      out.push({ cc, count, x, y, ratio, tier });
+    });
+    const topByCount = [...out].sort((a, b) => b.count - a.count).slice(0, 5);
+    for (const p of topByCount) p.label = true;
+    return out;
+  }, [aggregated, peak]);
 
-  const ariaLabel =
-    total === 0
-      ? 'World threat map — no threats detected'
-      : `World threat map — ${total} threats across ${countryCount} countries`;
+  const countries = aggregated.size;
+  const isEmpty = countries === 0;
 
   return (
-    <div
-      className={`relative w-full h-full overflow-hidden rounded-xl border border-white/[0.06] bg-[#16181D] ${className ?? ''}`}
-      role="img"
-      aria-label={ariaLabel}
-    >
+    <div className={`relative w-full h-full bg-card rounded-2xl overflow-hidden border border-border/40 ${className || ''}`}>
+      <div className="absolute top-3 left-3 z-10 flex items-center gap-2 px-2.5 py-1 rounded-md bg-background/70 border border-border/60 backdrop-blur-sm">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#22D3EE] animate-pulse" />
+        <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-foreground/85">
+          {countries} {countries === 1 ? 'country' : 'countries'} · {total.toLocaleString()} attacks
+        </span>
+      </div>
+
       <svg
-        viewBox={`0 0 ${VIEWBOX_W} ${VIEWBOX_H}`}
+        viewBox={`0 0 ${VBW} ${VBH}`}
+        className="w-full h-full block"
         preserveAspectRatio="xMidYMid meet"
-        className="block w-full h-full"
-        aria-hidden
+        style={{ background: 'radial-gradient(ellipse at center, #1A1D24 0%, #131519 100%)' }}
       >
-        {/* Braille continent layer — context, ambient */}
-        <g
-          fontFamily="Azeret Mono, ui-monospace, Menlo, Consolas, monospace"
-          fontSize={CELL_H}
-          fill="rgba(34,211,238,0.30)"
-          dominantBaseline="hanging"
-        >
-          {/* textLength + lengthAdjust forces each row to span exactly VIEWBOX_W,
-              keeping per-glyph alignment with the dot grid regardless of the
-              font's natural advance width. */}
-          {brailleRows.map((row, i) => (
-            <text
-              key={i}
-              x={0}
-              y={i * CELL_H}
-              textLength={VIEWBOX_W}
-              lengthAdjust="spacingAndGlyphs"
-            >
-              {row}
-            </text>
-          ))}
+        <defs>
+          <pattern id="aegis-dot-grid" x="0" y="0" width="22" height="22" patternUnits="userSpaceOnUse">
+            <circle cx="11" cy="11" r="0.6" fill="rgba(255,255,255,0.04)" />
+          </pattern>
+          <filter id="aegis-halo-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="6" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        <rect width={VBW} height={VBH} fill="url(#aegis-dot-grid)" />
+
+        <g fill="rgba(34,211,238,0.10)" stroke="rgba(34,211,238,0.55)" strokeWidth="1.1" strokeLinejoin="round">
+          {ALL_LANDS.map((coords, i) => <path key={i} d={pathFor(coords)} />)}
         </g>
 
-        {/* Soft halos behind dots */}
         <g>
-          {points.map(({ cc, cx, cy, ratio }) => {
-            const { glow } = tierColour(ratio);
-            const radius = 2.2 + ratio * 3.4;
+          {points.map((p) => {
+            const color = p.tier === 'high' ? '#F87171' : p.tier === 'med' ? '#F97316' : '#22D3EE';
+            const r = 6 + p.ratio * 18;
             return (
-              <circle
-                key={`halo-${cc}`}
-                cx={cx}
-                cy={cy}
-                r={radius * 2.6}
-                fill={glow}
-                opacity={0.4}
-              />
+              <circle key={`h-${p.cc}`} cx={p.x} cy={p.y} r={r} fill={color} opacity={0.18} filter="url(#aegis-halo-glow)" />
             );
           })}
         </g>
 
-        {/* Attack dots */}
         <g>
-          {points.map(({ cc, cx, cy, ratio, count }) => {
-            const { fill, pulse } = tierColour(ratio);
-            const radius = 2.2 + ratio * 3.4;
+          {points.map((p) => {
+            const color = p.tier === 'high' ? '#F87171' : p.tier === 'med' ? '#F97316' : '#22D3EE';
+            const r = 3 + p.ratio * 6;
+            const pulse = p.tier === 'high';
             return (
               <circle
-                key={cc}
-                cx={cx}
-                cy={cy}
-                r={radius}
-                fill={fill}
-                stroke="rgba(0,0,0,0.55)"
-                strokeWidth={0.8}
+                key={`d-${p.cc}`}
+                cx={p.x} cy={p.y} r={r}
+                fill={color}
+                stroke="rgba(0,0,0,0.55)" strokeWidth={1}
                 style={pulse ? { animation: 'aegis-threat-pulse 1.8s ease-in-out infinite' } : undefined}
               >
-                <title>{`${cc}: ${count} ${count === 1 ? 'incident' : 'incidents'}`}</title>
+                <title>{`${p.cc}: ${p.count.toLocaleString()} attacks`}</title>
               </circle>
             );
           })}
         </g>
 
-        {/* Top-5 labels with thin leader lines */}
-        <g>
-          {labels.map(({ cc, cx, cy, lx, ly, textAnchor }) => (
-            <g key={`label-${cc}`}>
-              <line
-                x1={cx}
-                y1={cy}
-                x2={lx}
-                y2={ly + 3}
-                stroke="rgba(245,245,245,0.35)"
-                strokeWidth={0.5}
-              />
+        <g fontFamily="Azeret Mono, ui-monospace, monospace" fontSize={14} fontWeight={600} fill="rgba(255,255,255,0.92)">
+          {points.filter((p) => p.label).map((p) => {
+            const rightEdge = p.x > VBW * 0.82;
+            const topEdge = p.y < 30;
+            const lx = rightEdge ? p.x - 14 : p.x + 14;
+            const ly = topEdge ? p.y + 18 : p.y - 12;
+            return (
               <text
-                x={lx}
-                y={ly}
-                textAnchor={textAnchor}
-                dominantBaseline="hanging"
-                fontFamily="Azeret Mono, ui-monospace, Menlo, Consolas, monospace"
-                fontSize={9}
-                fontWeight={600}
-                className="fill-foreground/70"
-                stroke="#16181D"
-                strokeWidth={2.5}
-                paintOrder="stroke"
-                style={{ paintOrder: 'stroke' }}
+                key={`l-${p.cc}`}
+                x={lx} y={ly}
+                textAnchor={rightEdge ? 'end' : 'start'}
+                stroke="#16181D" strokeWidth={3} paintOrder="stroke"
               >
-                {cc}
+                {p.cc}
+                <tspan dx="6" fontSize={11} fontWeight={500} fill="rgba(255,255,255,0.55)">
+                  {p.count >= 1000 ? `${(p.count / 1000).toFixed(1)}k` : p.count}
+                </tspan>
               </text>
-            </g>
-          ))}
+            );
+          })}
         </g>
       </svg>
 
-      {total === 0 ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <p
-            className="text-[11px] uppercase tracking-[0.2em] text-cyan-400/70 font-mono"
-            style={{ textShadow: '0 0 10px rgba(34,211,238,0.4)' }}
+      {isEmpty && (
+        <div className="absolute inset-0 grid place-items-center pointer-events-none">
+          <span
+            className="text-[12px] font-mono uppercase tracking-[0.22em] text-[#22D3EE]/70"
+            style={{ textShadow: '0 0 14px rgba(34,211,238,0.45)' }}
           >
-            {'// NO THREAT DATA'}
-          </p>
-        </div>
-      ) : (
-        <div className="absolute left-3 top-3 inline-flex items-center gap-3 rounded-md border border-cyan-500/30 bg-[#16181D]/80 backdrop-blur px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-cyan-100/80">
-          <span>
-            <span className="text-cyan-300">{countryCount}</span> countries
+            NO THREAT DATA
           </span>
-          <span className="opacity-40">·</span>
-          <span>
-            <span className="text-cyan-300">{total.toLocaleString()}</span> attacks
-          </span>
-        </div>
-      )}
-
-      {total > 0 && (
-        <div className="absolute right-3 bottom-3 rounded-md border border-cyan-500/30 bg-[#16181D]/85 backdrop-blur px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider min-w-[140px]">
-          <div className="text-cyan-300/80 mb-1.5 pb-1 border-b border-cyan-500/20 flex items-center justify-between gap-3">
-            <span>top sources</span>
-            <span className="text-cyan-100/50 tabular-nums">{Math.min(5, points.length)}</span>
-          </div>
-          <div className="space-y-1">
-            {topFive.map(({ cc, count, ratio }) => {
-              const { fill } = tierColour(ratio);
-              return (
-                <div key={cc} className="flex items-center justify-between gap-3 text-cyan-100/80">
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="inline-block w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: fill, boxShadow: `0 0 6px ${fill}` }}
-                    />
-                    <span>{cc}</span>
-                  </span>
-                  <span className="tabular-nums text-cyan-100/95">{count.toLocaleString()}</span>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 

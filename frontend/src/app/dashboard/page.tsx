@@ -261,111 +261,15 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4 animate-fade-in pb-6">
-      {/* FEATURED INCIDENT HERO — mockup-style hero card at the top */}
-      <FeaturedIncidentHero data={featuredIncident} loading={loadingFeatured} />
-
-      {/* HERO greeting + status + download */}
-      <div className="flex items-start justify-between gap-4 pt-1">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60 font-mono mb-2">
-            AEGIS Command · {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-          </p>
-          <h1 className="text-[26px] sm:text-[34px] lg:text-[40px] font-semibold tracking-[-0.025em] leading-none text-foreground">
-            {latest ? (
-              <>
-                <span className="text-muted-foreground/70">Hello,</span>{' '}
-                <Link
-                  href={`/dashboard/response`}
-                  className="inline-flex items-center gap-2 text-[var(--brand-accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)]/60 rounded-md"
-                >
-                  #INC-{shortId(latest.id)}
-                </Link>
-              </>
-            ) : (
-              <>
-                <span className="text-muted-foreground/70">All</span>{' '}
-                <span className="text-foreground">quiet</span>
-              </>
-            )}
-          </h1>
-          <div className="flex items-center gap-3 mt-3 text-[12px] text-muted-foreground">
-            {latest ? (
-              <>
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: severityBadgeColor(latest.severity) }}
-                    aria-hidden
-                  />
-                  <span className="uppercase tracking-wider text-[10px] font-mono"
-                    style={{ color: severityBadgeColor(latest.severity) }}>
-                    {latest.severity}
-                  </span>
-                </span>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="truncate max-w-[60ch]">{latest.title}</span>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="font-mono text-[11px]">{relativeTime(latest.detected_at)}</span>
-              </>
-            ) : (
-              <span>No open incidents · last attack {relativeTime(incidents[0]?.detected_at)}</span>
-            )}
-          </div>
-        </div>
-
+      {/* FEATURED INCIDENT HERO — incident-centric hero with #INC-XXXX + 4 stat cards */}
+      <div className="flex items-end justify-between gap-3 pt-1">
+        <FeaturedIncidentHero data={featuredIncident} loading={loadingFeatured} />
         <div className="flex items-center gap-2 shrink-0">
           <StatusPill status={wsStatus} />
-          <button
-            type="button"
-            className={cn(
-              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md',
-              'bg-card border border-border text-[12px] text-foreground/90',
-              'hover:bg-white/[0.04] hover:border-white/[0.12]',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-accent)]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              'transition-colors',
-            )}
-            onClick={() => {
-              // Navigate to reports page for now (export center)
-              window.location.href = '/dashboard/reports';
-            }}
-            aria-label="Download report"
-          >
-            <Download size={13} />
-            <span>Download</span>
-          </button>
+          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground/50">
+            {`${openIncidents.length} open · ${pendingActions.length} pending`}
+          </span>
         </div>
-      </div>
-
-      {/* KPI TILES */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
-        <KPITile
-          label="Affected Asset"
-          value={affectedAsset}
-          sub={latest ? `source: ${latest.source}` : 'no active incidents'}
-          tone={latest ? 'accent' : 'neutral'}
-          warm
-        />
-        <KPITile
-          label="MITRE Technique"
-          value={mitre}
-          sub={mitre !== '—' ? (mitreInfo(mitre)?.plain ?? 'view campaign cluster') : '—'}
-          href="/dashboard/threats/campaigns"
-          tone={mitre !== '—' ? 'warning' : 'neutral'}
-        />
-        <KPITile
-          label="Source IP"
-          value={latestIp}
-          sub={latestIp !== '—' ? 'click for IP intel' : '—'}
-          href={latestIp !== '—' ? `/dashboard/ip-intel?ip=${encodeURIComponent(latestIp)}` : undefined}
-          tone={latestIp !== '—' ? 'danger' : 'neutral'}
-          warm
-        />
-        <KPITile
-          label="Confidence"
-          value={confidence}
-          sub={`${openIncidents.length} open · ${pendingActions.length} pending`}
-          tone={confidence !== '—' ? 'success' : 'neutral'}
-        />
       </div>
 
       {/* INCIDENT TIMELINE — signature feature */}
