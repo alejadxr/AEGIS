@@ -7,11 +7,12 @@ import { Download, Radar } from 'lucide-react';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { KPITile } from '@/components/dashboard/KPITile';
 import { IncidentTimeline } from '@/components/dashboard/IncidentTimeline';
-import { AISuggestedActions } from '@/components/dashboard/AISuggestedActions';
 import { ThreatDetectionChart } from '@/components/dashboard/ThreatDetectionChart';
-import { LoginAttemptsHeatmap } from '@/components/dashboard/LoginAttemptsHeatmap';
 import { AssetRiskTable, type AssetRiskRow } from '@/components/dashboard/AssetRiskTable';
 import { Panel, SectionHeader } from '@/components/aegis';
+import FeaturedIncidentHero, { type FeaturedIncidentData } from '@/components/dashboard/FeaturedIncidentHero';
+import { LoginAttemptsMatrix } from '@/components/dashboard/LoginAttemptsMatrix';
+import AISuggestedActionsList from '@/components/dashboard/AISuggestedActionsList';
 import { api } from '@/lib/api';
 import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
 import { cn } from '@/lib/utils';
@@ -53,6 +54,11 @@ type Action = {
 };
 type Interaction = { id: string; timestamp: string; source_ip: string };
 type ThreatMapEntry = { country: string; country_code: string; count: number };
+type MonthlyAuthAttempts = {
+  months: Array<{ month: string; count: number }>;
+  total: number;
+  peak_month: string | null;
+};
 
 // Fallback if backend monitored-apps fetch fails
 const FALLBACK_MONITORED_APPS = ['sable', 'wilabia-frontend', 'wilabia-backend', 'sid-wilab', 'landing-wilab', 'sid', 'sid-backend', 'landing-wilab', 'contable-rd', 'cayde6-api', 'cayde6-frontend'];
@@ -118,18 +124,23 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [wsStatus, setWsStatus] = useState<WSStatus>('idle');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [featuredIncident, setFeaturedIncident] = useState<FeaturedIncidentData | null>(null);
+  const [monthlyAuthAttempts, setMonthlyAuthAttempts] = useState<MonthlyAuthAttempts>({ months: [], total: 0, peak_month: null });
+  const [loadingFeatured, setLoadingFeatured] = useState(true);
 
   // Initial load
   useEffect(() => {
     let mounted = true;
     async function load() {
-      const [inc, daily, act, ints, tm, apps] = await Promise.allSettled([
+      const [inc, daily, act, ints, tm, apps, fi, mauth] = await Promise.allSettled([
         api.response.incidents({ since: '24h', limit: 200 }),
         api.response.dailyCounts(7),
         api.response.actions(),
         api.phantom.interactions({ limit: '500' }),
         api.dashboard.threatMap(),
         api.dashboard.monitoredApps(),
+        api.dashboard.featuredIncident(),
+        api.dashboard.authAttemptsMonthly(6),
       ]);
       if (!mounted) return;
       if (inc.status === 'fulfilled') setIncidents(inc.value as Incident[]);
@@ -145,7 +156,10 @@ export default function DashboardPage() {
         const names = appData.apps.map((a) => a.name).filter(Boolean);
         if (names.length > 0) setMonitoredApps(names);
       }
+      if (fi.status === 'fulfilled') setFeaturedIncident(fi.value as FeaturedIncidentData | null);
+      if (mauth.status === 'fulfilled') setMonthlyAuthAttempts(mauth.value as MonthlyAuthAttempts);
       setLoading(false);
+      setLoadingFeatured(false);
     }
     load();
     return () => { mounted = false; };
@@ -247,6 +261,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4 animate-fade-in pb-6">
+      {/* FEATURED INCIDENT HERO — mockup-style hero card at the top */}
+      <FeaturedIncidentHero data={featuredIncident} loading={loadingFeatured} />
+
       {/* HERO greeting + status + download */}
       <div className="flex items-start justify-between gap-4 pt-1">
         <div className="min-w-0">
@@ -354,20 +371,33 @@ export default function DashboardPage() {
       {/* INCIDENT TIMELINE — signature feature */}
       <IncidentTimeline incidents={openIncidents.length > 0 ? openIncidents : incidents} days={14} />
 
-      {/* Row: AI Actions (2/3) + Login Attempts (1/3 narrow) + Threat Detection (1/3) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-5">
-          <AISuggestedActions
-            actions={pendingActions}
-            onChanged={() => setRefreshKey((k) => k + 1)}
-          />
-        </div>
-        <div className="lg:col-span-3">
-          <LoginAttemptsHeatmap interactions={interactions} hours={24} columns={10} />
-        </div>
-        <div className="lg:col-span-4">
-          <ThreatDetectionChart dailyCounts={dailyCounts} days={7} />
-        </div>
+      {/* Row: AI Suggested Actions · Login Attempts Matrix · Threat Detection Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <AISuggestedActionsList
+          actions={pendingActions.map((a) => ({
+            id: a.id,
+            title: a.action_type
+              ? a.action_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+              : 'Action',
+            created_at: a.created_at,
+            status: a.status,
+            target: a.target,
+          }))}
+          onApprove={async (id: string) => {
+            await api.response.approveAction(id);
+            setRefreshKey((k) => k + 1);
+          }}
+          onReject={async (id: string) => {
+            await api.response.rejectAction(id);
+            setRefreshKey((k) => k + 1);
+          }}
+        />
+        <LoginAttemptsMatrix
+          data={monthlyAuthAttempts.months}
+          total={monthlyAuthAttempts.total}
+          peak_month={monthlyAuthAttempts.peak_month ?? undefined}
+        />
+        <ThreatDetectionChart dailyCounts={dailyCounts} days={7} />
       </div>
 
       {/* Row: Asset Risk Table + Global Threat Map */}

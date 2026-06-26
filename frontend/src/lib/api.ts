@@ -295,6 +295,24 @@ export const api = {
         }>;
         count: number;
       }>('/dashboard/monitored-apps'),
+    featuredIncident: () =>
+      request<{
+        id: string;
+        title: string;
+        severity: string;
+        status: string;
+        source_ip: string | null;
+        mitre_technique: string | null;
+        ai_analysis: Record<string, unknown> | null;
+        detected_at: string;
+        source: string;
+      } | null>('/dashboard/featured-incident'),
+    authAttemptsMonthly: (months: number = 6) =>
+      request<{
+        months: Array<{ month: string; count: number }>;
+        total: number;
+        peak_month: string | null;
+      }>(`/dashboard/auth-attempts/monthly?months=${months}`),
   },
 
   // Surface
