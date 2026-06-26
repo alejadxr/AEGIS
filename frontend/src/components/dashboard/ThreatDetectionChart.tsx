@@ -78,11 +78,12 @@ export function ThreatDetectionChart({ incidents, dailyCounts, days = 7 }: Threa
       <SectionHeader title="Threat Detection" subtitle={`· ${days}d`} action={action} />
 
       <div
-        className="flex-1 px-2 pt-2 pb-2 min-h-[180px]"
+        className="flex-1 px-2 pt-2 pb-2 h-[200px] min-h-[200px]"
         role="img"
         aria-label={`Threat detection chart, ${total} incidents over the last ${days} days, peak ${peak}.`}
+        style={{ minHeight: 200 }}
       >
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={180}>
           <AreaChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="threatGradient" x1="0" y1="0" x2="1" y2="0">
