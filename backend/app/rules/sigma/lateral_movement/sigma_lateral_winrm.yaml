@@ -2,7 +2,7 @@ id: sigma_lateral_winrm
 name: WinRM Lateral Movement
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - LateralMovement
 techniques:

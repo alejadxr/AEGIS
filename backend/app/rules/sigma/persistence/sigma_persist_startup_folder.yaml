@@ -2,7 +2,7 @@ id: sigma_persist_startup_folder
 name: Startup Folder Persistence
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - Persistence
 techniques:

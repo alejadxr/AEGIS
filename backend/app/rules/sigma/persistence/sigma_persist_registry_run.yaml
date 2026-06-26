@@ -2,7 +2,7 @@ id: sigma_persist_registry_run
 name: Registry Run Key Persistence
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - Persistence
 techniques:

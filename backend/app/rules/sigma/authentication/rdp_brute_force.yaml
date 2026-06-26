@@ -2,7 +2,7 @@ id: rdp_brute_force
 name: RDP Brute Force Detected
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - CredentialAccess
 techniques:

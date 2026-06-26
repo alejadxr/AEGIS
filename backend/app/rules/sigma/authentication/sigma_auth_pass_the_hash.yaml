@@ -2,7 +2,7 @@ id: sigma_auth_pass_the_hash
 name: Pass-the-Hash Attack
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - CredentialAccess
 techniques:

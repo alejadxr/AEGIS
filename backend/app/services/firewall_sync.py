@@ -202,12 +202,16 @@ async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
         severity = _threat_level_to_severity(event.get("threat_level") or event.get("severity") or "medium")
 
         if ip:
+            # v1.6.3.2: dedup window is now 24h (was permanent — a firewall IP could
+            # only ever raise ONE incident in the DB's entire lifetime).
+            recent_cutoff = datetime.utcnow() - timedelta(hours=24)
             result = await db.execute(
-                select(Incident).where(
+                select(Incident.id).where(
                     Incident.client_id == client_id,
                     Incident.source_ip == ip,
                     Incident.source == "firewall",
-                )
+                    Incident.detected_at >= recent_cutoff,
+                ).limit(1)
             )
             if result.scalar_one_or_none():
                 continue
