@@ -1,0 +1,21 @@
+id: privilege_escalation
+name: Privilege Escalation Attempt
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1068
+data_sources:
+- pm2
+- edr
+condition:
+  event_type: priv_escalation
+  count_threshold: 2
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple privilege escalation attempts detected.

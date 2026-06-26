@@ -1,0 +1,27 @@
+id: sigma_web_sqli_union
+name: SQL Injection - UNION SELECT
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - UNION
+    - SELECT
+    - union
+    - select
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects UNION SELECT SQL injection attempts in web requests.

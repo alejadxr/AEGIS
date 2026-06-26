@@ -1,0 +1,26 @@
+id: sigma_cloud_k8s_api_abuse
+name: Kubernetes API Abuse
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Execution
+techniques:
+- T1609
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 5
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /api/v1/pods
+    - /api/v1/secrets
+    - /api/v1/namespaces
+entityMappings:
+- type: IP
+  field: source_ip
+description: Suspicious Kubernetes API requests from unexpected source.
