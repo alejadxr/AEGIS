@@ -126,7 +126,22 @@ class ThreatFeedManager:
         self._running = True
         self._http = httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True)
         self._bg_task = asyncio.create_task(self._refresh_loop(), name="threat_feed_refresh")
+        # v1.6.3.3: pre-warm offline_geoip in a thread so the first lookup()
+        # caller doesn't block the event loop for 3-4 minutes parsing 8M city
+        # ranges. Fire-and-forget via run_in_executor so startup isn't delayed.
+        asyncio.create_task(self._warmup_geoip(), name="geoip_warmup")
         logger.info("Threat feed manager started")
+
+    async def _warmup_geoip(self):
+        try:
+            await asyncio.sleep(8)
+            from app.services import offline_geoip as _og
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _og._load_asn_csv)
+            await loop.run_in_executor(None, _og._load_city_csv)
+            logger.info("offline_geoip warmed (async, off-loop)")
+        except Exception as exc:
+            logger.warning(f"offline_geoip warmup failed: {exc}")
 
     async def stop(self):
         """Stop the background refresh loop and close the HTTP client."""

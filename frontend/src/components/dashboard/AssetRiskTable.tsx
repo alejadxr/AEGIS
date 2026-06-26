@@ -61,8 +61,8 @@ export function AssetRiskTable({ rows }: AssetRiskTableProps) {
                 >
                   <td className="px-4 sm:px-5 py-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-md bg-muted/40 border border-border flex items-center justify-center text-[11px] font-mono uppercase text-muted-foreground">
-                        {r.asset.slice(0, 2)}
+                      <div className="w-6 h-6 rounded-full bg-[var(--brand-accent)]/12 border border-[var(--brand-accent)]/30 flex items-center justify-center text-[10px] font-semibold uppercase text-[var(--brand-accent)]">
+                        {r.asset.charAt(0)}
                       </div>
                       <span className="font-mono text-foreground/90">{r.asset}</span>
                     </div>
