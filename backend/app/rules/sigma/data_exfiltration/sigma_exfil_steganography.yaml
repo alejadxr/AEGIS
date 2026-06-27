@@ -1,0 +1,23 @@
+id: sigma_exfil_steganography
+name: Steganography Tool Detected
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1027.003
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - steghide
+    - openstego
+    - snow
+    - outguess
+entityMappings:
+- type: IP
+  field: source_ip
+description: Known steganography tool execution detected.
