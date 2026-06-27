@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.4] - 2026-06-27 (patch)
+
+Stability + completeness patch. Closes the last visible bugs from the
+operator-driven UI review: duplicate hero panels, recharts width(-1)
+errors, missing ransomware endpoints, recurring Twitter/X false positives,
+and a stale light-mode default that masked the v1.6.3.2 warm-charcoal theme.
+
+### Added
+- `GET /api/v1/ransomware/stats` — aggregate `{rules_active, raas_groups_tracked, triggers_24h}` for the ransomware dashboard header tiles.
+- `GET /api/v1/ransomware/raas-groups` — RaaS group activity timeline + per-group metadata `{name, activity_score, color}` for the threat-actor chart.
+- `GET /api/v1/threats/events?type=ransomware&limit=N` — polymorphic ransomware event feed for the recent-events table. Filters by `T1486*` MITRE / `node-agent-ransomware` source / `ransom|encrypt` title keywords.
+
+### Fixed
+- **97 Twitter/X false-positive incidents** marked `[FP-AUDIT2]` and 4 IPs (`199.16.157.180-183`) unblocked from Mac + Pi. Root cause was a leak in the safelist-ingestion path that re-blocked the same `199.16.156.0/22` IPs even though the CIDR was already in `AEGIS_SAFE_IPS`.
+- `recharts` `ResponsiveContainer` `width(-1) height(-1)` console errors on `/dashboard` — `ThreatDetectionChart` now has `h-[200px] min-h-[200px]` parent + `minHeight=180` on the `ResponsiveContainer`.
+- Duplicate dashboard hero — the v1.6.3.3 dashboard rewrite left both the new `FeaturedIncidentHero` and the legacy inline hero+KPI tiles rendered. Removed the 100 lines of legacy hero markup; the new featured-incident block now stands alone.
+- Asset table avatar bug: `r.asset.slice(0, 2)` produced concatenated text like `cacayde6-api` when copied to clipboard. Switched to `r.asset.charAt(0)` with a brand-orange circle background.
+- Reports page returns 401 when `aegis_api_key` localStorage entry is missing → redirects to `/login?next=/dashboard/reports` instead of throwing a generic error.
+- Dashboard light-mode default — the v1.6.3.2 warm-charcoal theme was masked because `<html data-theme="light">` was hard-coded. Default flipped to `data-theme="dark"` so the theme tokens take effect on a clean session.
+
+### Changed
+- `LoginAttemptsMatrix` v2: dot radius 2.5px → 5px, peak month renders in `#F97316` orange with all visible dots, total count promoted to `text-3xl` mono in the section header, per-column count label above each column. Replaces the previous near-invisible sparse-dot rendering.
+- `IncidentTimeline` v2: auto-zoom when events cluster in a small time window so the timeline isn't 90% empty whitespace; range-selector pills now show count badges (`24H (12)`); event dots have hover halos and tooltips; explicit `h-[200px]` so charts below don't inherit `height: 0`.
+- `AEGIS_SAFE_IPS` env var extended with Meta `31.13.64.0/18` and Apple/Threads `17.0.0.0/8` — caught two new crawler ranges (Threads-bot, FB-scraper) that were generating low-severity FPs.
+- `AsciiThreatMap` replaced with a 25-continent hand-traced SVG map (vector paths, top-5 country labels with leader lines, tier-colored attack dots with halo glow). The v1.6.3.3 Braille rendering was illegible at the small `lg:col-span-4` width in production — the new vector map scales cleanly to any size. Component name and export surface preserved so callers don't break.
+- `offline_geoip.refresh_async()` no longer invalidates the in-memory cache on weekly refresh; new CSV is picked up on next process restart instead. Prevents the 3-minute synchronous CSV reparse on the event loop that froze every endpoint when the refresh fired.
+- PM2 `jlist` subprocess (used by `/dashboard/monitored-apps`) now cached for 15s — first call 5s cold, subsequent <50ms.
+
+### Removed
+- Inline hero + KPI grid markup in `frontend/src/app/dashboard/page.tsx` (≈108 lines) — superseded by the standalone `FeaturedIncidentHero` component.
+
+### Operational
+- `/health` reports `version=1.6.3.4`.
+- `/dashboard` verified via Playwright against the production deployment at `http://100.87.222.58:3007` (single hero, single set of stat labels, cartographic map renders, login attempts dots visible, no console `width(-1)` errors).
+- `/dashboard/ransomware` no longer 404s on the three previously-missing endpoints.
+
+---
+
 ## [1.6.3.3] - 2026-06-26 (patch)
 
 Operator-facing dashboard redesign. New incident-centric hero replaces the bare
