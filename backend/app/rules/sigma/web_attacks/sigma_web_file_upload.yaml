@@ -1,0 +1,30 @@
+id: sigma_web_file_upload
+name: Malicious File Upload Attempt
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1505.003
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 300
+  group_by: source_ip
+  filter:
+    method: POST
+    path_contains:
+    - .php
+    - .jsp
+    - .aspx
+    - .sh
+    - .exe
+    - .phtml
+entityMappings:
+- type: IP
+  field: source_ip
+description: Upload of potentially malicious file types detected.

@@ -1,0 +1,25 @@
+id: sigma_evasion_av_tamper
+name: Antivirus/EDR Tampering
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1562.001
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - sc stop
+    - net stop
+    - taskkill
+    - Defender
+    - MsMpEng
+    - Set-MpPreference
+entityMappings:
+- type: IP
+  field: source_ip
+description: Attempt to disable or tamper with security tools.

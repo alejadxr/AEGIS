@@ -1,0 +1,23 @@
+id: sigma_exfil_uncommon_port
+name: HTTPS on Uncommon Port
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1571
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 5
+  time_window_seconds: 300
+  group_by: source_ip
+  filter:
+    protocol: tls
+    target_type: external
+entityMappings:
+- type: IP
+  field: source_ip
+description: TLS traffic on non-standard port suggesting covert channel.

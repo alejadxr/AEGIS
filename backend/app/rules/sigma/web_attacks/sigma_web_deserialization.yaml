@@ -1,0 +1,27 @@
+id: sigma_web_deserialization
+name: Insecure Deserialization Attack
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - rO0AB
+    - 'O:4:'
+    - a:2:{
+    - aced0005
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects serialized object injection attempts.

@@ -1,0 +1,21 @@
+id: sigma_recon_slow_scan
+name: Slow Stealth Port Scan
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1046
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 20
+  time_window_seconds: 3600
+  group_by: source_ip
+  unique_field: target_port
+entityMappings:
+- type: IP
+  field: source_ip
+description: Low-and-slow port scanning to evade detection.
