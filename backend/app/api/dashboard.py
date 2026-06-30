@@ -72,13 +72,31 @@ class ThreatMapEntry(BaseModel):
     count: int
 
 
+_OVERVIEW_CACHE: dict = {"ts": 0.0, "client": None, "data": None}
+_OVERVIEW_CACHE_TTL = 30.0  # seconds
+
+
 @router.get("/overview", response_model=OverviewStats)
 async def get_overview(
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get dashboard overview statistics."""
+    """Get dashboard overview statistics.
+
+    v1.6.3.10: results cached 30s per client + COUNT queries bounded to a
+    30-day window on growing tables (honeypot_interactions, actions). The
+    operator's KPI tile is interested in "recent" not "all-time", and the
+    unbounded COUNT was scanning > 1 M rows on every dashboard load.
+    """
+    import time as _time
     client = auth.client
+    now = _time.monotonic()
+    cached = _OVERVIEW_CACHE
+    if cached["data"] and cached["client"] == client.id and (now - cached["ts"]) < _OVERVIEW_CACHE_TTL:
+        return cached["data"]
+
+    cutoff_30d = datetime.utcnow() - timedelta(days=30)
+
     (
         total_assets, open_vulns, critical_vulns,
         active_incidents, hp_interactions, actions_taken,
@@ -97,12 +115,15 @@ async def get_overview(
             Incident.client_id == client.id,
             Incident.status.in_(["open", "investigating"]),
         )),
+        # v1.6.3.10: bound to 30d. Unbounded scan was the slowest leg of the gather.
         db.scalar(select(func.count(HoneypotInteraction.id)).where(
             HoneypotInteraction.client_id == client.id,
+            HoneypotInteraction.timestamp >= cutoff_30d,
         )),
         db.scalar(select(func.count(Action.id)).where(
             Action.client_id == client.id,
             Action.status == "executed",
+            Action.created_at >= cutoff_30d,
         )),
     )
     total_assets = total_assets or 0
@@ -122,7 +143,7 @@ async def get_overview(
     else:
         risk_level = "low"
 
-    return OverviewStats(
+    out = OverviewStats(
         total_assets=total_assets,
         open_vulnerabilities=open_vulns,
         critical_vulnerabilities=critical_vulns,
@@ -131,6 +152,10 @@ async def get_overview(
         actions_taken=actions_taken,
         risk_level=risk_level,
     )
+    _OVERVIEW_CACHE["ts"] = now
+    _OVERVIEW_CACHE["client"] = client.id
+    _OVERVIEW_CACHE["data"] = out
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -662,12 +687,14 @@ class MonitoredAppsOut(BaseModel):
 
 import time as _time
 _PM2_CACHE: dict = {"ts": 0.0, "data": {}}
-_PM2_CACHE_TTL = 15.0  # seconds
+_PM2_CACHE_TTL = 60.0  # v1.6.3.10: 15s -> 60s — PM2 statuses change rarely
 
 
 def _get_pm2_statuses() -> dict[str, str]:
-    """Cached PM2 process list. TTL 15s — PM2 jlist subprocess can take 5+s
-    on a busy box and was the dominant bottleneck on /monitored-apps."""
+    """Cached PM2 process list. TTL 60s — PM2 jlist subprocess can take 5+s
+    on a busy box and was the dominant bottleneck on /monitored-apps.
+    Cache is warmed at app startup via warmup_pm2_cache so first request
+    after restart is fast."""
     now = _time.monotonic()
     cached = _PM2_CACHE
     if cached["data"] and (now - cached["ts"]) < _PM2_CACHE_TTL:
@@ -692,6 +719,16 @@ def _get_pm2_statuses() -> dict[str, str]:
         return data
     except Exception:
         return cached["data"] or {}
+
+
+async def warmup_pm2_cache() -> None:
+    """Run PM2 jlist off the event loop at startup so first /monitored-apps
+    request after restart doesn't pay the 1-5s cold-cache penalty."""
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _get_pm2_statuses)
+    except Exception:
+        pass
 
 
 @router.get("/monitored-apps", response_model=MonitoredAppsOut)
@@ -726,6 +763,10 @@ async def get_monitored_apps(
     # v1.6.3.2: single GROUP BY query instead of 3Ã—N sequential queries.
     # Previous loop did open_count + resolved_count + max(detected_at) per app —
     # 27 queries for 9 monitored apps. Now 1 query returns all rows aggregated.
+    # v1.6.3.10: bound to 90d window. Older incidents are operationally noise
+    # and the unbounded scan over a growing table was the second slowest
+    # contributor after PM2 jlist.
+    cutoff_90d = datetime.utcnow() - timedelta(days=90)
     agg_rows = await db.execute(
         select(
             Incident.source,
@@ -736,6 +777,7 @@ async def get_monitored_apps(
         .where(
             Incident.client_id == client.id,
             Incident.source.in_(app_names) if app_names else func.false(),
+            Incident.detected_at >= cutoff_90d,
         )
         .group_by(Incident.source, Incident.status)
     )
