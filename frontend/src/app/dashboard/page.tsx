@@ -180,9 +180,14 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // Derived
+  // Derived — v1.6.3.9: hide [FP-*]-prefixed and auto_responded from active view
   const openIncidents = useMemo(
-    () => incidents.filter((i) => (i.status || '').toLowerCase() !== 'resolved'),
+    () => incidents.filter((i) => {
+      const status = (i.status || '').toLowerCase();
+      if (status === 'resolved' || status === 'closed' || status === 'auto_responded') return false;
+      if ((i.title || '').startsWith('[FP-')) return false;
+      return true;
+    }),
     [incidents],
   );
 
