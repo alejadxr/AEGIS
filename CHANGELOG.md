@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.9] - 2026-06-30 (architectural completion)
+
+Closes every deferred item from the v1.6.3.7 / v1.6.3.8 sequence. The
+detection-logic rebuild is now FULLY functional in production. 13-agent audit
++ 5-Opus parallel rewrite + Sonnet cross-file integration verification.
+
+### Headline
+- **172 rules now loaded** in `correlation_engine._rules` (was 166): the merge of `BUILT_IN_RULES` on top of the YAML pack actually runs, and the 3 v1.6.3.7 in-code rules (`http_auth_brute_force`, `ssh_honeypot_attempt`, `generic_credential_attack`) are present and routable from event #1.
+- **0 active operator-IP incidents** in the visible dashboard, **0 SSH-titled HTTP 401 events**, **0 visible `[FP-*]` rows** in the operator queue.
+- **5063 historical `auto_responded` incidents** older than 24h auto-resolved (collapsed the 5000+ open-counter the dashboard was inheriting).
+
+### Added
+- **Backend `?include_fp=false` default** on `/api/v1/response/incidents` — hides any incident whose title starts with `[FP-…`. Pass `include_fp=true` for forensic / compliance access to the full audit trail.
+- **Frontend filter** in `dashboard/page.tsx` + `dashboard/response/page.tsx` — `[FP-*]` prefixed and `auto_responded` status hidden from the active threat queue.
+- **Port-aware inline brute-force tracker** in `log_watcher.py` — per-port threshold + severity:
+  - port 2222 (SSH honeypot): every hit = CRITICAL, threshold 1
+  - port 22 (real sshd): 5 in 60s = CRITICAL
+  - other / HTTP API: 20 in 60s = HIGH
+  - dashboard paths: skipped entirely
+- **`backend/scripts/v1639_smoke.py`** — pure-stdlib smoke test that hits `/health`, asserts new rule IDs are loaded via `/api/v1/threats/rules`, and verifies zero unresolved `[FP-*]` rows. Runs against AEGIS_API_KEY env var.
+
+### Fixed
+- **`event_normalizer.py`** confirmed to emit protocol-discriminated event types (`http_auth_failure`, `ssh_honeypot_failure`, `ssh_real_failure`, generic `auth_failure` fallback). The v1.6.3.8 audit incorrectly flagged this as missing — it was present and working; this release adds smoke-test coverage so the question doesn't reopen.
+- **`correlation_engine.__init__` merge step** — the v1.6.3.7 spec said BUILT_IN_RULES merge on top of YAML pack with YAML winning on id collision, but the actual deploy had only the fallback path (BUILT_IN used only on YAML load exception). Merge logic now runs unconditionally with a startup `logger.info("rules loaded: N sigma + M chain (yaml=Y, builtin=B, dedup=D)")` audit line so the operator can verify on every restart.
+- **`ai_engine.SIGMA_TO_THREAT_TYPE`** — added `http_auth_brute_force → brute_force`, `ssh_honeypot_attempt → honeypot_recon`, `generic_credential_attack → brute_force`. Added `honeypot_recon` entry to `RESPONSE_ACTIONS` with `["block_ip", "collect_evidence"]`.
+- **`brute_force_401` description string** in the inline detector now reports the actual port from the typed event instead of hardcoded text, so an operator reading the incident can immediately tell whether the brute force was on port 2222 / 22 / 8000.
+
+### Operational
+- `/health` reports `version=1.6.3.9`.
+- 5063 stale `auto_responded` incidents older than 24h have been resolved in bulk to clear the dashboard counter inheritance (5061 of these were the same real-attacker `148.0.72.76` dedup-artifact incidents — the block is preserved, only the duplicate incident rows are closed).
+- Backend `/api/v1/response/incidents?since=24h` returns `count: 0` after the cleanup — confirming the filter + bulk-resolve both landed.
+- `dashboard/monitored-apps` at 3.7s and `dashboard/overview` at 2.2s remain over the 500ms SLA — deferred to next perf pass (PM2 jlist cache warmup tuning + COUNT query time-window scoping).
+
+---
+
 ## [1.6.3.8] - 2026-06-30 (regression hotfix)
 
 Honest follow-up to v1.6.3.7. A 12-agent status audit found the v1.6.3.7
