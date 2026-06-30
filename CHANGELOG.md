@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.6] - 2026-06-29 (hotfix)
+
+Hotfix on top of v1.6.3.5. Two root-cause defects identified by operator review.
+
+### Root cause #1 — Operator's ISP was missing from safelist
+- WHOIS verified that `179.52.12.148` belongs to `Compañía Dominicana de Teléfonos S.A.` (Codetel/Claro DR) with CIDR allocation `179.52.0.0/15`. Same ISP as the previously-safelisted `152.166.0.0/16` and `190.166.0.0/16`. The v1.6.3.5 audit conservatively classified this IP as "real attacker, keep blocked" based purely on the 1428-incident volume, without WHOIS verification.
+- `179.52.0.0/15` (entire Codetel residential allocation) appended to `AEGIS_SAFE_IPS`.
+- `179.52.12.148` removed from Mac Pro `blocked_ips.txt` and Pi `/blocked`. `threat_intel.firewall` entry purged.
+- 1437 incidents re-prefixed `[FP-USER-DEVICE-179]` (was `[FP-DEDUP-SSH]`).
+
+### Root cause #2 — `brute_force_ssh` rule was mislabeled
+- The correlation engine `brute_force_ssh` rule listened on `event_type=auth_failure` which is emitted by `correlation_engine._on_log_line()` whenever a PM2 log line matches the HTTP-401 regex (line 109). NOT on actual sshd protocol failures. Result: every HTTP 401 from a user mistyping a password produced an incident titled "SSH Brute Force Detected".
+- Title corrected to "Auth Brute Force (HTTP 401) Detected".
+- Threshold raised 5 → 15 events in 300s, cooldown 60s → 3600s. One alert per IP per hour during a sustained campaign instead of dozens of duplicates.
+- `path_excludes` filter added to the rule: `/api/v1/auth/`, `/api/v1/dashboard/`, `/dashboard/`, `/login`, `/ws`, `/api/v1/health`, `/api/v1/me`, `/api/v1/version`. Dashboard login typos no longer count.
+- MITRE tag changed from T1110.001 (sshd-specific) to T1110 (generic credential brute force).
+
+### Added
+- `path_excludes` filter key in `correlation_engine._matches_filter()` — fails the rule when the event path contains any listed fragment. Symmetric to the v1.6.3.2 `path_contains_all`.
+
+### Fixed
+- `correlation_engine._on_log_line` now calls `_is_safe_ip()` before feeding events into the rule window. Previously safelisted IPs created `auth_failure` / `sql_injection` / `scanner` events that triggered rule firings + safelist drops at incident creation — wasteful and noisy. Now those events never enter the window.
+- `log_watcher.PATTERNS` loop now also short-circuits on `is_dashboard_request` for `brute_force` and `reconnaissance` threat types — same protection as the inline `brute_force_401` detector.
+
+### Operational
+- `/health` reports `version=1.6.3.6`.
+- `AEGIS_SAFE_IPS` extended by 1 CIDR (`179.52.0.0/15`).
+- 0 active blocks now belong to the operator. 38 remaining blocks all confirmed real attackers.
+
+---
+
 ## [1.6.3.5] - 2026-06-29 (patch)
 
 Deep FP audit + safelist coverage expansion. 12-agent forensic workflow
