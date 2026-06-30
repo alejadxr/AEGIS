@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.5] - 2026-06-29 (patch)
+
+Deep FP audit + safelist coverage expansion. 12-agent forensic workflow
+(6 Haiku discover + 5 Sonnet verify + 1 Opus high-effort synthesis, 565 k
+output tokens) traced every recurring brute-force / auth-failure / login
+incident back to its root cause. Closes 1431+ false-positive incidents and
+adds 4 code-level safelist gates that were leaking events to the database.
+
+### Headline numbers
+- **0 IPs unblocked** — all 39 currently-enforced blocks are confirmed real attackers (Claro DR botnet `179.52.12.148`, Tor exits, SSH brute farms, exploit-scanning VPS).
+- **1431 FP incidents resolved** with audit-trail prefixes (`[FP-DEDUP-SSH]` for 1428 dedup artifacts from `179.52.12.148`, `[FP-CRAWLER-TWITTER]` for 3 Twitter/X crawler events).
+- **11 new CIDR ranges** added to `AEGIS_SAFE_IPS` covering Bingbot /16, Meta CDN /16, Cloudflare edge, Twitter API, Google secondary ranges, LinkedIn Australia.
+- **15 new crawler User-Agent substrings** added to `BENIGN_UAS` (Threadsbot, meta-externalagent, GoogleOther, Google-Extended, GPTBot, ClaudeBot, PerplexityBot, anthropic-ai, CCBot, ImagesiftBot, BingPreview, WhatsApp, FacebookBot, Slack-ImgProxy, Applebot-Extended).
+
+### Added
+- `_SAFE_PATHS` (log_watcher.py) extended with `/api/v1/auth/logout`, `/api/v1/auth/refresh`, `/api/v1/me`, `/api/v1/version`, `/api/v1/threats/feed`, `/favicon.ico`, `/_next/`. Operator browser polling no longer advances the brute_force_401 counter.
+
+### Fixed
+- **Inline `brute_force_401` threshold** raised from **5 → 15** failed 401s in 60s (NIST SP 800-63B baseline tolerates 5+ legitimate retries from password managers / typos). Deque now clears after firing so sustained campaigns re-alert each window instead of silently looping.
+- **`firewall_sync._sync_auto_response_events`** now calls `_is_safe_ip()` before creating incidents from external Pi firewall events. Previously only hardcoded `127.0.0.1`/`::1`/`localhost` was checked — Bingbot, Googlebot, Cloudflare, Tailscale events from the Pi were creating AEGIS incidents.
+- **`attack_chain_detector`** EDR chain rules now honor `AEGIS_SAFE_IPS` in addition to RFC1918+Tailscale. Previously CDN / partner crawler / monitoring infrastructure could trigger chain incidents.
+- **`correlation_engine._create_incident`** silent `except Exception: pass` replaced with `logger.warning` so a broken import doesn't silently degrade safelist coverage.
+- **`sigma_auth_default_credentials.yaml`** synced with the v1.6.2 in-code BUILT_IN_RULES fix: `event_type: auth_success` → `auth_failure`, removed `pi` and `ubuntu` from the username filter (cloud-init / Raspberry Pi hosts use them legitimately), added `count_threshold: 3` + `time_window_seconds: 300` + `cooldown_seconds: 600`. Was firing high-severity incident on EVERY successful admin/pi/ubuntu login.
+- **`sigma_auth_impossible_travel.yaml`** thresholds relaxed: `count_threshold` 2 → 3, `time_window_seconds` 300 → 900, added `cooldown_seconds: 1800` to absorb legitimate VPN-then-native reconnects.
+- **`high_request_rate` description string** now reads the actual threshold from `self._rate_tracker.threshold` (was hardcoded `>100 req/min` while the rate tracker uses 500).
+
+### Operational
+- 0 active blocks revoked. The 39 currently-enforced blocks were independently verified as real attackers across Mac Pro / Pi / threat_intel — they remain in place.
+- Backend `/health` reports `version=1.6.3.5`.
+- 11 safelist CIDRs added to `AEGIS_SAFE_IPS` env via `pm2 restart cayde6-api --update-env`.
+
+---
+
 ## [1.6.3.4] - 2026-06-27 (patch)
 
 Stability + completeness patch. Closes the last visible bugs from the
