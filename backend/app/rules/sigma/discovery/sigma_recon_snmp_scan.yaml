@@ -1,0 +1,23 @@
+id: sigma_recon_snmp_scan
+name: SNMP Community String Scan
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Discovery
+techniques:
+- T1046
+data_sources:
+- network
+condition:
+  event_type: connection
+  count_threshold: 10
+  time_window_seconds: 60
+  group_by: source_ip
+  unique_field: destination_ip
+  filter:
+    destination_port: 161
+entityMappings:
+- type: IP
+  field: source_ip
+description: SNMP queries with common community strings to multiple hosts.

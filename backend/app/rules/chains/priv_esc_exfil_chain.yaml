@@ -1,0 +1,34 @@
+id: priv_esc_exfil_chain
+name: Privilege escalation to exfiltration chain
+kind: chain
+severity: critical
+enabled: true
+tactics:
+- CredentialAccess
+- PrivilegeEscalation
+- Exfiltration
+techniques:
+- T1110
+- T1068
+- T1041
+data_sources:
+- correlation
+description: 'Same IP: brute force -> privilege escalation -> data exfiltration'
+condition:
+  event_type: __chain__
+sequence:
+- brute_force_ssh
+- privilege_escalation
+- data_exfiltration
+max_window_seconds: 7200
+group_by: source_ip
+chain:
+- sigma_rule: brute_force_ssh
+  within: 3600
+- sigma_rule: privilege_escalation
+  within: 1800
+- sigma_rule: data_exfiltration
+  within: 900
+entityMappings:
+- type: IP
+  field: source_ip

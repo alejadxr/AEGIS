@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------
+  # Lint backend (ruff)
+  # ------------------------------------------------------------------
+  lint-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint
+        run: |
+          cd backend
+          ruff check app/ --select E,F,W --ignore E501 --exit-zero
+
+  # ------------------------------------------------------------------
+  # Frontend build
+  # ------------------------------------------------------------------
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Build
+        run: |
+          cd frontend
+          npm run build
+
+  # ------------------------------------------------------------------
+  # Docker compose validation
+  # ------------------------------------------------------------------
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify compose config
+        run: docker compose config --quiet

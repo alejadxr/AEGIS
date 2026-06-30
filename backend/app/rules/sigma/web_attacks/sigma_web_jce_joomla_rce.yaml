@@ -1,0 +1,24 @@
+id: sigma_web_jce_joomla_rce
+name: Joomla JCE Editor Unauthenticated RCE (CVE-2026-48907)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains:
+    - option=com_jce&task=profiles.import
+    - option=com_jce&task=plugin.rpc
+  count_threshold: 2
+  time_window_seconds: 10
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects JCE exploit chain (profiles.import + plugin.rpc upload) targeting Joomla.
