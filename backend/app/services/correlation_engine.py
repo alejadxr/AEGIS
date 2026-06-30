@@ -143,25 +143,95 @@ _EDR_EVENT_MAP = {
 }
 
 # ---------------------------------------------------------------------------
+# Cooldown defaults per attack class (v1.6.4 protocol-aware tier)
+# ---------------------------------------------------------------------------
+# Auth-class attacks (brute force / lockouts) get long cooldowns to suppress
+# noisy persistent attackers, recon gets medium, exploit-attempts short, and
+# chain correlations never re-fire within the same window.
+COOLDOWN_AUTH = 3600        # password/credential class
+COOLDOWN_RECON = 600        # scans, enumeration
+COOLDOWN_EXPLOIT = 300      # single-shot RCE / SQLi / web exploit
+COOLDOWN_EXFIL = 600        # data movement
+COOLDOWN_CHAIN = 0          # chain rules never silenced
+COOLDOWN_HONEYPOT = 0       # every honeypot hit is a fresh signal
+COOLDOWN_SUPPLY = 60        # IoC hits — let burst-deduper handle storms
+
+# ---------------------------------------------------------------------------
+# Default confidence factor catalog
+# ---------------------------------------------------------------------------
+# Calling code (apply_confidence_factors) multiplies the base severity score
+# by the product of all matching factor weights. A factor with weight 0 is a
+# "drop" signal — the rule is suppressed entirely (used for safelist hits).
+DEFAULT_CONFIDENCE_FACTORS: list[dict] = [
+    {"factor": "scanner_ua",            "weight": 1.3},
+    {"factor": "tor_exit",              "weight": 1.5},
+    {"factor": "known_attacker_history","weight": 2.0},
+    {"factor": "geo_high_risk",         "weight": 1.2},
+    {"factor": "burst_rate",            "weight": 1.4},
+    {"factor": "safelisted",            "weight": 0.0},  # drop
+    {"factor": "internal_ip",           "weight": 0.0},  # drop
+]
+
+# Severity ladder used by apply_confidence_factors
+_SEVERITY_SCORE = {"low": 1.0, "medium": 2.0, "high": 3.0, "critical": 4.0}
+_SCORE_SEVERITY = [(4.0, "critical"), (2.75, "high"), (1.75, "medium"), (0.0, "low")]
+
+
+def apply_confidence_factors(rule: dict, event_context: dict) -> tuple[str, float]:
+    """Return (adjusted_severity, multiplier) for a triggered rule.
+
+    `event_context` is a dict where keys are factor names (as listed in the
+    rule's confidence_factors) and values are booleans indicating whether the
+    factor applies. A True value with weight=0 drops the alert (severity is
+    returned as 'suppressed').
+    """
+    base = rule.get("severity", "medium")
+    factors = rule.get("confidence_factors") or DEFAULT_CONFIDENCE_FACTORS
+    multiplier = 1.0
+    for f in factors:
+        name = f.get("factor")
+        weight = f.get("weight", 1.0)
+        if event_context.get(name):
+            if weight == 0:
+                return ("suppressed", 0.0)
+            multiplier *= weight
+    score = _SEVERITY_SCORE.get(base, 2.0) * multiplier
+    for threshold, label in _SCORE_SEVERITY:
+        if score >= threshold:
+            return (label, multiplier)
+    return ("low", multiplier)
+
+
+# ---------------------------------------------------------------------------
 # Built-in Sigma-style rules  (10+ covering common attack patterns)
+# v1.6.4 — protocol-aware brute-force split, per-rule cooldowns,
+# confidence_factors scoring, composite group_by support.
 # ---------------------------------------------------------------------------
 
 BUILT_IN_RULES: list[dict] = [
-    # 1 — SSH brute-force
+    # 1a — HTTP auth brute force (split from legacy brute_force_ssh)
+    # Listens only on the dedicated http_auth_failure stream so we don't
+    # conflate SSH protocol failures with web 401s anymore.
     {
-        "id": "brute_force_ssh",
-        "title": "Auth Brute Force (HTTP 401) Detected",
-        "description": "v1.6.3.5: rule listens on event_type=auth_failure which is emitted on HTTP 401 responses, NOT on sshd protocol failures. Title corrected to reflect actual behavior. Tightened to 15 events in 300s with 1h cooldown, and path_excludes skips operator login/dashboard polling so the rule no longer fires on a user typing their password wrong a few times.",
+        "id": "http_auth_brute_force",
+        "title": "HTTP Authentication Brute Force",
+        "description": "15+ HTTP 401 responses from the same source IP within 60s, excluding operator dashboard/login polling paths. Tagged scanner_ua/tor_exit/known_attacker_history factors boost severity.",
         "severity": "high",
         "enabled": True,
         "source": "builtin",
         "mitre": ["T1110"],
+        "confidence_factors": [
+            {"factor": "scanner_ua",             "weight": 1.3},
+            {"factor": "tor_exit",               "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "safelisted",             "weight": 0.0},
+        ],
         "condition": {
-            "event_type": "auth_failure",
+            "event_type": "http_auth_failure",
             "count_threshold": 15,
-            "time_window_seconds": 300,
-            "group_by": "source_ip",
-            "cooldown_seconds": 3600,
+            "time_window_seconds": 60,
+            "group_by": ["source_ip"],
+            "cooldown_seconds": COOLDOWN_AUTH,
             "filter": {
                 "path_excludes": [
                     "/api/v1/auth/",
@@ -174,6 +244,92 @@ BUILT_IN_RULES: list[dict] = [
                     "/api/v1/version",
                 ],
             },
+        },
+    },
+    # 1b — SSH honeypot hit (split from legacy brute_force_ssh)
+    # Any SSH attempt against the honeypot port is a high-signal event by
+    # definition — no legitimate user should ever be on 2222. We fire on
+    # every event (threshold=1) with no cooldown.
+    {
+        "id": "ssh_honeypot_attempt",
+        "title": "SSH Honeypot Authentication Attempt",
+        "description": "Single SSH login attempt against the honeypot (port 2222). No legitimate user should ever interact with this surface, so every event is alert-worthy. No cooldown — burst dedup is handled downstream.",
+        "severity": "critical",
+        "enabled": True,
+        "source": "builtin",
+        "mitre": ["T1110", "T1078"],
+        "confidence_factors": [
+            {"factor": "tor_exit",               "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
+        "condition": {
+            "event_type": "ssh_honeypot_failure",
+            "count_threshold": 1,
+            "time_window_seconds": 60,
+            "group_by": ["source_ip"],
+            "cooldown_seconds": COOLDOWN_HONEYPOT,
+        },
+    },
+    # 1c — Generic credential attack (fallback aggregator)
+    # Catches any auth_failure event type not covered by the protocol-specific
+    # rules above. Behaves like the historical brute_force_ssh and is the
+    # rule referenced by CHAIN_RULES + CampaignTracker for backward compat.
+    {
+        "id": "generic_credential_attack",
+        "title": "Generic Credential Attack",
+        "description": "Fallback rule: 25 generic auth_failure events from same source in 300s. Triggers when neither HTTP nor SSH honeypot specific rules match (e.g. FTP/SMTP/RDP without a service tag).",
+        "severity": "medium",
+        "enabled": True,
+        "source": "builtin",
+        "mitre": ["T1110"],
+        "confidence_factors": [
+            {"factor": "scanner_ua",             "weight": 1.3},
+            {"factor": "tor_exit",               "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "burst_rate",             "weight": 1.4},
+            {"factor": "safelisted",             "weight": 0.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
+        "condition": {
+            "event_type": "auth_failure",
+            "count_threshold": 25,
+            "time_window_seconds": 300,
+            "group_by": ["source_ip"],
+            "cooldown_seconds": COOLDOWN_AUTH,
+            "filter": {
+                "path_excludes": [
+                    "/api/v1/auth/",
+                    "/api/v1/dashboard/",
+                    "/dashboard/",
+                    "/login",
+                    "/ws",
+                    "/api/v1/health",
+                    "/api/v1/me",
+                    "/api/v1/version",
+                ],
+            },
+        },
+    },
+    # 1d — Legacy alias preserved for chains / phase map (DISABLED, kept for ID lookup)
+    # The historical brute_force_ssh rule is intentionally retained with
+    # enabled=False so that CHAIN_RULES, _PHASE_MAP and any operator dashboards
+    # referencing it by name don't break. New event handling routes through
+    # the three rules above.
+    {
+        "id": "brute_force_ssh",
+        "title": "[DEPRECATED] Auth Brute Force — replaced by http_auth_brute_force / ssh_honeypot_attempt / generic_credential_attack",
+        "description": "v1.6.4: superseded by protocol-aware split. Disabled by default; only kept so chain rules and PHASE_MAP lookups continue to resolve. To re-enable for backwards compat, set enabled=True via /api/v1/correlation/rules.",
+        "severity": "high",
+        "enabled": False,
+        "source": "builtin",
+        "mitre": ["T1110"],
+        "condition": {
+            "event_type": "auth_failure",
+            "count_threshold": 15,
+            "time_window_seconds": 300,
+            "group_by": ["source_ip"],
+            "cooldown_seconds": COOLDOWN_AUTH,
         },
     },
     # 2 — Lateral movement
@@ -367,12 +523,16 @@ BUILT_IN_RULES: list[dict] = [
     # -------------------------------------------------------------------
 
     # 13 — Account lockout detection
+    # v1.6.4: DISABLED — duplicate of generic_credential_attack. The previous
+    # group_by=username variant fired on a single user typing the wrong
+    # password repeatedly (caps-lock, wrong keymap) and produced FP spam.
+    # Kept for ID stability.
     {
         "id": "sigma_auth_account_lockout",
-        "title": "Account Lockout Detected",
-        "description": "Multiple failed authentications leading to account lockout.",
+        "title": "[DEPRECATED] Account Lockout — deduped by generic_credential_attack",
+        "description": "v1.6.4: Disabled. Username-grouped lockout detection was a duplicate of generic_credential_attack and fired on legitimate single-user mistype storms (keymap / caps-lock).",
         "severity": "medium",
-        "enabled": True,
+        "enabled": False,
         "source": "sigma",
         "category": "authentication",
         "mitre": ["T1110"],
@@ -380,7 +540,8 @@ BUILT_IN_RULES: list[dict] = [
             "event_type": "auth_failure",
             "count_threshold": 10,
             "time_window_seconds": 300,
-            "group_by": "username",
+            "group_by": ["username", "source_ip"],
+            "cooldown_seconds": COOLDOWN_AUTH,
         },
     },
     # 14 — Password spray attack
@@ -865,43 +1026,62 @@ BUILT_IN_RULES: list[dict] = [
         },
     },
     # 41 — HTTP request smuggling
+    # v1.6.4: threshold raised 1→3 in 60s, composite group_by, explicit
+    # cooldown=COOLDOWN_EXPLOIT to suppress legitimate proxy double-headers.
     {
         "id": "sigma_web_request_smuggling",
         "title": "HTTP Request Smuggling (TE.CL desync)",
-        "description": "Detects HTTP request smuggling via conflicting Transfer-Encoding/Content-Length headers. v1.6.2: requires BOTH headers present simultaneously (TE.CL desync signal), not either alone.",
+        "description": "Detects HTTP request smuggling via conflicting Transfer-Encoding/Content-Length headers. v1.6.4 raised threshold to 3 simultaneous offenders to suppress legitimate reverse-proxy normalisation.",
         "severity": "high",
         "enabled": True,
         "source": "sigma",
         "category": "web_attacks",
         "mitre": ["T1190"],
+        "confidence_factors": [
+            {"factor": "scanner_ua",             "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "safelisted",             "weight": 0.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
         "condition": {
             "event_type": "web_request",
-            # v1.6.2: TE.CL desync requires BOTH headers present in the same request.
-            # The previous filter matched either alone, which is present on every
-            # chunked / fixed-length request (i.e. 100% FP rate).
             "filter": {"path_contains_all": ["Transfer-Encoding:", "Content-Length:"]},
-            "count_threshold": 1,
+            "count_threshold": 3,
             "time_window_seconds": 60,
-            "group_by": "source_ip",
+            "group_by": ["source_ip", "request_path"],
+            "cooldown_seconds": COOLDOWN_EXPLOIT,
         },
     },
     # 42 — API abuse / enumeration
+    # v1.6.4: threshold raised 50→120 unique paths; composite group_by so
+    # an attacker who probes ANY API path is grouped per (ip,target_port),
+    # not flooded per-endpoint. cooldown=COOLDOWN_RECON.
     {
         "id": "sigma_web_api_abuse",
         "title": "API Endpoint Enumeration",
-        "description": "Rapid requests to multiple API endpoints suggesting enumeration.",
+        "description": "Rapid unique-path requests to /api/* suggesting enumeration. v1.6.4 raised threshold to 120 and excluded /health, /metrics, /version, /me probes to suppress legitimate SPA polling.",
         "severity": "medium",
         "enabled": True,
         "source": "sigma",
         "category": "web_attacks",
         "mitre": ["T1190"],
+        "confidence_factors": [
+            {"factor": "scanner_ua",             "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "safelisted",             "weight": 0.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
         "condition": {
             "event_type": "web_request",
-            "filter": {"path_contains": ["/api/"]},
-            "count_threshold": 50,
+            "filter": {
+                "path_contains": ["/api/"],
+                "path_excludes": ["/api/v1/health", "/api/v1/metrics", "/api/v1/version", "/api/v1/me"],
+            },
+            "count_threshold": 120,
             "time_window_seconds": 60,
-            "group_by": "source_ip",
+            "group_by": ["source_ip", "target_port"],
             "unique_field": "path",
+            "cooldown_seconds": COOLDOWN_RECON,
         },
     },
     # 43 — v1.6.2: Coordinated /29 campaign (3+ sibling IPs from same /29 hitting same threat_type)
@@ -1426,21 +1606,30 @@ BUILT_IN_RULES: list[dict] = [
         },
     },
     # 74 — DNS data exfiltration
+    # v1.6.4: query_length_gt raised 50→180 (matches real base64-encoded
+    # exfil payloads, not legitimate long SaaS subdomains). Composite
+    # group_by so legitimate resolver caching doesn't mask attacker host.
     {
         "id": "sigma_exfil_dns",
         "title": "DNS Data Exfiltration",
-        "description": "Large or encoded DNS queries suggesting data exfiltration via DNS.",
+        "description": "Large/encoded DNS queries (>=180 chars) suggesting data exfiltration via DNS. v1.6.4 raised length threshold from 50 to 180 to eliminate FPs from legitimate long subdomain chains.",
         "severity": "high",
         "enabled": True,
         "source": "sigma",
         "category": "data_exfiltration",
         "mitre": ["T1048.003"],
+        "confidence_factors": [
+            {"factor": "tor_exit",               "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "safelisted",             "weight": 0.0},
+        ],
         "condition": {
             "event_type": "dns_query",
             "count_threshold": 50,
             "time_window_seconds": 60,
-            "group_by": "source_ip",
-            "filter": {"query_length_gt": 50},
+            "group_by": ["source_ip"],
+            "filter": {"query_length_gt": 180},
+            "cooldown_seconds": COOLDOWN_EXFIL,
         },
     },
     # 75 — HTTPS to uncommon port
@@ -1583,21 +1772,29 @@ BUILT_IN_RULES: list[dict] = [
     # -------------------------------------------------------------------
 
     # 83 — Beacon pattern (regular intervals)
+    # v1.6.4: composite group_by, explicit cooldown=COOLDOWN_EXPLOIT.
     {
         "id": "sigma_c2_beacon_regular",
         "title": "C2 Beacon - Regular Interval",
-        "description": "Outbound connections at regular intervals suggesting C2 beaconing.",
+        "description": "Outbound connections at regular intervals suggesting C2 beaconing. v1.6.4 groups by (source_ip, destination_ip) so multiple internal hosts beaconing to the same C2 each get their own incident.",
         "severity": "critical",
         "enabled": True,
         "source": "sigma",
         "category": "command_and_control",
         "mitre": ["T1071.001"],
+        "confidence_factors": [
+            {"factor": "tor_exit",               "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "geo_high_risk",          "weight": 1.2},
+            {"factor": "safelisted",             "weight": 0.0},
+        ],
         "condition": {
             "event_type": "connection",
             "count_threshold": 10,
             "time_window_seconds": 600,
-            "group_by": "destination_ip",
+            "group_by": ["source_ip", "destination_ip"],
             "filter": {"direction": "outbound", "target_type": "external"},
+            "cooldown_seconds": COOLDOWN_EXPLOIT,
         },
     },
     # 84 — DNS-based C2
@@ -1976,21 +2173,32 @@ BUILT_IN_RULES: list[dict] = [
         },
     },
     # 107 — Directory brute force
+    # v1.6.4: threshold 100→250, excludes static asset trees, composite group_by.
     {
         "id": "sigma_recon_dir_bruteforce",
         "title": "Web Directory Brute Force",
-        "description": "Rapid requests to many different paths indicating directory enumeration.",
+        "description": "Rapid unique-path requests indicating directory enumeration. v1.6.4 raised threshold to 250 and excluded /static, /assets, /images, /_next to avoid FPs from large static sites.",
         "severity": "medium",
         "enabled": True,
         "source": "sigma",
         "category": "discovery",
         "mitre": ["T1083"],
+        "confidence_factors": [
+            {"factor": "scanner_ua",             "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "safelisted",             "weight": 0.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
         "condition": {
             "event_type": "web_request",
-            "count_threshold": 100,
+            "filter": {
+                "path_excludes": ["/static/", "/assets/", "/images/", "/_next/", "/favicon"],
+            },
+            "count_threshold": 250,
             "time_window_seconds": 60,
-            "group_by": "source_ip",
+            "group_by": ["source_ip", "target_port"],
             "unique_field": "path",
+            "cooldown_seconds": COOLDOWN_RECON,
         },
     },
     # 108 — Subdomain enumeration
@@ -2344,7 +2552,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_ai_marimo_terminal_rce",
     "title": "Marimo Notebook Pre-Auth Terminal RCE (CVE-2026-39987)",
-    "description": "WebSocket upgrade to /terminal/ws â€” pre-auth RCE in Marimo notebook server.",
+    "description": "WebSocket upgrade to /terminal/ws — pre-auth RCE in Marimo notebook server.",
     "severity": "critical",
     "enabled": True,
     "source": "sigma",
@@ -2380,7 +2588,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_supply_mastra_easyday_c2",
     "title": "Mastra easy-day-js typosquat C2 IOC (npm jun17 2026)",
-    "description": "Outbound to 23.254.164.92/123 /update/* â€” Mastra scope takeover dropper.",
+    "description": "Outbound to 23.254.164.92/123 /update/* — Mastra scope takeover dropper.",
     "severity": "critical",
     "enabled": True,
     "source": "sigma",
@@ -2398,7 +2606,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_supply_nodeipc_azure_c2",
     "title": "node-ipc HMAC C2 to sh.azurestaticprovider.net (jun12 2026)",
-    "description": "Outbound to sh.azurestaticprovider.net / 37.16.75.69 â€” node-ipc supply chain C2.",
+    "description": "Outbound to sh.azurestaticprovider.net / 37.16.75.69 — node-ipc supply chain C2.",
     "severity": "high",
     "enabled": True,
     "source": "sigma",
@@ -2416,7 +2624,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_supply_shai_hulud_miasma_anthropic_spoof",
     "title": "Shai-Hulud Miasma Anthropic API Path Spoof (jun01 2026)",
-    "description": "HTTP POST to api.anthropic.com/v1/api (lookalike of /v1/messages) â€” Miasma C2 indicator.",
+    "description": "HTTP POST to api.anthropic.com/v1/api (lookalike of /v1/messages) — Miasma C2 indicator.",
     "severity": "critical",
     "enabled": True,
     "source": "sigma",
@@ -2434,7 +2642,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_supply_solana_fakefix_telegram",
     "title": "Solana FakeFix PyPI Telegram Exfil (jun11 2026)",
-    "description": "HTTP POST to api.telegram.org/bot* â€” Solana FakeFix PyPI exfil to attacker Telegram bot.",
+    "description": "HTTP POST to api.telegram.org/bot* — Solana FakeFix PyPI exfil to attacker Telegram bot.",
     "severity": "critical",
     "enabled": True,
     "source": "sigma",
@@ -2452,7 +2660,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_network_fortibleed_ioc",
     "title": "FortiBleed Credential Exposure Campaign Source IP (jun13 2026)",
-    "description": "Inbound traffic from 85.11.187.8 â€” FortiBleed campaign IOC.",
+    "description": "Inbound traffic from 85.11.187.8 — FortiBleed campaign IOC.",
     "severity": "high",
     "enabled": True,
     "source": "sigma",
@@ -2470,7 +2678,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_ai_litellm_bearer_sqli",
     "title": "LiteLLM Proxy Pre-Auth SQLi via Bearer Quote (CVE-2026-42208)",
-    "description": "POST /chat/completions with single-quote in Bearer token â€” pre-auth SQL injection.",
+    "description": "POST /chat/completions with single-quote in Bearer token — pre-auth SQL injection.",
     "severity": "critical",
     "enabled": True,
     "source": "sigma",
@@ -2524,7 +2732,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_supply_shai_hulud_hades_firedalazer",
     "title": "Shai-Hulud Hades 'firedalazer' GitHub C2 Marker (jun08 2026)",
-    "description": "Outbound GET to github.com/search/commits with 'firedalazer' query â€” Hades PyPI .pth persistence C2.",
+    "description": "Outbound GET to github.com/search/commits with 'firedalazer' query — Hades PyPI .pth persistence C2.",
     "severity": "critical",
     "enabled": True,
     "source": "sigma",
@@ -2542,7 +2750,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_ransomware_prinz_eugen_ext",
     "title": "Prinz Eugen Ransomware Extension (.prinzeugen)",
-    "description": "File creation with .prinzeugen extension â€” Prinz Eugen ransomware encryption marker.",
+    "description": "File creation with .prinzeugen extension — Prinz Eugen ransomware encryption marker.",
     "severity": "high",
     "enabled": True,
     "source": "sigma",
@@ -2560,7 +2768,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_ransomware_shinysp1d3r_ext",
     "title": "ShinySp1d3r Ransomware Extension (.shinysp1d3r)",
-    "description": "File creation with .shinysp1d3r extension â€” ShinySp1d3r RaaS encryption marker (often ESXi/VMDK targets).",
+    "description": "File creation with .shinysp1d3r extension — ShinySp1d3r RaaS encryption marker (often ESXi/VMDK targets).",
     "severity": "high",
     "enabled": True,
     "source": "sigma",
@@ -2614,7 +2822,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_web_panos_globalprotect_bypass",
     "title": "Palo Alto PAN-OS GlobalProtect Auth Bypass (CVE-2026-0257)",
-    "description": "POST to GlobalProtect /ssl-vpn/hipreport.esp or /ssl-vpn/getconfig.esp â€” cookie-forging auth bypass.",
+    "description": "POST to GlobalProtect /ssl-vpn/hipreport.esp or /ssl-vpn/getconfig.esp — cookie-forging auth bypass.",
     "severity": "critical",
     "enabled": True,
     "source": "sigma",
@@ -2668,7 +2876,7 @@ BUILT_IN_RULES: list[dict] = [
 {
     "id": "sigma_supply_axios_sfrclak_c2",
     "title": "Axios npm Typosquat C2 sfrclak.com (mar26 2026)",
-    "description": "Outbound to sfrclak.com / 142.11.206.73:8000 â€” axios typosquat C2 IOC.",
+    "description": "Outbound to sfrclak.com / 142.11.206.73:8000 — axios typosquat C2 IOC.",
     "severity": "critical",
     "enabled": True,
     "source": "sigma",
@@ -2735,7 +2943,7 @@ CHAIN_RULES: list[dict] = [
         "mitre": ["T1046", "T1110", "T1595"],
         "chain": [
             {"sigma_rule": "port_scan", "within": 3600},
-            {"sigma_rule": "brute_force_ssh", "within": 1800},
+            {"sigma_rule": "generic_credential_attack", "within": 1800},
             {"event_type": "honeypot_interaction", "within": 900},
         ],
         "group_by": "source_ip",
@@ -2748,7 +2956,7 @@ CHAIN_RULES: list[dict] = [
         "description": "Same IP: brute force -> credential stuffing -> lateral movement",
         "mitre": ["T1110", "T1110.004", "T1021"],
         "chain": [
-            {"sigma_rule": "brute_force_ssh", "within": 1800},
+            {"sigma_rule": "generic_credential_attack", "within": 1800},
             {"sigma_rule": "credential_stuffing", "within": 1200},
             {"sigma_rule": "lateral_movement", "within": 600},
         ],
@@ -2947,13 +3155,37 @@ class CorrelationEngine:
         # Subscribe to raw event sources that need translation into typed
         # events before Sigma rules can evaluate them.
         self._event_bus.subscribe("log_line", self._on_log_line)
+        # v1.6.4: log_watcher now emits pre-normalized NormalizedEvent dicts
+        # on the `log_event` topic via event_normalizer. Bypass _on_log_line
+        # regex re-matching and feed straight into evaluate().
+        self._event_bus.subscribe("log_event", self._on_normalized_event)
         self._event_bus.subscribe("edr.event", self._on_edr_event)
         self._event_bus.subscribe("edr.process_start", self._on_edr_event)
         self._event_bus.subscribe("honeypot_interaction", self._on_honeypot_event)
         logger.info(
             f"Correlation engine subscribed to {len(event_types)} rule types "
-            f"+ log_line, edr.event, edr.process_start, honeypot_interaction"
+            f"+ log_line, log_event, edr.event, edr.process_start, honeypot_interaction"
         )
+
+    async def _on_normalized_event(self, data: dict) -> None:
+        """Handle pre-normalized events from log_watcher (v1.6.4+).
+
+        These events already carry typed event_type, source_ip, target_port,
+        protocol, request_path, request_method, response_status, user_agent.
+        No regex re-matching needed — feed straight into evaluate().
+        """
+        if not isinstance(data, dict):
+            return
+        if not data.get("event_type") or not data.get("source_ip"):
+            return
+        # Safelist gate (defence in depth — log_watcher should already have gated)
+        try:
+            from app.core.attack_detector import _is_safe_ip
+            if _is_safe_ip(data["source_ip"]):
+                return
+        except Exception as exc:
+            logger.warning(f"correlation_engine _on_normalized_event safelist check failed: {exc}")
+        await self.evaluate(data)
 
     async def evaluate(self, event: dict) -> list[dict]:
         """
@@ -3118,6 +3350,31 @@ class CorrelationEngine:
                 index.setdefault(et, []).append(rule)
         return index
 
+    @staticmethod
+    def _resolve_group_key(event: dict, group_by) -> str:
+        """Resolve group key from an event for a scalar or composite group_by.
+
+        v1.6.4: `group_by` may be a string (legacy) or a list of field names
+        (composite). When a list is supplied the values are joined with ``|``
+        producing a stable composite key, so a single attacker IP probing
+        many endpoints fires once per (ip,port) tuple rather than per-path.
+        """
+        if group_by is None:
+            return "__all__"
+        if isinstance(group_by, str):
+            return str(event.get(group_by, "__all__"))
+        if isinstance(group_by, (list, tuple)):
+            parts = [str(event.get(field, "__all__")) for field in group_by]
+            return "|".join(parts)
+        return "__all__"
+
+    @staticmethod
+    def _group_matches(event: dict, group_by, expected_key: str) -> bool:
+        """True when `event`'s resolved group key equals `expected_key`."""
+        if group_by is None:
+            return True
+        return CorrelationEngine._resolve_group_key(event, group_by) == expected_key
+
     def _check_rule(self, rule: dict, event: dict, now: float) -> bool:
         cond = rule["condition"]
         event_type = cond.get("event_type")
@@ -3131,27 +3388,42 @@ class CorrelationEngine:
         if top_filter and not _matches_filter(event, top_filter):
             return False
 
+        # v1.6.4: per-rule cooldown matched to attack class. Falls back to the
+        # legacy class-level COOLDOWN_SECONDS only when the rule omits one.
+        rule_cooldown = cond.get("cooldown_seconds", self.COOLDOWN_SECONDS)
+
         # Rules with no count_threshold fire immediately (single-event match)
         if "count_threshold" not in cond:
+            # Even single-shot rules respect cooldown to avoid duplicate
+            # incidents from a burst of identical events.
+            group_by = cond.get("group_by")
+            group_key = self._resolve_group_key(event, group_by)
+            cooldown_key = (rule["id"], group_key)
+            last_fired = self._fired.get(cooldown_key, 0)
+            if rule_cooldown > 0 and now - last_fired < rule_cooldown:
+                return False
+            self._fired[cooldown_key] = now
             return True
 
         # Sliding-window count evaluation
         threshold: int = cond["count_threshold"]
         window_secs: int = cond.get("time_window_seconds", 60)
-        group_by: str | None = cond.get("group_by")
+        group_by = cond.get("group_by")
         unique_field: str | None = cond.get("unique_field")
 
-        # Determine group key from the triggering event
-        group_key = event.get(group_by, "__all__") if group_by else "__all__"
+        # Determine group key from the triggering event — supports list group_by
+        group_key = self._resolve_group_key(event, group_by)
 
         # Cooldown check: avoid re-firing the same rule for the same group too rapidly
-        cooldown_key = (rule["id"], str(group_key))
+        cooldown_key = (rule["id"], group_key)
         # v1.6.3.2: TTL eviction so _fired can't grow unbounded under storms.
         if len(self._fired) > 2048:
-            stale_cutoff = now - self.COOLDOWN_SECONDS * 4
+            stale_cutoff = now - max(rule_cooldown, self.COOLDOWN_SECONDS) * 4
             self._fired = {k: v for k, v in self._fired.items() if v >= stale_cutoff}
         last_fired = self._fired.get(cooldown_key, 0)
-        if now - last_fired < self.COOLDOWN_SECONDS:
+        # v1.6.4: cooldown=0 means "always fire" (used by ssh_honeypot_attempt
+        # and chain rules where every event is signal).
+        if rule_cooldown > 0 and now - last_fired < rule_cooldown:
             return False
 
         # Count matching events within the time window
@@ -3160,7 +3432,7 @@ class CorrelationEngine:
             ev for ts, ev in self._window
             if ts >= cutoff
             and ev.get("event_type") == event_type
-            and (group_by is None or ev.get(group_by) == group_key)
+            and self._group_matches(ev, group_by, group_key)
             and (not top_filter or _matches_filter(ev, top_filter))
         ]
 
@@ -3290,6 +3562,37 @@ class CorrelationEngine:
         except Exception as e:
             logger.error(f"Fast triage pipeline error: {e}")
 
+    def _build_event_context(self, event: dict) -> dict:
+        """Assemble the confidence-factor context dict for an event.
+
+        v1.6.4: feeds apply_confidence_factors() so each rule can boost or
+        drop its severity based on per-event signals (Tor exit, scanner UA,
+        known-attacker history, safelist hit, internal IP, burst rate).
+        """
+        source_ip = event.get("source_ip")
+        ctx = {
+            "scanner_ua": bool(event.get("scanner_ua") or event.get("tag") == "scanner"),
+            "tor_exit": bool(event.get("tor_exit")),
+            "known_attacker_history": bool(event.get("known_attacker")),
+            "geo_high_risk": bool(event.get("geo_high_risk")),
+            "burst_rate": bool(event.get("burst_rate")),
+            "safelisted": False,
+            "internal_ip": _is_internal_ip(source_ip) if source_ip else False,
+        }
+        if source_ip:
+            try:
+                from app.core.attack_detector import _is_safe_ip
+                ctx["safelisted"] = bool(_is_safe_ip(source_ip))
+            except Exception:
+                pass
+            try:
+                from app.services.threat_feeds import threat_feed_manager  # type: ignore
+                if hasattr(threat_feed_manager, "is_tor_exit"):
+                    ctx["tor_exit"] = ctx["tor_exit"] or bool(threat_feed_manager.is_tor_exit(source_ip))
+            except Exception:
+                pass
+        return ctx
+
     async def _on_rule_triggered(self, rule: dict, triggering_event: dict) -> None:
         """Publish correlation alert and optionally create an AI incident."""
         # Drop events with no attributable source (null IP) AND internal IPs.
@@ -3302,13 +3605,26 @@ class CorrelationEngine:
             )
             return
 
+        # v1.6.4: apply per-event confidence factors to adjust severity.
+        # A safelisted/internal source returns ('suppressed', 0) and we drop.
+        event_ctx = self._build_event_context(triggering_event)
+        adjusted_severity, multiplier = apply_confidence_factors(rule, event_ctx)
+        if adjusted_severity == "suppressed":
+            logger.debug(
+                f"Correlation rule '{rule['id']}' suppressed by confidence "
+                f"factor (source_ip={source_ip})"
+            )
+            return
+
         alert_data = {
             "event_type": "correlation_triggered",
             "rule_id": rule["id"],
             "rule_title": rule["title"],
-            "severity": rule["severity"],
-            "incident_title": f"{rule['severity'].upper()}: {rule['title']}",
-            "incident_severity": rule["severity"],
+            "severity": adjusted_severity,
+            "base_severity": rule["severity"],
+            "confidence_multiplier": multiplier,
+            "incident_title": f"{adjusted_severity.upper()}: {rule['title']}",
+            "incident_severity": adjusted_severity,
             "mitre": rule.get("mitre", []),
             "description": rule.get("description", ""),
             "triggering_event": triggering_event,
@@ -3528,8 +3844,11 @@ _PHASE_MAP: dict[str, str] = {
     "sigma_recon_port_sweep": "recon",
     "sigma_recon_service_enum": "recon",
     # Exploit / Initial Access
-    "brute_force_ssh": "exploit",
+    "brute_force_ssh": "exploit",          # legacy alias (rule disabled but ID still resolves)
     "brute_force": "exploit",
+    "http_auth_brute_force": "exploit",    # v1.6.4 split — HTTP 401 brute force
+    "ssh_honeypot_attempt": "exploit",     # v1.6.4 split — honeypot SSH hit
+    "generic_credential_attack": "exploit",# v1.6.4 split — fallback auth_failure
     "sql_injection": "exploit",
     "sql_injection_chain": "exploit",
     "xss": "exploit",
