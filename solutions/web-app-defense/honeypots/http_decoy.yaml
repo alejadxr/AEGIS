@@ -1,0 +1,31 @@
+type: http
+port: 8888
+banner: "Apache/2.4.51 (Ubuntu)"
+description: >
+  HTTP honeypot mimicking a vulnerable PHP web application.
+  Attracts scanners and automated attack tools targeting common web vulnerabilities.
+fake_endpoints:
+  - path: /admin
+    response_code: 200
+    content_type: text/html
+    body: "<html><body><h1>Admin Login</h1><form method='POST'><input name='user'/><input name='pass' type='password'/></form></body></html>"
+  - path: /phpmyadmin
+    response_code: 200
+    content_type: text/html
+    body: "<html><body><h1>phpMyAdmin 4.8.1</h1></body></html>"
+  - path: /.env
+    response_code: 200
+    content_type: text/plain
+    body: "DB_HOST=localhost\nDB_USER=webapp\nDB_PASS=FAKE_CREDENTIAL_HONEYTOKEN\nAPP_KEY=base64:FAKE_KEY"
+  - path: /wp-login.php
+    response_code: 200
+    content_type: text/html
+    body: "<html><body><form method='POST' action='/wp-login.php'><input name='log'/><input name='pwd' type='password'/></form></body></html>"
+breadcrumbs:
+  - "Server: Apache/2.4.51 (Ubuntu)"
+  - "X-Powered-By: PHP/7.4.3"
+  - "X-Generator: WordPress 5.8"
+capture:
+  headers: true
+  body: true
+  fingerprint: true

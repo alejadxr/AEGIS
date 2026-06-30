@@ -1,0 +1,21 @@
+id: sigma_privesc_unquoted_path
+name: Unquoted Service Path Exploitation
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1574.009
+data_sources:
+- edr
+condition:
+  event_type: file_creation
+  filter:
+    path_contains:
+    - Program.exe
+    - Common.exe
+entityMappings:
+- type: IP
+  field: source_ip
+description: Executable placed in path to exploit unquoted service path vulnerability.

@@ -1,0 +1,22 @@
+id: sigma_evasion_amsi_bypass
+name: AMSI Bypass Attempt
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1562.001
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - AmsiUtils
+    - amsiInitFailed
+    - AmsiScanBuffer
+entityMappings:
+- type: IP
+  field: source_ip
+description: Attempt to bypass Antimalware Scan Interface.

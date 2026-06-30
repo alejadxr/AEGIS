@@ -1,0 +1,22 @@
+id: sigma_persist_init_script
+name: Init Script Modified
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Persistence
+techniques:
+- T1037.004
+data_sources:
+- edr
+condition:
+  event_type: file_modification
+  filter:
+    path_contains:
+    - /etc/init.d/
+    - /etc/rc.local
+    - /etc/rc.d/
+entityMappings:
+- type: IP
+  field: source_ip
+description: System init script modified for persistence.

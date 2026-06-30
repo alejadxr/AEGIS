@@ -1,0 +1,28 @@
+id: ransomware_bcdedit_recovery_disable
+name: Windows recovery environment disabled via bcdedit
+kind: sigma
+description: |
+  Detects bcdedit commands that disable the Windows Recovery Environment or
+  suppress boot failure recovery policies. Used by ransomware to prevent
+  victims from booting into safe mode for recovery.
+severity: high
+tactics:
+  - Impact
+techniques:
+  - T1490
+data_sources:
+  - process_creation
+condition:
+  event_type: process_create
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: hostname
+  filter:
+    command_line_regex: '(?i)bcdedit.*?(recoveryenabled\s+no|bootstatuspolicy\s+ignoreallfailures)'
+entityMappings:
+  - type: Host
+    field: hostname
+  - type: Account
+    field: username
+references:
+  - https://attack.mitre.org/techniques/T1490/

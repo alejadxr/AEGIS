@@ -1,0 +1,18 @@
+{
+  "name": "auth_log_parser",
+  "description": "Regex patterns for parsing Linux /var/log/auth.log and syslog authentication events",
+  "regexes": {
+    "ssh_failed_auth": "(?:Failed password|Invalid user|authentication failure).*?from\\s+(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})",
+    "ssh_accepted_auth": "Accepted\\s+(?:password|publickey|keyboard-interactive)\\s+for\\s+(\\w+)\\s+from\\s+(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})",
+    "sudo_command": "sudo:\\s+(\\w+)\\s*:.*?COMMAND=(.*?)$",
+    "sudo_failed": "sudo:\\s+(\\w+)\\s*:.*?(?:incorrect password attempts|NOT in sudoers)",
+    "su_attempt": "su:\\s+(?:FAILED|pam_unix).*?for\\s+(\\w+)",
+    "suid_execution": "(?:execve|exec).*?(?:setuid|suid).*?(\\d+)\\s+->\\s+(\\d+)",
+    "cron_job_added": "(?:CRON|crond)\\s+.*?(?:ADD|NEW).*?(?:crontab|cron\\.d|cron\\.daily)",
+    "log_deletion": "(?:rm|unlink|truncate|shred).*?(?:/var/log/|/var/run/utmp|/var/log/auth)",
+    "kernel_module": "(?:insmod|modprobe|rmmod)\\s+(.+?)(?:\\s|$)",
+    "source_ip": "(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})",
+    "username": "(?:user|for|invalid user)\\s+(\\w+)",
+    "timestamp": "^(\\w{3}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2})"
+  }
+}
