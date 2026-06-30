@@ -3152,12 +3152,13 @@ class CorrelationEngine:
         for et in event_types:
             self._event_bus.subscribe(et, self._on_event)
 
-        # Subscribe to raw event sources that need translation into typed
-        # events before Sigma rules can evaluate them.
-        self._event_bus.subscribe("log_line", self._on_log_line)
-        # v1.6.4: log_watcher now emits pre-normalized NormalizedEvent dicts
-        # on the `log_event` topic via event_normalizer. Bypass _on_log_line
-        # regex re-matching and feed straight into evaluate().
+        # v1.6.3.8: ONLY subscribe to the typed `log_event` channel emitted by
+        # log_watcher AFTER event_normalizer translation + safelist gate.
+        # The legacy `log_line` topic still fires for the "Live Log" UI widget
+        # but is no longer consumed here — subscribing to both was causing
+        # exact 1:1 double-counting (226 correlation_engine + 226 fast_triage
+        # for the same event burst).  _on_log_line remains as a manually
+        # callable fallback used by tests.
         self._event_bus.subscribe("log_event", self._on_normalized_event)
         self._event_bus.subscribe("edr.event", self._on_edr_event)
         self._event_bus.subscribe("edr.process_start", self._on_edr_event)
