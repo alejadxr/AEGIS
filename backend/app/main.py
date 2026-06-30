@@ -560,6 +560,14 @@ async def lifespan(app: FastAPI):
     scheduled_scanner.start()
     logger.info('Scheduled scanner started')
 
+    # v1.6.3.10: prime PM2 jlist cache off the event loop so the first
+    # /monitored-apps request after restart doesn't eat the 1-5s cold penalty.
+    try:
+        from app.api.dashboard import warmup_pm2_cache
+        asyncio.create_task(warmup_pm2_cache(), name='pm2_cache_warmup')
+    except Exception as exc:
+        logger.warning(f'PM2 cache warmup task failed to launch: {exc}')
+
     # v1.6.2: retention service — bounds incidents/attackers/honeypot table growth
     # to AEGIS_RETENTION_DAYS rolling (default 90). Auto-closes stuck-investigating
     # incidents whose source_ip is already in threat_intel. Honors
@@ -634,7 +642,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.3.9",
+    version="1.6.3.10",
     lifespan=lifespan,
 )
 
@@ -741,7 +749,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.3.9",
+        "version": "1.6.3.10",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -753,7 +761,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.3.9",
+        "version": "1.6.3.10",
         "ai_mode": _ai_mode.value,
     }
 
