@@ -1,0 +1,24 @@
+id: linux-server-hardening
+name: Linux Server Hardening
+version: 1.0.0
+description: >
+  Detection and response for Linux server threats. Covers SSH brute force,
+  privilege escalation (sudo abuse, SUID), rootkit detection, log tampering,
+  and suspicious cron-based persistence.
+author: Wilab
+includes:
+  rules:
+    - rules/brute_force_ssh.yaml
+    - rules/sigma_privesc_sudo_abuse.yaml
+    - rules/sigma_privesc_suid.yaml
+    - rules/sigma_evasion_rootkit.yaml
+    - rules/sigma_evasion_log_deletion.yaml
+    - rules/sigma_persist_cron.yaml
+  playbooks:
+    - playbooks/ssh_brute_force_response.yaml
+    - playbooks/privilege_escalation_response.yaml
+  parsers:
+    - parsers/auth_log_parser.json
+  honeypots:
+    - honeypots/ssh_decoy.yaml
+depends_on: []

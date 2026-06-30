@@ -1,0 +1,20 @@
+id: sigma_c2_dns
+name: DNS-Based Command and Control
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- CommandAndControl
+techniques:
+- T1071.004
+data_sources:
+- dns
+condition:
+  event_type: dns_query
+  count_threshold: 200
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Suspicious DNS query patterns indicating C2 via DNS protocol.

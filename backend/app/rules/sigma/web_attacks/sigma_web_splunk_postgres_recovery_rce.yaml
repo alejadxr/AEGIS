@@ -1,0 +1,23 @@
+id: sigma_web_splunk_postgres_recovery_rce
+name: Splunk Postgres Sidecar Unauth RCE (CVE-2026-20253)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains:
+    - /splunkd/__raw/v1/postgres/recovery/
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Splunk-internal postgres recovery POST endpoint â€” unauth file ops leading to RCE.

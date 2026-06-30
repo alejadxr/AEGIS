@@ -1,0 +1,20 @@
+id: sigma_privesc_token_manipulation
+name: Access Token Manipulation
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1134
+data_sources:
+- edr
+condition:
+  event_type: token_manipulation
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Token impersonation or theft for privilege escalation.

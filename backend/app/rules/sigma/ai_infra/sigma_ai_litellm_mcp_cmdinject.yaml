@@ -1,0 +1,27 @@
+id: sigma_ai_litellm_mcp_cmdinject
+name: LiteLLM MCP REST stdio Command Injection (CVE-2026-42271)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Execution
+- InitialAccess
+techniques:
+- T1059
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: web_request
+  filter:
+    path_contains_all:
+    - /mcp-rest/test/
+    - stdio
+    - '"command"'
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: LiteLLM MCP REST endpoint POST with stdio transport + command/args fields â€” RCE.

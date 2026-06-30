@@ -1,0 +1,785 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { SecurityCheckIcon, Clock01Icon, FlashIcon } from 'hugeicons-react';
+import { CheckCircle, ChevronDown, ChevronUp, Shield } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { StatusIndicator } from '@/components/shared/StatusIndicator';
+import { LoadingState } from '@/components/shared/LoadingState';
+import { Panel } from '@/components/aegis/Panel';
+import { SectionHeader } from '@/components/aegis/SectionHeader';
+import { EmptyState } from '@/components/aegis/EmptyState';
+import { api } from '@/lib/api';
+import { cn, formatRelativeTime, formatDate } from '@/lib/utils';
+import { buildAbuseMailto, abuseContactOf } from '@/lib/abuse-mailto';
+import { mitreLabel } from '@/lib/mitre';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
+
+interface ProvenanceMeta {
+  kind: 'algorithm' | 'agent' | 'honeypot';
+  source: string;
+  model?: string;
+  rule?: string;
+  rules?: string[];
+  providers?: string[];
+  ts?: string;
+}
+
+interface IncidentItem {
+  id: string;
+  title: string;
+  description: string;
+  severity: string;
+  status: string;
+  source: string;
+  mitre_technique: string | null;
+  mitre_tactic: string | null;
+  source_ip: string | null;
+  ai_analysis: Record<string, unknown> | null;
+  detected_at: string;
+}
+
+interface ActionItem {
+  id: string;
+  incident_id: string;
+  action_type: string;
+  target: string;
+  status: string;
+  requires_approval: boolean;
+  ai_reasoning: string | null;
+  created_at: string;
+}
+
+const statusChartConfig = {
+  escalated:   { label: 'Escalated',   color: 'var(--success)' },
+  resolved:    { label: 'Resolved',    color: 'var(--brand)' },
+  in_progress: { label: 'In Progress', color: 'var(--chart-5)' },
+  open:        { label: 'Open',        color: 'var(--muted-foreground)' },
+} satisfies ChartConfig;
+
+const severityDotColor: Record<string, string> = {
+  critical: 'bg-[var(--danger)]',
+  high:     'bg-[var(--brand-accent)]',
+  medium:   'bg-[var(--warning)]',
+  low:      'bg-[var(--info)]',
+};
+
+const TACTICS = [
+  'Initial Access', 'Execution', 'Credential Access', 'Discovery',
+  'Privilege Escalation', 'Defense Evasion', 'Lateral Movement', 'Reconnaissance',
+];
+
+function heatmapCellColor(value: number): string {
+  if (value === 0) return 'bg-muted/30';
+  if (value === 1) return 'bg-primary/15';
+  if (value === 2) return 'bg-primary/35';
+  if (value === 3) return 'bg-primary/55';
+  return 'bg-primary/80';
+}
+
+function getLast7DayLabels(): string[] {
+  const labels: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+  }
+  return labels;
+}
+
+function buildTacticsHeatmap(incidents: IncidentItem[]): { days: string[]; data: number[][] } {
+  const days = getLast7DayLabels();
+  const now = Date.now();
+  const data: number[][] = TACTICS.map(() => new Array(7).fill(0));
+
+  // Map MITRE ATT&CK tactic IDs to names
+  const TACTIC_ID_MAP: Record<string, string> = {
+    'TA0043': 'Reconnaissance', 'TA0001': 'Initial Access', 'TA0002': 'Execution',
+    'TA0003': 'Persistence', 'TA0004': 'Privilege Escalation', 'TA0005': 'Defense Evasion',
+    'TA0006': 'Credential Access', 'TA0007': 'Discovery', 'TA0008': 'Lateral Movement',
+  };
+
+  incidents.forEach((inc) => {
+    if (!inc.mitre_tactic) return;
+    // Resolve tactic ID to name if needed
+    const tacticName = TACTIC_ID_MAP[inc.mitre_tactic] || inc.mitre_tactic;
+    const tacticIdx = TACTICS.findIndex(
+      (t) => t.toLowerCase() === tacticName.toLowerCase()
+    );
+    if (tacticIdx === -1) return;
+    const diffDays = Math.floor((now - new Date(inc.detected_at).getTime()) / 86400000);
+    const dayIdx = 6 - diffDays;
+    if (dayIdx >= 0 && dayIdx < 7) {
+      data[tacticIdx][dayIdx] += 1;
+    }
+  });
+
+  return { days, data };
+}
+
+function buildStatusDistribution(incidents: IncidentItem[]): Array<Record<string, string | number>> {
+  const days = getLast7DayLabels();
+  const now = Date.now();
+
+  const buckets: Record<string, { day: string; escalated: number; resolved: number; in_progress: number; open: number }> = {};
+  days.forEach((d) => {
+    buckets[d] = { day: d.split(' ')[1], escalated: 0, resolved: 0, in_progress: 0, open: 0 };
+  });
+
+  incidents.forEach((inc) => {
+    const diffDays = Math.floor((now - new Date(inc.detected_at).getTime()) / 86400000);
+    const dayIdx = 6 - diffDays;
+    if (dayIdx < 0 || dayIdx >= 7) return;
+    const dayKey = days[dayIdx];
+    const bucket = buckets[dayKey];
+    if (!bucket) return;
+    if (inc.status === 'resolved' || inc.status === 'remediated' || inc.status === 'auto_responded') bucket.resolved += 1;
+    else if (inc.status === 'investigating' || inc.status === 'contained') bucket.in_progress += 1;
+    else if (inc.status === 'escalated') bucket.escalated += 1;
+    else bucket.open += 1;
+  });
+
+  return Object.values(buckets);
+}
+
+function ProvenanceBadge({ provenance }: { provenance?: ProvenanceMeta | null }) {
+  const meta = provenance ?? { kind: 'algorithm', source: 'legacy' };
+  const kind = meta.kind ?? 'algorithm';
+
+  let label: string;
+  let colorClass: string;
+
+  if (kind === 'agent') {
+    const model = meta.model ?? meta.source ?? 'agent';
+    label = `Agent · ${model.split(':').pop() ?? model}`;
+    colorClass = [
+      'bg-[color-mix(in_oklab,var(--warning)_12%,transparent)]',
+      'border-[color-mix(in_oklab,var(--warning)_28%,transparent)]',
+      'text-[var(--warning)]',
+    ].join(' ');
+  } else if (kind === 'honeypot') {
+    label = `Honeypot · ${meta.source}`;
+    colorClass = [
+      'bg-[color-mix(in_oklab,var(--primary)_12%,transparent)]',
+      'border-[color-mix(in_oklab,var(--primary)_28%,transparent)]',
+      'text-[var(--primary)]',
+    ].join(' ');
+  } else {
+    // algorithm (deterministic) or legacy
+    const src = meta.source === 'legacy' ? 'legacy' : meta.rule ?? meta.source;
+    label = `Algorithm · ${src}`;
+    colorClass = [
+      'bg-[color-mix(in_oklab,var(--info)_12%,transparent)]',
+      'border-[color-mix(in_oklab,var(--info)_28%,transparent)]',
+      'text-[var(--info)]',
+    ].join(' ');
+  }
+
+  return (
+    <span className={cn(
+      'inline-flex items-center text-[9px] font-semibold uppercase tracking-wider',
+      'px-1.5 py-0.5 rounded border font-mono',
+      colorClass,
+    )}>
+      {label}
+    </span>
+  );
+}
+
+export default function ResponsePage() {
+  const [incidents, setIncidents] = useState<IncidentItem[]>([]);
+  const [actions, setActions] = useState<ActionItem[]>([]);
+  const [guardrails, setGuardrails] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+  const [expandedIncident, setExpandedIncident] = useState<string | null>(null);
+  const [tab, setTab] = useState<string>('incidents');
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [inc, act, gr] = await Promise.allSettled([
+          api.response.incidents(),
+          api.response.actions(),
+          api.response.guardrails(),
+        ]);
+        setIncidents(inc.status === 'fulfilled' ? inc.value : []);
+        setActions(act.status === 'fulfilled' ? act.value : []);
+        if (gr.status === 'fulfilled') {
+          const raw = gr.value as Record<string, unknown>;
+          const guardrailData = (raw.guardrails || raw) as Record<string, string | boolean>;
+          const parsed: Record<string, boolean> = {};
+          for (const [k, v] of Object.entries(guardrailData)) {
+            if (typeof v === 'boolean') parsed[k] = v;
+            else if (typeof v === 'string') parsed[k] = v === 'auto_approve';
+          }
+          setGuardrails(parsed);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const handleApprove = async (actionId: string) => {
+    try {
+      await api.response.approveAction(actionId);
+    } catch {
+      // best effort
+    }
+    setActions(actions.map((a) => a.id === actionId ? { ...a, status: 'approved' } : a));
+  };
+
+  const toggleGuardrail = async (key: string) => {
+    const updated = { ...guardrails, [key]: !guardrails[key] };
+    setGuardrails(updated);
+    try {
+      await api.response.updateGuardrails(updated);
+    } catch {
+      // best effort
+    }
+  };
+
+  const pendingActions = actions.filter((a) => a.status === 'pending' && a.requires_approval);
+
+  if (loading) return <LoadingState message="Loading incident response data..." />;
+
+  const { days: heatmapDays, data: heatmapData } = buildTacticsHeatmap(incidents);
+  const statusDistData = buildStatusDistribution(incidents);
+  const hasIncidents = incidents.length > 0;
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[22px] sm:text-[28px] font-bold text-foreground tracking-tight">Incident Response</h1>
+          <p className="text-sm text-muted-foreground mt-1 hidden sm:block">Autonomous threat analysis and response actions</p>
+        </div>
+        {pendingActions.length > 0 && (
+          <Badge variant="outline" className="bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] border-[color-mix(in_oklab,var(--warning)_30%,transparent)] text-[var(--warning)] shrink-0 px-3 sm:px-4 py-2 h-auto gap-1.5">
+            <Clock01Icon size={14} />
+            <span className="text-[12px] sm:text-[13px] font-medium">{pendingActions.length} pending</span>
+          </Badge>
+        )}
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Threat Tactics Activity Heatmap */}
+        <Panel>
+          <SectionHeader title="Threat Tactics Activity" subtitle="· MITRE ATT&CK over 7 days" />
+          <div className="p-4 sm:p-6 overflow-x-auto">
+            {!hasIncidents ? (
+              <EmptyState size="md" title="No data yet" />
+            ) : (
+              <>
+                <div className="flex mb-2">
+                  <div className="w-32 shrink-0" />
+                  {heatmapDays.map((day) => (
+                    <div key={day} className="flex-1 text-center text-[10px] text-muted-foreground/50 font-mono">{day.split(' ')[1]}</div>
+                  ))}
+                </div>
+                {TACTICS.map((tactic, rowIdx) => (
+                  <div key={tactic} className="flex items-center mb-1">
+                    <div className="w-32 shrink-0 text-[11px] text-muted-foreground font-medium truncate pr-3">{tactic}</div>
+                    {heatmapData[rowIdx].map((value, colIdx) => (
+                      <div key={colIdx} className="flex-1 px-0.5">
+                        <div
+                          className={cn('h-7 rounded-md transition-colors', heatmapCellColor(value))}
+                          title={`${tactic}: ${value} events on ${heatmapDays[colIdx]}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 mt-4 justify-end">
+                  <span className="text-[10px] text-muted-foreground/50">Less</span>
+                  {[0, 1, 2, 3, 4].map((v) => (
+                    <div key={v} className={cn('w-4 h-4 rounded', heatmapCellColor(v))} />
+                  ))}
+                  <span className="text-[10px] text-muted-foreground/50">More</span>
+                </div>
+              </>
+            )}
+          </div>
+        </Panel>
+
+        {/* Response Status Distribution */}
+        <Panel>
+          <SectionHeader title="Response Status" subtitle="· Incident outcomes by day" />
+          <div className="p-4 sm:p-6 h-[200px] sm:h-[240px]">
+            {!hasIncidents ? (
+              <EmptyState size="md" title="No data yet" />
+            ) : (
+              <ChartContainer config={statusChartConfig} className="h-full w-full aspect-auto">
+                <BarChart data={statusDistData} barCategoryGap={6}>
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fontSize: 11, fontFamily: 'Azeret Mono' }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fontFamily: 'Azeret Mono' }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <ChartTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.2 }} content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="escalated" stackId="a" fill="var(--color-escalated)" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="resolved" stackId="a" fill="var(--color-resolved)" />
+                  <Bar dataKey="in_progress" stackId="a" fill="var(--color-in_progress)" />
+                  <Bar dataKey="open" stackId="a" fill="var(--color-open)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      {/* Tab Section */}
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList variant="line">
+          {[
+            { id: 'incidents', label: 'Incidents', icon: SecurityCheckIcon, count: incidents.length },
+            { id: 'actions', label: 'Response Actions', icon: FlashIcon, count: actions.length },
+            { id: 'guardrails', label: 'Guardrails', icon: Shield },
+          ].map((t) => (
+            <TabsTrigger key={t.id} value={t.id}>
+              <t.icon className="w-4 h-4" size={16} />
+              {t.label}
+              {t.count !== undefined && (
+                <Badge variant="secondary" className="text-[11px] px-1.5 py-0.5 h-auto">{t.count}</Badge>
+              )}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        {/* Incidents Tab */}
+        <TabsContent value="incidents">
+          <div className="space-y-3">
+            {incidents.length === 0 ? (
+              <Panel padding="lg">
+                <EmptyState
+                  icon={<SecurityCheckIcon size={48} />}
+                  title="No active incidents"
+                  description="Your perimeter is secure."
+                  size="lg"
+                />
+              </Panel>
+            ) : (
+              incidents.map((incident) => (
+                <Panel
+                  as="article"
+                  key={incident.id}
+                  className="transition-all duration-200 hover:border-white/[0.12]"
+                >
+                  <button
+                    onClick={() => setExpandedIncident(expandedIncident === incident.id ? null : incident.id)}
+                    className="w-full flex items-center justify-between px-4 sm:px-6 py-4 text-left"
+                  >
+                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                      <div className="mt-0.5 shrink-0">
+                        <span className={cn('block w-2 h-2 rounded-full', severityDotColor[incident.severity] || 'bg-muted-foreground/50')} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-medium text-foreground truncate">{incident.title}</p>
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <StatusIndicator status={incident.status} label={incident.status} />
+                          {incident.source_ip && (
+                            <span className="text-[11px] text-muted-foreground font-mono">{incident.source_ip}</span>
+                          )}
+                          {incident.mitre_technique && (
+                            <Badge variant="outline" className="text-[10px] text-[var(--chart-5)] bg-[color-mix(in_oklab,var(--chart-5)_12%,transparent)] border-[color-mix(in_oklab,var(--chart-5)_25%,transparent)] px-1.5 py-0.5 h-auto font-mono font-medium">{mitreLabel(incident.mitre_technique)}</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 ml-4">
+                      <span className="text-[11px] text-muted-foreground/50 font-mono tabular-nums">{formatRelativeTime(incident.detected_at)}</span>
+                      {expandedIncident === incident.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                    </div>
+                  </button>
+                  {expandedIncident === incident.id && (
+                    <div className="px-4 sm:px-6 pb-5 border-t border-border pt-5 animate-fade-in">
+                      <p className="text-[13px] text-muted-foreground mb-4">{incident.description}</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { label: 'Source', value: incident.source, capitalize: true },
+                          { label: 'MITRE Tactic', value: incident.mitre_tactic || 'N/A' },
+                          { label: 'Detected', value: formatDate(incident.detected_at) },
+                          { label: 'Source IP', value: incident.source_ip || 'Internal', mono: true },
+                        ].map((item) => (
+                          <div key={item.label} className="bg-background border border-border rounded-xl p-3">
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium mb-1">{item.label}</p>
+                            <p className={cn('text-[13px] text-foreground font-medium', item.capitalize && 'capitalize', item.mono && 'font-mono')}>{item.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {/* AI Analysis Details */}
+                      {incident.ai_analysis && (
+                        <div className="mt-4">
+                          <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2 flex items-center gap-2">
+                            AI Analysis
+                            <ProvenanceBadge
+                              provenance={
+                                ((incident.ai_analysis as Record<string, unknown>)?.triage as Record<string, unknown> | undefined)?._provenance as ProvenanceMeta | undefined
+                                ?? (incident.ai_analysis as Record<string, unknown>)?._origin as ProvenanceMeta | undefined
+                              }
+                            />
+                          </p>
+                          <div className="bg-background border border-border rounded-xl p-4 space-y-2">
+                            {(() => {
+                              const analysis = incident.ai_analysis as Record<string, unknown> | null;
+                              const triage = analysis?.triage as Record<string, string | number | boolean> | undefined;
+                              if (!triage) return <p className="text-[12px] text-muted-foreground">No analysis data</p>;
+                              return (
+                                <>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                                      {`${triage.threat_type || 'unknown'}`}
+                                    </span>
+                                    <span className="text-[9px] text-muted-foreground font-mono">
+                                      confidence: {typeof triage.confidence === 'number' ? `${Math.round(Number(triage.confidence) * 100)}%` : 'N/A'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[12px] text-foreground leading-relaxed">
+                                    {`${triage.summary || incident.description}`}
+                                  </p>
+                                  {triage.mitre_technique && (
+                                    <div className="flex items-center gap-2 mt-2">
+                                      <Badge variant="outline" className="text-[9px] text-[var(--chart-5)] bg-[color-mix(in_oklab,var(--chart-5)_12%,transparent)] border-[color-mix(in_oklab,var(--chart-5)_25%,transparent)] px-1.5 py-0.5 h-auto font-mono">
+                                        {mitreLabel(`${triage.mitre_technique}`)}
+                                      </Badge>
+                                      {triage.mitre_tactic && (
+                                        <span className="text-[10px] text-muted-foreground">{`${triage.mitre_tactic}`}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* IP Intel — populated by incident_enrichment hook */}
+                      {(() => {
+                        const intel = (incident.ai_analysis as Record<string, unknown> | null)?.ip_intel as
+                          | {
+                              asn?: string;
+                              org?: string;
+                              country?: string;
+                              city?: string;
+                              region?: string;
+                              hostname?: string;
+                              is_tor?: boolean | null;
+                              is_vpn?: boolean | null;
+                              is_proxy?: boolean | null;
+                              is_datacenter?: boolean | null;
+                              is_malicious?: boolean | null;
+                              risk_score?: number | null;
+                              providers?: string[];
+                              cached?: boolean;
+                              classification?: string;
+                              confidence?: { tor: number; vpn: number; proxy: number; datacenter: number; attacker: number };
+                              asn_reputation_name?: string;
+                              asn_reputation_owner?: string;
+                              tor_list_match?: boolean;
+                              spamhaus_match?: boolean;
+                              consensus_risk?: number | null;
+                              abuseipdb_score?: number | null;
+                              external_feeds?: Array<{ feed?: string; threat_type?: string }>;
+                              history?: { incidents?: { count?: number; first_seen?: string; last_seen?: string } };
+                              ipapi_is_abuse_contact?: string | null;
+                            }
+                          | undefined;
+                        if (!intel) return null;
+                        const hostnameLooksTor = !!intel.hostname && /(tor|exit)/i.test(intel.hostname);
+                        const isTor = intel.is_tor === true || hostnameLooksTor || intel.tor_list_match === true;
+                        const tags: Array<{ label: string; tone: 'amber' | 'red' | 'cyan' | 'muted' }> = [];
+                        if (isTor) tags.push({ label: 'TOR EXIT', tone: 'red' });
+                        if (intel.is_vpn) tags.push({ label: 'VPN', tone: 'amber' });
+                        if (intel.is_proxy) tags.push({ label: 'PROXY', tone: 'amber' });
+                        if (intel.is_datacenter) tags.push({ label: 'DATACENTER', tone: 'cyan' });
+                        if (intel.is_malicious) tags.push({ label: 'MALICIOUS', tone: 'red' });
+                        if (intel.spamhaus_match) tags.push({ label: 'SPAMHAUS', tone: 'red' });
+                        if (intel.cached) tags.push({ label: 'CACHED', tone: 'muted' });
+                        const classificationMap: Record<string, { label: string; tone: 'red' | 'amber' | 'cyan' | 'muted' }> = {
+                          tor_exit: { label: 'Tor exit', tone: 'red' },
+                          known_attacker: { label: 'Known attacker', tone: 'red' },
+                          vpn_user: { label: 'VPN user', tone: 'amber' },
+                          known_crawler: { label: 'Known crawler', tone: 'cyan' },
+                          datacenter_bot: { label: 'Datacenter / bot', tone: 'cyan' },
+                          known_service: { label: 'Known service', tone: 'cyan' },
+                          unknown: { label: 'Unknown', tone: 'muted' },
+                        };
+                        const cls = intel.classification ? classificationMap[intel.classification] : undefined;
+                        const toneClass: Record<string, string> = {
+                          red: 'bg-red-500/10 text-red-400 border-red-500/30',
+                          amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                          cyan: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+                          muted: 'bg-muted/40 text-muted-foreground border-border',
+                        };
+                        const locParts = [intel.city, intel.region, intel.country].filter(Boolean);
+                        const ipIntelProvenance = (intel as unknown as Record<string, unknown>)?._provenance as ProvenanceMeta | undefined;
+                        return (
+                          <div className="mt-4">
+                            <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2 flex items-center gap-2">
+                              IP Intel
+                              <ProvenanceBadge provenance={ipIntelProvenance} />
+                              {intel.providers && intel.providers.length > 0 && !ipIntelProvenance && (
+                                <span className="text-[9px] font-mono text-muted-foreground/40 normal-case tracking-normal">
+                                  · {intel.providers.join(', ')}
+                                </span>
+                              )}
+                            </p>
+                            <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+                              {cls && (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={cn('text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded border whitespace-nowrap', toneClass[cls.tone])}>
+                                    {cls.label}{intel.asn_reputation_name && (intel.classification === 'known_crawler' || intel.classification === 'known_service') ? ` · ${intel.asn_reputation_name}` : ''}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-muted-foreground/40">[algorithm:classification]</span>
+                                </div>
+                              )}
+                              {intel.confidence && (
+                                <div className="flex flex-wrap gap-2">
+                                  {(['tor','vpn','proxy','datacenter','attacker'] as const).map((k) => {
+                                    const v = intel.confidence![k];
+                                    const tone: 'red' | 'amber' | 'cyan' | 'muted' = v >= 0.7 ? 'red' : v >= 0.4 ? 'amber' : v >= 0.1 ? 'cyan' : 'muted';
+                                    return (
+                                      <span key={k} className={cn('text-[10px] font-mono font-semibold uppercase tracking-wider px-2 py-1 rounded-md border whitespace-nowrap inline-flex items-center gap-1.5', toneClass[tone])}>
+                                        <span>{k}</span>
+                                        <span className="opacity-70">{v.toFixed(2)}</span>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {tags.length > 0 && (
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  {tags.map((t) => (
+                                    <span
+                                      key={t.label}
+                                      className={cn(
+                                        'text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md border whitespace-nowrap',
+                                        toneClass[t.tone],
+                                      )}
+                                    >
+                                      {t.label}
+                                    </span>
+                                  ))}
+                                  {typeof intel.risk_score === 'number' && (
+                                    <span className="text-[10px] font-mono text-muted-foreground/80 ml-1">
+                                      risk:&nbsp;<span className="text-foreground font-semibold">{intel.risk_score}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[12px] pt-2 border-t border-border/60">
+                                {intel.asn && (
+                                  <div>
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-1">ASN</p>
+                                    <p className="font-mono text-foreground">{intel.asn}</p>
+                                  </div>
+                                )}
+                                {intel.org && (
+                                  <div className="min-w-0">
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-1">Org</p>
+                                    <p className="text-foreground truncate" title={intel.org}>
+                                      {intel.org}
+                                    </p>
+                                  </div>
+                                )}
+                                {locParts.length > 0 && (
+                                  <div className="col-span-2">
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-1">Location</p>
+                                    <p className="text-foreground">{locParts.join(', ')}</p>
+                                  </div>
+                                )}
+                                {intel.hostname && (
+                                  <div className="col-span-2 min-w-0">
+                                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-1">Hostname</p>
+                                    <p className="font-mono text-foreground text-[11px] truncate" title={intel.hostname}>
+                                      {intel.hostname}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                              {(() => {
+                                if (!incident.source_ip) return null;
+                                const contact = abuseContactOf({ ...intel, ip: incident.source_ip });
+                                if (!contact) return null;
+                                return (
+                                  <div className="pt-2 border-t border-border flex items-center justify-between gap-3">
+                                    <p className="text-[10px] text-muted-foreground/70">
+                                      Abuse contact:{' '}
+                                      <span className="font-mono text-foreground/80">{contact}</span>
+                                    </p>
+                                    <a
+                                      href={buildAbuseMailto({ ...intel, ip: incident.source_ip })}
+                                      className={cn(
+                                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg',
+                                        'border border-border bg-background hover:bg-muted/40',
+                                        'text-[11px] font-medium text-foreground transition-colors',
+                                      )}
+                                    >
+                                      <Shield className="size-3.5" />
+                                      Report abuse
+                                    </a>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {actions.filter((a) => a.incident_id === incident.id).length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">Response Actions</p>
+                          <div className="space-y-2">
+                            {actions.filter((a) => a.incident_id === incident.id).map((action) => (
+                              <div key={action.id} className="flex items-center justify-between bg-background border border-border p-3 rounded-xl">
+                                <div className="flex items-center gap-3">
+                                  <StatusIndicator status={action.status} />
+                                  <div>
+                                    <p className="text-[13px] text-foreground capitalize">{action.action_type.replace(/_/g, ' ')}</p>
+                                    <p className="text-[11px] text-muted-foreground font-mono">{action.target}</p>
+                                  </div>
+                                </div>
+                                {action.status === 'pending' && action.requires_approval && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleApprove(action.id)}
+                                    className="text-[11px] bg-[color-mix(in_oklab,var(--success)_12%,transparent)] text-[var(--success)] hover:bg-[color-mix(in_oklab,var(--success)_22%,transparent)] font-medium gap-1.5"
+                                  >
+                                    Approve
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Panel>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Actions Tab */}
+        <TabsContent value="actions">
+          <div className="space-y-3">
+            {actions.length === 0 ? (
+              <Panel padding="lg">
+                <EmptyState
+                  icon={<FlashIcon size={48} />}
+                  title="No response actions recorded yet"
+                  size="lg"
+                />
+              </Panel>
+            ) : (
+              actions.map((action) => (
+                <Panel as="article" key={action.id} padding="sm" className="hover:border-white/[0.12] transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <StatusIndicator status={action.status} />
+                      <span className="text-[13px] font-medium text-foreground capitalize">{action.action_type.replace(/_/g, ' ')}</span>
+                      <Badge variant="outline" className="text-[11px] font-mono text-primary bg-primary/10 border-primary/20">{action.target}</Badge>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] text-muted-foreground/50 font-mono tabular-nums">{formatRelativeTime(action.created_at)}</span>
+                      {action.status === 'pending' && action.requires_approval && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleApprove(action.id)}
+                          className="text-[11px] bg-[color-mix(in_oklab,var(--success)_12%,transparent)] text-[var(--success)] hover:bg-[color-mix(in_oklab,var(--success)_22%,transparent)] font-medium gap-1.5"
+                        >
+                          <CheckCircle className="w-3 h-3" />
+                          Approve
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {action.ai_reasoning && (
+                    <div className="bg-background border border-border rounded-xl p-4">
+                      <p className="text-[10px] text-muted-foreground/50 mb-1 font-medium uppercase tracking-wider">AI Reasoning</p>
+                      <p className="text-[13px] text-muted-foreground">{action.ai_reasoning}</p>
+                    </div>
+                  )}
+                </Panel>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Guardrails Tab */}
+        <TabsContent value="guardrails">
+          <Panel>
+            <SectionHeader
+              title="Autonomous Response Configuration"
+              subtitle="· control which actions AEGIS executes automatically"
+            />
+            <div>
+              {Object.keys(guardrails).length === 0 ? (
+                <EmptyState
+                  icon={<Shield className="w-12 h-12" />}
+                  title="No guardrails configured yet"
+                  size="lg"
+                />
+              ) : (
+                <div>
+                  {Object.entries(guardrails).map(([key, enabled], index) => (
+                    <div key={key} className={cn('flex items-center justify-between px-6 py-4', index < Object.entries(guardrails).length - 1 && 'border-b border-border/50')}>
+                      <div>
+                        <p className="text-[13px] font-medium text-foreground capitalize">{key.replace(/^auto_/, '').replace(/_/g, ' ')}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {enabled ? 'Autonomous \u2014 executes immediately (Sigma rules + playbooks, no AI required)' : 'Manual \u2014 requires admin approval before execution'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => toggleGuardrail(key)}
+                        className={cn(
+                          'relative w-11 h-6 rounded-full transition-colors duration-200',
+                          enabled ? 'bg-primary' : 'bg-muted'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200',
+                            enabled && 'translate-x-5'
+                          )}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Panel>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
