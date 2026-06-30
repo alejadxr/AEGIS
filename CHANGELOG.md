@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.8] - 2026-06-30 (regression hotfix)
+
+Honest follow-up to v1.6.3.7. A 12-agent status audit found the v1.6.3.7
+"detection-logic rebuild" was **incomplete in production**: new modules
+shipped clean, but the YAML rules-loader shadowed the new Python BUILT_IN_RULES
+so the protocol-aware rules were dead code, and log_watcher kept publishing on
+both `log_line` AND `log_event` while correlation_engine subscribed to both,
+causing exact 1:1 double-counting. FP rate rose to 99.8% (452/453 in 24h)
+instead of dropping.
+
+### Root causes (caught by 12-agent post-deploy audit)
+
+1. **YAML pack shadows `BUILT_IN_RULES`** — `correlation_engine.__init__` loads rules via `rules_loader.load_rules()` (YAML pack) and only falls back to in-code rules on exception. The v1.6.3.7 `http_auth_brute_force` / `ssh_honeypot_attempt` / `generic_credential_attack` rules never entered `self._rules`.
+2. **`event_normalizer` still emits `event_type='auth_failure'`** — not the protocol-discriminated `'http_auth_failure'`/`'ssh_honeypot_failure'` values the new rules required. Even if the new rules HAD loaded, they would never have matched.
+3. **Double-publish in `log_watcher`** — line 530 publishes raw `log_line` (for the Live Log UI widget) and line 575 publishes typed `log_event`. `correlation_engine` subscribed to BOTH, calling `evaluate()` twice per source event. Source distribution confirmed the symptom: `correlation_engine: 226 + fast_triage: 226` exact-equal counts for the same 24h.
+4. **Rule sync gap** — `sigma_auth_account_lockout.yaml` was disabled in the local checkout (commit 7ce5757, 2026-05-31) but the stale `enabled: true` version was still on Mac Pro, doubling SSH-class incidents alongside `brute_force_ssh`.
+5. **`brute_force_ssh.yaml`** was never touched — it had `count_threshold: 5, time_window_seconds: 300` and produced all 225 "SSH Brute Force Detected" titled incidents from the operator's IP this 24h window.
+
+### Fixed
+- `backend/app/rules/sigma/authentication/brute_force_ssh.yaml`: title corrected to "Auth Brute Force (HTTP 401) Detected"; threshold raised 5 → 20 in 300s; `cooldown_seconds: 3600` added; `path_excludes` filter listing operator paths (`/api/v1/auth/`, `/api/v1/dashboard/`, `/dashboard/`, `/login`, `/ws`, `/api/v1/health`, `/api/v1/me`, `/api/v1/version`); MITRE technique corrected to `T1110` (was `T1110.001` sshd-specific despite matching HTTP).
+- `correlation_engine.py` no longer subscribes to legacy `log_line` — only to `log_event` (the typed-event topic). `_on_log_line` remains as a manually callable function for tests. This kills the exact 1:1 double-counting between `correlation_engine` and `fast_triage` sources.
+- Synced 4 stale YAML rules to Mac Pro: `brute_force_ssh.yaml`, `sigma_auth_account_lockout.yaml`, `sigma_auth_default_credentials.yaml`, `sigma_auth_impossible_travel.yaml`. The deploy pipeline never picked up local YAML edits.
+
+### Operational
+- `/health` reports `version=1.6.3.8`.
+- Operator IP `179.52.12.148` and CIDR `179.52.0.0/15` confirmed clear across Mac, Pi, and `threat_intel.firewall` — the whitelist is still preventing the BLOCK; this release stops the FP INCIDENT being created in the first place.
+- Expected FP volume drop on next 24h sample: from ~452/day to single digits (the inline `brute_force_401` tracker is the only remaining surface and it already has `threshold=15` + path skip from v1.6.3.5).
+- Three v1.6.3.7-introduced deferred-work items remain (low priority): make `event_normalizer` emit protocol-discriminated event_types, merge `BUILT_IN_RULES` into `self._rules` (instead of fallback-only), add the new rules to `SIGMA_TO_THREAT_TYPE` in `ai_engine.py`. None are required for FP suppression — they unlock additional precision but the high-priority FP loop is closed in this release.
+
+---
+
 ## [1.6.3.7] - 2026-06-29 (architectural)
 
 Detection-logic rebuild driven by a 19-agent forensic audit (10 Haiku discover
