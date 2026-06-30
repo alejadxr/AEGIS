@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.10] - 2026-06-30 (perf)
+
+Targeted attack on the two endpoints flagged in v1.6.3.9 as >1.5s. No new
+features — just stop scanning growing tables on every dashboard load and
+stop paying the cold PM2-jlist tax on every restart.
+
+### Measured (Mac Pro production, X-API-Key, 3 consecutive curls)
+
+| Endpoint | v1.6.3.9 | cold | warm | Speedup (warm) |
+|---|---:|---:|---:|---:|
+| `/dashboard/overview` | 1.748 s | 1.253 s | **175 ms** | **10×** |
+| `/dashboard/monitored-apps` | 3.697 s | 1.044 s | **131 ms** | **28×** |
+
+### Added
+- **30-second in-process result cache** on `/dashboard/overview` (per client) — KPI tiles redraw 10× per minute on an active dashboard; the TTL collapses 10 DB round-trips into 1.
+- **`warmup_pm2_cache()` startup task** in `main.py` lifespan — fires `pm2 jlist` off the event loop after `scheduled_scanner.start()` so the first `/monitored-apps` request after restart doesn't pay the 1-5 s cold-cache penalty.
+- **PM2 cache TTL extended** 15 s → 60 s — PM2 process status changes rarely; 60 s removes ~75 % of subprocess calls.
+
+### Changed
+- `/dashboard/overview` COUNT queries on `HoneypotInteraction` and `Action` now bounded to `>= NOW() - 30 days`. Unbounded scan was the slowest leg of the `asyncio.gather()`.
+- `/dashboard/monitored-apps` per-app `GROUP BY` query bounded to `Incident.detected_at >= NOW() - 90 days`.
+
+### Operational
+- `/health` reports `version=1.6.3.10`.
+- Zero errors in `pm2 logs cayde6-api --err` after restart.
+- Cold-call regression remaining (`/dashboard/overview` 1.25 s cold) is bounded by DB pool warmup — next perf pass if needed (DB pool pre-warm).
+
+---
+
 ## [1.6.3.9] - 2026-06-30 (architectural completion)
 
 Closes every deferred item from the v1.6.3.7 / v1.6.3.8 sequence. The
