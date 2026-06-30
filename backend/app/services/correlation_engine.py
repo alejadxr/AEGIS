@@ -3321,8 +3321,8 @@ class CorrelationEngine:
                 if _is_safe_ip(source_ip):
                     logger.debug(f"correlation_engine: skipping incident for safe IP {source_ip} (rule={rule.get('id')})")
                     return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(f"correlation_engine safelist import failed: {exc}")
         try:
             from app.database import async_session
             from app.services.ai_engine import ai_engine

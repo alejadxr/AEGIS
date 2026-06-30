@@ -677,8 +677,15 @@ class LogWatcher:
                             description=f"Port scan detected: >10 unique ports probed by {ip} in 60s",
                         )
 
-        # Skip rate/brute-force tracking for normal dashboard API paths
-        _SAFE_PATHS = ("/dashboard/", "/api/v1/health", "/api/v1/dashboard/", "/ws", "/api/v1/nodes/heartbeat")
+        # Skip rate/brute-force tracking for normal dashboard API paths.
+        # v1.6.3.5: extended to cover operator auth refresh, profile, version, and Next.js assets
+        # so legitimate browser polling does not advance the brute_force_401 counter.
+        _SAFE_PATHS = (
+            "/dashboard/", "/api/v1/health", "/api/v1/dashboard/", "/ws",
+            "/api/v1/nodes/heartbeat", "/api/v1/auth/logout",
+            "/api/v1/auth/refresh", "/api/v1/me", "/api/v1/version",
+            "/api/v1/threats/feed", "/favicon.ico", "/_next/",
+        )
         is_dashboard_request = any(p in line for p in _SAFE_PATHS)
 
         # Brute force detection: track 401 responses per IP (not 403 tier-gating)
@@ -689,7 +696,10 @@ class LogWatcher:
             while q and q[0] < cutoff:
                 q.popleft()
             q.append(now)
-            if len(q) >= 5:
+            # v1.6.3.5: threshold raised 5 -> 15 (NIST SP 800-63B baseline tolerates
+            # 5+ legitimate retries from password managers / typos before alerting)
+            if len(q) >= 15:
+                q.clear()  # reset so a sustained campaign re-alerts each window
                 alert_key = f"brute_force:{ip}"
                 if alert_key not in self._recent_alerts:
                     self._recent_alerts.append(alert_key)
@@ -699,7 +709,7 @@ class LogWatcher:
                         threat_type="brute_force",
                         severity="high",
                         source_ip=ip,
-                        description=f"Brute force detected: {len(q)} failed auth attempts from {ip} in 60s",
+                        description=f"Brute force detected: {len(q)}+ failed auth attempts from {ip} in 60s",
                     )
 
         if ip and not is_dashboard_request and self._rate_tracker.record(ip):
@@ -712,7 +722,7 @@ class LogWatcher:
                     threat_type="brute_force",
                     severity="high",
                     source_ip=ip,
-                    description=f"High request rate detected from {ip} (>100 req/min)",
+                    description=f"High request rate detected from {ip} (>{self._rate_tracker.threshold} req/min)",
                 )
 
         for pattern in PATTERNS:

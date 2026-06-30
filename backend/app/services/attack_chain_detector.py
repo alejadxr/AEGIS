@@ -498,6 +498,16 @@ async def evaluate_event(
     if source_ip and _is_internal_ip(source_ip):
         logger.debug(f"Skipping chain incident from internal IP {source_ip}")
         return matches
+    # v1.6.3.5: also honor AEGIS_SAFE_IPS so EDR chain rules don't fire on
+    # CDN / partner crawler / monitoring infrastructure.
+    if source_ip:
+        try:
+            from app.core.attack_detector import _is_safe_ip
+            if _is_safe_ip(source_ip):
+                logger.debug(f"Skipping chain incident from safe IP {source_ip} (AEGIS_SAFE_IPS)")
+                return matches
+        except Exception as exc:
+            logger.warning(f"attack_chain_detector safelist import failed: {exc}")
 
     for m in matches:
         incident = Incident(
