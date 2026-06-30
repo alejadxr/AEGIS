@@ -1,20 +1,31 @@
 id: brute_force_ssh
-name: SSH Brute Force Detected
+name: Auth Brute Force (HTTP 401) Detected
 kind: sigma
 severity: high
 enabled: true
 tactics:
 - CredentialAccess
 techniques:
-- T1110.001
+- T1110
 data_sources:
 - auth_log
 condition:
   event_type: auth_failure
-  count_threshold: 5
+  count_threshold: 20
   time_window_seconds: 300
   group_by: source_ip
+  cooldown_seconds: 3600
+  filter:
+    path_excludes:
+    - /api/v1/auth/
+    - /api/v1/dashboard/
+    - /dashboard/
+    - /login
+    - /ws
+    - /api/v1/health
+    - /api/v1/me
+    - /api/v1/version
 entityMappings:
 - type: IP
   field: source_ip
-description: Multiple failed SSH login attempts from the same source IP.
+description: v1.6.3.8 — listens on auth_failure (HTTP 401 from log_watcher). Threshold raised 5 to 20 in 300s with 1h cooldown to stop the per-event incident inflation. Title corrected — this never actually matched sshd, it matched HTTP 401.
