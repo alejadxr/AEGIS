@@ -1,0 +1,22 @@
+id: sigma_privesc_capabilities
+name: Linux Capability Abuse
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1548
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - cap_setuid
+    - cap_sys_admin
+    - setcap
+entityMappings:
+- type: IP
+  field: source_ip
+description: Binary with dangerous capabilities executed for privilege escalation.

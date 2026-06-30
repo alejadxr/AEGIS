@@ -1,0 +1,19 @@
+id: sigma_exfil_usb
+name: USB Storage Device Mounted
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1052.001
+data_sources:
+- endpoint
+condition:
+  event_type: device_connect
+  filter:
+    device_type: usb_storage
+entityMappings:
+- type: IP
+  field: source_ip
+description: USB mass storage device connected and mounted.

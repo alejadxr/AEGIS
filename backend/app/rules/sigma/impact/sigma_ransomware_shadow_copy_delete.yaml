@@ -1,0 +1,27 @@
+id: ransomware_shadow_copy_delete
+name: APFS / Btrfs snapshot deletion
+kind: sigma
+description: |
+  Detects deletion of APFS Time Machine snapshots (tmutil delete) or
+  Btrfs/ZFS subvolume/filesystem destruction on Linux. Ransomware targeting
+  macOS and Linux removes these checkpoints before encrypting files.
+severity: critical
+tactics:
+  - Impact
+techniques:
+  - T1490
+data_sources:
+  - process_creation
+  - edr
+condition:
+  event_type: process_create
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: hostname
+  filter:
+    command_line_regex: '(?i)(tmutil\s+delete|btrfs\s+subvolume\s+delete|zfs\s+destroy.*-r)'
+entityMappings:
+  - type: Host
+    field: hostname
+references:
+  - https://attack.mitre.org/techniques/T1490/

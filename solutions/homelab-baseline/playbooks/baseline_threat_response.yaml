@@ -1,0 +1,26 @@
+id: baseline_threat_response
+name: Baseline Threat Response
+description: >
+  Lightweight response for homelab environments. Blocks identified attackers,
+  logs events for review, and sends alerts. Designed to be low-noise with
+  minimal false positives.
+triggers:
+  - brute_force_ssh
+  - port_scan
+  - sigma_recon_vuln_scanner
+  - sigma_web_sqli_blind
+  - credential_stuffing
+steps:
+  - action: block_ip
+    description: Block the source IP at the firewall
+    params:
+      duration_seconds: 86400
+      reason: "Homelab baseline threat detected"
+  - action: alert
+    description: Log event for manual review
+    params:
+      severity: medium
+      notify_channel: homelab_alerts
+      include_whois: true
+severity: medium
+auto_execute: true

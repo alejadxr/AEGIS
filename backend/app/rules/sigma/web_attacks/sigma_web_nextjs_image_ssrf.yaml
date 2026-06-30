@@ -1,0 +1,39 @@
+id: sigma_web_nextjs_image_ssrf
+name: Next.js Image Optimization SSRF to Internal Endpoints
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Discovery
+- Collection
+techniques:
+- T1190
+- T1046
+- T1552.005
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /_next/image?url=http://localhost
+    - /_next/image?url=http://127.0.0.1
+    - /_next/image?url=http://169.254.169.254
+    - /_next/image?url=http://10.
+    - /_next/image?url=http://192.168.
+    - /_next/image?url=http://172.16.
+    - /_next/image?url=metadata.google
+    - /cdn-cgi/image/https://localhost
+    - "/cdn-cgi/image/\\."
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  Next.js Image Optimization SSRF probing internal/cloud-metadata
+  endpoints via url= parameter. Includes Cloudflare OpenNext variant
+  (CVE-2026-3125) using backslash bypass. Targets: 169.254.169.254
+  (AWS/GCP IMDS), localhost, RFC1918 ranges.

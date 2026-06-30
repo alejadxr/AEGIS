@@ -1,0 +1,21 @@
+id: sigma_exfil_encrypted_channel
+name: Encrypted Channel Data Exfiltration
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Exfiltration
+techniques:
+- T1041
+data_sources:
+- network
+condition:
+  event_type: connection
+  filter:
+    protocol: tls
+    direction: outbound
+    bytes_gt: 10485760
+entityMappings:
+- type: IP
+  field: source_ip
+description: High-volume encrypted traffic to unusual destination.

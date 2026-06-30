@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AEGIS Node</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Azeret+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090B;
+      --card: #18181B;
+      --border: rgba(255,255,255,0.06);
+      --fg: #FAFAFA;
+      --fg2: #A1A1AA;
+      --fg3: #52525B;
+      --cyan: #22D3EE;
+      --cyan-dim: rgba(34,211,238,0.06);
+      --cyan-border: rgba(34,211,238,0.18);
+      --green: #10B981;
+      --green-dim: rgba(16,185,129,0.06);
+      --green-border: rgba(16,185,129,0.2);
+      --amber: #F59E0B;
+      --red: #EF4444;
+      --red-dim: rgba(239,68,68,0.06);
+      --red-border: rgba(239,68,68,0.2);
+      --muted: #1C1C1F;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:var(--fg); height:100vh; overflow-y:auto; overflow-x:hidden; user-select:none; -webkit-font-smoothing:antialiased; }
+
+    .app { display:flex; flex-direction:column; min-height:100vh; padding:20px; gap:16px; }
+
+    /* ── Header ── */
+    .header { display:flex; align-items:center; gap:12px; }
+    .logo { width:32px; height:32px; border-radius:10px; background:linear-gradient(135deg,var(--cyan),#0891B2); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:11px; color:var(--bg); flex-shrink:0; }
+    .header h1 { font-size:17px; font-weight:600; letter-spacing:-0.02em; }
+    .header .ver { font-size:10px; color:var(--fg3); margin-left:auto; font-family:'Azeret Mono',monospace; }
+
+    /* ── Card ── */
+    .card { background:var(--card); border:1px solid var(--border); border-radius:16px; transition:border-color 0.2s; }
+
+    /* ── Enroll ── */
+    .enroll-card { padding:28px 20px; text-align:center; }
+    .enroll-label { font-size:10px; color:var(--fg3); text-transform:uppercase; letter-spacing:2px; font-weight:500; margin-bottom:14px; }
+    .enroll-code { font-family:'Azeret Mono',monospace; font-size:28px; font-weight:600; color:var(--cyan); letter-spacing:5px; padding:12px 24px; background:var(--cyan-dim); border:1.5px dashed var(--cyan-border); border-radius:12px; cursor:pointer; transition:all 0.2s; display:inline-block; }
+    .enroll-code:hover { background:rgba(34,211,238,0.12); border-color:rgba(34,211,238,0.4); transform:scale(1.02); }
+    .enroll-code.copied { color:var(--green); border-color:var(--green-border); }
+    .enroll-hint { font-size:10px; color:var(--fg3); margin-top:8px; }
+    .enroll-timer { font-family:'Azeret Mono',monospace; font-size:11px; color:var(--amber); margin-top:10px; }
+    .enroll-timer.expired { color:var(--red); }
+
+    /* ── Status ── */
+    .status-bar { display:flex; align-items:center; gap:10px; padding:10px 16px; }
+    .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .dot-pulse { background:var(--amber); animation:pulse 2s ease-in-out infinite; }
+    .dot-live { background:var(--green); box-shadow:0 0 8px rgba(16,185,129,0.5); }
+    .status-text { font-size:13px; color:var(--fg2); }
+
+    /* ── Badge ── */
+    .badge { font-size:10px; font-weight:500; padding:3px 10px; border-radius:99px; margin-left:auto; }
+    .badge-live { background:var(--green-dim); color:var(--green); border:1px solid var(--green-border); }
+    .badge-warn { background:rgba(245,158,11,0.06); color:var(--amber); border:1px solid rgba(245,158,11,0.2); }
+
+    /* ── Stats ── */
+    .stats { display:grid; gap:10px; }
+    .stats-3 { grid-template-columns:1fr 1fr 1fr; }
+    .stats-2 { grid-template-columns:1fr 1fr; }
+    .stat { padding:14px 16px; }
+    .stat-label { font-size:10px; color:var(--fg3); text-transform:uppercase; letter-spacing:0.5px; font-weight:500; }
+    .stat-value { font-family:'Azeret Mono',monospace; font-size:22px; font-weight:600; margin-top:4px; }
+    .stat-sub { font-size:10px; color:var(--fg3); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .v-cyan { color:var(--cyan); }
+    .v-green { color:var(--green); }
+    .v-amber { color:var(--amber); }
+    .v-red { color:var(--red); }
+
+    /* ── Info Row ── */
+    .info-row { display:flex; gap:10px; }
+    .info-item { flex:1; padding:12px 14px; }
+    .info-label { font-size:10px; color:var(--fg3); text-transform:uppercase; letter-spacing:0.5px; }
+    .info-value { font-family:'Azeret Mono',monospace; font-size:11px; color:var(--fg2); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    /* ── Connected Header ── */
+    .conn-header { display:flex; align-items:center; gap:12px; padding:14px 16px; border-color:var(--green-border); background:var(--green-dim); }
+    .conn-info { flex:1; min-width:0; }
+    .conn-sub { font-size:10px; color:var(--fg3); text-transform:uppercase; letter-spacing:0.5px; }
+    .conn-org { font-size:15px; font-weight:600; color:var(--green); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+
+    /* ── Switch ── */
+    .switch-row { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; }
+    .switch-label { font-size:13px; color:var(--fg2); }
+    .switch { width:40px; height:22px; border-radius:11px; background:var(--muted); cursor:pointer; position:relative; transition:background 0.2s; border:1px solid var(--border); }
+    .switch.on { background:#0891B2; border-color:transparent; }
+    .switch::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:8px; background:var(--fg); transition:transform 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.3); }
+    .switch.on::after { transform:translateX(18px); }
+
+    /* ── Scan Result ── */
+    .scan-result { display:none; align-items:center; gap:10px; padding:10px 16px; font-size:12px; color:var(--cyan); }
+    .scan-result.show { display:flex; }
+    .spinner { width:14px; height:14px; border:2px solid var(--cyan-border); border-top-color:var(--cyan); border-radius:50%; animation:spin 0.7s linear infinite; flex-shrink:0; }
+    .scan-result .check { color:var(--green); font-size:16px; flex-shrink:0; }
+
+    /* ── Separator ── */
+    .sep { height:1px; background:var(--border); margin:2px 0; }
+
+    /* ── Buttons ── */
+    .btns { display:flex; gap:8px; }
+    .btn { flex:1; height:38px; border-radius:10px; border:1px solid var(--border); background:var(--card); color:var(--fg2); font-family:'Outfit',sans-serif; font-size:12px; font-weight:500; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center; gap:6px; }
+    .btn:hover { border-color:rgba(255,255,255,0.12); color:var(--fg); background:rgba(255,255,255,0.04); }
+    .btn:active { transform:scale(0.97); }
+    .btn-primary { background:linear-gradient(135deg,var(--cyan),#0891B2); color:var(--bg); border:none; font-weight:600; }
+    .btn-primary:hover { opacity:0.9; }
+    .btn-green { border-color:var(--green-border); color:var(--green); }
+    .btn-green:hover { background:var(--green-dim); }
+    .btn-red { border-color:var(--red-border); color:var(--red); }
+    .btn-red:hover { background:var(--red-dim); }
+
+    /* ── Server Input ── */
+    .server-box { display:none; gap:8px; }
+    .server-box.show { display:flex; }
+    .server-input { flex:1; height:36px; border-radius:10px; border:1px solid var(--border); background:var(--muted); color:var(--fg); font-family:'Azeret Mono',monospace; font-size:11px; padding:0 12px; outline:none; }
+    .server-input:focus { border-color:var(--cyan); }
+    .server-save { height:36px; padding:0 16px; border-radius:10px; border:1px solid var(--cyan-border); background:var(--cyan-dim); color:var(--cyan); font-family:'Outfit',sans-serif; font-size:12px; font-weight:500; cursor:pointer; }
+
+    /* ── Error ── */
+    .error-banner { display:none; border:1px solid var(--red-border); background:var(--red-dim); border-radius:12px; padding:10px 14px; font-size:12px; color:var(--red); }
+    .error-banner.show { display:block; }
+
+    .state { display:flex; flex-direction:column; flex:1; width:100%; }
+    .state > * { margin-bottom:12px; }
+    .state > *:last-child { margin-bottom:0; }
+    .state.hidden { display:none !important; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+    .fade-in { animation:fadeIn 0.3s ease; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="logo">C6</div>
+      <h1>AEGIS Node</h1>
+      <span class="ver">v0.1.0</span>
+    </div>
+
+    <div class="error-banner" id="errorBanner"></div>
+
+    <!-- ===== ENROLLMENT ===== -->
+    <div id="stateEnroll" class="state hidden">
+      <div class="card enroll-card">
+        <div class="enroll-label">Enrollment Code</div>
+        <div class="enroll-code" id="enrollCode">------</div>
+        <div class="enroll-hint">Click to copy — paste in your dashboard</div>
+        <div class="enroll-timer" id="enrollExpires">Expires in 15:00</div>
+      </div>
+
+      <div class="card status-bar">
+        <div class="dot dot-pulse"></div>
+        <span class="status-text">Waiting for manager...</span>
+      </div>
+
+      <div class="server-box" id="serverInput">
+        <input type="text" class="server-input" id="serverUrl" placeholder="http://localhost:8000/api/v1" />
+        <button class="server-save" id="btnSaveUrl">Save</button>
+      </div>
+
+      <div class="stats stats-3">
+        <div class="card stat"><div class="stat-label">CPU</div><div class="stat-value v-cyan" id="enrollCpu">--%</div></div>
+        <div class="card stat"><div class="stat-label">RAM</div><div class="stat-value v-green" id="enrollRam">--%</div></div>
+        <div class="card stat"><div class="stat-label">Procs</div><div class="stat-value v-amber" id="enrollProcs">--</div></div>
+      </div>
+
+      <div style="flex:1"></div>
+      <div class="btns">
+        <button class="btn" id="btnServer">Server</button>
+        <button class="btn" id="btnNewCode">New Code</button>
+      </div>
+    </div>
+
+    <!-- ===== CONNECTED ===== -->
+    <div id="stateConnected" class="state hidden">
+      <!-- Connection status -->
+      <div class="card conn-header">
+        <div class="dot dot-live"></div>
+        <div class="conn-info">
+          <div class="conn-sub">Connected to</div>
+          <div class="conn-org" id="connOrg">Organization</div>
+        </div>
+        <span class="badge badge-live" id="heartbeatBadge">Live</span>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats stats-2">
+        <div class="card stat"><div class="stat-label">CPU</div><div class="stat-value v-cyan" id="cpuUsage">--%</div><div class="stat-sub" id="cpuBrand">Loading...</div></div>
+        <div class="card stat"><div class="stat-label">RAM</div><div class="stat-value v-green" id="ramUsage">--%</div><div class="stat-sub" id="ramDetail">-- / -- GB</div></div>
+        <div class="card stat"><div class="stat-label">Processes</div><div class="stat-value v-amber" id="procCount">--</div><div class="stat-sub" id="procSuspicious">0 suspicious</div></div>
+        <div class="card stat"><div class="stat-label">Events</div><div class="stat-value v-cyan" id="eventsCount">0</div><div class="stat-sub" id="hostName">--</div></div>
+      </div>
+
+      <!-- Node info + autostart -->
+      <div class="info-row">
+        <div class="card info-item"><div class="info-label">Node ID</div><div class="info-value" id="connNodeId">--</div></div>
+        <div class="card info-item"><div class="info-label">Uptime</div><div class="info-value" id="connUptime">--</div></div>
+      </div>
+      <div class="card switch-row">
+        <span class="switch-label">Start on boot</span>
+        <button class="switch" id="btnAutostart"></button>
+      </div>
+
+      <!-- Scan result -->
+      <div class="scan-result" id="scanStatus">
+        <div class="spinner" id="scanSpinner"></div>
+        <span id="scanText">Scanning assets...</span>
+      </div>
+      <div id="scanResults" style="display:none; padding:8px 16px;"></div>
+
+      <div style="flex:1"></div>
+
+      <!-- Buttons -->
+      <div class="btns">
+        <button class="btn btn-green" id="btnScan">Scan Now</button>
+        <button class="btn btn-primary" id="btnMinimize">Minimize</button>
+        <button class="btn btn-red" id="btnDisconnect">Disconnect</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let invoke, listen, config=null, countdownInterval=null, autostartEnabled=false, startTime=Date.now(), bootstrapped=false;
+
+    function showError(m) { const b=document.getElementById('errorBanner'); b.textContent=m; b.classList.add('show'); }
+    function hideError() { document.getElementById('errorBanner').classList.remove('show'); }
+
+    function waitForTauri(ms) {
+      return new Promise((ok,no) => {
+        if (window.__TAURI__?.core) return ok();
+        const t0=Date.now(), iv=setInterval(() => {
+          if (window.__TAURI__?.core) { clearInterval(iv); ok(); }
+          else if (Date.now()-t0>ms) { clearInterval(iv); no(new Error('timeout')); }
+        }, 50);
+      });
+    }
+
+    async function bootstrap() {
+      if (bootstrapped) return;
+      try {
+        await waitForTauri(8000);
+        invoke=window.__TAURI__.core.invoke;
+        listen=window.__TAURI__.event.listen;
+        bootstrapped=true;
+        hideError();
+        await init();
+      } catch(e) { showError('IPC timeout. Restart app.'); }
+    }
+
+    async function init() {
+      try { config=await invoke('get_node_config'); } catch(e) { showError('Config: '+e); return; }
+      switchState(); startCountdown();
+      try { autostartEnabled=await invoke('is_autostart_enabled'); updateSwitch(); } catch(_) {}
+      refreshStats(); setInterval(refreshStats,5000); setInterval(updateUptime,1000);
+      try {
+        await listen('node-enrolled', e => { config=e.payload; switchState(); });
+        await listen('node-disconnected', e => { config=e.payload; switchState(); startCountdown(); });
+        await listen('heartbeat-status', e => {
+          const b=document.getElementById('heartbeatBadge'),d=e.payload;
+          if(d==='connected'){b.className='badge badge-live';b.textContent='Live';hideError();}
+          else if(d?.status==='error'){b.className='badge badge-warn';b.textContent='Retry '+d.next_retry_secs+'s';}
+        });
+      } catch(_) {}
+    }
+
+    function switchState() {
+      const en=document.getElementById('stateEnroll'),co=document.getElementById('stateConnected');
+      if(config?.status==='connected') {
+        en.classList.add('hidden');
+        co.classList.remove('hidden'); co.classList.add('fade-in');
+        document.getElementById('connOrg').textContent=config.client_name||'Unknown';
+        document.getElementById('connNodeId').textContent=config.node_id?(config.node_id.substring(0,16)+'...'):'--';
+        startTime=Date.now();
+        document.getElementById('heartbeatBadge').className='badge badge-live';
+        document.getElementById('heartbeatBadge').textContent='Live';
+      } else {
+        en.classList.remove('hidden');
+        co.classList.add('hidden');
+        if(config){document.getElementById('enrollCode').textContent=config.enroll_code||'------';document.getElementById('serverUrl').value=config.server_url||'';}
+      }
+    }
+
+    async function refreshStats() {
+      if(!invoke)return;
+      try {
+        const i=await invoke('get_system_info'),p=await invoke('get_process_stats');
+        const cpu=i.cpu_usage_percent,ram=i.ram_usage_percent;
+        document.getElementById('cpuUsage').textContent=cpu.toFixed(1)+'%';
+        document.getElementById('cpuUsage').className='stat-value '+(cpu>80?'v-red':cpu>50?'v-amber':'v-cyan');
+        document.getElementById('cpuBrand').textContent=(i.cpu_brand||'').substring(0,30);
+        document.getElementById('ramUsage').textContent=ram.toFixed(1)+'%';
+        document.getElementById('ramUsage').className='stat-value '+(ram>80?'v-red':ram>60?'v-amber':'v-green');
+        document.getElementById('ramDetail').textContent=(i.ram_used_mb/1024).toFixed(1)+' / '+(i.ram_total_mb/1024).toFixed(1)+' GB';
+        document.getElementById('procCount').textContent=p.total;
+        document.getElementById('procSuspicious').textContent=p.suspicious+' suspicious';
+        document.getElementById('eventsCount').textContent=p.events_sent;
+        document.getElementById('hostName').textContent=i.hostname;
+        document.getElementById('enrollCpu').textContent=cpu.toFixed(0)+'%';
+        document.getElementById('enrollRam').textContent=ram.toFixed(0)+'%';
+        document.getElementById('enrollProcs').textContent=p.total;
+      } catch(_) {}
+    }
+
+    function startCountdown() {
+      if(countdownInterval)clearInterval(countdownInterval);
+      if(!config?.enroll_expires_at)return;
+      const exp=new Date(config.enroll_expires_at),el=document.getElementById('enrollExpires');
+      countdownInterval=setInterval(()=>{
+        if(config?.status==='connected'){clearInterval(countdownInterval);return;}
+        const d=Math.max(0,Math.floor((exp-new Date())/1000)),m=Math.floor(d/60),s=d%60;
+        if(d>0){el.textContent='Expires in '+m+':'+s.toString().padStart(2,'0');el.className='enroll-timer';}
+        else{el.textContent='Expired — click New Code';el.className='enroll-timer expired';}
+      },1000);
+    }
+
+    function updateUptime() {
+      if(config?.status!=='connected')return;
+      const d=Math.floor((Date.now()-startTime)/1000),h=Math.floor(d/3600),m=Math.floor((d%3600)/60),s=d%60;
+      document.getElementById('connUptime').textContent=(h>0?h+'h ':'')+ m+'m '+s+'s';
+    }
+
+    function updateSwitch() { const t=document.getElementById('btnAutostart'); autostartEnabled?t.classList.add('on'):t.classList.remove('on'); }
+
+    // ── Button handlers ──
+    document.addEventListener('DOMContentLoaded', function() {
+      // Enroll code copy
+      document.getElementById('enrollCode').addEventListener('click', async function() {
+        if(!config)return;
+        const el=this,orig=config.enroll_code;
+        try{await navigator.clipboard.writeText(el.textContent);}catch(_){}
+        el.textContent='Copied!';el.classList.add('copied');
+        setTimeout(()=>{el.textContent=orig||'------';el.classList.remove('copied');},1500);
+      });
+
+      // Server toggle
+      document.getElementById('btnServer').addEventListener('click', function() {
+        document.getElementById('serverInput').classList.toggle('show');
+      });
+
+      // Save URL
+      document.getElementById('btnSaveUrl').addEventListener('click', async function() {
+        if(!invoke)return;
+        const url=document.getElementById('serverUrl').value.trim();
+        if(!url)return;
+        try{config=await invoke('set_server_url',{url});document.getElementById('serverInput').classList.remove('show');}catch(e){showError(e);}
+      });
+
+      // New Code
+      document.getElementById('btnNewCode').addEventListener('click', async function() {
+        if(!invoke)return;
+        try{config=await invoke('regenerate_code');document.getElementById('enrollCode').textContent=config.enroll_code;startCountdown();}catch(e){showError(e);}
+      });
+
+      // Scan
+      document.getElementById('btnScan').addEventListener('click', async function() {
+        if(!invoke){showError('Not connected');return;}
+        const bar=document.getElementById('scanStatus'),txt=document.getElementById('scanText'),sp=document.getElementById('scanSpinner'),resultsDiv=document.getElementById('scanResults');
+        bar.classList.add('show'); sp.style.display='block'; txt.textContent='Scanning local assets...'; txt.style.color='var(--cyan)';
+        resultsDiv.style.display='none'; resultsDiv.innerHTML='';
+        try {
+          const r=await invoke('auto_scan_assets');
+          sp.style.display='none';
+          const svcs=r.services||[];
+          txt.innerHTML='<span style="color:var(--green)">&#10003;</span> Found '+svcs.length+' services — reported to server';
+          txt.style.color='var(--green)';
+          if(svcs.length>0){
+            let html='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+            svcs.forEach(function(s){
+              html+='<span style="font-family:Azeret Mono,monospace;font-size:10px;padding:3px 8px;border-radius:6px;background:var(--cyan-dim);color:var(--cyan);border:1px solid var(--cyan-border);">'
+                +s.port+': '+s.service+(s.latency_ms?' ('+s.latency_ms+'ms)':'')+'</span>';
+            });
+            html+='</div>';
+            resultsDiv.innerHTML=html;
+            resultsDiv.style.display='block';
+          }
+          setTimeout(function(){bar.classList.remove('show');resultsDiv.style.display='none';},8000);
+        } catch(e) {
+          sp.style.display='none';
+          txt.textContent='Scan failed: '+e; txt.style.color='var(--red)';
+          setTimeout(function(){bar.classList.remove('show');},4000);
+        }
+      });
+
+      // Minimize
+      document.getElementById('btnMinimize').addEventListener('click', async function() {
+        if(!invoke){showError('Not connected');return;}
+        try{await invoke('hide_to_tray');}catch(e){showError('Hide: '+e);}
+      });
+
+      // Disconnect
+      document.getElementById('btnDisconnect').addEventListener('click', async function() {
+        if(!invoke){showError('Not connected');return;}
+        if(!confirm('Disconnect from server?\nYou will need to re-enroll.'))return;
+        try{config=await invoke('disconnect_node');startTime=Date.now();switchState();startCountdown();}catch(e){showError(e);}
+      });
+
+      // Autostart toggle
+      document.getElementById('btnAutostart').addEventListener('click', async function() {
+        if(!invoke)return;
+        try{autostartEnabled?await invoke('disable_autostart'):await invoke('enable_autostart');autostartEnabled=!autostartEnabled;updateSwitch();}catch(_){}
+      });
+
+      // Bootstrap
+      bootstrap();
+    });
+  </script>
+</body>
+</html>

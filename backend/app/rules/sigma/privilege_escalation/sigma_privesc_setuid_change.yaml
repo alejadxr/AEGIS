@@ -1,0 +1,23 @@
+id: sigma_privesc_setuid_change
+name: SUID/SGID Bit Modified
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- PrivilegeEscalation
+techniques:
+- T1548.001
+data_sources:
+- edr
+condition:
+  event_type: process_creation
+  filter:
+    path_contains:
+    - chmod
+    - +s
+    - '4755'
+    - '2755'
+entityMappings:
+- type: IP
+  field: source_ip
+description: File permissions changed to add SUID or SGID bit.
