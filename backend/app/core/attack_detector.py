@@ -283,6 +283,22 @@ _BENIGN_UAS_DEFAULTS = frozenset({
     "bitsightbot",
     "archive.org_bot",
     "shadowserver",
+    # v1.6.3.5 — modern Threads + Meta + Apple + LLM crawler variants
+    "threadsbot",
+    "meta-externalagent",
+    "meta-externalfetcher",
+    "facebookbot",
+    "slack-imgproxy",
+    "applebot-extended",
+    "googleother",
+    "google-extended",
+    "gptbot",
+    "claudebot",
+    "perplexitybot",
+    "anthropic-ai",
+    "imagesiftbot",
+    "bingpreview",
+    "whatsapp",
 })
 
 

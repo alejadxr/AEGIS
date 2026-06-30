@@ -197,6 +197,15 @@ async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
         # Skip events from safe/internal IPs (own scans, localhost)
         if ip and ip in ("127.0.0.1", "::1", "localhost", ""):
             continue
+        # v1.6.3.5: also honor AEGIS_SAFE_IPS so crawler/CDN events from the Pi
+        # firewall do not become AEGIS incidents.
+        if ip:
+            try:
+                from app.core.attack_detector import _is_safe_ip
+                if _is_safe_ip(ip):
+                    continue
+            except Exception as exc:
+                logger.warning(f"firewall_sync safelist import failed: {exc}")
 
         description = event.get("description") or event.get("reason") or f"Firewall detected: {event_type}"
         severity = _threat_level_to_severity(event.get("threat_level") or event.get("severity") or "medium")
