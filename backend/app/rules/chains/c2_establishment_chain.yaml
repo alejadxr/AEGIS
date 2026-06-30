@@ -1,0 +1,34 @@
+id: c2_establishment_chain
+name: C2 establishment chain detected
+kind: chain
+severity: critical
+enabled: true
+tactics:
+- CredentialAccess
+- CommandAndControl
+- Discovery
+techniques:
+- T1046
+- T1110
+- T1071
+data_sources:
+- correlation
+description: 'Same IP: port scan -> brute force -> C2 beacon pattern'
+condition:
+  event_type: __chain__
+sequence:
+- port_scan
+- brute_force_ssh
+- c2_beacon
+max_window_seconds: 7200
+group_by: source_ip
+chain:
+- sigma_rule: port_scan
+  within: 7200
+- sigma_rule: brute_force_ssh
+  within: 3600
+- sigma_rule: c2_beacon
+  within: 1800
+entityMappings:
+- type: IP
+  field: source_ip

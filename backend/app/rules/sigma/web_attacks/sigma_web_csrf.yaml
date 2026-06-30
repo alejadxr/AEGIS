@@ -1,0 +1,24 @@
+id: sigma_web_csrf
+name: CSRF Attack Detected
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1189
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 5
+  time_window_seconds: 120
+  group_by: source_ip
+  filter:
+    csrf_valid: false
+    method: POST
+entityMappings:
+- type: IP
+  field: source_ip
+description: Cross-site request forgery detected via missing/invalid CSRF token.
