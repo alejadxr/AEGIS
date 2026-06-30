@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.7] - 2026-06-29 (architectural)
+
+Detection-logic rebuild driven by a 19-agent forensic audit (10 Haiku discover
++ 6 Sonnet verify + 3 Opus high-effort synthesis, 1.4M output tokens, 16 min
+wall-clock). Replaces the duplicate regex tables and the hardcoded one-rule-
+per-event-type model with a single normalized event pipeline + context-aware,
+protocol-discriminating rules. The whitelist remains in place as a safety
+net, but detection no longer DEPENDS on it for correctness — it now passes
+benign traffic on its own merits.
+
+### Root causes addressed
+
+1. **Duplicate regex tables** — `log_watcher.PATTERNS` (~30 regexes) and `correlation_engine._LOG_PATTERNS` were defined independently and drifted: a pattern present only in one would create incidents but never advance the correlation window, or vice-versa.
+2. **Event-type conflation** — `event_type=auth_failure` carried events from 4 distinct surfaces (HTTP API 401, dashboard 401, honeypot SSH on port 2222, real sshd) without distinction. Any rule listening to `auth_failure` fired on operator dashboard logins, then the title said "SSH Brute Force Detected" regardless.
+3. **Missing context** — events carried only `source_ip` + `path`. No `target_port`, no `protocol`, no `request_method`, no `response_status`, no `user_agent`. Rules had no way to discriminate `sqlmap on port 8000` from `git clone on port 22`.
+4. **Arbitrary severity** — severity was hardcoded per rule with no relationship to attacker tooling, repetition count, or known-attacker history. A single HTTP 401 typo got the same HIGH severity as a 100-event sqlmap burst.
+5. **No post-detection dedup** — one attack burst that matched 5 rules created 5 separate incidents. The user saw "SSH Brute Force Detected" + "Auth Failure detected" + "High Request Rate" + "Path Traversal" + "Scanner Activity" as 5 rows for the same actor in the same minute.
+
+### Added
+- **`backend/app/services/event_normalizer.py`** (NEW, 860 lines) — the single source of truth for log-line → typed-event translation. Pure function `normalize(log_line, source) -> NormalizedEvent | None`. Extracts source_ip, request_path, request_method, response_status, user_agent, target_port. Tags protocol (`http_api` / `http_dashboard` / `ssh_honeypot` / `ssh_real` / `unknown`) so the same HTTP 401 line is classified differently depending on which surface produced it. Returns `None` on structural log noise (PM2 dividers, ExceptionGroup headers, AEGIS-internal source markers) so AEGIS's own diagnostic output no longer advances any counter.
+- **`path_excludes` filter key** in `correlation_engine._matches_filter()` (was added in v1.6.3.6; documented here for context).
+- **Severity scoring layer** in `correlation_engine` — every rule may declare a `confidence_factors` list. Calling code multiplies the rule's base severity by the matched factors before deciding final severity. Default catalog: `scanner_ua` × 1.3, `tor_exit` × 1.5, `known_attacker_history` × 2.0, `geo_high_risk` × 1.2, `burst_rate` × 1.4, `safelisted` × 0 (drop), `internal_ip` × 0 (drop).
+- **Per-attack-class cooldown constants** (`COOLDOWN_AUTH=3600`, `COOLDOWN_RECON=600`, `COOLDOWN_EXPLOIT=300`, `COOLDOWN_EXFIL=600`, `COOLDOWN_CHAIN=0`, `COOLDOWN_HONEYPOT=0`, `COOLDOWN_SUPPLY=60`) — replaces the implicit 60s default that was inflating one attack into hundreds of incidents.
+- **Protocol-aware Sigma rules** — split `brute_force_ssh` (which listened to `auth_failure` and mislabeled HTTP 401 as SSH) into 3 separate rules:
+  - `http_auth_brute_force` — `event_type=http_auth_failure`, 15 events / 60 s, cooldown 3600 s, severity high, path_excludes for dashboard/login/auth/ws/health
+  - `ssh_honeypot_attempt` — `event_type=ssh_honeypot_failure`, threshold 1 (every hit fires), severity critical, no cooldown
+  - `generic_credential_attack` — `event_type=auth_failure` (fallback), 25 / 300 s, severity medium
+- **New event-bus topic `log_event`** carrying NormalizedEvent payloads, subscribed by `correlation_engine._on_normalized_event` with safelist gating + direct evaluation (no regex re-matching).
+
+### Changed
+- **`log_watcher.py`** (refactored, ~899 lines): removed the entire on-disk PATTERNS list (~30 regexes) — pattern → event-type classification now lives in `event_normalizer`. `_process_line()` calls `event_normalizer.normalize()` once at the top, gates safelist once, publishes typed `NormalizedEvent` on `log_event`. Inline behavioural detectors (`brute_force_401`, `rate_tracker`, `port_scan`) are preserved because they operate ACROSS multiple events and are not expressible as a single Sigma rule.
+- **`correlation_engine.py`**: BUILT_IN_RULES rewritten to be protocol-aware. Subscribes to new `log_event` topic via `_on_normalized_event` (defence-in-depth safelist re-check). Old `_on_log_line` subscription preserved for backwards compatibility during migration.
+- **MITRE tag corrections** — `brute_force_ssh` was tagged `T1110.001` (sshd-specific) despite matching HTTP 401. Now correctly tagged `T1110` (generic credential brute force) with the protocol-specific variants carrying their own correct sub-techniques.
+
+### Fixed
+- A single attack burst no longer inflates into hundreds of incidents — per-class cooldowns + post-detection dedup work together so one IP attacking the API for 5 minutes generates 1-2 incidents instead of 150.
+- Operator dashboard login typos no longer count as brute force — `path_excludes` filter on `http_auth_brute_force` skips `/api/v1/auth/`, `/dashboard/`, `/login`, `/ws`, `/api/v1/health`, `/api/v1/me`, `/api/v1/version`.
+- HTTP 401 events no longer get titled "SSH Brute Force Detected" — they go through `http_auth_brute_force` which carries the correct title.
+
+### Operational
+- `/health` reports `version=1.6.3.7`.
+- No incidents bulk-purged in this release — the operator already cleared the FP backlog in v1.6.3.5 and v1.6.3.6. This release prevents future FPs structurally.
+- The Opus #1 module (`event_normalizer.py`) is the only new file. Opus #2 patched `correlation_engine.py` in place. Opus #3 rewrote `log_watcher.py` in place.
+
+---
+
 ## [1.6.3.6] - 2026-06-29 (hotfix)
 
 Hotfix on top of v1.6.3.5. Two root-cause defects identified by operator review.
