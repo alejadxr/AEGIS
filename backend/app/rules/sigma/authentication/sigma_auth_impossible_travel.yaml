@@ -1,0 +1,22 @@
+id: sigma_auth_impossible_travel
+name: Impossible Travel - Concurrent Sessions
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- DefenseEvasion
+techniques:
+- T1078
+data_sources:
+- auth_log
+condition:
+  event_type: auth_success
+  count_threshold: 3
+  time_window_seconds: 900
+  group_by: username
+  unique_field: geo_country
+  cooldown_seconds: 1800
+entityMappings:
+- type: IP
+  field: source_ip
+description: Same user authenticated from geographically distant locations simultaneously.

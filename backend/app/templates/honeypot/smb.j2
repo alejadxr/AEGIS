@@ -1,0 +1,4 @@
+{{ service_name | default('FILESERVER') }} - SMB {{ version | default('3.1.1') }}
+{{ banner | default('Windows Server 2019') }}
+Shares: SYSVOL, NETLOGON, IPC$, Data, Backups
+Access denied. Authentication required.

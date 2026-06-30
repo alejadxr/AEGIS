@@ -1,0 +1,23 @@
+id: sigma_auth_ssh_key_brute
+name: SSH Key Brute Force
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- CredentialAccess
+techniques:
+- T1110.004
+data_sources:
+- auth_log
+condition:
+  event_type: auth_failure
+  count_threshold: 20
+  time_window_seconds: 120
+  group_by: source_ip
+  filter:
+    service: ssh
+    auth_method: publickey
+entityMappings:
+- type: IP
+  field: source_ip
+description: Multiple SSH key authentication failures from same IP.

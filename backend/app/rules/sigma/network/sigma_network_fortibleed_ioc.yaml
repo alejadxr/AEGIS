@@ -1,0 +1,23 @@
+id: sigma_network_fortibleed_ioc
+name: FortiBleed Credential Exposure Campaign Source IP
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- network_flows
+condition:
+  event_type: network_connection
+  filter:
+    source_ip:
+    - 85.11.187.8
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Inbound traffic from FortiBleed campaign IOC IP 85.11.187.8.
