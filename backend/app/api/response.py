@@ -100,6 +100,7 @@ async def list_incidents(
     limit: int = 100,
     offset: int = 0,
     include_analysis: bool = False,
+    include_fp: bool = False,
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
@@ -109,6 +110,10 @@ async def list_incidents(
     the last N days of incidents for charts/dashboards without paginating.
     When since is set, the implicit limit cap is also raised to 10_000 so the
     full window is returned (callers can still pass an explicit limit).
+
+    v1.6.3.9: ?include_fp=false (default) hides incidents whose title starts
+    with [FP-... — i.e. audit-resolved false positives. Pass include_fp=true
+    when you need the full historical record (FP audits, compliance).
     """
     client = auth.client
     query = select(Incident).where(Incident.client_id == client.id)
@@ -116,6 +121,8 @@ async def list_incidents(
         query = query.where(Incident.status == status)
     if severity:
         query = query.where(Incident.severity == severity)
+    if not include_fp:
+        query = query.where(~Incident.title.like("[FP-%"))
     # v1.6.3: time-window filter
     _WINDOW_MAP = {
         "24h": timedelta(hours=24),

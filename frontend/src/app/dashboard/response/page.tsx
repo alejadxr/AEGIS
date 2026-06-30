@@ -217,7 +217,9 @@ export default function ResponsePage() {
           api.response.actions(),
           api.response.guardrails(),
         ]);
-        setIncidents(inc.status === 'fulfilled' ? inc.value : []);
+        // v1.6.3.9: hide [FP-*]-prefixed incidents from the active response queue
+        const rawIncidents = inc.status === 'fulfilled' ? inc.value : [];
+        setIncidents(rawIncidents.filter((i: IncidentItem) => !(i.title || '').startsWith('[FP-')));
         setActions(act.status === 'fulfilled' ? act.value : []);
         if (gr.status === 'fulfilled') {
           const raw = gr.value as Record<string, unknown>;
