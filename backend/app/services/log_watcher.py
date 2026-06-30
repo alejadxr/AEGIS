@@ -730,6 +730,15 @@ class LogWatcher:
                 # Extra guard: skip auth_failure from internal/private IPs
                 if pattern["name"] == "auth_failure" and ip and (ip in INTERNAL_IPS or _is_private_ip(ip)):
                     return
+                # v1.6.3.5: also skip auth_failure on operator dashboard / auth
+                # endpoints — a legitimate user typing the wrong password on the
+                # dashboard login should not be classified as a brute force.
+                if pattern["name"] == "auth_failure" and is_dashboard_request:
+                    return
+                # Same protection for high-rate / port-scan etc when path is
+                # a safe operator path.
+                if is_dashboard_request and pattern["threat_type"] in ("brute_force", "reconnaissance"):
+                    return
                 # v1.6.2: dedup on (ip, pattern, threat_type) so URL query-string
                 # variation (e.g. ?id=1 vs ?id=2) collapses into one incident per
                 # 5-minute window instead of inflating the table 10× per attacker.

@@ -1,6 +1,6 @@
 {
   "name": "aegis-next",
-  "version": "1.6.3.5",
+  "version": "1.6.3.6",
   "type": "module",
   "private": true,
   "scripts": {

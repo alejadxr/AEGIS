@@ -150,17 +150,30 @@ BUILT_IN_RULES: list[dict] = [
     # 1 — SSH brute-force
     {
         "id": "brute_force_ssh",
-        "title": "SSH Brute Force Detected",
-        "description": "Multiple failed SSH login attempts from the same source IP.",
+        "title": "Auth Brute Force (HTTP 401) Detected",
+        "description": "v1.6.3.5: rule listens on event_type=auth_failure which is emitted on HTTP 401 responses, NOT on sshd protocol failures. Title corrected to reflect actual behavior. Tightened to 15 events in 300s with 1h cooldown, and path_excludes skips operator login/dashboard polling so the rule no longer fires on a user typing their password wrong a few times.",
         "severity": "high",
         "enabled": True,
         "source": "builtin",
-        "mitre": ["T1110.001"],
+        "mitre": ["T1110"],
         "condition": {
             "event_type": "auth_failure",
-            "count_threshold": 5,
+            "count_threshold": 15,
             "time_window_seconds": 300,
             "group_by": "source_ip",
+            "cooldown_seconds": 3600,
+            "filter": {
+                "path_excludes": [
+                    "/api/v1/auth/",
+                    "/api/v1/dashboard/",
+                    "/dashboard/",
+                    "/login",
+                    "/ws",
+                    "/api/v1/health",
+                    "/api/v1/me",
+                    "/api/v1/version",
+                ],
+            },
         },
     },
     # 2 — Lateral movement
@@ -2829,6 +2842,12 @@ def _matches_filter(event: dict, filt: dict) -> bool:
                 if not all(fragment in path for fragment in expected):
                     return False
                 continue
+            # v1.6.3.5: path_excludes — fail the rule if path contains ANY listed fragment
+            if key == "path_excludes":
+                path = event.get("path", "") or event.get("url", "") or ""
+                if any(fragment in path for fragment in expected):
+                    return False
+                continue
             if actual not in expected:
                 return False
             continue
@@ -3412,6 +3431,15 @@ class CorrelationEngine:
         # producing the feedback-loop false positives from traceback dividers.
         if not source_ip or _is_internal_ip(source_ip):
             return
+        # v1.6.3.5: also gate AEGIS_SAFE_IPS here — safelisted IPs (operator's
+        # Claro DR residential, Twitter/X, Bingbot, etc) should never feed
+        # auth_failure / sql_injection / scanner events into the rule window.
+        try:
+            from app.core.attack_detector import _is_safe_ip
+            if _is_safe_ip(source_ip):
+                return
+        except Exception as exc:
+            logger.warning(f"correlation_engine _on_log_line safelist import failed: {exc}")
         path_match = _PATH_RE.search(line)
         request_path = path_match.group(1) if path_match else ""
         port_match = _PORT_RE.search(line)
