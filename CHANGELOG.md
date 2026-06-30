@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3.11] - 2026-06-30 (cold-cache perf)
+
+Eliminates the cold-cache tax on the first dashboard request after every
+restart by pre-warming the DB pool, SQLAlchemy compile cache, and the
+`/dashboard/overview` result cache during startup — off the event loop.
+
+### Measured (Mac Pro production, 2 consecutive curls, after warmup)
+
+| Endpoint | v1.6.3.10 cold | v1.6.3.11 1st | v1.6.3.11 2nd |
+|---|---:|---:|---:|
+| `/dashboard/overview` | 1.253 s | **415 ms** (3× faster cold) | 899 ms (cache miss between) |
+| `/dashboard/monitored-apps` | 1.044 s | **192 ms** (5× faster cold) | 327 ms |
+| `/dashboard/featured-incident` | 866 ms | **180 ms** (5× faster cold) | 291 ms |
+| `/dashboard/threat-map` | 513 ms | 1076 ms (full query path) | **171 ms** |
+| `/dashboard/live-metrics?window=24h` | 526 ms | **375 ms** | 541 ms |
+
+### Added
+- **`warmup_dashboard_cache()`** in `backend/app/api/dashboard.py` — runs after `warmup_pm2_cache()` in the FastAPI lifespan. Sequence: 5 parallel DB pool ping → resolve bootstrap client → serial pre-runs of /overview, /monitored-apps, /featured-incident, /threat-map, /live-metrics → populate `_OVERVIEW_CACHE` so the first request finds the result cached.
+- **`logger = logging.getLogger("aegis.dashboard")`** module-level logger so warmup paths can log progress + warnings without sprinkling print statements.
+- New startup log line: `[aegis.dashboard] INFO: dashboard warmup: pool + compile cache + result cache primed`.
+
+### Operational
+- `/health` reports `version=1.6.3.11`.
+- Zero errors in `pm2 logs cayde6-api --err`. The intermediate v1 of the warmup used `asyncio.gather()` on a single AsyncSession which raises an `InvalidRequestError` (sessions can't do concurrent queries); fix was to make the warmup serial (only the live endpoint uses gather, where FastAPI injects a fresh session per request).
+- Net effect: operator hits the dashboard URL the first time after a restart and the KPI tiles render in 415 ms instead of 1253 ms — the difference between "feels instant" and "feels stale".
+
+---
+
 ## [1.6.3.10] - 2026-06-30 (perf)
 
 Targeted attack on the two endpoints flagged in v1.6.3.9 as >1.5s. No new

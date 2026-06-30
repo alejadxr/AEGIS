@@ -1,7 +1,10 @@
 import asyncio
 import json
+import logging
 import subprocess
 from datetime import datetime, timedelta
+
+logger = logging.getLogger("aegis.dashboard")
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -729,6 +732,162 @@ async def warmup_pm2_cache() -> None:
         await loop.run_in_executor(None, _get_pm2_statuses)
     except Exception:
         pass
+
+
+async def warmup_dashboard_cache() -> None:
+    """v1.6.3.11 — pre-warm DB pool + SQLAlchemy compile cache + dashboard
+    result caches at startup so the FIRST request after restart pays the
+    same warm-cache latency as steady-state.
+
+    Pre-warmups:
+      * 5 parallel connection-pool opens (warms pool_pre_ping checks)
+      * /overview gather() — caches per-client + warms compile cache
+      * /monitored-apps GROUP BY — warms compile cache
+      * /featured-incident lookup — warms compile cache
+      * /threat-map aggregates — warms compile cache
+      * /live-metrics 24h window — warms compile cache
+
+    All run sequentially after PM2 warmup. The bootstrap demo client is
+    looked up from the DB so we don't have to know the client_id upfront.
+    Total expected cold cost: ~2 s amortized across startup; eliminates
+    the ~1.25 s cold tax that operators see on first dashboard load.
+    """
+    try:
+        from sqlalchemy import select, func as _f
+        from datetime import datetime as _dt, timedelta as _td
+        from app.database import async_session, engine
+        from app.models.client import Client as _Client
+        from app.models.asset import Asset as _Asset
+        from app.models.incident import Incident as _Inc
+        from app.models.honeypot import HoneypotInteraction as _HP
+        from app.models.action import Action as _Act
+        from app.models.vulnerability import Vulnerability as _Vuln
+    except Exception as exc:
+        logger.warning(f'dashboard warmup: imports failed: {exc}')
+        return
+
+    # 1) Warm DB pool — 5 parallel connection opens (each does pool_pre_ping)
+    try:
+        async def _ping():
+            async with async_session() as s:
+                await s.scalar(select(_f.now()))
+        await asyncio.gather(*[_ping() for _ in range(5)])
+    except Exception as exc:
+        logger.debug(f'dashboard warmup: pool ping failed: {exc}')
+
+    # 2) Resolve a real client_id (first row — bootstrap demo client)
+    try:
+        async with async_session() as db:
+            client = await db.scalar(select(_Client).limit(1))
+            if client is None:
+                logger.info('dashboard warmup: no clients yet — skipping query pre-warm')
+                return
+    except Exception as exc:
+        logger.warning(f'dashboard warmup: client lookup failed: {exc}')
+        return
+
+    cutoff_30d = _dt.utcnow() - _td(days=30)
+    cutoff_90d = _dt.utcnow() - _td(days=90)
+    cutoff_24h = _dt.utcnow() - _td(hours=24)
+
+    # 3) Pre-run /overview queries SERIALLY (single session can't do
+    # concurrent queries — that's why this differs from the live endpoint
+    # which uses a fresh session per request). Populates _OVERVIEW_CACHE.
+    try:
+        async with async_session() as db:
+            total_assets = await db.scalar(select(_f.count(_Asset.id)).where(_Asset.client_id == client.id))
+            open_vulns = await db.scalar(select(_f.count(_Vuln.id)).where(
+                _Vuln.client_id == client.id, _Vuln.status == 'open',
+            ))
+            critical_vulns = await db.scalar(select(_f.count(_Vuln.id)).where(
+                _Vuln.client_id == client.id, _Vuln.severity == 'critical', _Vuln.status == 'open',
+            ))
+            active_incidents = await db.scalar(select(_f.count(_Inc.id)).where(
+                _Inc.client_id == client.id, _Inc.status.in_(['open', 'investigating']),
+            ))
+            hp_interactions = await db.scalar(select(_f.count(_HP.id)).where(
+                _HP.client_id == client.id, _HP.timestamp >= cutoff_30d,
+            ))
+            actions_taken = await db.scalar(select(_f.count(_Act.id)).where(
+                _Act.client_id == client.id, _Act.status == 'executed',
+                _Act.created_at >= cutoff_30d,
+            ))
+            # Populate the response cache so first /overview request is instant
+            total_assets = total_assets or 0
+            open_vulns = open_vulns or 0
+            critical_vulns = critical_vulns or 0
+            active_incidents = active_incidents or 0
+            hp_interactions = hp_interactions or 0
+            actions_taken = actions_taken or 0
+            score = critical_vulns * 10 + active_incidents * 5
+            risk_level = (
+                'critical' if score >= 50 else
+                'high' if score >= 20 else
+                'medium' if score >= 5 else 'low'
+            )
+            import time as _t
+            _OVERVIEW_CACHE['ts'] = _t.monotonic()
+            _OVERVIEW_CACHE['client'] = client.id
+            _OVERVIEW_CACHE['data'] = OverviewStats(
+                total_assets=total_assets,
+                open_vulnerabilities=open_vulns,
+                critical_vulnerabilities=critical_vulns,
+                active_incidents=active_incidents,
+                honeypot_interactions=hp_interactions,
+                actions_taken=actions_taken,
+                risk_level=risk_level,
+            )
+    except Exception as exc:
+        logger.warning(f'dashboard warmup: /overview pre-run failed: {exc}')
+
+    # 4) Pre-run /monitored-apps GROUP BY (warms compile cache)
+    try:
+        async with async_session() as db:
+            await db.execute(
+                select(_Inc.source, _Inc.status, _f.count(_Inc.id), _f.max(_Inc.detected_at))
+                .where(_Inc.client_id == client.id, _Inc.detected_at >= cutoff_90d)
+                .group_by(_Inc.source, _Inc.status)
+            )
+    except Exception as exc:
+        logger.debug(f'dashboard warmup: /monitored-apps pre-run failed: {exc}')
+
+    # 5) Pre-run /featured-incident lookup
+    try:
+        async with async_session() as db:
+            await db.scalar(
+                select(_Inc).where(_Inc.client_id == client.id)
+                .order_by(_Inc.detected_at.desc()).limit(1)
+            )
+    except Exception as exc:
+        logger.debug(f'dashboard warmup: /featured-incident pre-run failed: {exc}')
+
+    # 6) Pre-run /threat-map aggregates (incidents + honeypot, both bounded)
+    try:
+        async with async_session() as db:
+            await db.execute(
+                select(_Inc.source_ip, _f.count(_Inc.id))
+                .where(_Inc.client_id == client.id, _Inc.source_ip.isnot(None))
+                .group_by(_Inc.source_ip).limit(500)
+            )
+            await db.execute(
+                select(_HP.source_ip, _f.count(_HP.id))
+                .where(_HP.client_id == client.id, _HP.source_ip.isnot(None))
+                .group_by(_HP.source_ip).limit(500)
+            )
+    except Exception as exc:
+        logger.debug(f'dashboard warmup: /threat-map pre-run failed: {exc}')
+
+    # 7) Pre-run /live-metrics 24h window (the default window)
+    try:
+        async with async_session() as db:
+            await db.execute(
+                select(_f.count(_Inc.id))
+                .where(_Inc.client_id == client.id, _Inc.detected_at >= cutoff_24h)
+            )
+    except Exception as exc:
+        logger.debug(f'dashboard warmup: /live-metrics pre-run failed: {exc}')
+
+    logger.info('dashboard warmup: pool + compile cache + result cache primed')
 
 
 @router.get("/monitored-apps", response_model=MonitoredAppsOut)
