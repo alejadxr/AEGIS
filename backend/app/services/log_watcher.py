@@ -628,33 +628,43 @@ class LogWatcher:
                         description=f"Port scan detected: >10 unique ports probed by {source_ip} in 60s",
                     )
 
-        # ----- Brute force (HTTP 401) ---------------------------------
-        # Detect 401 either via typed event.status_code or substring
-        # fallback on the raw line.  Skip dashboard / auth-refresh paths.
+        # ----- Brute force (HTTP 401 or SSH auth fail) ----------------
+        # v1.6.3.9: port-aware. Different thresholds + severities per surface:
+        #   port 2222 (SSH honeypot) — every hit = CRITICAL, no threshold
+        #   port 22   (real sshd)    — 5 in 60s   = CRITICAL
+        #   port 8000 / 80 / 443     — 20 in 60s  = HIGH (HTTP API)
+        #   dashboard paths          — skip entirely
         is_401 = (status_code == 401) or (" 401 " in line)
         if is_401 and not is_dashboard_request:
+            # Port-aware threshold + severity selection.
+            if port_for_scan == 2222:
+                threshold, severity_str, label = 1, "critical", "ssh_honeypot_brute"
+            elif port_for_scan == 22:
+                threshold, severity_str, label = 5, "critical", "ssh_real_brute"
+            else:
+                threshold, severity_str, label = 20, "high", "http_auth_brute"
+
             now = datetime.utcnow()
             cutoff = now - timedelta(seconds=60)
             q = self._brute_force_tracker[source_ip]
             while q and q[0] < cutoff:
                 q.popleft()
             q.append(now)
-            # NIST SP 800-63B baseline tolerates 5+ legitimate retries
-            # from password managers / typos before flagging brute force.
-            if len(q) >= 15:
+            current_count = len(q)
+            if current_count >= threshold:
                 q.clear()
-                alert_key = f"brute_force:{source_ip}"
+                alert_key = f"{label}:{source_ip}"
                 if alert_key not in self._recent_alerts:
                     self._recent_alerts.append(alert_key)
                     await self._create_incident_from_log(
                         line=line,
-                        pattern_name="brute_force_401",
+                        pattern_name=label,
                         threat_type="brute_force",
-                        severity="high",
+                        severity=severity_str,
                         source_ip=source_ip,
                         description=(
-                            f"Brute force detected: {len(q)}+ failed auth "
-                            f"attempts from {source_ip} in 60s"
+                            f"Brute force detected: {current_count}+ failed auth "
+                            f"attempts from {source_ip} in 60s on port {port_for_scan or 'unknown'}"
                         ),
                     )
 
