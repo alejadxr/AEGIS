@@ -3089,35 +3089,94 @@ class CorrelationEngine:
     def __init__(self):
         self._window: deque[tuple[float, dict]] = deque(maxlen=self.MAX_EVENTS)
 
-        # Load rules from YAML pack; fall back to in-code lists if the
-        # rules directory doesn't exist yet (e.g. during first-run before
-        # migration is applied).
+        # Hybrid rule-pack loading (v1.6.4+):
+        # 1. Load YAML pack from app/rules/ — operator-curated Sigma + chain rules.
+        # 2. MERGE BUILT_IN_RULES / CHAIN_RULES in-code definitions on top, with
+        #    YAML rules winning on `id` collision (operator override).
+        # 3. If YAML loading fails entirely, fall back to deepcopy(BUILT_IN_RULES)
+        #    and deepcopy(CHAIN_RULES) so the engine still has a working baseline.
+        # The merge guarantees that in-code rules like http_auth_brute_force,
+        # ssh_honeypot_attempt, and generic_credential_attack are always present
+        # (CHAIN_RULES reference generic_credential_attack), even when a YAML pack
+        # is installed but partial.
         try:
             from app.services.rules_loader import load_rules, start_watcher
             from pathlib import Path
             _rules_path = Path(__file__).parent.parent / "rules"
             self._rule_pack = load_rules(_rules_path)
-            # Flatten rules across all event types into a single list for
+            # Flatten YAML rules across event types into a single list for
             # CRUD / stats / list_rules compatibility.
             self._rules: list = [r for rules in self._rule_pack.rules.values() for r in rules]
             self._chain_rules: list = list(self._rule_pack.chains)
+
+            yaml_sigma_count = len(self._rules)
+            yaml_chain_count = len(self._chain_rules)
+
+            # ---- MERGE in-code BUILT_IN_RULES (YAML wins on id collision) ----
+            yaml_rule_ids = {r["id"] for r in self._rules}
+            yaml_chain_ids = {c["id"] for c in self._chain_rules}
+
+            builtin_added_ids: list[str] = []
+            builtin_dedup = 0
+            for builtin in BUILT_IN_RULES:
+                rid = builtin.get("id")
+                if not rid:
+                    continue
+                if rid in yaml_rule_ids:
+                    builtin_dedup += 1
+                    continue
+                self._rules.append(deepcopy(builtin))
+                yaml_rule_ids.add(rid)
+                builtin_added_ids.append(rid)
+            builtin_added = len(builtin_added_ids)
+
+            chain_added_ids: list[str] = []
+            chain_dedup = 0
+            for builtin_chain in CHAIN_RULES:
+                cid = builtin_chain.get("id")
+                if not cid:
+                    continue
+                if cid in yaml_chain_ids:
+                    chain_dedup += 1
+                    continue
+                self._chain_rules.append(deepcopy(builtin_chain))
+                yaml_chain_ids.add(cid)
+                chain_added_ids.append(cid)
+            chain_added = len(chain_added_ids)
+
             # Start hot-reload watcher (no-op if watchdog not installed)
             self._watcher = start_watcher(self._rule_pack, _rules_path)
+
             logger.info(
-                f"Loaded {len(self._rules)} sigma rules + "
-                f"{len(self._chain_rules)} chain rules from YAML"
+                f"rules loaded: {len(self._rules)} sigma + {len(self._chain_rules)} chain "
+                f"(yaml={yaml_sigma_count}, builtin={builtin_added}, dedup={builtin_dedup}) "
+                f"| chains (yaml={yaml_chain_count}, builtin={chain_added}, dedup={chain_dedup})"
             )
+            if builtin_added_ids:
+                logger.info(
+                    f"In-code rules merged into YAML pack: {builtin_added_ids}"
+                )
+            if chain_added_ids:
+                logger.info(
+                    f"In-code chain rules merged into YAML pack: {chain_added_ids}"
+                )
         except Exception as _load_err:
             logger.warning(
                 f"YAML rule load failed ({_load_err}); "
-                f"falling back to in-code BUILT_IN_RULES"
+                f"falling back to in-code BUILT_IN_RULES only"
             )
             self._rules = deepcopy(BUILT_IN_RULES)
             self._chain_rules = deepcopy(CHAIN_RULES)
             self._rule_pack = None
             self._watcher = None
+            logger.info(
+                f"rules loaded: {len(self._rules)} sigma + {len(self._chain_rules)} chain "
+                f"(yaml=0, builtin={len(self._rules)}, dedup=0) [fallback path]"
+            )
 
-        # O(1) event-type dispatch index — keeps evaluate() off the full rule list.
+        # O(1) event-type dispatch index — rebuilt AFTER the YAML+builtin merge
+        # so newly-merged in-code rules (http_auth_brute_force, ssh_honeypot_attempt,
+        # generic_credential_attack) are routable from the first event onward.
         self._rules_by_type: dict[str, list] = self._build_type_index(self._rules)
 
         self._fired: dict[tuple[str, str], float] = {}  # (rule_id, group_key) → last_fired_ts
@@ -3518,6 +3577,26 @@ class CorrelationEngine:
                 f"rule={chain_rule.get('id', 'chain')}"
             )
             return
+
+        # v1.6.4.1: gate AEGIS_SAFE_IPS (crawlers/CDNs/monitors) BEFORE the
+        # event-bus publish. Previously this check lived only in the async
+        # _create_incident() at line ~3716, which ran ~100ms AFTER
+        # publish_critical() below. That race meant a safelisted crawler
+        # (e.g. Twitterbot from 199.16.156.0/22 hitting a URL that matched the
+        # SQLi mega-regex) would flash a "SQL Injection Attack Chain" alert on
+        # the dashboard even though the incident was correctly dropped in DB.
+        # Gating here suppresses both the dashboard alert and the incident.
+        if source_ip:
+            try:
+                from app.core.attack_detector import _is_safe_ip
+                if _is_safe_ip(source_ip):
+                    logger.debug(
+                        f"Skipping chain correlation for safe IP {source_ip} "
+                        f"(rule={chain_rule.get('id', 'chain')})"
+                    )
+                    return
+            except Exception as exc:
+                logger.warning(f"correlation_engine chain safelist import failed: {exc}")
 
         alert_data = {
             "event_type": "chain_correlation_triggered",
