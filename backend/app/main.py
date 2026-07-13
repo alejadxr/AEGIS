@@ -560,12 +560,12 @@ async def lifespan(app: FastAPI):
     scheduled_scanner.start()
     logger.info('Scheduled scanner started')
 
-    # v1.6.3.11: prime PM2 jlist cache off the event loop so the first
+    # v1.6.3.12: prime PM2 jlist cache off the event loop so the first
     # /monitored-apps request after restart doesn't eat the 1-5s cold penalty.
     try:
         from app.api.dashboard import warmup_pm2_cache, warmup_dashboard_cache
         asyncio.create_task(warmup_pm2_cache(), name='pm2_cache_warmup')
-        # v1.6.3.11: also pre-warm DB pool + SQLAlchemy compile cache +
+        # v1.6.3.12: also pre-warm DB pool + SQLAlchemy compile cache +
         # /overview result cache so the first dashboard request after
         # restart serves at ~150ms warm-cache latency instead of ~1.25s cold.
         asyncio.create_task(warmup_dashboard_cache(), name='dashboard_cache_warmup')
@@ -646,7 +646,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.3.11",
+    version="1.6.3.12",
     lifespan=lifespan,
 )
 
@@ -753,7 +753,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.3.11",
+        "version": "1.6.3.12",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -765,7 +765,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.3.11",
+        "version": "1.6.3.12",
         "ai_mode": _ai_mode.value,
     }
 

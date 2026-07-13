@@ -63,6 +63,73 @@ _SAFE_NETWORKS: list = [
     _ipaddress.ip_network("100.64.0.0/10"),   # CGNAT / Tailscale range
 ]
 
+# ---------------------------------------------------------------------------
+# v1.6.5: ALWAYS-ON crawler / CDN IP range safelist.
+#
+# Public crawler networks (Google, Bing, Twitter/X, Meta, Apple, ...) publish
+# stable CIDR blocks. Previously benign crawlers were recognized ONLY by their
+# User-Agent string; if a crawler sent a request that happened to trip the
+# mega-regex (e.g. a blog URL containing "union select") from an IP whose UA
+# was stripped/custom, it could be detected and — after BLOCK_THRESHOLD hits —
+# the entire crawler /22 could be auto-blocked, breaking search indexing and
+# social link previews for the whole service.
+#
+# `_CRAWLER_NETWORKS` closes that gap as a permanent default layer BENEATH the
+# operator-configurable AEGIS_SAFE_IPS. It is checked by `_is_crawler_ip()` and
+# folded into `_is_safe_ip()`, so every existing safelist gate (middleware,
+# correlation_engine, attack_chain_detector, firewall_sync, guardrails,
+# responder, ip_blocker, phantom safety) automatically covers crawlers.
+#
+# CIDRs are published official ranges (Google goog.json, Microsoft bingbot,
+# Twitter/X, Meta/Facebook ASN blocks, Apple 17.0.0.0/8). Ranges intentionally
+# err on the wider side for stability; UA + mega-regex still protect against
+# spoofed crawler UAs from non-crawler IPs.
+_CRAWLER_NETWORKS: list = [
+    _ipaddress.ip_network(_cidr)
+    for _cidr in (
+        # --- Google (Search, GoogleOther, feeds, AMP, Cloud crawlers) ---
+        "66.249.64.0/19",   # Googlebot primary
+        "66.102.0.0/20",    # Google secondary (research, feeds, AMP)
+        "64.233.160.0/19",  # Google infrastructure
+        "216.239.32.0/19",  # Google infrastructure
+        "34.64.0.0/10",     # Google Cloud (GoogleOther / cloud-hosted crawlers)
+        "35.190.0.0/17",    # Google Cloud LB / crawlers
+        # --- Microsoft / Bing ---
+        "40.77.0.0/16",     # Bingbot
+        "157.55.0.0/16",    # Bingbot / MSN
+        "207.46.0.0/16",    # Bingbot legacy
+        "13.66.0.0/17",     # Azure-hosted Bing crawlers
+        # --- Twitter / X ---
+        "199.16.156.0/22",  # Twitterbot / X card fetcher
+        "192.133.76.0/22",  # Twitter / X secondary
+        # --- Meta / Facebook (facebookexternalhit, Graph API, Threads) ---
+        "31.13.24.0/21",
+        "31.13.64.0/18",
+        "66.220.144.0/20",
+        "69.63.176.0/20",
+        "173.252.64.0/18",  # Meta primary data center (Graph API, embeds)
+        "57.141.0.0/16",    # Meta international carrier (WhatsApp previews)
+        "129.134.0.0/16",   # Meta / Facebook
+        # --- Apple (Applebot, Apple News, iMessage link previews) ---
+        "17.0.0.0/8",
+    )
+]
+
+
+def _is_crawler_ip(ip: str) -> bool:
+    """True if `ip` falls inside a published crawler/CDN network.
+
+    Parse-safe: returns False for malformed input. This is an always-on
+    default layer independent of AEGIS_SAFE_IPS.
+    """
+    if not ip:
+        return False
+    try:
+        addr = _ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return False
+    return any(addr in net for net in _CRAWLER_NETWORKS)
+
 # Parse AEGIS_SAFE_IPS: literal IPs go to SAFE_IPS set; CIDR entries go to _SAFE_NETWORKS.
 _safe_literals: set[str] = set()
 for _entry in (e.strip() for e in _safe_ips_str.split(",") if e.strip()):
@@ -77,14 +144,21 @@ SAFE_IPS = frozenset(_safe_literals) | _auto_ips
 
 
 def _is_safe_ip(ip: str) -> bool:
-    """Check if an IP is in SAFE_IPS set or in a private/Tailscale/configured range."""
+    """Check if an IP is safe (never block / never create incident).
+
+    Safe = literal SAFE_IPS, a private/Tailscale/AEGIS_SAFE_IPS range, OR a
+    published crawler/CDN network (`_is_crawler_ip`). Folding crawlers in here
+    means every downstream safelist gate covers them for free.
+    """
     if ip in SAFE_IPS:
         return True
     try:
         addr = _ipaddress.ip_address(ip)
-        return any(addr in net for net in _SAFE_NETWORKS)
     except (ValueError, TypeError):
         return False
+    if any(addr in net for net in _SAFE_NETWORKS):
+        return True
+    return any(addr in net for net in _CRAWLER_NETWORKS)
 
 # ---------------------------------------------------------------------------
 # FAST-PATH: paths that skip ALL detection (internal/health endpoints)
@@ -253,7 +327,7 @@ _BENIGN_UAS_DEFAULTS = frozenset({
     "ccbot/", "commoncrawl",
     "seznambot",
     "applebot",
-    "googlebot",  # redundant with 66.249/16 CIDR but cheaper UA check
+    "googlebot",  # v1.6.5: cheaper UA check; IP ranges now in _CRAWLER_NETWORKS
     "bingbot", "msnbot", "adidxbot",
     "twitterbot",
     "linkedinbot",
@@ -293,9 +367,15 @@ _BENIGN_UAS_DEFAULTS = frozenset({
     "googleother",
     "google-extended",
     "gptbot",
+    "oai-searchbot",       # OpenAI search crawler
+    "chatgpt-user",        # ChatGPT browsing on-demand fetch
     "claudebot",
+    "claude-web",
     "perplexitybot",
+    "perplexity-user",
     "anthropic-ai",
+    "amazonbot",
+    "bytespider",          # ByteDance / TikTok
     "imagesiftbot",
     "bingpreview",
     "whatsapp",
