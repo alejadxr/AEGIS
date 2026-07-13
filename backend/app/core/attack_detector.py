@@ -92,6 +92,15 @@ _CRAWLER_NETWORKS: list = [
         "66.102.0.0/20",    # Google secondary (research, feeds, AMP)
         "64.233.160.0/19",  # Google infrastructure
         "216.239.32.0/19",  # Google infrastructure
+        # TRADEOFF (intentional, do NOT narrow): 34.64.0.0/10 is ~4M GCP IPs.
+        # GoogleOther / cloud-hosted crawlers rotate across the whole block,
+        # so a tighter range would let crawler FPs through. We accept the blind
+        # spot: attacks HOSTED on Google Cloud from this /10 will be treated as
+        # safe. Rationale — crawler FP suppression is prioritized over GCP-hosted
+        # attack detection here; real observed attackers came from AWS/DO, not
+        # GCP. If a GCP-hosted attack is ever seen, add its specific /24 to a
+        # denylist checked BEFORE this crawler safelist rather than shrinking
+        # this range.
         "34.64.0.0/10",     # Google Cloud (GoogleOther / cloud-hosted crawlers)
         "35.190.0.0/17",    # Google Cloud LB / crawlers
         # --- Microsoft / Bing ---
