@@ -256,6 +256,10 @@ BUILT_IN_RULES: list[dict] = [
             "filter": {
                 "path_excludes": [
                     "/api/v1/auth/",
+                    "/api/v1/auth/me",
+                    "/api/v1/auth/refresh",
+                    "/api/v1/auth/logout",
+                    "/api/v1/auth/session",
                     "/api/v1/dashboard/",
                     "/dashboard/",
                     "/login",
@@ -321,6 +325,10 @@ BUILT_IN_RULES: list[dict] = [
             "filter": {
                 "path_excludes": [
                     "/api/v1/auth/",
+                    "/api/v1/auth/me",
+                    "/api/v1/auth/refresh",
+                    "/api/v1/auth/logout",
+                    "/api/v1/auth/session",
                     "/api/v1/dashboard/",
                     "/dashboard/",
                     "/login",

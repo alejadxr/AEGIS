@@ -31,6 +31,18 @@ Design contract (per the v1.6.x integration plan):
    produced it (operator dashboard vs. external API vs. honeypot SSH vs.
    real sshd). Callers decide whether to suppress dashboard 401s.
 
+v1.6.3.7 update -- PROTOCOL-DISCRIMINATED AUTH EVENTS
+-----------------------------------------------------
+The single `auth_failure` event type produced by previous versions was too
+coarse for the new Sigma rules (`http_auth_brute_force`,
+`ssh_honeypot_attempt`, `generic_credential_attack`). The rules listen for
+typed events keyed on the surface (`http_auth_failure`,
+`ssh_honeypot_failure`, `ssh_real_failure`) and never fired because the
+normalizer emitted a single generic name. This module now splits the
+classification using `source`, `target_port`, and `request_path` so the new
+rules match while the legacy `auth_failure` name is preserved as a
+backwards-compatible fallback for any rule still subscribed to the old name.
+
 The module deliberately does NOT decide what to DO with an event. It only
 classifies. Action policy (block / open incident / advance Sigma counter)
 lives in the callers.
@@ -532,6 +544,7 @@ _SOURCE_PROTOCOL_MAP: tuple[tuple[str, str], ...] = (
     ("phantom-ssh", "ssh_honeypot"),
     ("honeypot_http", "http_honeypot"),
     ("phantom-http", "http_honeypot"),
+    ("journalctl_sshd", "ssh_real"),
     ("sshd", "ssh_real"),
     ("auth.log", "ssh_real"),
     ("aegis-firewall", "firewall"),
@@ -541,15 +554,105 @@ _SOURCE_PROTOCOL_MAP: tuple[tuple[str, str], ...] = (
     ("aegis-feed", "feed"),
 )
 
+# Source-to-protocol fast-path used by protocol_for(). Mirrors the substring
+# map above but keyed to the v1.6.3.7 protocol vocabulary required by the new
+# Sigma rules. Order matters -- the most specific surface markers must win
+# over the generic ones.
+_PROTOCOL_FOR_SOURCE_MAP: tuple[tuple[str, str], ...] = (
+    ("honeypot_ssh", "ssh_honeypot"),
+    ("honeypot-ssh", "ssh_honeypot"),
+    ("ssh_honeypot", "ssh_honeypot"),
+    ("phantom-ssh", "ssh_honeypot"),
+    ("honeypot_http", "http_honeypot"),
+    ("phantom-http", "http_honeypot"),
+    ("journalctl_sshd", "ssh_real"),
+    ("sshd", "ssh_real"),
+    ("auth.log", "ssh_real"),
+    ("cayde6-api", "http_api"),
+    ("aegis-api", "http_api"),
+    ("uvicorn", "http_api"),
+    ("nginx", "http_api"),
+    ("apache2", "http_api"),
+    ("cayde6-frontend", "http_dashboard"),
+    ("aegis-frontend", "http_dashboard"),
+    ("frontend", "http_dashboard"),
+    ("aegis-firewall", "firewall"),
+    ("nodes_edr", "nodes_edr"),
+    ("aegis-node", "nodes_edr"),
+    ("edr", "nodes_edr"),
+    ("aegis-feed", "feed"),
+)
+
+
+def protocol_for(
+    source: str,
+    target_port: Optional[int],
+    request_path: Optional[str],
+) -> str:
+    """Return the canonical protocol label for an event.
+
+    This is the SINGLE structured-field resolver used to populate the
+    ``protocol`` key on every NormalizedEvent and to discriminate auth
+    failures by surface. It uses only structured inputs -- no raw log line
+    -- so it can be reused by callers that already parsed the line.
+
+    Resolution order
+    ----------------
+    1. Explicit honeypot / sshd markers in ``source`` (most specific first).
+    2. ``target_port`` conventions: 2222 -> ssh_honeypot, 22 -> ssh_real,
+       8888 -> http_honeypot, 8000 -> http_api, 3007 -> http_dashboard.
+    3. Generic source-substring map (HTTP API / dashboard / firewall / EDR).
+    4. ``request_path`` heuristic: any path beginning with ``/api/`` is
+       attributed to ``http_api``.
+    5. ``unknown`` fallback.
+
+    Returns one of: ``ssh_honeypot``, ``ssh_real``, ``http_honeypot``,
+    ``http_api``, ``http_dashboard``, ``firewall``, ``nodes_edr``, ``feed``,
+    ``unknown``.
+    """
+    src = (source or "").lower()
+
+    # 1. Honeypot / sshd markers win unconditionally.
+    if "honeypot_ssh" in src or "phantom-ssh" in src or src == "ssh_honeypot":
+        return "ssh_honeypot"
+    if "journalctl_sshd" in src:
+        return "ssh_real"
+
+    # 2. Port conventions.
+    if target_port == 2222:
+        return "ssh_honeypot"
+    if target_port == 22:
+        return "ssh_real"
+    if target_port == 8888:
+        return "http_honeypot"
+
+    # 3. Generic source-substring map.
+    for needle, label in _PROTOCOL_FOR_SOURCE_MAP:
+        if needle in src:
+            return label
+
+    # 4. Port conventions for HTTP surfaces, applied AFTER source matching
+    #    so an explicit source wins over a port that could be either.
+    if target_port == 8000:
+        return "http_api"
+    if target_port == 3007:
+        return "http_dashboard"
+
+    # 5. Request-path heuristic.
+    if request_path and request_path.startswith("/api/"):
+        return "http_api"
+
+    return "unknown"
+
 
 def _identify_protocol(source: str, line: str) -> str:
     """Map (source, line) to a protocol tag.
 
-    Order:
-    1. Explicit honeypot / SSH markers in the line itself (port 2222 / 22).
-    2. Matching prefix in `source` argument.
-    3. Presence of an HTTP request shape in the line -> http_api by default.
-    4. 'unknown' fallback.
+    Line-aware companion to :func:`protocol_for`. It first checks structural
+    line-level signals (e.g. ``:2222 ssh``) that ``protocol_for`` cannot see,
+    then delegates to ``protocol_for(source, None, None)`` for the source-
+    based decision, and finally falls back to detecting an HTTP request
+    shape in the line.
     """
     src = (source or "").lower()
 
@@ -562,10 +665,10 @@ def _identify_protocol(source: str, line: str) -> str:
     if ":2222" in line and "ssh" in line.lower():
         return "ssh_honeypot"
 
-    # 2. Source-prefix table.
-    for needle, label in _SOURCE_PROTOCOL_MAP:
-        if needle in src:
-            return label
+    # 2. Source-based decision via the canonical helper.
+    label = protocol_for(source, None, None)
+    if label != "unknown":
+        return label
 
     # 3. HTTP shape fallback.
     if _ACCESS_LOG_RE.search(line):
@@ -620,6 +723,154 @@ def _is_internal_ip(ip: Optional[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Protocol-discriminated auth-failure refinement
+# ---------------------------------------------------------------------------
+
+# Session-check / token-lifecycle endpoints. A 401 on any of these is a benign
+# part of the normal auth flow (frontend verifying an expired token, refreshing,
+# logging out) -- NOT a credential brute-force attempt. These must NEVER be
+# promoted to ``http_auth_failure`` or they cascade into false brute-force
+# incidents (see 38.52.220.20 FP: single GET /api/v1/auth/me 401 auto-blocked).
+_SESSION_CHECK_PATHS: frozenset[str] = frozenset(
+    {
+        "/api/v1/auth/me",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/session",
+        "/api/v1/me",
+        "/api/v1/version",
+    }
+)
+
+# The only auth surface that accepts credentials and can therefore be brute
+# forced. A 401 here (especially repeated POSTs from one IP) is a real signal.
+_LOGIN_PATHS: frozenset[str] = frozenset(
+    {
+        "/api/v1/auth/login",
+        "/api/v1/auth/token",
+        "/api/v1/login",
+    }
+)
+
+
+def _is_session_check(request_path: Optional[str], request_method: Optional[str]) -> bool:
+    """Return True when a 401 on ``request_path`` is a benign session check.
+
+    A path is treated as a session-check (and thus excluded from
+    ``http_auth_failure`` classification) when either:
+
+    * it is one of the explicit token-lifecycle endpoints in
+      ``_SESSION_CHECK_PATHS`` (prefix match, tolerant of query strings), OR
+    * it is any request under ``/api/v1/auth/`` (or ``/auth/``) that is NOT the
+      credential-accepting login endpoint and is NOT an HTTP POST. Login
+      attempts are POSTs; session checks / refreshes / logouts are GET/HEAD/
+      OPTIONS/DELETE. When the method is unknown we still exclude the explicit
+      session-check paths above by prefix.
+    """
+    if not request_path:
+        return False
+
+    # Normalise: strip query string / fragment for the prefix comparison.
+    path = request_path.split("?", 1)[0].split("#", 1)[0]
+
+    # Never treat the actual credential surface as a session check.
+    if any(path == lp or path.startswith(lp + "/") for lp in _LOGIN_PATHS):
+        return False
+
+    # Explicit token-lifecycle endpoints: always benign, even if method unknown.
+    if any(path == sp or path.startswith(sp + "/") for sp in _SESSION_CHECK_PATHS):
+        return True
+
+    method = (request_method or "").upper()
+
+    # Any non-POST request under an auth namespace that isn't the login
+    # endpoint is a session-check / lifecycle call, not a brute-force attempt.
+    if path.startswith("/api/v1/auth/") or path.startswith("/auth/"):
+        if method and method != "POST":
+            return True
+        # Method unknown: be conservative and only exclude the explicit
+        # session-check paths handled above (already returned). A generic
+        # /auth/* 401 with unknown method stays a login-surface signal.
+
+    return False
+
+
+def _refine_auth_failure(
+    source: str,
+    target_port: Optional[int],
+    request_path: Optional[str],
+    status: Optional[int],
+    fallback_protocol: str,
+    request_method: Optional[str] = None,
+) -> tuple[str, str, str, str]:
+    """Split the generic ``auth_failure`` classification by surface.
+
+    Returns ``(event_type, protocol, severity_base, legacy_tag)``.
+
+    The matching rules mirror the v1.6.3.7 Sigma pack:
+
+    * ``honeypot_ssh`` source OR target port 2222
+      -> ``ssh_honeypot_failure`` / ``ssh_honeypot`` / critical
+    * ``cayde6-api`` source AND path under ``/api/v1/auth/`` AND status 401
+      -> ``http_auth_failure`` / ``http_api`` / medium
+    * ``cayde6-api`` source AND any other 401
+      -> ``http_auth_failure`` / ``http_dashboard`` / medium
+    * ``journalctl_sshd`` source OR target port 22
+      -> ``ssh_real_failure`` / ``ssh`` / high
+    * everything else
+      -> ``auth_failure`` / fallback protocol / medium (backwards compat)
+    """
+    src = (source or "").lower()
+
+    # SSH honeypot wins first -- this is the highest-confidence credential
+    # attack signal AEGIS sees.
+    if (
+        "honeypot_ssh" in src
+        or "phantom-ssh" in src
+        or src == "ssh_honeypot"
+        or target_port == 2222
+    ):
+        return ("ssh_honeypot_failure", "ssh_honeypot", "critical", "honeypot_401")
+
+    # Public API auth endpoints: real brute-force surface.
+    if "cayde6-api" in src or "aegis-api" in src:
+        # Session-check / token-lifecycle 401s (GET /auth/me, /auth/refresh,
+        # /auth/logout, etc.) are a benign part of the normal auth flow. They
+        # must NOT be promoted to http_auth_failure -- doing so cascades into
+        # false brute-force incidents and auto-blocks legitimate users.
+        if status == 401 and _is_session_check(request_path, request_method):
+            return ("http_request", "http_api", "low", "session_check_401")
+        if (
+            request_path
+            and request_path.startswith("/api/v1/auth/")
+            and status == 401
+        ):
+            # Genuine credential surface (POST /api/v1/auth/login and friends).
+            return ("http_auth_failure", "http_api", "medium", "api_401")
+        if status == 401:
+            return (
+                "http_auth_failure",
+                "http_dashboard",
+                "medium",
+                "dashboard_401",
+            )
+
+    # Real sshd on the host.
+    if "journalctl_sshd" in src or "sshd" in src or target_port == 22:
+        return ("ssh_real_failure", "ssh", "high", "sshd_auth_fail")
+
+    # Session-check 401s from any other HTTP source (e.g. cayde6-frontend proxy
+    # lines) are still benign -- do not fall through to the generic
+    # auth_failure brute-force signal.
+    if status == 401 and _is_session_check(request_path, request_method):
+        return ("http_request", fallback_protocol, "low", "session_check_401")
+
+    # Backwards-compatible generic name. Rules subscribed to the old
+    # ``auth_failure`` event_type keep firing on lines we cannot classify.
+    return ("auth_failure", fallback_protocol, "medium", "unknown_surface_401")
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -635,9 +886,10 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
     source
         Human-readable identifier of the producing surface. Examples:
         ``"cayde6-api"``, ``"cayde6-frontend"``, ``"honeypot_ssh"``,
-        ``"sshd"``, ``"aegis-node:mac-pro"``, ``""``. Used to assign the
-        ``protocol`` tag so that a 401 on the operator dashboard can be
-        distinguished from a 401 on the public API.
+        ``"journalctl_sshd"``, ``"aegis-node:mac-pro"``, ``""``. Used to
+        assign the ``protocol`` tag so that a 401 on the operator dashboard
+        can be distinguished from a 401 on the public API and from a
+        credential probe against the SSH honeypot.
 
     Returns
     -------
@@ -647,12 +899,17 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
         ``NormalizedEvent`` dict with the following keys::
 
             {
-                "event_type": str,           # 'auth_failure', 'sql_injection', ...
+                "event_type": str,            # 'http_auth_failure',
+                                              # 'ssh_honeypot_failure',
+                                              # 'ssh_real_failure',
+                                              # 'auth_failure' (fallback),
+                                              # 'sql_injection', ...
                 "source_ip": str | None,
                 "source_port": int | None,
-                "target_port": int | None,
+                "target_port": int | None,    # ALWAYS present (None if unknown)
                 "protocol": str,              # 'http_api' | 'http_dashboard'
                                               # | 'ssh_honeypot' | 'ssh_real'
+                                              # | 'ssh' | 'http_honeypot'
                                               # | 'nodes_edr' | 'unknown' | ...
                 "request_path": str | None,
                 "request_method": str | None,
@@ -677,6 +934,13 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
     -----
     This function is PURE -- no DB calls, no event-bus publishing, no side
     effects. Callers decide what to do with the event.
+
+    v1.6.3.7 behavioural change: auth events are now split by surface. A
+    line that matches the generic 401 pattern is promoted to
+    ``http_auth_failure`` / ``ssh_honeypot_failure`` / ``ssh_real_failure``
+    when the source / port / path say so. The legacy ``auth_failure``
+    event_type is preserved as the fallback so any rule subscribed to the
+    old name keeps firing.
     """
     if log_line is None:
         return None
@@ -684,6 +948,8 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
     if _is_structural(line):
         return None
 
+    # Initial protocol guess from source + line shape. Will be refined below
+    # once we have structured fields (target_port, request_path).
     protocol = _identify_protocol(source, line)
 
     # ----- Parse the access-log envelope if present.
@@ -750,6 +1016,14 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
                 target_port = cand
                 break
 
+    # Re-resolve the protocol using the canonical structured-field helper
+    # now that target_port and request_path are known. This keeps the
+    # ``protocol`` field consistent with the discrimination performed below
+    # for auth failures, and lets callers reuse `protocol_for` directly.
+    refined_protocol = protocol_for(source, target_port, path)
+    if refined_protocol != "unknown":
+        protocol = refined_protocol
+
     # User-agent: last quoted segment.
     ua_match = _USER_AGENT_RE.search(line)
     user_agent = ua_match.group(1) if ua_match else None
@@ -795,21 +1069,26 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
         required = matched.required_signal_count
         tags = list(matched.tags)
 
-    # Protocol-aware refinement for auth_failure: a 401 on the operator
-    # dashboard is almost always a typo, while a 401 on the public API may
-    # be a real brute force. Encode that distinction as a tag so consumers
-    # can apply suppression cheaply.
+    # Protocol-discriminated auth refinement (v1.6.3.7). A line classified as
+    # the generic ``auth_failure`` is promoted to a typed event keyed on the
+    # surface so the new Sigma rules (http_auth_brute_force,
+    # ssh_honeypot_attempt, generic_credential_attack) actually fire. The
+    # legacy tags are preserved so dashboards / suppression filters that key
+    # on ``honeypot_401`` etc. keep working.
     if event_type == "auth_failure":
-        if protocol == "http_dashboard":
-            tags.append("dashboard_401")
-        elif protocol == "ssh_honeypot":
-            tags.append("honeypot_401")
-        elif protocol == "ssh_real":
-            tags.append("sshd_auth_fail")
-        elif protocol == "http_api":
-            tags.append("api_401")
-        else:
-            tags.append("unknown_surface_401")
+        refined_type, refined_proto, refined_sev, legacy_tag = _refine_auth_failure(
+            source=source,
+            target_port=target_port,
+            request_path=path,
+            status=status,
+            fallback_protocol=protocol,
+            request_method=method,
+        )
+        event_type = refined_type
+        protocol = refined_proto
+        severity_base = refined_sev
+        if legacy_tag not in tags:
+            tags.append(legacy_tag)
 
     return {
         "event_type": event_type,
@@ -857,4 +1136,5 @@ __all__ = (
     "normalize",
     "pattern_by_name",
     "pattern_names",
+    "protocol_for",
 )
