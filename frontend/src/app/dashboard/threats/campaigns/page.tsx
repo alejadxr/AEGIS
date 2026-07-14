@@ -35,7 +35,9 @@ function CampaignsPageInner() {
 
   const initialFilters: FilterState = useMemo(
     () => ({
-      windowHours: Number(searchParams.get('window')) || 168,
+      // Default to the full 30-day retention window so historical, IP-rotating
+      // campaigns (whose last activity may be weeks old) render on first load.
+      windowHours: Number(searchParams.get('window')) || 720,
       minIps: Number(searchParams.get('min_ips')) || 2,
       tactic: searchParams.get('tactic') || '',
       severity: searchParams.get('severity') || 'all',
