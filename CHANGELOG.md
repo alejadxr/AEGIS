@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.3] - 2026-07-14 (auth session-check FP fix + block gating)
+
+### Fixed - Auth Session-Check False Positive
+
+Root cause: GET /api/v1/auth/me returning 401 (normal session expiry / unauthenticated browser poll) was classified identically to brute-force credential attacks, creating spurious incidents and blocks for residential ISPs and cloud crawlers.
+
+- **event_normalizer.py**: Added _SESSION_CHECK_PATHS frozenset and _is_session_check() helper. Non-POST requests to session-check paths returning 401 are now classified as session_check_401 at low severity instead of generic auth_failure.
+- **log_watcher.py**: Added is_session_check_401 guard in _run_behavioural_detectors(). Brute-force gate skips 401s on session-check paths.
+- **correlation_engine.py**: Added /api/v1/auth/me, /api/v1/auth/refresh, /api/v1/auth/logout, /api/v1/auth/session to path_excludes for http_auth_brute_force and generic_credential_attack rules.
+
+### Added - Auto-Block Confirmation Gate
+
+Single-event or low-confidence detections no longer auto-block IPs without meeting explicit confirmation thresholds.
+
+- **playbook_engine.py**: New is_confirmed_attack() helper. Block-ip actions are withheld (status=withheld_requires_approval) unless the alert matches confirmed exploit rules OR meets brute-force thresholds (5+ events at high+ severity). Non-block actions execute immediately.
+- **ai_engine.py**: New _alert_block_confirmed() check in process_alert(). Unconfirmed blocks route to _create_pending_block() creating a PENDING Action. Confirmed blocks continue through guardrail_engine unchanged.
+
+### Operational - FP Cleanup
+
+- 17 false-positive IPs unblocked from Pi firewall and removed from threat_intel: social media crawlers, residential ISP single-401 events, cloud single /api/og Open Graph crawler hits.
+- Corresponding incidents tagged with FP-SESSION-CHECK, FP-OG-CRAWLER, and FP-CRAWLER-TWITTER prefixes.
+
+---
+
 ## [1.6.4.1] - 2026-07-14 (dashboard FP filter)
 
 ### Fixed

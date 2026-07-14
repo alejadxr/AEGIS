@@ -172,7 +172,8 @@ def _is_internal_line(line: str) -> bool:
 _SAFE_PATHS = (
     "/dashboard/", "/api/v1/health", "/api/v1/dashboard/", "/ws",
     "/api/v1/nodes/heartbeat", "/api/v1/auth/logout",
-    "/api/v1/auth/refresh", "/api/v1/me", "/api/v1/version",
+    "/api/v1/auth/refresh", "/api/v1/auth/me", "/api/v1/auth/session",
+    "/api/v1/me", "/api/v1/version",
     "/api/v1/threats/feed", "/favicon.ico", "/_next/",
 )
 
@@ -595,7 +596,34 @@ class LogWatcher:
         event_path = _event_attr(event, "path")
         event_port = _event_attr(event, "target_port")
         status_code = _event_attr(event, "status_code")
+        event_type = _event_attr(event, "event_type")
+        event_method = _event_attr(event, "method")
         is_dashboard_request = _is_safe_path(line, event_path)
+
+        # Defense-in-depth: a 401 that event_normalizer already classified as a
+        # benign session-check (event_type http_request, not http_auth_failure)
+        # must never advance the brute-force counter, even if the raw line slips
+        # past _SAFE_PATHS substring matching. Login attempts are POSTs; a
+        # non-POST 401 on an auth namespace is a session-check / token refresh.
+        is_session_check_401 = False
+        if isinstance(event_path, str):
+            _bare_path = event_path.split("?", 1)[0]
+            _is_auth_ns = _bare_path.startswith("/api/v1/auth/") or _bare_path.startswith("/auth/")
+            _is_login = _bare_path.startswith("/api/v1/auth/login") or _bare_path.startswith("/api/v1/login")
+            _method = (event_method or "").upper()
+            if _is_auth_ns and not _is_login and _method and _method != "POST":
+                is_session_check_401 = True
+        if event_type in ("http_request", "session_check_401"):
+            # Normalizer already ruled this benign.
+            is_session_check_401 = is_session_check_401 or (
+                isinstance(event_path, str)
+                and (
+                    event_path.startswith("/api/v1/auth/me")
+                    or event_path.startswith("/api/v1/auth/refresh")
+                    or event_path.startswith("/api/v1/auth/logout")
+                    or event_path.startswith("/api/v1/auth/session")
+                )
+            )
 
         # ----- Port-scan tracker --------------------------------------
         # Prefer event.target_port (so we can tell port 22 / SSH from
@@ -635,7 +663,7 @@ class LogWatcher:
         #   port 8000 / 80 / 443     — 20 in 60s  = HIGH (HTTP API)
         #   dashboard paths          — skip entirely
         is_401 = (status_code == 401) or (" 401 " in line)
-        if is_401 and not is_dashboard_request:
+        if is_401 and not is_dashboard_request and not is_session_check_401:
             # Port-aware threshold + severity selection.
             if port_for_scan == 2222:
                 threshold, severity_str, label = 1, "critical", "ssh_honeypot_brute"
