@@ -191,6 +191,7 @@ async def incidents_daily_counts(
         .where(
             Incident.client_id == client.id,
             Incident.detected_at >= cutoff,
+            ~Incident.title.like("[FP-%"),  # daily chart counts real incidents only
         )
         .group_by('day')
     )
