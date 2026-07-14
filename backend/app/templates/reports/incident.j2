@@ -1,0 +1,39 @@
+# Incident Report: {{ title | default('Security Incident') }}
+
+**Generated:** {{ generated_at | default('N/A') }}
+**Severity:** {{ severity | default('unknown') | upper }}
+**Status:** {{ status | default('investigating') }}
+
+## Summary
+
+{{ description | default('No description available.') }}
+
+## Source
+
+- **IP Address:** {{ source_ip | default('Unknown') }}
+- **MITRE Technique:** {{ mitre_technique | default('N/A') }}
+- **MITRE Tactic:** {{ mitre_tactic | default('N/A') }}
+
+## Timeline
+
+{% for event in timeline | default([]) %}
+- {{ event.timestamp }}: {{ event.description }}
+{% else %}
+No timeline events recorded.
+{% endfor %}
+
+## Actions Taken
+
+{% for action in actions | default([]) %}
+- {{ action.action_type }}: {{ action.result | default('completed') }}
+{% else %}
+No response actions recorded.
+{% endfor %}
+
+## Recommendations
+
+{% for rec in recommendations | default([]) %}
+{{ loop.index }}. {{ rec }}
+{% else %}
+Review the incident details and apply standard remediation procedures for {{ threat_type | default('this threat type') }}.
+{% endfor %}

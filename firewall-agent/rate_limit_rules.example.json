@@ -1,0 +1,22 @@
+{
+  "_comment": "Example of the persisted DoS netshield state written by dos_netshield.py. This file is DOCUMENTATION ONLY and is NOT loaded at runtime. The live file lives at /etc/aegis/dos_netshield_rules.json on the Pi and is created/updated only when the network tier is explicitly enabled (AEGIS_DOS_NETSHIELD=1 + X-AEGIS-Netshield: enable). The sysctl revert snapshot is stored separately at /etc/aegis/dos_netshield_sysctl_backup.json.",
+  "ratelimit": {
+    "rate": 50,
+    "burst": 100,
+    "connlimit": 100,
+    "port": 8000,
+    "enabled": true,
+    "applied_at": "2026-07-14T00:00:00+00:00"
+  },
+  "synflood_hardening": {
+    "enabled": true,
+    "applied": {
+      "net.ipv4.tcp_syncookies": "1",
+      "net.ipv4.tcp_max_syn_backlog": "2048",
+      "net.ipv4.tcp_synack_retries": "2",
+      "net.ipv4.tcp_syn_retries": "3",
+      "net.core.somaxconn": "1024"
+    },
+    "applied_at": "2026-07-14T00:00:00+00:00"
+  }
+}
