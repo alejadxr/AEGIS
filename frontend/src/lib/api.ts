@@ -1110,6 +1110,56 @@ export const api = {
       ),
   },
 
+  // DoS Shield
+  dos: {
+    status: () =>
+      request<{
+        mode: string;
+        under_attack: boolean;
+        global_rps: number;
+        global_window_s: number;
+        netshield_enabled: boolean;
+        netshield_env_gate: boolean;
+        thresholds: {
+          per_ip_rps: number;
+          subnet_rps: number;
+          global_rps: number;
+          expensive_rpm: number;
+          concurrency_per_ip: number;
+          block_duration_s: number;
+        };
+        counters: {
+          tracked_ips: number;
+          tracked_subnets: number;
+          events_published: number;
+          blocks: number;
+        };
+        top_offenders: Array<{
+          ip: string;
+          rps: number;
+          blocked: boolean;
+          reason?: string;
+          first_seen?: string | null;
+          country?: string;
+          asn?: string;
+        }>;
+        available: boolean;
+      }>('/dos/status'),
+    offenders: () =>
+      request<{
+        items: Array<{
+          ip: string;
+          rps: number;
+          blocked: boolean;
+          reason?: string;
+          first_seen?: string | null;
+          country?: string;
+          asn?: string;
+        }>;
+        count: number;
+      }>('/dos/offenders'),
+  },
+
   // Honey-AI Deception at Scale
   deception: {
     themes: () =>

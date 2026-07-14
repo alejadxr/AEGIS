@@ -25,6 +25,7 @@ const SUB_TABS: Record<string, SubTab[]> = {
     { label: 'Antivirus', href: '/dashboard/antivirus' },
     { label: 'Ransomware', href: '/dashboard/ransomware' },
     { label: 'EDR / XDR', href: '/dashboard/edr' },
+    { label: 'DoS Shield', href: '/dashboard/dos' },
   ],
   assets: [
     { label: 'Surface', href: '/dashboard/surface' },
