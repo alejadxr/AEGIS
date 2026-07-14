@@ -90,6 +90,59 @@ class Settings(BaseSettings):
     # FastAPI 403 middleware enforces them too. Default OFF (push-only).
     AEGIS_FIREWALL_PULL_FROM_PI: bool = False
 
+    # ----------------------------------------------------------------------
+    # DoS Shield (v1.6.4.0) — L7 flood detection / mitigation.
+    # SAFE DEFAULTS: MODE=monitor (detect+emit only, NEVER 429/block) and the
+    # network tier is gated off (NETSHIELD=False). Flipping to active or
+    # enabling netshield is an explicit human decision — see deploy_notes.
+    # ----------------------------------------------------------------------
+    # 'monitor' = detect + log + emit dos.* events, NEVER 429/block.
+    # 'active'   = enforce (429 + escalate). Runtime-overridable via /dos/mode.
+    AEGIS_DOS_MODE: str = "monitor"
+    # Network-tier master gate. False/0 = firewall_client network methods and
+    # /dos/netshield endpoints are no-ops. Guards against locking the Mac Pro
+    # out of its own Pi gateway. Must be explicitly enabled by an operator.
+    AEGIS_DOS_NETSHIELD: bool = False
+
+    # --- Per-IP sliding window ---
+    # Baseline peak legit IP = 2 req/s → 5x headroom. Above trips dos.http_flood.
+    AEGIS_DOS_PER_IP_RPS: float = 10.0
+    AEGIS_DOS_PER_IP_WINDOW: int = 10   # seconds; budget = RPS*WINDOW = 100/10s
+
+    # --- Per-/24-subnet aggregate window (catches clustered botnets) ---
+    AEGIS_DOS_SUBNET_RPS: float = 40.0
+    AEGIS_DOS_SUBNET_WINDOW: int = 10
+
+    # --- Global aggregate window (catches fully-distributed floods) ---
+    # Real API ~0.7 req/s, probe peak ~16.7 req/s → ~70x headroom on real traffic.
+    AEGIS_DOS_GLOBAL_RPS: float = 50.0
+    AEGIS_DOS_GLOBAL_WINDOW: int = 10
+
+    # --- Expensive-endpoint budget (AI inference, scan triggers) ---
+    AEGIS_DOS_EXPENSIVE_RPM: float = 6.0   # per-IP req/min = 1 per 10s
+    AEGIS_DOS_EXPENSIVE_PATHS: str = (
+        "/api/v1/ask,/api/v1/surface/scan,/api/v1/surface/scan/now"
+    )
+
+    # --- Slow-loris heuristics ---
+    AEGIS_DOS_CONCURRENCY_PER_IP: int = 20   # max concurrent in-flight per IP
+    AEGIS_DOS_SLOW_REQUEST_SECONDS: int = 25  # handler duration => slow-request tick
+
+    # --- Escalation / body / adaptive knobs ---
+    AEGIS_DOS_BLOCK_DURATION: int = 900       # seconds an escalated IP stays blocked
+    AEGIS_DOS_MAX_BODY_BYTES: int = 10485760  # 10 MB → 413 above this
+    AEGIS_DOS_UNDER_ATTACK_FACTOR: float = 0.5  # tighten budgets under attack
+    AEGIS_DOS_EVENT_COOLDOWN: int = 30        # min seconds between same (ip,reason) event
+
+    # Direct-peer IPs from which X-Forwarded-For is trusted for client-IP
+    # derivation. Default = localhost + Tailscale CGNAT. Any other peer uses the
+    # real socket IP, defeating XFF spoofing of rate-limit accounting.
+    AEGIS_DOS_TRUSTED_PROXIES: str = "127.0.0.1,::1,100.64.0.0/10"
+
+    # --- Network tier (gated by AEGIS_DOS_NETSHIELD) ---
+    AEGIS_DOS_NETSHIELD_SYN_RATE: int = 50    # per-source SYN pkts/sec (iptables hashlimit)
+    AEGIS_DOS_NETSHIELD_CONNLIMIT: int = 100  # max concurrent conns/source (iptables connlimit)
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

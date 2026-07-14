@@ -155,6 +155,27 @@ COOLDOWN_EXFIL = 600        # data movement
 COOLDOWN_CHAIN = 0          # chain rules never silenced
 COOLDOWN_HONEYPOT = 0       # every honeypot hit is a fresh signal
 COOLDOWN_SUPPLY = 60        # IoC hits — let burst-deduper handle storms
+# v1.6.4.0 — DoS Shield (L7 flood) class. dos_shield already applies its own
+# per-(ip,reason) event cooldown (AEGIS_DOS_EVENT_COOLDOWN, default 30s) before
+# publishing, so the correlation-side cooldown is kept short: it only needs to
+# suppress duplicate *incidents* from the same offender, not the underlying
+# dos.* event stream. Distributed/under-attack rules use 0 (every escalation of
+# a confirmed flood is signal, mirroring COOLDOWN_CHAIN).
+COOLDOWN_DOS = 120          # single-source L7 flood incidents
+COOLDOWN_DOS_CRITICAL = 0   # distributed / under-attack — never silenced
+
+# v1.6.4.0 — the complete set of dos.* topics dos_shield may publish. The
+# correlation engine binds these to the safelist-gated _on_dos_event handler.
+# dos.ip_blocked has no matching rule (it is an audit signal) but is bound so
+# the whole DoS event surface flows through one gated path.
+_DOS_EVENT_TYPES: frozenset[str] = frozenset({
+    "dos.http_flood",
+    "dos.distributed",
+    "dos.expensive_abuse",
+    "dos.slowloris",
+    "dos.under_attack",
+    "dos.ip_blocked",
+})
 
 # ---------------------------------------------------------------------------
 # Default confidence factor catalog
@@ -2926,6 +2947,187 @@ BUILT_IN_RULES: list[dict] = [
         "group_by": "source_ip",
     },
 },
+
+    # -------------------------------------------------------------------
+    # CATEGORY: DoS SHIELD (L7 flood) — v1.6.4.0
+    # -------------------------------------------------------------------
+    # These rules consume the dos.* events published by the dos_shield
+    # singleton (app.services.dos_shield). The event payload already carries
+    # event_type / source_ip / subnet / per_ip_rps / subnet_rps / global_rps /
+    # concurrency / reason / mode / under_attack, so each event flows through
+    # evaluate() unchanged and the engine auto-subscribes to these event_types
+    # via _collect_subscribed_types().
+    #
+    # Severity policy (honest severities):
+    #   single-source flood                        -> high
+    #   distributed (subnet/global) / sustained    -> critical
+    #   under-attack mode entered                  -> critical
+    #
+    # dos_shield NEVER blocks in monitor mode (the default posture); these
+    # correlation rules only open incidents / surface on the threat map. Actual
+    # blocking is delegated to dos_shield.escalate() (active mode only) which
+    # reuses ip_blocker_service + firewall_client — no new mechanism here.
+
+    # DoS-1 — single-source HTTP flood
+    {
+        "id": "dos_http_flood",
+        "title": "HTTP Flood (single source)",
+        "description": "A single source IP crossed the per-IP request-rate threshold (AEGIS_DOS_PER_IP_RPS) reported by dos_shield. Correlates 3+ dos.http_flood events (each already event-cooldown deduped by dos_shield) from the same IP within 5 min into one incident. High severity — a lone flooder against AEGIS's single-worker event loop.",
+        "severity": "high",
+        "enabled": True,
+        "source": "builtin",
+        "category": "dos",
+        "mitre": ["T1498.001", "T1499.002"],
+        "confidence_factors": [
+            {"factor": "scanner_ua",             "weight": 1.3},
+            {"factor": "tor_exit",               "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "burst_rate",             "weight": 1.4},
+            {"factor": "safelisted",             "weight": 0.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
+        "condition": {
+            "event_type": "dos.http_flood",
+            "count_threshold": 3,
+            "time_window_seconds": 300,
+            "group_by": ["source_ip"],
+            "cooldown_seconds": COOLDOWN_DOS,
+        },
+    },
+    # DoS-2 — distributed flood (subnet / global). Grouped by `subnet`
+    # (a.b.c.0/24, present on the dos_shield payload) so a botnet clustered in
+    # one address block correlates even when each member IP stays under the
+    # per-IP limit. dos.distributed is emitted for BOTH subnet and global
+    # floods; grouping on subnet keeps global floods (subnet varies) firing
+    # per-block while still catching the clustered case. Critical.
+    {
+        "id": "dos_distributed",
+        "title": "Distributed DoS Flood (subnet/global)",
+        "description": "dos_shield reported an aggregate flood: either a /24 subnet crossed AEGIS_DOS_SUBNET_RPS or the global request rate crossed AEGIS_DOS_GLOBAL_RPS. Grouped by /24 subnet so botnets clustered in one address block correlate even when every member IP stays below the per-IP threshold. Critical — distributed floods are DDoS-blind to the legacy per-IP detectors.",
+        "severity": "critical",
+        "enabled": True,
+        "source": "builtin",
+        "category": "dos",
+        "mitre": ["T1498", "T1499"],
+        "confidence_factors": [
+            {"factor": "tor_exit",               "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "burst_rate",             "weight": 1.4},
+            {"factor": "safelisted",             "weight": 0.0},
+        ],
+        "condition": {
+            "event_type": "dos.distributed",
+            "count_threshold": 2,
+            "time_window_seconds": 120,
+            "group_by": ["subnet"],
+            "cooldown_seconds": COOLDOWN_DOS_CRITICAL,
+        },
+    },
+    # DoS-3 — expensive-endpoint hammering (/api/v1/ask, /surface/scan). These
+    # spend OpenRouter tokens / spawn subprocesses, so a much lower budget trips
+    # (AEGIS_DOS_EXPENSIVE_RPM). High severity — resource/quota exhaustion.
+    {
+        "id": "dos_expensive_abuse",
+        "title": "Expensive Endpoint Abuse",
+        "description": "A source IP hammered an EXPENSIVE_PATHS endpoint (AI inference / scan trigger) above the dedicated per-IP budget (AEGIS_DOS_EXPENSIVE_RPM). Correlates 2+ dos.expensive_abuse events from the same IP within 5 min. High — drives OpenRouter token spend and subprocess/DB-pool exhaustion.",
+        "severity": "high",
+        "enabled": True,
+        "source": "builtin",
+        "category": "dos",
+        "mitre": ["T1499.003"],
+        "confidence_factors": [
+            {"factor": "scanner_ua",             "weight": 1.3},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "burst_rate",             "weight": 1.4},
+            {"factor": "safelisted",             "weight": 0.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
+        "condition": {
+            "event_type": "dos.expensive_abuse",
+            "count_threshold": 2,
+            "time_window_seconds": 300,
+            "group_by": ["source_ip"],
+            "cooldown_seconds": COOLDOWN_DOS,
+        },
+    },
+    # DoS-4 — slow-loris / slow-POST / slow-read heuristic (per-IP concurrency
+    # or long-lived request signal from dos_shield). High severity.
+    {
+        "id": "dos_slowloris",
+        "title": "Slow-Loris / Connection Exhaustion",
+        "description": "dos_shield flagged excessive concurrent in-flight requests (AEGIS_DOS_CONCURRENCY_PER_IP) or long-lived requests (AEGIS_DOS_SLOW_REQUEST_SECONDS) from a single IP — a slow-loris / slow-POST / slow-read signature that holds connections open to exhaust the single uvicorn worker. Correlates 2+ dos.slowloris events from the same IP within 5 min. High.",
+        "severity": "high",
+        "enabled": True,
+        "source": "builtin",
+        "category": "dos",
+        "mitre": ["T1499.002"],
+        "confidence_factors": [
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "safelisted",             "weight": 0.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
+        "condition": {
+            "event_type": "dos.slowloris",
+            "count_threshold": 2,
+            "time_window_seconds": 300,
+            "group_by": ["source_ip"],
+            "cooldown_seconds": COOLDOWN_DOS,
+        },
+    },
+    # DoS-5 — global under-attack mode entered. dos_shield sets this adaptive
+    # flag when the global request rate crosses AEGIS_DOS_GLOBAL_RPS. This is a
+    # system-wide condition (not attributable to one IP), so it is single-shot
+    # (no count_threshold) and critical. group_by is a constant so the whole
+    # platform shares one cooldown window and we don't storm incidents.
+    {
+        "id": "dos_under_attack",
+        "title": "AEGIS Under Active DoS (global)",
+        "description": "dos_shield entered adaptive under-attack mode — the GLOBAL request rate crossed AEGIS_DOS_GLOBAL_RPS (~70x headroom over real API baseline). A platform-wide condition; fires once per event (dos_shield emits enter/clear transitions). Critical — the whole service is degrading, not a single offender.",
+        "severity": "critical",
+        "enabled": True,
+        "source": "builtin",
+        "category": "dos",
+        "mitre": ["T1498", "T1499"],
+        "condition": {
+            "event_type": "dos.under_attack",
+            # Only the "entered" transition (under_attack=True) opens an
+            # incident; the matching "cleared" event (under_attack=False) is
+            # ignored so we don't raise a critical alert when the flood subsides.
+            "filter": {"under_attack": True},
+            "group_by": ["detector"],
+            "cooldown_seconds": COOLDOWN_DOS,
+        },
+    },
+    # DoS-6 — Sustained DoS Campaign. Escalates a *persistent* single-source
+    # flooder to CRITICAL: 6+ dos.http_flood events (dos_shield emits at most
+    # one per AEGIS_DOS_EVENT_COOLDOWN=30s per ip, so 6 ≈ 3+ minutes of
+    # unrelenting flooding) from the same IP within 10 min. This is the
+    # long-horizon companion to dos_http_flood — a brief burst stays high, but
+    # sustained hammering becomes a critical campaign incident.
+    {
+        "id": "dos_sustained_campaign",
+        "title": "Sustained DoS Campaign",
+        "description": "A single source produced 6+ dos.http_flood events over 10 min (dos_shield event-cooldown = 30s, so this represents several minutes of unrelenting flooding). Promotes a persistent flooder from a high single-source alert to a CRITICAL sustained-campaign incident. Never silenced (cooldown 0) so ongoing campaigns keep surfacing on the threat map.",
+        "severity": "critical",
+        "enabled": True,
+        "source": "builtin",
+        "category": "dos",
+        "mitre": ["T1498", "T1499.002"],
+        "confidence_factors": [
+            {"factor": "tor_exit",               "weight": 1.5},
+            {"factor": "known_attacker_history", "weight": 2.0},
+            {"factor": "burst_rate",             "weight": 1.4},
+            {"factor": "safelisted",             "weight": 0.0},
+            {"factor": "internal_ip",            "weight": 0.0},
+        ],
+        "condition": {
+            "event_type": "dos.http_flood",
+            "count_threshold": 6,
+            "time_window_seconds": 600,
+            "group_by": ["source_ip"],
+            "cooldown_seconds": COOLDOWN_DOS_CRITICAL,
+        },
+    },
 ]
 
 
@@ -3209,7 +3411,24 @@ class CorrelationEngine:
 
         event_types = self._collect_subscribed_types()
         for et in event_types:
+            # v1.6.4.0: dos.* topics are routed through the safelist-gated
+            # _on_dos_event handler below (mirrors _on_normalized_event), NOT
+            # the generic _on_event — otherwise a safelisted crawler/Tailscale
+            # peer that somehow reached dos_shield would open a DoS incident.
+            # They are still collected here from the DoS rule conditions so we
+            # know which dos.* topics to bind, but we skip the generic bind to
+            # avoid double-processing the same event.
+            if et in _DOS_EVENT_TYPES:
+                continue
             self._event_bus.subscribe(et, self._on_event)
+
+        # v1.6.4.0: bind every dos.* topic dos_shield can publish (including
+        # dos.ip_blocked, which has no matching correlation rule but is part of
+        # the shared contract) to the gated DoS handler. Subscribing all six
+        # keeps the DoS event surface flowing into the incident/threat-map
+        # pipeline without a parallel path.
+        for et in _DOS_EVENT_TYPES:
+            self._event_bus.subscribe(et, self._on_dos_event)
 
         # v1.6.3.8: ONLY subscribe to the typed `log_event` channel emitted by
         # log_watcher AFTER event_normalizer translation + safelist gate.
@@ -3224,6 +3443,7 @@ class CorrelationEngine:
         self._event_bus.subscribe("honeypot_interaction", self._on_honeypot_event)
         logger.info(
             f"Correlation engine subscribed to {len(event_types)} rule types "
+            f"({len(_DOS_EVENT_TYPES)} dos.* via gated handler) "
             f"+ log_line, log_event, edr.event, edr.process_start, honeypot_interaction"
         )
 
@@ -3803,6 +4023,35 @@ class CorrelationEngine:
         """Handler registered with the event bus; called for every subscribed event."""
         if isinstance(data, dict):
             await self.evaluate(data)
+
+    async def _on_dos_event(self, data: dict) -> None:
+        """Handle dos.* events emitted by the dos_shield singleton (v1.6.4.0).
+
+        dos_shield's middleware already short-circuits on _is_safe_ip() before
+        ever calling record_request(), so a safelisted peer normally never
+        produces a dos.* event. This handler re-applies the same safelist gate
+        as defence-in-depth (mirrors _on_normalized_event) so a safelisted
+        source_ip can never open a DoS incident, then feeds the payload — which
+        already carries event_type/source_ip/subnet/*_rps — straight into
+        evaluate() with no re-normalisation.
+        """
+        if not isinstance(data, dict):
+            return
+        if not data.get("event_type"):
+            return
+        source_ip = data.get("source_ip")
+        # under_attack / ip_blocked payloads are system-wide and may carry a
+        # placeholder or empty source_ip; only gate when a real IP is present.
+        if source_ip:
+            try:
+                from app.core.attack_detector import _is_safe_ip
+                if _is_safe_ip(source_ip):
+                    return
+            except Exception as exc:
+                logger.warning(
+                    f"correlation_engine _on_dos_event safelist check failed: {exc}"
+                )
+        await self.evaluate(data)
 
     # ------------------------------------------------------------------
     # Raw-source event translators
