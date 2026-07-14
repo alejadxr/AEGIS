@@ -63,6 +63,7 @@ from app.api import deception as deception_router
 from app.api import intel as intel_router
 from app.api import edr as edr_router
 from app.api import antivirus as antivirus_router
+from app.api import dos as dos_router
 from app.services.signature_updater import signature_updater
 
 # MongoDB threat intel hub
@@ -111,6 +112,13 @@ EVENT_TO_TOPICS: dict[str, tuple[str, ...]] = {
     "threat_shared": ("threats.new", "threats.ioc"),
     "threat_blocked_ip": ("threats.blocked_ip", "threats.new"),
     "threat_pattern_update": ("threats.pattern_update",),
+    # DoS Shield events (v1.6.4.0)
+    "dos.http_flood": ("dos.events", "incidents.new"),
+    "dos.distributed": ("dos.events", "incidents.new"),
+    "dos.expensive_abuse": ("dos.events", "incidents.new"),
+    "dos.slowloris": ("dos.events", "incidents.new"),
+    "dos.under_attack": ("dos.events", "incidents.new"),
+    "dos.ip_blocked": ("dos.events", "actions.new"),
 }
 
 
@@ -429,6 +437,30 @@ async def lifespan(app: FastAPI):
     await correlation_engine.start()
     logger.info("Sigma correlation engine started (with chain rules)")
 
+    # Start DoS Shield (v1.6.4.0) — L7 flood detection. Monitor-mode by default
+    # (AEGIS_DOS_MODE=monitor): detects + emits dos.* events, NEVER 429/blocks.
+    # Mirrors the correlation_engine pattern: register bus, then start().
+    try:
+        from app.services.dos_shield import dos_shield
+        if hasattr(dos_shield, "register_event_bus"):
+            dos_shield.register_event_bus(event_bus)
+        if hasattr(dos_shield, "start"):
+            await dos_shield.start()
+        # Forward dos.* events to the live dashboard.
+        for _dos_topic in (
+            "dos.http_flood",
+            "dos.distributed",
+            "dos.expensive_abuse",
+            "dos.slowloris",
+            "dos.under_attack",
+            "dos.ip_blocked",
+        ):
+            event_bus.subscribe(_dos_topic, ws_event_handler)
+        logger.info("DoS Shield started (mode=%s, netshield=%s)",
+                    settings.AEGIS_DOS_MODE, settings.AEGIS_DOS_NETSHIELD)
+    except Exception as exc:
+        logger.error("DoS Shield failed to start (non-fatal): %s", exc)
+
     # Start threat feeds
     await threat_feed_manager.start()
     logger.info("Threat feed manager started")
@@ -623,6 +655,12 @@ async def lifespan(app: FastAPI):
     await intel_cloud.stop()
     report_scheduler.stop()
     await threat_feed_manager.stop()
+    try:
+        from app.services.dos_shield import dos_shield
+        if hasattr(dos_shield, "stop"):
+            await dos_shield.stop()
+    except Exception:
+        pass
     await event_bus.stop()
     await event_stream.stop()
     await openrouter_client.close()
@@ -646,7 +684,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.3.12",
+    version="1.6.4.0",
     lifespan=lifespan,
 )
 
@@ -666,6 +704,17 @@ app.add_middleware(
 # Attack detection middleware (runs before every request)
 from app.core.attack_detector import AttackDetectorMiddleware
 app.add_middleware(AttackDetectorMiddleware)
+
+# DoS Shield (v1.6.4.0). Starlette wraps middleware in REVERSE registration
+# order (last added = outermost = runs first). By adding BodySizeLimitMiddleware
+# then DoSShieldMiddleware AFTER AttackDetectorMiddleware, the runtime order
+# becomes: DoSShieldMiddleware -> BodySizeLimitMiddleware -> AttackDetector ->
+# CORS -> routes. Floods are shed BEFORE the heavy mega-regex attack detection
+# and body reads. Monitor-mode by default (AEGIS_DOS_MODE=monitor): detect only,
+# no 429/block.
+from app.core.dos_middleware import DoSShieldMiddleware, BodySizeLimitMiddleware
+app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(DoSShieldMiddleware)
 
 # Register API routes
 app.include_router(auth.router, prefix="/api/v1")
@@ -702,6 +751,7 @@ app.include_router(ransomware_router.router, prefix="/api/v1")
 app.include_router(deception_router.router, prefix="/api/v1")
 app.include_router(edr_router.router, prefix="/api/v1")
 app.include_router(antivirus_router.router, prefix="/api/v1")
+app.include_router(dos_router.router, prefix="/api/v1")
 app.include_router(threat_intel_hub_router.router, prefix="/api/v1")
 app.include_router(intel_router.router, prefix="/api/v1/intel", tags=["ip-intel"])
 app.include_router(admin.router, prefix="/api/v1")
@@ -753,7 +803,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.3.12",
+        "version": "1.6.4.0",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -765,7 +815,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.3.12",
+        "version": "1.6.4.0",
         "ai_mode": _ai_mode.value,
     }
 
