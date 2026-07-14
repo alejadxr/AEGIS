@@ -455,7 +455,7 @@ class LiveMetrics(BaseModel):
 
 @router.get("/live-metrics", response_model=LiveMetrics)
 async def get_live_metrics(
-    window: str = "24h",
+    window: str = "30d",
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ):
@@ -463,6 +463,11 @@ async def get_live_metrics(
 
     v1.6.2: configurable ?window=24h|7d|30d|all so operators can see slow-burn
     campaigns that the previous hard-coded 24h cutoff hid.
+
+    v1.7.1: default window widened 24h -> 30d. Real attacker/target data is
+    weeks old (the June AWS SQLi wave); the old 24h default rendered the Live
+    SOC top-lists empty even though 8+ attackers exist in the 30-day view.
+    Operators can still narrow via ?window=24h|7d or broaden via ?window=all.
 
     Returns:
       - Top 10 attacker IPs (by incident count)

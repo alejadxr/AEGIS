@@ -92,10 +92,15 @@ class ThreatIntelGenerator:
         logger.info(f"Generated {len(iocs_created)} IOCs from {len(interactions)} interactions")
         return iocs_created
 
-    async def generate_threat_feed(self, db: AsyncSession, format: str = "json") -> dict:
-        """Export threat intelligence as a feed."""
+    async def generate_threat_feed(self, db: AsyncSession, format: str = "json", limit: int = 1000) -> dict:
+        """Export threat intelligence as a feed.
+
+        `limit` is bounded to [1, 10000] so remote AEGIS nodes can pull the
+        full indicator set (default 1000) instead of being silently capped.
+        """
+        bounded_limit = max(1, min(int(limit), 10000))
         result = await db.execute(
-            select(ThreatIntel).order_by(ThreatIntel.last_seen.desc()).limit(1000)
+            select(ThreatIntel).order_by(ThreatIntel.last_seen.desc()).limit(bounded_limit)
         )
         iocs = result.scalars().all()
 

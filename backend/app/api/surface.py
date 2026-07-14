@@ -97,9 +97,16 @@ async def launch_scan(
 
 
 @router.get("/scans", response_model=list[ScanDetail])
-async def list_scans(auth: AuthContext = Depends(require_viewer)):
-    """List scans for the current tenant."""
-    scans = scan_orchestrator.list_scans(client_id=auth.client.id)
+async def list_scans(
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """List scans for the current tenant.
+
+    Reads from the persisted ``scans`` table so history survives restarts
+    (previously scans lived only in an in-memory dict and vanished on reboot).
+    """
+    scans = await scan_orchestrator.list_scans(client_id=auth.client.id, db=db)
     return [
         ScanDetail(
             id=s["id"],
@@ -116,9 +123,13 @@ async def list_scans(auth: AuthContext = Depends(require_viewer)):
 
 
 @router.get("/scans/{scan_id}", response_model=ScanDetail)
-async def get_scan(scan_id: str, auth: AuthContext = Depends(require_viewer)):
+async def get_scan(
+    scan_id: str,
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
     """Get scan details and results. Scoped to current tenant."""
-    scan = scan_orchestrator.get_scan(scan_id, client_id=auth.client.id)
+    scan = await scan_orchestrator.get_scan(scan_id, client_id=auth.client.id, db=db)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     return ScanDetail(

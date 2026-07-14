@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.4] - 2026-07-14 (dashboard visibility — widen campaign/history windows)
+
+### Fixed - Dashboard Visibility
+
+Historical attack data was invisible on first load because default query windows were too narrow.
+
+- **api/threats.py**: campaigns default window 24h -> 168h, cap 14d -> 30d; added 7d/14d/30d historical fallback + effective_window_hours field; feed endpoint gained `?limit` param (1..10000).
+- **services/ttp_clustering.py**: detect_campaigns and get_campaign_detail now exclude [FP-*] incidents so crawler noise cannot form fake campaigns.
+- **api/dashboard.py**: live-metrics default window changed from '24h' to '30d' so weeks-old attacker/target top-lists render by default.
+- **modules/phantom/intel.py**: generate_threat_feed gained bounded limit param (default 1000, max 10000), replacing hard-coded .limit(1000).
+- **api/intel_cloud.py**: community/stats endpoint now awaits intel_cloud.get_stats_live() for DB-backed real-time counts.
+- **services/intel_cloud.py**: added async get_stats_live() reconciling iocs_submitted/unique_contributors against non-expired shared_iocs, with in-memory fallback.
+- **models/scan.py**: NEW Scan ORM model persisting scan history (composite index on client_id, created_at).
+- **models/__init__.py**: registered Scan model so its table is created by Base.metadata.create_all.
+- **services/scanner.py**: persist scans to DB on start/complete/fail; get_scan/list_scans now async and DB-backed with in-memory merge for in-flight scans.
+- **api/surface.py**: scans list/detail endpoints inject db and await the now-async orchestrator methods.
+- **frontend/threats/campaigns/page.tsx**: Changed default campaign window from 168h to 720h (30d) so historical campaigns render on first load.
+- **frontend/threats/CampaignFilters.tsx**: Replaced WINDOWS selector with honest 24h/7d/14d/30d progression; removed misleading duplicate 'All' option.
+
+---
+
 ## [1.6.4.3] - 2026-07-14 (auth session-check FP fix + block gating)
 
 ### Fixed - Auth Session-Check False Positive

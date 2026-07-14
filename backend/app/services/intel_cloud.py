@@ -747,7 +747,7 @@ class IntelCloud:
     # -- stats --------------------------------------------------------------
 
     def get_stats(self) -> dict:
-        """Return sharing statistics."""
+        """Return sharing statistics (in-memory counters)."""
         return {
             **self._stats,
             "sharing_enabled": self.sharing_enabled,
@@ -755,6 +755,46 @@ class IntelCloud:
             "is_hub": self.is_hub,
             "hub_url": self._config["hub_url"] or "(this instance)",
         }
+
+    async def get_stats_live(self) -> dict:
+        """Return sharing statistics with live DB-backed counts.
+
+        The in-memory counters (`iocs_submitted`, `unique_contributors`) start
+        at zero and only advance when submit/pull run in-process, so they read
+        as 0 even when the shared_iocs table already holds rows (inserted by a
+        prior process or a direct path). This method reconciles the returned
+        stats against the DB so GET /intel/community/stats reflects reality:
+
+          - iocs_submitted     = COUNT(*) of non-expired shared_iocs
+          - unique_contributors = COUNT(DISTINCT source_hash) of non-expired rows
+
+        Falls back to the in-memory counters if the DB is unreachable.
+        """
+        stats = self.get_stats()
+        try:
+            now = datetime.utcnow()
+            async with async_session() as db:
+                not_expired = or_(
+                    SharedIOC.expires_at.is_(None),
+                    SharedIOC.expires_at > now,
+                )
+                total = await db.scalar(
+                    select(func.count(SharedIOC.id)).where(not_expired)
+                )
+                contributors = await db.scalar(
+                    select(func.count(func.distinct(SharedIOC.source_hash))).where(not_expired)
+                )
+            # Surface the larger of (live DB count, in-memory counter) so we
+            # never regress a legitimately-higher in-process counter.
+            stats["iocs_submitted"] = max(int(total or 0), int(stats.get("iocs_submitted") or 0))
+            stats["unique_contributors"] = max(
+                int(contributors or 0), int(stats.get("unique_contributors") or 0)
+            )
+            # Keep the in-memory mirror in sync for subsequent sync-path reads.
+            self._stats["unique_contributors"] = stats["unique_contributors"]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("get_stats_live DB reconciliation failed: %s", exc)
+        return stats
 
 
 # ---------------------------------------------------------------------------

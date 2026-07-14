@@ -17,6 +17,7 @@ from app.models.ransomware_event import RansomwareEvent
 from app.models.av_detection import AvDetection
 from app.models.honeypot_canary import HoneypotCanary
 from app.models.tls_fingerprint import TlsFingerprint
+from app.models.scan import Scan
 
 __all__ = [
     "Base",
@@ -42,4 +43,5 @@ __all__ = [
     "AvDetection",
     "HoneypotCanary",
     "TlsFingerprint",
+    "Scan",
 ]
