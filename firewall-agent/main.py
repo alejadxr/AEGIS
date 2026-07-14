@@ -774,6 +774,104 @@ async def ai_chat(req: ChatRequest):
 
 
 # ---------------------------------------------------------------------------
+# DoS Netshield (network tier) — DEFAULT OFF, gated endpoints
+# ---------------------------------------------------------------------------
+#
+# These endpoints wrap dos_netshield.py (dedicated AEGIS_DOS iptables chain +
+# sysctl SYN hardening). They are NO-OPS unless BOTH:
+#   (1) the Pi env AEGIS_DOS_NETSHIELD=1 is set on the systemd unit, AND
+#   (2) the caller sends header  X-AEGIS-Netshield: enable
+# so the network tier can NEVER be applied accidentally. The dos_netshield
+# module ALWAYS prepends host-safety ACCEPT rules (Mac Pro + Tailscale CGNAT +
+# loopback) before any limit/DROP, so the gateway cannot lock out its own host.
+# Nothing here runs at import or startup — application is explicit only.
+
+try:
+    import dos_netshield  # type: ignore
+    _NETSHIELD_AVAILABLE = True
+except Exception as _e:  # pragma: no cover - defensive import
+    dos_netshield = None  # type: ignore
+    _NETSHIELD_AVAILABLE = False
+    logger.warning(f"dos_netshield module unavailable: {_e}")
+
+_NETSHIELD_ENV_GATE = os.getenv("AEGIS_DOS_NETSHIELD", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+class DoSRateLimitRequest(BaseModel):
+    rate: int = 50
+    burst: int = 100
+    connlimit: int = 100
+    port: int = 8000
+
+
+def _require_netshield(request: Request) -> None:
+    """Enforce the double gate: env var + confirmation header. Raises 403."""
+    if not _NETSHIELD_AVAILABLE:
+        raise HTTPException(status_code=503, detail="dos_netshield module not available")
+    if not _NETSHIELD_ENV_GATE:
+        raise HTTPException(
+            status_code=403,
+            detail="netshield disabled (set AEGIS_DOS_NETSHIELD=1 on the Pi unit)",
+        )
+    if request.headers.get("X-AEGIS-Netshield", "").strip().lower() != "enable":
+        raise HTTPException(
+            status_code=403,
+            detail="netshield confirmation header missing (X-AEGIS-Netshield: enable)",
+        )
+
+
+@app.get("/dos/status")
+async def dos_status():
+    """Read-only netshield state. Safe to call regardless of gate."""
+    if not _NETSHIELD_AVAILABLE:
+        return {"available": False, "env_gate": _NETSHIELD_ENV_GATE}
+    state = dos_netshield.status()
+    state["available"] = True
+    state["env_gate"] = _NETSHIELD_ENV_GATE
+    return state
+
+
+@app.post("/dos/ratelimit")
+async def dos_ratelimit(req: DoSRateLimitRequest, request: Request):
+    """Apply per-source SYN hashlimit + connlimit in the dedicated AEGIS_DOS chain."""
+    _require_netshield(request)
+    try:
+        result = dos_netshield.apply_ratelimit(
+            rate=req.rate, burst=req.burst, connlimit=req.connlimit, port=req.port,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if result.get("success"):
+        _add_event("dos_ratelimit", details=f"Netshield ratelimit applied: {result}", severity="high")
+    return result
+
+
+@app.post("/dos/harden")
+async def dos_harden(request: Request):
+    """Enable tcp_syncookies + tune SYN backlog via sysctl (snapshotted, reversible)."""
+    _require_netshield(request)
+    result = dos_netshield.harden_synflood()
+    if result.get("success"):
+        _add_event("dos_harden", details="Netshield SYN-flood sysctl hardening applied", severity="high")
+    return result
+
+
+@app.post("/dos/revert")
+async def dos_revert(request: Request):
+    """FULL rollback: remove AEGIS_DOS chain + restore sysctl. Requires env gate + header."""
+    # Revert must be reachable to recover, but still requires the env gate so a
+    # stray caller can't tear down rules on a Pi that never enabled netshield.
+    if not _NETSHIELD_AVAILABLE:
+        raise HTTPException(status_code=503, detail="dos_netshield module not available")
+    if not _NETSHIELD_ENV_GATE:
+        raise HTTPException(status_code=403, detail="netshield disabled (nothing to revert)")
+    result = dos_netshield.revert()
+    if result.get("success"):
+        _add_event("dos_revert", details="Netshield reverted (chain removed, sysctl restored)", severity="medium")
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Additional utility endpoints
 # ---------------------------------------------------------------------------
 
@@ -788,5 +886,6 @@ async def root():
             "/blocked", "/block", "/analyze", "/ai/investigate",
             "/threat-summary", "/visitors/recent", "/iptables/rules",
             "/events", "/auto-response/blocked", "/ai/chat",
+            "/dos/status", "/dos/ratelimit", "/dos/harden", "/dos/revert",
         ],
     }
