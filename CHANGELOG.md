@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.1] - 2026-07-14 (dashboard FP filter)
+
+### Fixed
+- Dashboard aggregation endpoints (live-metrics top attackers + attack types, threat-map, featured-incident, auth-attempts monthly, incidents daily-counts) now exclude `[FP-*]`-prefixed incidents, matching the incidents list. Previously benign crawlers and operator/internal IPs appeared as "top attackers" and dominated the threat map; the dashboard now reflects only real threats.
+
+### Known limitation
+- The offline GeoIP dataset lacks country coverage for some attacker ranges (e.g. Starlink CGNAT, certain cloud ranges), which render as "Unknown" on the threat map until the dataset is upgraded.
+
+---
+
 ## [1.6.4.0] - 2026-07-14 (DoS/DDoS Shield)
 
 Application-layer DoS and DDoS detection module added as an always-on
