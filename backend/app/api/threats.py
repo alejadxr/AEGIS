@@ -116,6 +116,7 @@ async def create_ioc(
 @router.get("/feed")
 async def get_threat_feed(
     format: str = "json",
+    limit: int = Query(1000, ge=1, le=10000, description="Max indicators to return (default 1000, up to 10k)."),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
@@ -125,6 +126,8 @@ async def get_threat_feed(
     Remote AEGIS nodes and third-party tools can pull shared IOCs from here.
     Supports JSON (default) and STIX format.
     Optionally pass ?since=<ISO8601> to get only recent IOCs.
+    Optionally pass ?limit=<n> (default 1000, max 10000) to pull more of the
+    ~2k+ indicators than the previous hard-coded 1000-record cap allowed.
     """
     since_param = request.query_params.get("since") if request else None
 
@@ -142,6 +145,8 @@ async def get_threat_feed(
             for key in ("first_seen", "last_seen"):
                 if isinstance(ioc.get(key), datetime):
                     ioc[key] = ioc[key].isoformat()
+        # Honour the caller's limit on the hub path too.
+        iocs = iocs[:limit]
         return {
             "iocs": iocs,
             "count": len(iocs),
@@ -150,7 +155,7 @@ async def get_threat_feed(
         }
 
     # Fallback: serve from local PostgreSQL
-    return await threat_intel_generator.generate_threat_feed(db, format=format)
+    return await threat_intel_generator.generate_threat_feed(db, format=format, limit=limit)
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +375,7 @@ async def get_sharing_stats():
 @router.get("/campaigns")
 async def list_ttp_campaigns(
     limit: int = 20,
-    window_hours: int = 24,
+    window_hours: int = 168,
     min_distinct_ips: int = 3,
     auth: AuthContext = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
@@ -380,18 +385,34 @@ async def list_ttp_campaigns(
 
     A campaign is surfaced when ≥ min_distinct_ips different source IPs
     triggered incidents with the same TTP fingerprint inside the window.
+
+    v1.7.1: default window widened 24h -> 168h (7d) and the hard 14-day cap
+    raised to 30 days so historical multi-IP campaigns (e.g. the June AWS
+    SQLi cluster) are not silently hidden. If the requested window yields no
+    campaigns, we automatically widen the search (7d -> 14d -> 30d) before
+    giving up, mirroring the ?window=all fallback used by live-metrics /
+    threat-map. [FP-*] crawler incidents are excluded from clustering inside
+    detect_campaigns so they can never form fake campaigns.
     """
     from app.services.ttp_clustering import detect_campaigns
-    bounded_window = max(1, min(window_hours, 24 * 14))
+    # Raise the cap from 14 days to 30 days so operators can query the full
+    # month of history the dashboard already exposes elsewhere.
+    bounded_window = max(1, min(window_hours, 24 * 30))
     bounded_min_ips = max(2, min(min_distinct_ips, 50))
     bounded_limit = max(1, min(limit, 100))
-    campaigns = await detect_campaigns(
-        db=db,
-        window_hours=bounded_window,
-        min_distinct_ips=bounded_min_ips,
-        client_id=auth.client.id,
-        limit=bounded_limit,
-    )
+
+    async def _detect(win: int, cid):
+        return await detect_campaigns(
+            db=db,
+            window_hours=win,
+            min_distinct_ips=bounded_min_ips,
+            client_id=cid,
+            limit=bounded_limit,
+        )
+
+    effective_window = bounded_window
+    campaigns = await _detect(bounded_window, auth.client.id)
+
     # BUG-5 fix: log_watcher historically wrote incidents under whichever
     # client `SELECT ... LIMIT 1` returned first (no ORDER BY), which can
     # differ from the API-key-resolved client. If the per-tenant query
@@ -399,17 +420,27 @@ async def list_ttp_campaigns(
     # while the legacy incidents drain. The deterministic log_watcher
     # client lookup (same commit) prevents new mismatches.
     if not campaigns:
-        campaigns = await detect_campaigns(
-            db=db,
-            window_hours=bounded_window,
-            min_distinct_ips=bounded_min_ips,
-            client_id=None,
-            limit=bounded_limit,
-        )
+        campaigns = await _detect(bounded_window, None)
+
+    # Smart historical fallback: if the requested window is short and returned
+    # nothing, progressively widen (up to 30d) so slow-burn campaigns whose
+    # last_seen is weeks old still surface instead of an empty list.
+    if not campaigns:
+        for wider in (24 * 7, 24 * 14, 24 * 30):
+            if wider <= bounded_window:
+                continue
+            campaigns = await _detect(wider, auth.client.id)
+            if not campaigns:
+                campaigns = await _detect(wider, None)
+            if campaigns:
+                effective_window = wider
+                break
+
     return {
         "campaigns": campaigns,
         "count": len(campaigns),
         "window_hours": window_hours,
+        "effective_window_hours": effective_window,
         "min_distinct_ips": min_distinct_ips,
     }
 

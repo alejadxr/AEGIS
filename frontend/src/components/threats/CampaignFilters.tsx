@@ -20,11 +20,13 @@ export interface CampaignFiltersProps {
   loading?: boolean;
 }
 
+// Window presets. 30d (720h) is the server-side maximum campaign window,
+// so "30d" already surfaces every retained campaign — no separate "All".
 const WINDOWS: { label: string; value: number }[] = [
   { label: '24h', value: 24 },
   { label: '7d', value: 168 },
+  { label: '14d', value: 336 },
   { label: '30d', value: 720 },
-  { label: 'All', value: 24 * 30 }, // capped server-side; "All" approximates 30d
 ];
 
 const MIN_IPS: { label: string; value: number }[] = [
