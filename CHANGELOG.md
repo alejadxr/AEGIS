@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.0] - 2026-07-14 (DoS/DDoS Shield)
+
+Application-layer DoS and DDoS detection module added as an always-on
+monitor with network-tier blocking gated behind a feature flag.
+
+### Added
+- **`dos_shield`** service (`backend/app/services/dos_shield.py`) — per-IP,
+  per-subnet, and global request-rate counters with configurable thresholds
+  for HTTP flood, distributed flood, expensive-endpoint abuse, Slowloris
+  connection exhaustion, and coordinated under-attack mode. Runs in monitor
+  mode by default (detect-only, no blocks) so operators can tune thresholds
+  before enabling enforcement.
+- **`DoSShieldMiddleware`** (`backend/app/core/dos_middleware.py`) — ASGI
+  middleware that feeds every inbound request into the shield counters and
+  emits structured `dos.*` events onto the internal event bus.
+- **`/api/v1/dos` router** (`backend/app/api/dos.py`) — status endpoint,
+  per-IP counter inspection, threshold configuration, and manual override
+  to switch between monitor-only and enforcement modes at runtime.
+- **DoS correlation rules** — five new Sigma-style chain rules covering
+  HTTP flood, distributed flood, expensive-endpoint abuse, Slowloris, and
+  global under-attack patterns. Integrated with the existing rules loader
+  and hot-reload path.
+- **Network-tier blocking** (`firewall-agent/dos_netshield.py`) — optional
+  iptables/nftables rate-limit enforcement on the Pi network segment, off
+  by default. Activated only when the `DOS_NETWORK_TIER` feature flag is
+  set, keeping production impact zero until explicitly opted in.
+- **`firewall-agent/rate_limit_rules.example.json`** — reference config
+  documenting per-route and global rate-limit parameters.
+- **`scripts/dos_hardening.md`** — operational runbook: threshold tuning
+  guide, escalation from monitor to enforce mode, rollback procedure.
+- **`backend/tests/test_dos_shield.py`** — unit tests for counter logic,
+  threshold evaluation, and event emission.
+
+### Operational
+- Monitor mode is the default; no traffic is dropped until the operator
+  sets `DOS_ENFORCE=1` in the environment.
+- Network-tier blocking (Pi segment) is disabled by default; set
+  `DOS_NETWORK_TIER=1` to enable iptables rate-limit rules on the
+  remote firewall executor.
+- `/health` reports `version=1.6.4.0`.
+
+---
+
 ## [1.6.3.11] - 2026-06-30 (cold-cache perf)
 
 Eliminates the cold-cache tax on the first dashboard request after every
