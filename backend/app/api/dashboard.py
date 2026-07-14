@@ -234,6 +234,7 @@ async def get_featured_incident(
             Incident.client_id == client.id,
             Incident.status.in_(["open", "investigating"]),
             Incident.severity.in_(["critical", "high"]),
+            ~Incident.title.like("[FP-%"),  # never feature a false-positive
         )
         .order_by(Incident.detected_at.desc())
         .limit(1)
@@ -247,6 +248,7 @@ async def get_featured_incident(
             .where(
                 Incident.client_id == client.id,
                 Incident.status.in_(["open", "investigating"]),
+                ~Incident.title.like("[FP-%"),
             )
             .order_by(Incident.detected_at.desc())
             .limit(1)
@@ -356,6 +358,7 @@ async def get_auth_attempts_monthly(
             Incident.client_id == client.id,
             Incident.detected_at >= cutoff,
             auth_filter,
+            ~Incident.title.like("[FP-%"),  # exclude false-positive-tagged incidents
         )
         .group_by(month_bucket)
         .order_by(month_bucket)
@@ -487,6 +490,7 @@ async def get_live_metrics(
             Incident.client_id == client.id,
             Incident.source_ip.is_not(None),
             Incident.detected_at >= cutoff,
+            ~Incident.title.like("[FP-%"),  # exclude crawlers/operator FPs from top attackers
         )
         .group_by(Incident.source_ip)
         .order_by(func.count(Incident.id).desc())
@@ -506,6 +510,7 @@ async def get_live_metrics(
             Incident.client_id == client.id,
             Incident.mitre_technique.is_not(None),
             Incident.detected_at >= cutoff,
+            ~Incident.title.like("[FP-%"),  # exclude FP-tagged from attack-type mix
         )
         .group_by(Incident.mitre_technique)
         .order_by(func.count(Incident.id).desc())
@@ -628,6 +633,7 @@ async def get_threat_map(
     ).where(
         Incident.client_id == client.id,
         Incident.source_ip.is_not(None),
+        ~Incident.title.like("[FP-%"),  # keep crawlers/operator off the threat map
     )
     if cutoff:
         inc_q = inc_q.where(Incident.detected_at >= cutoff)

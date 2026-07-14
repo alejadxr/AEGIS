@@ -112,7 +112,7 @@ EVENT_TO_TOPICS: dict[str, tuple[str, ...]] = {
     "threat_shared": ("threats.new", "threats.ioc"),
     "threat_blocked_ip": ("threats.blocked_ip", "threats.new"),
     "threat_pattern_update": ("threats.pattern_update",),
-    # DoS Shield events (v1.6.4.0)
+    # DoS Shield events (v1.6.4.1)
     "dos.http_flood": ("dos.events", "incidents.new"),
     "dos.distributed": ("dos.events", "incidents.new"),
     "dos.expensive_abuse": ("dos.events", "incidents.new"),
@@ -437,7 +437,7 @@ async def lifespan(app: FastAPI):
     await correlation_engine.start()
     logger.info("Sigma correlation engine started (with chain rules)")
 
-    # Start DoS Shield (v1.6.4.0) — L7 flood detection. Monitor-mode by default
+    # Start DoS Shield (v1.6.4.1) — L7 flood detection. Monitor-mode by default
     # (AEGIS_DOS_MODE=monitor): detects + emits dos.* events, NEVER 429/blocks.
     # Mirrors the correlation_engine pattern: register bus, then start().
     try:
@@ -684,7 +684,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.4.0",
+    version="1.6.4.1",
     lifespan=lifespan,
 )
 
@@ -705,7 +705,7 @@ app.add_middleware(
 from app.core.attack_detector import AttackDetectorMiddleware
 app.add_middleware(AttackDetectorMiddleware)
 
-# DoS Shield (v1.6.4.0). Starlette wraps middleware in REVERSE registration
+# DoS Shield (v1.6.4.1). Starlette wraps middleware in REVERSE registration
 # order (last added = outermost = runs first). By adding BodySizeLimitMiddleware
 # then DoSShieldMiddleware AFTER AttackDetectorMiddleware, the runtime order
 # becomes: DoSShieldMiddleware -> BodySizeLimitMiddleware -> AttackDetector ->
@@ -803,7 +803,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.0",
+        "version": "1.6.4.1",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -815,7 +815,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.0",
+        "version": "1.6.4.1",
         "ai_mode": _ai_mode.value,
     }
 
