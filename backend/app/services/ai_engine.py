@@ -66,6 +66,7 @@ RESPONSE_ACTIONS = {
     "credential_dumping": ["isolate_host", "revoke_creds"],
     "web_shell": ["quarantine_file", "isolate_host"],
     "ransomware": ["isolate_host", "network_segment", "shutdown_service"],
+    "honeypot_recon": ["block_ip", "collect_evidence"],
 }
 
 # Map sigma rule IDs to threat types for fast path
@@ -82,6 +83,9 @@ SIGMA_TO_THREAT_TYPE = {
     "web_shell_activity": "web_shell",
     "privilege_escalation": "privilege_escalation",
     "xss_attack_chain": "xss",
+    "http_auth_brute_force": "brute_force",
+    "ssh_honeypot_attempt": "honeypot_recon",
+    "generic_credential_attack": "brute_force",
 }
 
 
@@ -411,18 +415,50 @@ class AIDecisionEngine:
         # Stage 4: Decide actions
         threat_type = triage.get("threat_type", "unknown")
         recommended = RESPONSE_ACTIONS.get(threat_type, ["block_ip"])
+
+        # Auto-block confirmation gate (mirrors playbook_engine.is_confirmed_attack).
+        # A lone MEDIUM/low-confidence auth-failure / brute-force alert must NOT
+        # auto-block. When the threat is not a confirmed real attack, block_ip
+        # (and other IP-blocking actions) are forced to require operator
+        # approval instead of relying on the auto_approve default policy.
+        block_confirmed, block_reason = self._alert_block_confirmed(
+            alert_data, triage, threat_type
+        )
+        result["block_confirmed"] = block_confirmed
+        result["block_confirmation_reason"] = block_reason
+
         actions = []
         for action_type in recommended:
             target = alert_data.get("source_ip", alert_data.get("target", "unknown"))
             reasoning = f"AI recommended {action_type} for {threat_type} threat. {triage.get('summary', '')}"
-            action = await guardrail_engine.evaluate_action(
-                client=client,
-                action_type=action_type,
-                target=target,
-                ai_reasoning=reasoning,
-                db=db,
-                incident_id=incident.id,
-            )
+
+            # Gate IP-blocking actions on the confirmation verdict. Non-blocking
+            # actions (firewall_rule for XSS, etc.) still follow their policy.
+            if action_type == "block_ip" and not block_confirmed:
+                logger.warning(
+                    f"GUARDRAIL (ai_engine): withholding auto-block_ip on {target} "
+                    f"— attack NOT confirmed (reason={block_reason}, "
+                    f"threat={threat_type}). Requires operator approval."
+                )
+                action = await self._create_pending_block(
+                    client=client,
+                    target=target,
+                    ai_reasoning=(
+                        f"Auto-block WITHHELD (unconfirmed: {block_reason}). "
+                        f"{reasoning}"
+                    ),
+                    db=db,
+                    incident_id=incident.id,
+                )
+            else:
+                action = await guardrail_engine.evaluate_action(
+                    client=client,
+                    action_type=action_type,
+                    target=target,
+                    ai_reasoning=reasoning,
+                    db=db,
+                    incident_id=incident.id,
+                )
             actions.append({
                 "id": action.id,
                 "type": action.action_type,
@@ -440,6 +476,152 @@ class AIDecisionEngine:
         await event_bus.publish("alert_processed", result)
 
         return result
+
+    def _alert_block_confirmed(
+        self, alert_data: dict, triage: dict, threat_type: str,
+    ) -> tuple[bool, str]:
+        """Decide whether an AI-path alert justifies an AUTO block_ip.
+
+        Returns (confirmed, reason). Confirmed => block_ip may auto-execute.
+        Not confirmed => block_ip is downgraded to require operator approval.
+
+        A block is confirmed when ANY of the following holds:
+          1. Known-bad IOC hit on the source IP.
+          2. Threat is a non-auth exploit class (SQLi, RCE, XSS, web shell,
+             priv-esc, C2, data exfil, DNS tunnel, port scan, honeypot).
+          3. Repeated, high-confidence brute force: HIGH+ severity AND a
+             confirmed event count at/above the brute-force floor.
+        A lone MEDIUM auth-failure / brute-force (session-check 401, single
+        bad login) never meets this bar.
+        """
+        # Reuse the single source of truth in the playbook engine so the AI
+        # path and the deterministic path apply identical confirmation logic.
+        from app.services.playbook_engine import (
+            CONFIRMED_EXPLOIT_RULES,
+            AUTH_BRUTE_FORCE_RULES,
+            MIN_BRUTE_FORCE_COUNT,
+        )
+
+        # 1. Known-bad IOC hit.
+        ioc = alert_data.get("ioc_check") or alert_data.get("ioc")
+        if isinstance(ioc, dict) and ioc.get("verdict") == "malicious":
+            return True, "known_bad_ioc"
+        if alert_data.get("known_attacker") or alert_data.get("known_bad_ip"):
+            return True, "known_bad_ioc"
+
+        severity = (triage.get("severity") or alert_data.get("severity") or "medium").lower()
+        sev_rank = _severity_order(severity)
+
+        # Normalize confidence to a float (may arrive as "high"/"medium"/etc.).
+        confidence = triage.get("confidence", 0.5)
+        if isinstance(confidence, str):
+            confidence = {"critical": 0.95, "high": 0.85, "medium": 0.6, "low": 0.3}.get(
+                confidence.lower(), 0.5
+            )
+        try:
+            confidence = float(confidence)
+        except (ValueError, TypeError):
+            confidence = 0.5
+
+        # 2. Non-auth exploit / high-signal threat class.
+        # Map threat_type back to the exploit-rule vocabulary.
+        exploit_threat_types = {
+            "sql_injection", "rce", "xss", "web_shell", "privilege_escalation",
+            "c2_communication", "data_exfiltration", "dns_tunneling", "port_scan",
+            "lateral_movement", "malware", "ransomware", "credential_dumping",
+            "honeypot_recon",
+        }
+        if threat_type in exploit_threat_types:
+            return True, f"confirmed_exploit:{threat_type}"
+
+        # Also honor explicit sigma rule ids carried on the alert.
+        pattern = alert_data.get("pattern") or alert_data.get("rule_id") or ""
+        if pattern in CONFIRMED_EXPLOIT_RULES:
+            return True, f"confirmed_exploit:{pattern}"
+
+        # 3. Repeated, high-confidence brute force.
+        is_auth = (
+            threat_type == "brute_force"
+            or pattern in AUTH_BRUTE_FORCE_RULES
+            or (alert_data.get("threat_type") or "") in ("brute_force", "auth_failure")
+        )
+        if is_auth:
+            # Confirmed count from the correlation engine / behavioural detector.
+            count = 0
+            for key in ("event_count", "count", "match_count", "failure_count", "attempt_count"):
+                try:
+                    count = max(count, int(alert_data.get(key, 0) or 0))
+                except (TypeError, ValueError):
+                    continue
+            if sev_rank >= _severity_order("high") and confidence >= 0.75 and count >= MIN_BRUTE_FORCE_COUNT:
+                return True, f"confirmed_brute_force(sev={severity},conf={confidence:.2f},count={count})"
+            return False, (
+                f"unconfirmed_auth(sev={severity},conf={confidence:.2f},count={count})"
+            )
+
+        # 4. Any other CRITICAL/HIGH-severity, high-confidence signal is
+        #    treated as confirmed. Medium/low unknown signals are withheld.
+        if sev_rank >= _severity_order("high") and confidence >= 0.75:
+            return True, f"confirmed_high_severity(sev={severity},conf={confidence:.2f})"
+
+        return False, f"unconfirmed_low_signal(sev={severity},conf={confidence:.2f})"
+
+    async def _create_pending_block(
+        self,
+        client: Client,
+        target: str,
+        ai_reasoning: str,
+        db: AsyncSession,
+        incident_id: Optional[str] = None,
+    ):
+        """Create a block_ip Action in PENDING (requires_approval) state.
+
+        Used when the confirmation gate withholds an auto-block. The safe-IP
+        guardrail is still honored by delegating to guardrail_engine when the
+        target is a safe IP, so we never emit a pending block for a safe IP.
+        The Action is created directly (bypassing the auto_approve default
+        policy) so an operator can approve it from the dashboard.
+        """
+        from app.core.attack_detector import _is_safe_ip
+        try:
+            if target and _is_safe_ip(target):
+                # Route safe IPs through the guardrail so the existing
+                # skipped_safe_ip handling / event fires exactly as before.
+                return await guardrail_engine.evaluate_action(
+                    client=client,
+                    action_type="block_ip",
+                    target=target,
+                    ai_reasoning=ai_reasoning,
+                    db=db,
+                    incident_id=incident_id,
+                )
+        except Exception:
+            pass
+
+        from app.models.action import Action
+
+        action = Action(
+            incident_id=incident_id or "",
+            client_id=client.id,
+            action_type="block_ip",
+            target=target,
+            parameters={},
+            status="pending",
+            requires_approval=True,
+            ai_reasoning=ai_reasoning,
+        )
+        db.add(action)
+        await db.commit()
+        await db.refresh(action)
+
+        await event_bus.publish("action_requires_approval", {
+            "action_id": action.id,
+            "client_id": action.client_id,
+            "incident_id": action.incident_id,
+            "action_type": action.action_type,
+            "target": action.target,
+        })
+        return action
 
     async def _triage(self, alert_data: dict) -> dict:
         """Quick triage; uses MITRE heuristics when AI unavailable."""

@@ -182,6 +182,143 @@ PLAYBOOKS: list[dict] = [
 # Severity ordering for comparison
 SEVERITY_ORDER = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 
+# ---------------------------------------------------------------------------
+# Auto-block confirmation gate  (BUG: false-positive auto-block on lone
+# medium auth-failure incidents, e.g. 38.52.220.20 blocked on 2 medium
+# `auth_failure` events 5 days apart against GET /api/v1/auth/me)
+# ---------------------------------------------------------------------------
+#
+# block_ip must only AUTO-execute when the threat is a CONFIRMED real attack.
+# A lone / low-count MEDIUM auth-failure or brute-force incident must NOT
+# auto-block — it still creates an incident for visibility, but the block is
+# withheld pending operator approval (via the normal guardrail flow).
+#
+# A block is considered CONFIRMED when ANY of the following holds:
+#   1. A known-bad IOC hit  — the source IP is on a malicious threat feed.
+#   2. A non-auth exploit / high-signal sigma rule matched (SQLi, RCE, XSS,
+#      web shell, privilege escalation, C2, data exfil, DNS tunnel, port
+#      scan, honeypot). These are inherently confirmed on a single match —
+#      no legitimate traffic produces them.
+#   3. A REPEATED, high-confidence brute force: the matched auth/brute-force
+#      rule fired at HIGH+ severity AND its correlation count_threshold meets
+#      the real-attack floor (>= MIN_BRUTE_FORCE_COUNT). A lone MEDIUM auth
+#      failure (session-check 401, credential typo) never meets this bar.
+
+# Sigma rule IDs whose SINGLE match is, by itself, a confirmed attack.
+# These are non-auth exploit / high-signal detections — no benign traffic
+# produces them, so one match is sufficient to auto-block.
+CONFIRMED_EXPLOIT_RULES = frozenset({
+    "sql_injection_chain",
+    "xss_attack_chain",
+    "web_shell_activity",
+    "privilege_escalation",
+    "c2_beacon",
+    "data_exfiltration",
+    "dns_tunneling",
+    "rce",
+    "rce_attempt",
+    "port_scan",
+    "ssh_honeypot_attempt",       # honeypot: any hit is malicious by definition
+    "ssh_honeypot_failure",
+})
+
+# Sigma rule IDs / event types that are auth/brute-force in nature. A match
+# here is only "confirmed" when it is HIGH+ severity AND meets the repeated
+# count floor below. A lone MEDIUM auth failure must NOT auto-block.
+AUTH_BRUTE_FORCE_RULES = frozenset({
+    "http_auth_brute_force",
+    "generic_credential_attack",
+    "brute_force_ssh",
+    "brute_force",
+    "credential_stuffing",
+    "rdp_brute_force",
+    "auth_failure",
+})
+
+# Minimum repeated-attempt count for a brute-force detection to be treated as
+# a confirmed attack eligible for auto-block. A rule whose correlation
+# count_threshold is below this floor (or unknown) does not qualify on its own.
+MIN_BRUTE_FORCE_COUNT = 5
+
+# Minimum severity for a brute-force detection to be eligible for auto-block.
+MIN_BRUTE_FORCE_SEVERITY = "high"
+
+
+def _rule_id(match: dict) -> str:
+    return match.get("id", match.get("rule_id", "")) or ""
+
+
+def _rule_severity(match: dict) -> str:
+    return match.get("severity", "low") or "low"
+
+
+def _rule_count_threshold(match: dict) -> int:
+    """Correlation count_threshold declared by a sigma rule dict.
+
+    For rules that fired via the correlation engine the rule dict carries a
+    `condition.count_threshold`. When the threshold is met the rule fires, so
+    a threshold >= MIN_BRUTE_FORCE_COUNT means the attack was repeated at
+    least that many times within the rule window.
+    """
+    cond = match.get("condition")
+    if isinstance(cond, dict):
+        try:
+            return int(cond.get("count_threshold", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+    # Some callers flatten the threshold onto the match itself.
+    try:
+        return int(match.get("count_threshold", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def is_confirmed_attack(
+    sigma_matches: Optional[list[dict]],
+    ioc_check: Optional[dict] = None,
+) -> tuple[bool, str]:
+    """Decide whether an auto-block is justified.
+
+    Returns (confirmed, reason). `confirmed=True` means the threat is a real,
+    repeated attack (or exploit / known-bad IOC) and block_ip may auto-execute.
+    `confirmed=False` means the signal is too weak (e.g. a lone medium
+    auth-failure) and the block must be withheld for operator approval.
+    """
+    sigma_matches = sigma_matches or []
+
+    # 1. Known-bad IOC hit — always auto-block regardless of sigma detail.
+    if ioc_check and ioc_check.get("verdict") == "malicious":
+        return True, "known_bad_ioc"
+
+    # 2. Non-auth exploit / high-signal sigma rule matched.
+    for m in sigma_matches:
+        rid = _rule_id(m)
+        if rid in CONFIRMED_EXPLOIT_RULES:
+            return True, f"confirmed_exploit:{rid}"
+
+    # 3. Repeated, high-confidence brute force.
+    min_sev_rank = SEVERITY_ORDER.get(MIN_BRUTE_FORCE_SEVERITY, 3)
+    for m in sigma_matches:
+        rid = _rule_id(m)
+        if rid not in AUTH_BRUTE_FORCE_RULES:
+            continue
+        sev_rank = SEVERITY_ORDER.get(_rule_severity(m), 0)
+        count = _rule_count_threshold(m)
+        if sev_rank >= min_sev_rank and count >= MIN_BRUTE_FORCE_COUNT:
+            return True, f"confirmed_brute_force:{rid}(sev>={MIN_BRUTE_FORCE_SEVERITY},count>={count})"
+
+    # 4. Any remaining HIGH+/CRITICAL sigma match that is not an auth rule is
+    #    treated as confirmed (e.g. bespoke critical rules). Medium/low
+    #    non-exploit auth signals fall through to "not confirmed".
+    for m in sigma_matches:
+        rid = _rule_id(m)
+        if rid in AUTH_BRUTE_FORCE_RULES:
+            continue
+        if SEVERITY_ORDER.get(_rule_severity(m), 0) >= SEVERITY_ORDER["high"]:
+            return True, f"confirmed_high_severity:{rid}"
+
+    return False, "unconfirmed_low_signal"
+
 
 # ---------------------------------------------------------------------------
 # PlaybookEngine
@@ -262,7 +399,14 @@ class PlaybookEngine:
                             break
 
             if conditions_met:
-                results.append(playbook)
+                # Attach the auto-block confirmation verdict so execute_playbook
+                # can withhold block_ip on weak signals (lone medium auth
+                # failures) without dropping the incident/notify actions.
+                confirmed, reason = is_confirmed_attack(sigma_matches, ioc_check)
+                pb = dict(playbook)
+                pb["_block_confirmed"] = confirmed
+                pb["_block_confirmation_reason"] = reason
+                results.append(pb)
                 self._stats["playbooks_triggered"] += 1
 
         elapsed_ms = (time.monotonic_ns() - start) / 1_000_000
@@ -284,12 +428,40 @@ class PlaybookEngine:
         results = []
         start = time.monotonic_ns()
 
+        # Auto-block confirmation gate. evaluate() stamps _block_confirmed on
+        # the playbook. If it is missing (playbook executed directly without
+        # going through evaluate()), default to WITHHOLD so we fail safe —
+        # block_ip never auto-fires on an unverified path.
+        block_confirmed = playbook.get("_block_confirmed", False)
+        block_reason = playbook.get("_block_confirmation_reason", "no_confirmation_context")
+
         for action in playbook.get("actions", []):
             action_type = action["type"]
             result = {"action": action_type, "status": "pending"}
 
             try:
                 if action_type == "block_ip" and source_ip:
+                    if not block_confirmed:
+                        # Not a confirmed real attack (e.g. lone medium
+                        # auth-failure). Withhold the auto-block; the incident
+                        # + notify actions still run for visibility, and an
+                        # operator can approve the block via the guardrail flow.
+                        logger.warning(
+                            "GUARDRAIL (playbook): withholding auto-block_ip on "
+                            f"{source_ip} — attack NOT confirmed "
+                            f"(reason={block_reason}, playbook={playbook.get('id')}). "
+                            "Requires operator approval."
+                        )
+                        result = {
+                            "action": "block_ip",
+                            "via": action.get("via", "local"),
+                            "status": "withheld_requires_approval",
+                            "ip": source_ip,
+                            "reason": block_reason,
+                        }
+                        self._stats["actions_executed"] += 1
+                        results.append(result)
+                        continue
                     via = action.get("via", "local")
                     if via == "firewall":
                         result = await self._block_via_firewall(source_ip)
@@ -335,12 +507,21 @@ class PlaybookEngine:
 
         elapsed_ms = (time.monotonic_ns() - start) / 1_000_000
 
+        block_withheld = any(
+            r.get("action") == "block_ip"
+            and r.get("status") == "withheld_requires_approval"
+            for r in results
+        )
+
         execution_result = {
             "execution_id": execution_id,
             "playbook_id": playbook["id"],
             "playbook_name": playbook["name"],
             "source_ip": source_ip,
             "actions": results,
+            "block_confirmed": block_confirmed,
+            "block_confirmation_reason": block_reason,
+            "block_withheld": block_withheld,
             "elapsed_ms": round(elapsed_ms, 2),
             "timestamp": datetime.utcnow().isoformat(),
         }
