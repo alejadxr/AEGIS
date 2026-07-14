@@ -194,8 +194,11 @@ async def get_sharing_stats(
 ):
     """
     Get sharing statistics: total shared, total received, contributor count.
+
+    Uses live DB-backed counts so the shared_iocs already in the table are
+    reflected even when the in-memory counters are still zero.
     """
-    stats = intel_cloud.get_stats()
+    stats = await intel_cloud.get_stats_live()
     return SharingStats(**stats)
 
 

@@ -63,7 +63,13 @@ async def detect_campaigns(
     """
     cutoff = datetime.utcnow() - timedelta(hours=window_hours)
 
-    q = select(Incident).where(Incident.detected_at >= cutoff)
+    # Exclude [FP-*] incidents (crawlers / operator-confirmed false positives)
+    # so benign scanner noise can never coalesce into a fake "campaign".
+    # Real multi-IP clusters (e.g. AWS SQLi) are untagged and still surface.
+    q = select(Incident).where(
+        Incident.detected_at >= cutoff,
+        ~Incident.title.like("[FP-%"),
+    )
     if client_id:
         q = q.where(Incident.client_id == client_id)
 
@@ -177,7 +183,12 @@ async def get_campaign_detail(
     """
     cutoff = datetime.utcnow() - timedelta(hours=window_hours)
 
-    q = select(Incident).where(Incident.detected_at >= cutoff)
+    # Mirror detect_campaigns: exclude [FP-*] incidents so the drill-down
+    # member list matches the (FP-filtered) listing that surfaced this cluster.
+    q = select(Incident).where(
+        Incident.detected_at >= cutoff,
+        ~Incident.title.like("[FP-%"),
+    )
     if client_id:
         q = q.where(Incident.client_id == client_id)
     result = await db.execute(q)
