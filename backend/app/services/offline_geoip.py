@@ -20,6 +20,7 @@ No external HTTP at lookup time. No PyPI dependency. Pure Python stdlib.
 
 from __future__ import annotations
 
+import array
 import csv
 import functools
 import ipaddress
@@ -42,19 +43,43 @@ _CITY_CSV = _DATA_DIR / "dbip-city-lite.csv"
 _DBIP_ASN_URL_TMPL = "https://download.db-ip.com/free/dbip-asn-lite-{ym}.csv.gz"
 _DBIP_CITY_URL_TMPL = "https://download.db-ip.com/free/dbip-city-lite-{ym}.csv.gz"
 
-# In-memory parallel arrays — keep the cold-path sorted-start-ip list separate
-# from the payload so bisect over a flat list is cache-friendly.
-_asn_starts: list[int] = []
-_asn_ends: list[int] = []
+# ---------------------------------------------------------------------------
+# MEMORY LAYOUT (v1.6.4.6 — memory-leak fix)
+# ---------------------------------------------------------------------------
+# The db-ip *city* Lite CSV is 8.07 MILLION rows. Previously it was parsed into
+# Python `list[int]` (starts/ends) + `list[tuple[str,str,str]]` (country/region/
+# city). A Python int is ~28 B and a 3-string tuple ~200 B, so the city table
+# alone cost ~2 GB of RSS — the dominant term in the 3.2 GB worker footprint.
+#
+# Fix:
+#   * starts/ends are stored in `array.array('Q')` — 8 bytes per entry, not ~36.
+#   * region/city are DROPPED (nothing depends on them from the offline source;
+#     ip_intel only uses offline country/asn as a fallback, region/city come
+#     from the live HTTP providers). Only `country` is kept, as a compact
+#     uint32 index into a small deduplicated country table (~250 entries).
+#   * IPv6 rows are skipped: their 128-bit ints overflow `array('Q')` (uint64)
+#     and IPv6 attacker geolocation is rarely needed. IPv6 lookups return None.
+# Result: city footprint ~2 GB -> ~160 MB.
+# ---------------------------------------------------------------------------
+
+# ASN ranges: compact uint64 arrays for the range bounds, small tuple list for
+# the (asn, owner) payload (only ~471K rows, ~40 MB — left as-is).
+_asn_starts: "array.array[int]" = array.array("Q")
+_asn_ends: "array.array[int]" = array.array("Q")
 _asn_data: list[tuple[str, str]] = []  # (asn, owner)
 _asn_loaded_at: float = 0.0
 
-_city_starts: list[int] = []
-_city_ends: list[int] = []
-_city_data: list[tuple[str, str, str]] = []  # (country, region, city)
+# City ranges: uint64 bounds + a uint32 index into `_city_country_table`.
+_city_starts: "array.array[int]" = array.array("Q")
+_city_ends: "array.array[int]" = array.array("Q")
+_city_country_idx: "array.array[int]" = array.array("I")  # index -> _city_country_table
+_city_country_table: list[str] = []
 _city_loaded_at: float = 0.0
 
 _LOAD_TTL = 24 * 3600.0 * 365  # effectively never re-read on the live process — reload happens on restart
+
+# uint64 ceiling — IPv6 ints exceed this and are skipped (see layout note).
+_UINT64_MAX = 0xFFFFFFFFFFFFFFFF
 
 
 def _ip_to_int(ip: str) -> Optional[int]:
@@ -73,8 +98,8 @@ def _load_asn_csv() -> None:
     if not _ASN_CSV.exists():
         logger.debug("dbip ASN csv not present at %s", _ASN_CSV)
         return
-    starts: list[int] = []
-    ends: list[int] = []
+    starts = array.array("Q")
+    ends = array.array("Q")
     data: list[tuple[str, str]] = []
     try:
         with _ASN_CSV.open("r", encoding="utf-8", errors="ignore", newline="") as fh:
@@ -82,9 +107,12 @@ def _load_asn_csv() -> None:
             for row in reader:
                 if len(row) < 4:
                     continue
+                # Skip IPv6 (colon in the address) — overflows uint64 arrays.
+                if ":" in row[0]:
+                    continue
                 s = _ip_to_int(row[0])
                 e = _ip_to_int(row[1])
-                if s is None or e is None:
+                if s is None or e is None or e > _UINT64_MAX:
                     continue
                 asn_raw = row[2].strip()
                 owner = row[3].strip().strip('"')
@@ -103,46 +131,62 @@ def _load_asn_csv() -> None:
 
 
 def _load_city_csv() -> None:
-    global _city_starts, _city_ends, _city_data, _city_loaded_at
+    global _city_starts, _city_ends, _city_country_idx, _city_country_table, _city_loaded_at
     now = time.monotonic()
     if _city_starts and (now - _city_loaded_at) < _LOAD_TTL:
         return
     if not _CITY_CSV.exists():
         logger.debug("dbip city csv not present at %s", _CITY_CSV)
         return
-    starts: list[int] = []
-    ends: list[int] = []
-    data: list[tuple[str, str, str]] = []
+    starts = array.array("Q")
+    ends = array.array("Q")
+    country_idx = array.array("I")
+    table: list[str] = []
+    table_map: dict[str, int] = {}
     try:
         with _CITY_CSV.open("r", encoding="utf-8", errors="ignore", newline="") as fh:
             reader = csv.reader(fh)
             for row in reader:
                 if len(row) < 8:
                     continue
+                # Skip IPv6 (overflows uint64 arrays); IPv6 geo rarely needed.
+                if ":" in row[0]:
+                    continue
                 s = _ip_to_int(row[0])
                 e = _ip_to_int(row[1])
-                if s is None or e is None:
+                if s is None or e is None or e > _UINT64_MAX:
                     continue
                 # db-ip city CSV columns:
-                # start, end, continent, country, state1, state2, city, postcode, lat, lon, tz
+                # start, end, continent, country, state1, state2, city, ...
+                # Only `country` is retained (region/city dropped — see layout note).
                 country = (row[3] if len(row) > 3 else "").strip()
-                region = (row[4] if len(row) > 4 else "").strip()
-                city = (row[6] if len(row) > 6 else "").strip()
+                ci = table_map.get(country)
+                if ci is None:
+                    ci = len(table)
+                    table.append(country)
+                    table_map[country] = ci
                 starts.append(s)
                 ends.append(e)
-                data.append((country, region, city))
+                country_idx.append(ci)
     except Exception as exc:
         logger.warning("dbip city csv load failed: %s", exc)
         return
     _city_starts = starts
     _city_ends = ends
-    _city_data = data
+    _city_country_idx = country_idx
+    _city_country_table = table
     _city_loaded_at = now
-    logger.info("offline_geoip: loaded %d city ranges from %s", len(starts), _CITY_CSV.name)
+    logger.info(
+        "offline_geoip: loaded %d city ranges (%d distinct countries) from %s",
+        len(starts), len(table), _CITY_CSV.name,
+    )
 
 
-def _lookup_range(starts: list[int], ends: list[int], ip_int: int) -> int | None:
-    """Binary search: return index where starts[i] <= ip_int <= ends[i], else None."""
+def _lookup_range(starts, ends, ip_int: int) -> int | None:
+    """Binary search: return index where starts[i] <= ip_int <= ends[i], else None.
+
+    `starts`/`ends` are array.array('Q') (or any sorted indexable of ints).
+    """
     if not starts:
         return None
     # bisect_right returns the index where ip_int would be inserted to keep
@@ -179,17 +223,14 @@ def lookup(ip: str) -> dict | None:
         out["asn_owner"] = owner
 
     # City lookup is opportunistic — skip silently when the CSV hasn't been
-    # parsed yet rather than triggering a sync 3-minute parse on the event loop.
+    # parsed yet. v1.6.4.6: only `country` is stored (region/city dropped to
+    # save ~2 GB RSS); region/city now come only from live HTTP providers.
     if _city_starts:
         c_idx = _lookup_range(_city_starts, _city_ends, ip_int)
         if c_idx is not None:
-            country, region, city = _city_data[c_idx]
+            country = _city_country_table[_city_country_idx[c_idx]]
             if country:
                 out["country"] = country
-            if region:
-                out["region"] = region
-            if city:
-                out["city"] = city
 
     # No useful data? Return None so caller doesn't add an empty feed.
     if "asn" not in out and "country" not in out:
