@@ -77,6 +77,11 @@ class EventBus:
             self._subscribers[event_type] = [
                 h for h in self._subscribers[event_type] if h != handler
             ]
+            # Prune the empty-list key so the _subscribers dict doesn't retain
+            # one dead entry per event_type that has ever had all its handlers
+            # removed. Keeps stats()/lookup lean; no functional change.
+            if not self._subscribers[event_type]:
+                del self._subscribers[event_type]
 
     async def publish(self, event_type: str, data: Any = None, priority: int = PRIORITY_MEDIUM):
         """Publish an event. Enriches with event_id and timestamp automatically.

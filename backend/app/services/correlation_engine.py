@@ -16,9 +16,26 @@ import uuid
 from collections import deque, defaultdict
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import Any
+from functools import partial
+from typing import Any, Optional
+
+from app.core.mem_bounds import (
+    DEFAULT_MAX_KEYS,
+    cap_lru,
+    prune_stale_keyed_maps,
+    prune_stale_ts_map,
+)
 
 logger = logging.getLogger("aegis.correlation")
+
+# Max timestamps retained per (rule_id, group_key) in _sigma_fire_log. Chain
+# rules only need enough recent firings to satisfy their step counts; 200 is
+# well above any chain requirement while capping per-key growth.
+_SIGMA_FIRE_MAXLEN = 200
+# Retention window for a _sigma_fire_log key with no new firings (seconds).
+# Matches the existing 7200s per-entry trim so stale (rule, ip) pairs are
+# dropped wholesale rather than lingering as empty/cold lists forever.
+_SIGMA_FIRE_TTL = 7200
 
 
 # Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
@@ -3391,9 +3408,16 @@ class CorrelationEngine:
 
         self._fired: dict[tuple[str, str], float] = {}  # (rule_id, group_key) → last_fired_ts
         self._chain_fired: dict[tuple[str, str], float] = {}  # chain cooldowns
-        # Track sigma rule firings per group key for chain evaluation
-        # key: (rule_id, group_key) -> list of timestamps when rule fired
-        self._sigma_fire_log: dict[tuple[str, str], list[float]] = defaultdict(list)
+        # Track sigma rule firings per group key for chain evaluation.
+        # key: (rule_id, group_key) -> deque of timestamps when rule fired.
+        # Bounded deque (maxlen) caps per-key growth; a periodic sweep
+        # (_prune_state) evicts whole keys once they go stale so the dict can't
+        # grow one entry per unique (rule, attacker_IP) pair forever (rank-1 leak).
+        self._sigma_fire_log: dict[tuple[str, str], deque] = defaultdict(
+            partial(deque, maxlen=_SIGMA_FIRE_MAXLEN)
+        )
+        # Background memory-bounding sweep task (started in start()).
+        self._prune_task: Optional["asyncio.Task"] = None
         self._stats = {
             "events_processed": 0,
             "rules_triggered": 0,
@@ -3449,11 +3473,77 @@ class CorrelationEngine:
         self._event_bus.subscribe("edr.event", self._on_edr_event)
         self._event_bus.subscribe("edr.process_start", self._on_edr_event)
         self._event_bus.subscribe("honeypot_interaction", self._on_honeypot_event)
+        # Start the background memory-bounding sweep (evicts stale per-key state
+        # from _sigma_fire_log / _fired / _chain_fired and the campaign tracker).
+        if self._prune_task is None or self._prune_task.done():
+            try:
+                self._prune_task = asyncio.create_task(
+                    self._prune_loop(), name="correlation_prune"
+                )
+            except RuntimeError:
+                self._prune_task = None  # no running loop (sync unit test)
         logger.info(
             f"Correlation engine subscribed to {len(event_types)} rule types "
             f"({len(_DOS_EVENT_TYPES)} dos.* via gated handler) "
             f"+ log_line, log_event, edr.event, edr.process_start, honeypot_interaction"
         )
+
+    async def stop(self) -> None:
+        """Cancel the background prune task. Idempotent."""
+        if self._prune_task is not None:
+            self._prune_task.cancel()
+            try:
+                await self._prune_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._prune_task = None
+
+    async def _prune_loop(self, interval_s: int = 300) -> None:
+        """Every ~5 min, evict stale per-key state so the correlation engine's
+        in-memory maps can't grow one entry per unique (rule, IP) / IP forever."""
+        while True:
+            try:
+                await asyncio.sleep(interval_s)
+                self._prune_state()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(f"correlation prune error: {exc}")
+
+    def _prune_state(self, now: Optional[float] = None) -> int:
+        """Drop cold keys from every unbounded per-key map. Returns total evicted.
+
+        - _sigma_fire_log: (rule_id, group_key) -> deque[ts]. Evict keys whose
+          newest firing is older than _SIGMA_FIRE_TTL (or that emptied out).
+        - _fired / _chain_fired: (rule_id, group_key) -> last_fired_ts. Evict
+          entries older than the relevant cooldown; these previously only
+          shrank via a size-threshold rebuild on the hot path.
+        - _campaign_tracker: per-IP phase sets + alert timestamps.
+        Each is bounded further by an LRU cap as a burst backstop.
+        """
+        if now is None:
+            now = _now_ts()
+        evicted = 0
+        # _sigma_fire_log — deque values
+        stale = [
+            k for k, dq in self._sigma_fire_log.items()
+            if not dq or now - dq[-1] >= _SIGMA_FIRE_TTL
+        ]
+        for k in stale:
+            self._sigma_fire_log.pop(k, None)
+        evicted += len(stale)
+        evicted += cap_lru(
+            self._sigma_fire_log, DEFAULT_MAX_KEYS,
+            lambda dq: dq[-1] if dq else 0.0,
+        )
+        # _fired / _chain_fired — float-ts values. Keep 2x the base cooldown.
+        evicted += prune_stale_ts_map(self._fired, self.COOLDOWN_SECONDS * 2, now)
+        evicted += prune_stale_ts_map(
+            self._chain_fired, self.COOLDOWN_SECONDS * 10, now
+        )
+        # Campaign tracker per-IP maps.
+        evicted += _campaign_tracker.prune(now)
+        return evicted
 
     async def _on_normalized_event(self, data: dict) -> None:
         """Handle pre-normalized events from log_watcher (v1.6.4+).
@@ -3500,12 +3590,12 @@ class CorrelationEngine:
 
                 # Record sigma fire for chain rule evaluation
                 group_key = event.get("source_ip", "__all__")
-                self._sigma_fire_log[(rule["id"], group_key)].append(ts)
-                # Trim old entries (keep last hour)
-                self._sigma_fire_log[(rule["id"], group_key)] = [
-                    t for t in self._sigma_fire_log[(rule["id"], group_key)]
-                    if ts - t < 7200
-                ]
+                fire_dq = self._sigma_fire_log[(rule["id"], group_key)]
+                fire_dq.append(ts)
+                # Trim old entries in place (keep last 2h). Bounded deque already
+                # caps length at _SIGMA_FIRE_MAXLEN; this drops age-stale heads.
+                while fire_dq and ts - fire_dq[0] >= _SIGMA_FIRE_TTL:
+                    fire_dq.popleft()
 
                 await self._on_rule_triggered(rule, event)
 
@@ -4224,11 +4314,19 @@ class CampaignTracker:
 
     CAMPAIGN_THRESHOLD = 3  # distinct phases needed
 
+    # Idle TTL for per-IP phase state. An IP that has not contributed a new
+    # kill-chain phase within this window is cold and its accumulated set is
+    # dropped by prune(). Comfortably longer than the alert cooldown so an
+    # in-progress slow campaign is never forgotten mid-flight.
+    _IDLE_TTL = 3600  # 1 hour
+
     def __init__(self):
         # source_ip -> set of phases observed
         self._ip_phases: dict[str, set[str]] = defaultdict(set)
         # Cooldown: source_ip -> last campaign alert timestamp
         self._alerted: dict[str, float] = {}
+        # source_ip -> last time this IP contributed a phase (drives eviction)
+        self._last_seen: dict[str, float] = {}
         self._cooldown = 600  # 10 min cooldown per IP
 
     def track(self, rule_id: str, source_ip: str, now: float) -> dict | None:
@@ -4244,6 +4342,7 @@ class CampaignTracker:
             return None
 
         self._ip_phases[source_ip].add(phase)
+        self._last_seen[source_ip] = now
 
         if len(self._ip_phases[source_ip]) >= self.CAMPAIGN_THRESHOLD:
             last = self._alerted.get(source_ip, 0)
@@ -4268,6 +4367,30 @@ class CampaignTracker:
                 "timestamp": datetime.utcnow().isoformat(),
             }
         return None
+
+    def prune(self, now: float | None = None) -> int:
+        """Evict per-IP phase state for IPs idle longer than _IDLE_TTL.
+
+        Drives all three parallel maps (_ip_phases, _alerted, _last_seen) off
+        the _last_seen timestamp so none can grow one entry per unique IP
+        forever. Only cold IPs are dropped — an IP still adding phases keeps a
+        fresh _last_seen and is retained. LRU-capped as a burst backstop."""
+        if now is None:
+            now = _now_ts()
+        evicted = prune_stale_keyed_maps(
+            self._last_seen, self._IDLE_TTL, now,
+            self._ip_phases, self._alerted,
+        )
+        evicted += cap_lru(
+            self._last_seen, DEFAULT_MAX_KEYS, lambda ts: ts,
+        )
+        # Keep companion maps aligned after any LRU eviction from _last_seen.
+        live = set(self._last_seen)
+        for stale_key in [k for k in self._ip_phases if k not in live]:
+            self._ip_phases.pop(stale_key, None)
+        for stale_key in [k for k in self._alerted if k not in live]:
+            self._alerted.pop(stale_key, None)
+        return evicted
 
 
 _campaign_tracker = CampaignTracker()

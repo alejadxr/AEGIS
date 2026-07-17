@@ -45,6 +45,7 @@ from app.core.events import (
     PRIORITY_HIGH,
     event_bus as _default_event_bus,
 )
+from app.core.mem_bounds import DEFAULT_MAX_KEYS, cap_lru, prune_stale_ts_map
 
 logger = logging.getLogger("aegis.dos_shield")
 
@@ -269,20 +270,29 @@ class DoSShield:
             self.per_ip_window, self.subnet_window, self.global_window
         )
         cutoff = now - max_window
-        # prune per-IP: drop entries with no recent hits and zero concurrency
+        # Absolute idle TTL: even a half-open / slow-loris connection stuck at
+        # concurrency > 0 must be force-evicted once it has been idle far longer
+        # than any active window, otherwise its _IPState leaks forever (rank 3).
+        # 900s (or block_duration) is well beyond legitimate keep-alive.
+        hard_ttl = max(max_window, self.block_duration, 900)
+        hard_cutoff = now - hard_ttl
+        # prune per-IP: drop entries with no recent hits and zero concurrency,
+        # OR any entry idle past the absolute TTL regardless of concurrency.
         stale = []
         for ip, st in self._ip_state.items():
             self._prune_deque(st.hits, now - self.per_ip_window)
             self._prune_deque(st.expensive_hits, now - 60.0)
+            idle = st.last_seen < cutoff
             if (
-                not st.hits
-                and not st.expensive_hits
-                and st.concurrency <= 0
-                and st.last_seen < cutoff
+                (not st.hits and not st.expensive_hits and st.concurrency <= 0 and idle)
+                or st.last_seen < hard_cutoff
             ):
                 stale.append(ip)
         for ip in stale:
             self._ip_state.pop(ip, None)
+        # Hard cap as a burst backstop: if a scan storm creates unique-IP state
+        # faster than the 30s sweep can evict it, drop the coldest by last_seen.
+        cap_lru(self._ip_state, DEFAULT_MAX_KEYS, lambda st: st.last_seen)
         # subnets
         stale_sub = []
         for sub, dq in self._subnet_hits.items():
@@ -291,12 +301,22 @@ class DoSShield:
                 stale_sub.append(sub)
         for sub in stale_sub:
             self._subnet_hits.pop(sub, None)
+        cap_lru(
+            self._subnet_hits, DEFAULT_MAX_KEYS,
+            lambda dq: dq[-1] if dq else 0.0,
+        )
         self._prune_deque(self._global_hits, now - self.global_window)
         # escalation dedup expiry
         exp = [ip for ip, ts in self._escalated.items()
                if now - ts > self.block_duration]
         for ip in exp:
             self._escalated.pop(ip, None)
+        # event cooldown: (ip, reason) -> last publish ts. Never evicted before;
+        # accumulates one entry per unique (ip, reason) forever. Drop entries
+        # older than 10x the cooldown window — safely past any suppression need.
+        prune_stale_ts_map(
+            self._event_cooldown, self.event_cooldown * 10, now
+        )
 
     @staticmethod
     def _prune_deque(dq: deque, cutoff: float) -> None:

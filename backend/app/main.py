@@ -588,6 +588,19 @@ async def lifespan(app: FastAPI):
     await log_watcher.start()
     logger.info('Log watcher started')
 
+    # Memory-bounding sweeper for the module-level attack_detector._attack_log.
+    # That per-IP tracker prunes deque *contents* by age on the hot path but
+    # never removed the empty dict keys, so it leaked one entry per unique
+    # attacker IP forever. This periodic sweep evicts idle keys (every 60s).
+    try:
+        from app.core.attack_detector import attack_log_sweeper
+        app.state.attack_log_sweeper_task = asyncio.create_task(
+            attack_log_sweeper(60), name='attack_log_sweeper'
+        )
+        logger.info('attack_log sweeper started (60s idle-key eviction)')
+    except Exception as exc:
+        logger.warning(f'attack_log sweeper failed to start: {exc}')
+
     # Start scheduled scanner (full scan 2h, quick scan 30min, discovery 1h, uptime 5min)
     scheduled_scanner.start()
     logger.info('Scheduled scanner started')
@@ -649,6 +662,18 @@ async def lifespan(app: FastAPI):
         pass
     scheduled_scanner.stop()
     await log_watcher.stop()
+    _als_task = getattr(app.state, 'attack_log_sweeper_task', None)
+    if _als_task is not None:
+        _als_task.cancel()
+        try:
+            await _als_task
+        except (asyncio.CancelledError, Exception):
+            pass
+    try:
+        if hasattr(correlation_engine, "stop"):
+            await correlation_engine.stop()
+    except Exception:
+        pass
     await behavioral_engine.stop()
     await threat_intel_hub.stop()
     await close_mongo()
@@ -684,7 +709,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.4.4",
+    version="1.6.4.5",
     lifespan=lifespan,
 )
 
@@ -803,7 +828,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.4",
+        "version": "1.6.4.5",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -815,7 +840,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.4",
+        "version": "1.6.4.5",
         "ai_mode": _ai_mode.value,
     }
 

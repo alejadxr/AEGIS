@@ -192,6 +192,12 @@ def _is_safe_path(line: str, event_path: Optional[str] = None) -> bool:
     return any(p in line for p in _SAFE_PATHS)
 
 
+# Hard ceiling on distinct IP keys any per-IP tracker below will hold. Far
+# above legitimate concurrent-scanner counts; caps worst-case heap growth if a
+# scan storm outruns the periodic idle-key sweep.
+_TRACKER_MAX_KEYS = 50_000
+
+
 class PortScanTracker:
     """Track unique ports accessed per IP to detect port scanning."""
 
@@ -210,6 +216,14 @@ class PortScanTracker:
         unique_ports = len(set(p for _, p in q))
         return unique_ports >= self.threshold
 
+    def prune(self, now: Optional[datetime] = None) -> int:
+        """Evict IP keys whose deque is empty or whose newest hit is stale.
+        Previously empty deques were never removed from the dict, leaking one
+        entry per unique scanning IP. Only idle keys are dropped."""
+        return _prune_dt_deque_map(
+            self._port_hits, self.window, now, ts_getter=lambda item: item[0]
+        )
+
 
 class RateTracker:
     def __init__(self, window_seconds: int = 60, threshold: int = 100):
@@ -225,6 +239,37 @@ class RateTracker:
             q.popleft()
         q.append(now)
         return len(q) >= self.threshold
+
+    def prune(self, now: Optional[datetime] = None) -> int:
+        """Evict IP keys whose deque is empty or whose newest request is stale."""
+        return _prune_dt_deque_map(self._requests, self.window, now)
+
+
+def _prune_dt_deque_map(mapping, window_s, now=None, ts_getter=lambda item: item):
+    """Evict keys from an `ip -> deque` map keyed by `datetime` timestamps when
+    the deque is empty OR its newest entry is older than `now - window_s`.
+    Also LRU-caps the map at `_TRACKER_MAX_KEYS` as a burst backstop.
+    Returns the number of keys evicted. Only removes IDLE keys."""
+    if now is None:
+        now = datetime.utcnow()
+    cutoff = now - timedelta(seconds=window_s)
+    stale = []
+    for key, dq in mapping.items():
+        if not dq or ts_getter(dq[-1]) < cutoff:
+            stale.append(key)
+    for key in stale:
+        mapping.pop(key, None)
+    # Hard cap backstop: drop coldest keys by newest timestamp.
+    over = len(mapping) - _TRACKER_MAX_KEYS
+    if over > 0:
+        _epoch = datetime.min
+        victims = sorted(
+            mapping.items(),
+            key=lambda kv: (ts_getter(kv[1][-1]) if kv[1] else _epoch),
+        )[:over]
+        for key, _ in victims:
+            mapping.pop(key, None)
+    return len(stale)
 
 
 # Fallback port extractor used only when the normalized event does not
@@ -288,9 +333,11 @@ class LogWatcher:
 
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
+        self._sweep_task: Optional[asyncio.Task] = None
         self._running = False
         self._rate_tracker = RateTracker(window_seconds=60, threshold=500)
         self._brute_force_tracker: dict = defaultdict(deque)
+        self._brute_force_window = 60  # seconds (matches inline prune below)
         self._port_scan_tracker = PortScanTracker(window_seconds=60, threshold=10)
         self._recent_alerts: deque = deque(maxlen=500)
         # Incident deduplication: (ip, threat_type) -> last_created timestamp
@@ -302,17 +349,58 @@ class LogWatcher:
             return
         self._running = True
         self._task = asyncio.create_task(self._watch_loop(), name="log_watcher")
+        # Periodic memory-bounding sweep for the per-IP tracker dicts and the
+        # incident-cooldown map. These prune deque contents by age on the hot
+        # path but never removed the (empty) dict keys, so each leaked one entry
+        # per unique attacker IP forever. This sweep evicts idle keys every 60s.
+        self._sweep_task = asyncio.create_task(
+            self._sweep_loop(), name="log_watcher_sweep"
+        )
         logger.info("Log watcher started")
 
     async def stop(self):
         self._running = False
-        if self._task and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+        for t in (self._task, self._sweep_task):
+            if t and not t.done():
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
         logger.info("Log watcher stopped")
+
+    async def _sweep_loop(self, interval_s: int = 60):
+        """Background idle-key eviction for all per-IP tracker dicts."""
+        while self._running:
+            try:
+                await asyncio.sleep(interval_s)
+                self._sweep_trackers()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(f"log_watcher sweep error: {exc}")
+
+    def _sweep_trackers(self, now: Optional[datetime] = None) -> None:
+        """Evict idle keys from every per-IP tracker + prune incident cooldown.
+
+        - _brute_force_tracker: `ip -> deque[datetime]`; empty deques (emptied by
+          inline age-pruning or q.clear()) previously stayed as dict keys.
+        - _rate_tracker / _port_scan_tracker: same empty-key retention pattern.
+        - _incident_cooldown: previously only evicted when len > 1024, so entries
+          accumulated below that threshold forever. Now proactively evicted.
+        Only IDLE keys are removed; active-IP windows are preserved.
+        """
+        if now is None:
+            now = datetime.utcnow()
+        # brute-force tracker (60s window, datetime deque of bare timestamps)
+        _prune_dt_deque_map(self._brute_force_tracker, self._brute_force_window, now)
+        self._rate_tracker.prune(now)
+        self._port_scan_tracker.prune(now)
+        # incident cooldown: drop entries older than 2x the cooldown window.
+        stale_cutoff = now - timedelta(seconds=self._COOLDOWN_SECONDS * 2)
+        self._incident_cooldown = {
+            k: v for k, v in self._incident_cooldown.items() if v >= stale_cutoff
+        }
 
     async def _watch_loop(self):
         while self._running:
@@ -681,6 +769,9 @@ class LogWatcher:
             current_count = len(q)
             if current_count >= threshold:
                 q.clear()
+                # Emptied deque: drop the key so the tracker dict does not retain
+                # one empty entry per unique brute-force source IP (leak fix).
+                self._brute_force_tracker.pop(source_ip, None)
                 alert_key = f"{label}:{source_ip}"
                 if alert_key not in self._recent_alerts:
                     self._recent_alerts.append(alert_key)

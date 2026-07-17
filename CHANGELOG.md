@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.5] - 2026-07-17 (memory hardening — bound per-IP tracker growth)
+
+### Fixed - Memory Bounding
+
+Six in-memory structures accumulated one entry per unique attacker IP seen since process start, causing the observed 3.2 GB RSS leak under sustained honeypot traffic. All bounding is idle/stale-key eviction only — active-attacker detection windows and thresholds are unchanged.
+
+- **core/mem_bounds.py** (NEW): Shared helpers `prune_stale_deque_map`, `prune_stale_list_map`, `prune_stale_ts_map`, `prune_stale_keyed_maps`, `cap_lru` (DEFAULT_MAX_KEYS=50k). Called from periodic background sweeps, never on the hot path.
+- **services/correlation_engine.py** (Rank-1): `_sigma_fire_log` value type changed from unbounded list to `deque(maxlen=200)`. Added `_prune_loop()` (300s) evicting stale `_sigma_fire_log` keys (>7200s idle), `_fired`/`_chain_fired` past 2x/10x cooldown, and campaign tracker per-IP phase state idle >3600s. New `stop()` wired into main.py shutdown.
+- **core/attack_detector.py** (Rank-2): `sweep_attack_log()` evicts `_attack_log` keys whose deque is empty or newest hit is older than BLOCK_WINDOW (300s). Background `attack_log_sweeper()` coroutine (60s) started/cancelled in main.py lifespan.
+- **services/dos_shield.py** (Rank-3): Added absolute idle TTL in `_prune()` that force-evicts `_ip_state` entries idle past `max(max_window, block_duration, 900)s` regardless of active concurrency counter — fixes stuck TCP half-open/slow-loris preventing eviction. Added `cap_lru(50k)` backstops on `_ip_state` and `_subnet_hits`. Added `prune_stale_ts_map` on `_event_cooldown` (which previously had NO eviction).
+- **services/log_watcher.py** (Rank-5): Added `.prune()` to `RateTracker` and `PortScanTracker`. New `_sweep_loop()` (60s) in `LogWatcher` sweeps all trackers and proactively evicts `_incident_cooldown` entries older than 2x cooldown (previously only evicted when len>1024).
+- **core/ws_push.py**: Added `MAX_CLIENTS=512` cap with FIFO eviction of oldest zombie socket in `connect()`; added `total_evicted_over_cap` stat.
+- **core/events.py**: `unsubscribe()` now deletes the event_type key when its handler list becomes empty (prevents empty-list key retention).
+- **services/incident_enrichment.py**: Added `_ENRICH_TIMEOUT_S=15.0` + `_enrich_guarded()` wrapper using `asyncio.wait_for()` so every enrichment task terminates and is discarded from `_pending_tasks`.
+- **ecosystem.config.js** (NEW): PM2 ecosystem file launching venv python directly (interpreter:none) so `max_memory_restart` monitors the real uvicorn worker (2000M for API, 1000M for frontend) rather than a ~1MB bash wrapper. Not yet applied — operator must run: `pm2 delete cayde6-api && pm2 start ecosystem.config.js --only cayde6-api`.
+
+### Result
+Fresh worker RSS baseline after restart: 543 MB (was 3.2 GB before fix).
+
+---
+
 ## [1.6.4.4] - 2026-07-14 (dashboard visibility — widen campaign/history windows)
 
 ### Fixed - Dashboard Visibility

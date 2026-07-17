@@ -56,17 +56,38 @@ class WSPushManager:
 
     SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
+    # Hard cap on concurrent tracked clients. Prevents the _clients list from
+    # growing without bound when sockets die silently (client crash / proxy
+    # reset) and never call disconnect(). When the cap is reached we FIFO-evict
+    # the oldest client (best-effort close its socket) before admitting a new
+    # one. A legitimate dashboard fleet is nowhere near this, so this only ever
+    # trims leaked/zombie connections.
+    MAX_CLIENTS = 512
+
     def __init__(self):
         self._clients: list[WSClient] = []
         self._stats = {
             "total_connections": 0,
             "total_events_broadcast": 0,
             "total_events_filtered": 0,
+            "total_evicted_over_cap": 0,
         }
 
     async def connect(self, websocket: WebSocket, client_id: str = "anonymous") -> WSClient:
         """Accept a WebSocket connection and register the client."""
         await websocket.accept()
+        # Enforce the cap BEFORE appending: evict oldest zombie(s) if full.
+        while len(self._clients) >= self.MAX_CLIENTS:
+            oldest = self._clients.pop(0)
+            self._stats["total_evicted_over_cap"] += 1
+            logger.warning(
+                f"WS client cap ({self.MAX_CLIENTS}) reached — evicting oldest "
+                f"client {oldest.client_id}"
+            )
+            try:
+                await oldest.websocket.close(code=1013)  # 1013 = try again later
+            except Exception:
+                pass  # socket already dead — the point is to drop the reference
         client = WSClient(websocket, client_id)
         self._clients.append(client)
         self._stats["total_connections"] += 1
