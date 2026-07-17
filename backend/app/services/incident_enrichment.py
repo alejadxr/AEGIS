@@ -32,6 +32,13 @@ from app.services.ip_intel import lookup
 
 logger = logging.getLogger("aegis.incident_enrichment")
 
+# Hard ceiling on how long a single enrichment task may run. Without this a
+# hung ip_intel.lookup() (slow/dead upstream provider) keeps its asyncio task
+# — and the DB session + closure it captures — alive in _pending_tasks
+# indefinitely. Under sustained incident volume those hung tasks accumulate and
+# leak. wait_for() guarantees every task terminates and is discarded.
+_ENRICH_TIMEOUT_S = 15.0
+
 
 def _enabled() -> bool:
     raw = os.environ.get("AEGIS_INCIDENT_ENRICH", "1").strip().lower()
@@ -48,6 +55,21 @@ def _is_lookupable(ip: str | None) -> bool:
         return not (addr.is_loopback or addr.is_private or addr.is_link_local)
     except (ValueError, TypeError):
         return False
+
+
+async def _enrich_guarded(incident_id: str, src_ip: str) -> None:
+    """Timeout-bounded wrapper around _enrich. Guarantees the fire-and-forget
+    task always terminates so it can be discarded from _pending_tasks even if
+    the underlying lookup/DB call hangs."""
+    try:
+        await asyncio.wait_for(_enrich(incident_id, src_ip), timeout=_ENRICH_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        logger.warning(
+            f"enrichment timed out after {_ENRICH_TIMEOUT_S}s for "
+            f"incident {incident_id} ip={src_ip}"
+        )
+    except Exception as exc:  # defensive — never let a task die uncaught
+        logger.warning(f"enrichment task failed for incident {incident_id}: {exc}")
 
 
 async def _enrich(incident_id: str, src_ip: str) -> None:
@@ -98,7 +120,7 @@ def _schedule(incident_id: str, src_ip: str) -> None:
         # No running loop (sync context, e.g. during startup or sync tests).
         logger.debug(f"no running loop — skipping enrichment for {src_ip}")
         return
-    task = loop.create_task(_enrich(incident_id, src_ip))
+    task = loop.create_task(_enrich_guarded(incident_id, src_ip))
     _pending_tasks.add(task)
     task.add_done_callback(_pending_tasks.discard)
     logger.debug(f"scheduled enrichment task for incident {incident_id} ip={src_ip}")

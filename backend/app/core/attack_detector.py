@@ -624,6 +624,76 @@ async def _share_to_mongo(ip: str, reason: str):
         logger.debug(f"[AttackDetector] MongoDB share failed (non-fatal): {e}")
 
 
+# Bound on the number of distinct source-IP keys held in `_attack_log`. Each
+# key is one unique attacker IP; under an internet-wide scan the dict would
+# otherwise grow one entry per /32 seen since process start and never shrink,
+# even after the per-IP deque is emptied by age pruning. When the cap is
+# exceeded on insert we evict the coldest (oldest newest-hit) keys.
+_ATTACK_LOG_MAX_KEYS = 50_000
+
+
+def _cap_attack_log() -> None:
+    """LRU-cap `_attack_log` so a scan storm can't grow it without bound.
+
+    Evicts the keys whose most-recent hit is oldest until the map is back under
+    the cap. Empty deques sort oldest (ts 0.0) so they are dropped first. Only
+    touches IDLE keys — an IP still inside its BLOCK_WINDOW keeps a recent
+    timestamp and is retained, so active-attacker detection is unaffected.
+    """
+    over = len(_attack_log) - _ATTACK_LOG_MAX_KEYS
+    if over <= 0:
+        return
+    victims = sorted(
+        _attack_log.items(),
+        key=lambda kv: (kv[1][-1][0] if kv[1] else 0.0),
+    )[:over]
+    for key, _ in victims:
+        _attack_log.pop(key, None)
+
+
+def sweep_attack_log(now: Optional[float] = None) -> int:
+    """Evict IDLE keys from `_attack_log` (module-level per-IP tracker).
+
+    Removes any key whose deque is empty OR whose newest hit is older than
+    BLOCK_WINDOW (300s) — i.e. IPs that have gone silent. This is the fix for
+    the rank-2 leak: previously the deque contents were pruned by age on access
+    but the empty deque (dict key) was never removed, so the map grew one entry
+    per unique attacker IP forever. Handles both 'ip' and 'bf:ip' key variants.
+    Safe to call from a periodic background task; returns keys evicted.
+    """
+    if now is None:
+        now = time.time()
+    cutoff = now - BLOCK_WINDOW
+    stale = []
+    for key, q in _attack_log.items():
+        # bf: entries use a 60s window but BLOCK_WINDOW (300s) is a safe upper
+        # bound — anything older than 300s is idle under either window.
+        if not q or q[-1][0] < cutoff:
+            stale.append(key)
+    for key in stale:
+        _attack_log.pop(key, None)
+    # Hard cap backstop in case a burst outran the sweep.
+    _cap_attack_log()
+    return len(stale)
+
+
+async def attack_log_sweeper(interval_s: int = 60) -> None:
+    """Background coroutine: periodically sweep idle keys from `_attack_log`.
+
+    Started from the FastAPI lifespan in main.py. Runs until cancelled.
+    """
+    while True:
+        try:
+            await asyncio.sleep(interval_s)
+            evicted = sweep_attack_log()
+            if evicted:
+                logger.debug(f"[AttackDetector] swept {evicted} idle IP keys from _attack_log")
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(f"[AttackDetector] attack_log sweep error: {exc}")
+
+
 def _record_attack(ip: str, pattern_name: str) -> bool:
     """Record an attack. Returns True if IP should be blocked."""
     now = time.time()
@@ -636,6 +706,10 @@ def _record_attack(ip: str, pattern_name: str) -> bool:
 
     _stats["total_detections"] += 1
     _stats["detections_by_type"][pattern_name] += 1
+
+    # Backstop cap: bound the number of tracked IP keys.
+    if len(_attack_log) > _ATTACK_LOG_MAX_KEYS:
+        _cap_attack_log()
 
     return len(q) >= BLOCK_THRESHOLD
 
