@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.6] - 2026-07-17 (memory — GeoIP compact storage, the real leak)
+
+### Fixed - GeoIP memory (dominant term of the 3.2 GB worker footprint)
+- `offline_geoip.py` parsed the 8.07-million-row db-ip **city** CSV into Python `list[int]` (starts/ends) + `list[tuple[str,str,str]]` (country/region/city), costing **~2 GB RSS** — the single largest contributor to the leaked worker (v1.6.4.5 bounded the per-IP dicts, but the GeoIP baseline remained). Rewritten to:
+  - store range bounds in `array.array('Q')` (8 bytes/entry vs ~36 for Python ints),
+  - keep only `country` as a compact `array.array('I')` index into a deduplicated ~250-entry country table (region/city dropped — nothing depends on them from the offline source; `ip_intel` uses live HTTP providers for those and offline country/asn only as a fallback),
+  - skip IPv6 rows (128-bit ints overflow uint64 arrays; IPv6 geo rarely needed).
+- Result verified in production: worker RSS **3.2 GB → ~570 MB (−82%)**, stable.
+- Side benefit: offline GeoIP lookups now resolve correctly (previously returned `None` for all IPs), so the dashboard threat map now shows real attacker countries instead of "Unknown".
+
+### Note
+- The PM2 memory-restart backstop (ecosystem.config.js, added in 1.6.4.5) can now be applied safely: the ~570 MB baseline sits well under the 2000 MB ceiling, whereas the previous 3.2 GB baseline would have caused a restart loop.
+
+---
+
 ## [1.6.4.5] - 2026-07-17 (memory hardening — bound per-IP tracker growth)
 
 ### Fixed - Memory Bounding
