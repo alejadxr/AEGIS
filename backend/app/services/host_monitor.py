@@ -32,6 +32,7 @@ from watchdog.events import FileSystemEventHandler, FileSystemEvent
 
 from app.database import async_session
 from app.core.events import event_bus
+from app.core.mem_bounds import prune_stale_list_map, cap_lru, DEFAULT_MAX_KEYS
 from app.models.endpoint_agent import (
     AgentEvent, EndpointAgent, AgentStatus,
     EventCategory, EventSeverity,
@@ -162,6 +163,7 @@ class HostMonitor:
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
         self._fim_task: Optional[asyncio.Task] = None
+        self._sweep_task: Optional[asyncio.Task] = None
         self._running = False
         # Track known PIDs so we can detect new/terminated processes
         self._known_pids: set[int] = set()
@@ -177,11 +179,38 @@ class HostMonitor:
         self._running = True
         await self._ensure_agent_registered()
         self._task = asyncio.create_task(self._loop())
+        self._sweep_task = asyncio.create_task(self._sweep_loop())
         self._start_fim()
         logger.info("Host monitor started (interval=%ds, FIM active)", INTERVAL_SECONDS)
 
+    async def _sweep_loop(self, interval_s: int = 60):
+        """Evict idle keys from `_conn_tracker`. `_collect()` age-prunes each
+        PID's timestamp *list* down to the anomaly window, but never removes the
+        dict KEY, so every PID that ever made an outbound connection left a
+        permanent entry (same leak class fixed for log_watcher's trackers in
+        v1.6.4.5). This off-hot-path sweep drops PIDs idle past the window and
+        hard-caps distinct keys."""
+        while self._running:
+            try:
+                await asyncio.sleep(interval_s)
+                now = time.monotonic()
+                prune_stale_list_map(self._conn_tracker, NET_ANOMALY_WINDOW_SECS, now)
+                cap_lru(self._conn_tracker, DEFAULT_MAX_KEYS,
+                        idle_ts=lambda lst: lst[-1] if lst else 0.0)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("host_monitor sweep error: %s", exc)
+
     async def stop(self):
         self._running = False
+        if self._sweep_task:
+            self._sweep_task.cancel()
+            try:
+                await self._sweep_task
+            except asyncio.CancelledError:
+                pass
+            self._sweep_task = None
         if self._fim_observer:
             self._fim_observer.stop()
             self._fim_observer.join(timeout=2)
