@@ -58,6 +58,8 @@ from typing import Any
 
 import httpx
 
+from app.core.mem_bounds import cap_lru, DEFAULT_MAX_KEYS
+
 logger = logging.getLogger("aegis.ip_intel")
 
 # ---------------------------------------------------------------------------
@@ -120,6 +122,32 @@ def _deep_cache_get(ip: str) -> dict | None:
 
 def _deep_cache_set(ip: str, result: dict) -> None:
     _DEEP_CACHE[ip] = (time.monotonic() + _DEEP_CACHE_TTL, result)
+
+
+def sweep(now: float | None = None) -> int:
+    """Evict expired + LRU-cap the per-IP intel caches.
+
+    Both `_CACHE` and `_DEEP_CACHE` insert one entry per unique IP ever looked
+    up (driven by `incident_enrichment`'s after_insert listener, which fires
+    `lookup()` for every new incident's source IP). An entry is only removed on
+    a *repeat* lookup of the SAME IP after its TTL — but most attacker/scanner
+    IPs are seen once and never return, so the dict keys accumulate for the life
+    of the process. This periodic sweep drops expired entries (by stored
+    expiry) and hard-caps distinct keys, mirroring the mem_bounds contract used
+    by the other detection engines. Call from a background coroutine.
+    """
+    now = now if now is not None else time.monotonic()
+    evicted = 0
+    for mapping in (_CACHE, _DEEP_CACHE):
+        # value is (expiry_monotonic, result); drop anything already expired.
+        stale = [k for k, (exp, _) in mapping.items() if exp < now]
+        for k in stale:
+            mapping.pop(k, None)
+        evicted += len(stale)
+        # Backstop against a burst of unique IPs arriving faster than the sweep:
+        # cap distinct keys, evicting the entries closest to expiry first.
+        evicted += cap_lru(mapping, DEFAULT_MAX_KEYS, idle_ts=lambda v: v[0])
+    return evicted
 
 
 # ---------------------------------------------------------------------------

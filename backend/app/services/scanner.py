@@ -167,12 +167,13 @@ class ScanOrchestrator:
 
             await db.commit()
 
-            self._active_scans[scan_id]["status"] = "completed"
-            self._active_scans[scan_id]["completed_at"] = datetime.utcnow().isoformat()
-            self._active_scans[scan_id]["assets_found"] = len(assets_created)
+            state = self._active_scans[scan_id]
+            state["status"] = "completed"
+            state["completed_at"] = datetime.utcnow().isoformat()
+            state["assets_found"] = len(assets_created)
 
             # Persist the completed scan (assets already committed above).
-            await self._persist_scan(db, self._active_scans[scan_id])
+            await self._persist_scan(db, state)
 
             await event_bus.publish("scan_completed", {
                 "scan_id": scan_id,
@@ -180,20 +181,26 @@ class ScanOrchestrator:
                 "assets_found": len(assets_created),
             })
 
-            return self._active_scans[scan_id]
+            # Scan is durably in the `scans` table now (source of truth); drop it
+            # from the hot cache so completed scans — each carrying full
+            # discovery + nuclei result payloads — don't accumulate in RSS for
+            # the life of the process. Reads fall back to the DB.
+            return self._active_scans.pop(scan_id, state)
 
         except Exception as e:
             logger.error(f"Scan failed for {target}: {e}")
-            self._active_scans[scan_id]["status"] = "failed"
-            self._active_scans[scan_id]["error"] = str(e)
-            self._active_scans[scan_id]["completed_at"] = datetime.utcnow().isoformat()
+            state = self._active_scans[scan_id]
+            state["status"] = "failed"
+            state["error"] = str(e)
+            state["completed_at"] = datetime.utcnow().isoformat()
             # Roll back any partial asset/vuln work, then persist the failure.
             try:
                 await db.rollback()
             except Exception:  # noqa: BLE001
                 pass
-            await self._persist_scan(db, self._active_scans[scan_id])
-            return self._active_scans[scan_id]
+            await self._persist_scan(db, state)
+            # Terminal state persisted — evict from the hot cache (see above).
+            return self._active_scans.pop(scan_id, state)
 
     async def get_scan(
         self,

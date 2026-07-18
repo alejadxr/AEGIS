@@ -4,7 +4,7 @@
 
 ### Self-hosted. Deterministic-first. Offline-capable.
 
-*Detect, block, and recover from ransomware and intrusions in milliseconds — 134 Sigma rules, <1 ms in-memory evaluation, no LLM in the hot path.*
+*Detect, block, and recover from ransomware and intrusions in milliseconds — 168 Sigma rules, <1 ms in-memory evaluation, no LLM in the hot path.*
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![Coverage](https://img.shields.io/badge/coverage-65%25-yellow)]()
@@ -12,7 +12,7 @@
 [![Detection](https://img.shields.io/badge/detection-11%2F11-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
 [![Docker](https://img.shields.io/badge/docker-compose-blue)]()
-[![Version](https://img.shields.io/badge/version-1.6.3.2-cyan)]()
+[![Version](https://img.shields.io/badge/version-1.6.4.7-cyan)]()
 
 [What is AEGIS?](#what-is-aegis) · [Install](#5-minute-install) · [Ransomware Defense](#ransomware-defense-v16) · [Detection](#detection-1111-verified) · [vs Wazuh / OSSEC / Elastic](#aegis-vs-wazuh--ossec--elastic-security) · [Architecture](#architecture) · [Docs](docs/)
 
@@ -24,7 +24,7 @@
 
 **AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time — without depending on a cloud AI service.**
 
-It owns your firewall, watches your logs, runs deception honeypots, and evaluates 134 Sigma rules + 6 chain detections in **<1 ms per event**. When it sees an attack — brute-force, shadow-copy delete, mass file encryption, ransom note drop, SMB lateral movement — it auto-blocks the attacker IP, kills the process tree, restores from snapshot, and writes a structured incident postmortem.
+It owns your firewall, watches your logs, runs deception honeypots, and evaluates 168 Sigma rules + 6 chain detections in **<1 ms per event**. When it sees an attack — brute-force, shadow-copy delete, mass file encryption, ransom note drop, SMB lateral movement — it auto-blocks the attacker IP, kills the process tree, restores from snapshot, and writes a structured incident postmortem.
 
 Set `AEGIS_AI_MODE=offline` and the entire stack runs on deterministic rules and Jinja2 templates. AI enrichment is available but never required.
 
@@ -284,7 +284,7 @@ Incoming Event
      |     7 security patterns, brute-force tracker, rate limiter
      |
 [Layer 3] Sigma Correlation Engine ───────────── event correlation
-     |     134 rules + 6 chain rules + campaign tracker
+     |     168 rules + 6 chain rules + campaign tracker
      |     O(1) type-indexed lookup, 10K event sliding window
      |
 [Layer 4] Response Engine (dual-mode) ──────────── classification + decision
@@ -406,7 +406,7 @@ aegis/
 │   │   │   ├── surface/        # ASM: discovery, nuclei, risk scoring
 │   │   │   ├── response/       # SOAR: ingestion, analysis, playbooks, responder
 │   │   │   └── phantom/        # Deception: SSH/HTTP honeypots, profiler, rotation
-│   │   ├── rules/              # 134 Sigma rules + 6 chain rules (YAML)
+│   │   ├── rules/              # 168 Sigma rules + 6 chain rules (YAML)
 │   │   │   ├── sigma/          # Categorized by MITRE tactic
 │   │   │   └── chains/         # Kill-chain detection rules
 │   │   └── services/           # Background services: log_watcher, raas_intel, correlation_engine
@@ -498,14 +498,14 @@ Paste this block into any HTML landing page <head> to enable rich results.
       "@type": "SoftwareApplication",
       "name": "AEGIS",
       "alternateName": "AEGIS Autonomous Defense Platform",
-      "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 134 Sigma rules. Offline-capable. No cloud AI required.",
+      "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 168 Sigma rules. Offline-capable. No cloud AI required.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux, macOS, Windows",
-      "softwareVersion": "1.6.3.2",
+      "softwareVersion": "1.6.4.7",
       "datePublished": "2026-05-01",
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "url": "https://github.com/alejadxr/AEGIS",
-      "downloadUrl": "https://github.com/alejadxr/AEGIS/releases/tag/v1.6.3.2",
+      "downloadUrl": "https://github.com/alejadxr/AEGIS/releases/latest",
       "codeRepository": "https://github.com/alejadxr/AEGIS",
       "programmingLanguage": ["Python", "TypeScript", "Rust"],
       "keywords": [
@@ -521,7 +521,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
         "autonomous incident response"
       ],
       "featureList": [
-        "134 Sigma correlation rules with <1 ms evaluation",
+        "168 Sigma correlation rules with <1 ms evaluation",
         "12 ransomware-specific detection rules (MITRE T1490/T1486/T1105/T1218/T1021)",
         "Ransomware kill-chain detection and response",
         "RaaS threat intelligence feed (RansomLook + CISA)",
@@ -546,7 +546,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
           "name": "What is AEGIS cybersecurity?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time. It evaluates 134 Sigma rules in <1 ms, runs deception honeypots, enforces firewall blocks via pfctl/iptables, and orchestrates snapshot recovery — all without requiring a cloud AI service."
+            "text": "AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time. It evaluates 168 Sigma rules in <1 ms, runs deception honeypots, enforces firewall blocks via pfctl/iptables, and orchestrates snapshot recovery — all without requiring a cloud AI service."
           }
         },
         {

@@ -601,6 +601,33 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning(f'attack_log sweeper failed to start: {exc}')
 
+    # Memory-bounding sweeper for ip_intel's per-IP enrichment caches
+    # (_CACHE/_DEEP_CACHE). incident_enrichment fires ip_intel.lookup() for
+    # every new incident's source IP, so those dicts gained one entry per unique
+    # attacker IP and only evicted on a repeat lookup of the same IP — a slow
+    # leak proportional to distinct IPs seen. This sweep drops expired + LRU-caps
+    # them every 300s (TTLs are 15min/24h).
+    async def _ip_intel_cache_sweeper(interval_s: int = 300):
+        from app.services import ip_intel as _ip_intel
+        while True:
+            try:
+                await asyncio.sleep(interval_s)
+                evicted = _ip_intel.sweep()
+                if evicted:
+                    logger.debug('ip_intel cache sweep evicted %d entries', evicted)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug('ip_intel cache sweep error: %s', exc)
+
+    try:
+        app.state.ip_intel_sweeper_task = asyncio.create_task(
+            _ip_intel_cache_sweeper(300), name='ip_intel_cache_sweeper'
+        )
+        logger.info('ip_intel cache sweeper started (300s expiry + LRU cap)')
+    except Exception as exc:
+        logger.warning(f'ip_intel cache sweeper failed to start: {exc}')
+
     # Start scheduled scanner (full scan 2h, quick scan 30min, discovery 1h, uptime 5min)
     scheduled_scanner.start()
     logger.info('Scheduled scanner started')
@@ -669,6 +696,13 @@ async def lifespan(app: FastAPI):
             await _als_task
         except (asyncio.CancelledError, Exception):
             pass
+    _iics_task = getattr(app.state, 'ip_intel_sweeper_task', None)
+    if _iics_task is not None:
+        _iics_task.cancel()
+        try:
+            await _iics_task
+        except (asyncio.CancelledError, Exception):
+            pass
     try:
         if hasattr(correlation_engine, "stop"):
             await correlation_engine.stop()
@@ -709,7 +743,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.4.6",
+    version="1.6.4.7",
     lifespan=lifespan,
 )
 
@@ -828,7 +862,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.6",
+        "version": "1.6.4.7",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -840,7 +874,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.6",
+        "version": "1.6.4.7",
         "ai_mode": _ai_mode.value,
     }
 
