@@ -279,6 +279,7 @@ async def seed_default_admin(db: AsyncSession, client: Client) -> None:
         role=UserRole.admin,
         client_id=client.id,
         is_active=True,
+        must_change_password=True,
     )
     db.add(admin_user)
     await db.commit()
