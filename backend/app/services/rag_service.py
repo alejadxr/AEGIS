@@ -635,10 +635,20 @@ class RAGService:
         event_bus.subscribe("honeypot_interaction", self._on_honeypot_interaction)
         logger.info("RAG service registered with event bus for auto-ingestion")
 
+    # Auto-ingestion is best-effort knowledge-base writing, but ingest()
+    # awaits an embedding (~100-300 ms CPU via executor) + Qdrant upsert per
+    # event — and the event bus runs handlers sequentially, so awaiting it
+    # here stalled delivery of every queued event behind each alert/scan/
+    # honeypot hit (measured as the dominant term of avg_process_time_ms).
+    # Handlers now hand the ingest off to bg_tasks.fire_and_forget (bounded)
+    # and return immediately; failures stay non-fatal, logged by bg_tasks.
+
     async def _on_alert_processed(self, data: dict) -> None:
-        """Auto-ingest when an alert is processed."""
-        try:
-            await self.ingest_incident({
+        """Auto-ingest when an alert is processed (off the bus hot path)."""
+        from app.core.bg_tasks import fire_and_forget
+
+        fire_and_forget(
+            self.ingest_incident({
                 "id": data.get("incident_id", ""),
                 "title": data.get("incident_title", "Alert"),
                 "severity": data.get("incident_severity", "medium"),
@@ -646,51 +656,54 @@ class RAGService:
                 "source": "alert_processed",
                 "source_ip": data.get("source_ip", ""),
                 "description": data.get("summary", ""),
-            })
-        except Exception as exc:
-            logger.debug("RAG auto-ingest alert failed (non-fatal): %s", exc)
+            }),
+            label="rag_ingest_alert",
+        )
 
     async def _on_scan_completed(self, data: dict) -> None:
-        """Auto-ingest when a scan completes."""
-        try:
-            await self.ingest_scan_result(data)
-        except Exception as exc:
-            logger.debug("RAG auto-ingest scan failed (non-fatal): %s", exc)
+        """Auto-ingest when a scan completes (off the bus hot path)."""
+        from app.core.bg_tasks import fire_and_forget
+
+        fire_and_forget(self.ingest_scan_result(data), label="rag_ingest_scan")
 
     async def _on_correlation_triggered(self, data: dict) -> None:
-        """Auto-ingest correlation events."""
-        try:
-            text = (
-                f"Correlation triggered: {data.get('rule_id', 'unknown')}\n"
-                f"Events correlated: {data.get('event_count', 'N/A')}\n"
-                f"Severity: {data.get('severity', 'medium')}\n"
-                f"Details: {json.dumps(data, default=str)[:1500]}"
-            )
-            await self.ingest(
+        """Auto-ingest correlation events (off the bus hot path)."""
+        from app.core.bg_tasks import fire_and_forget
+
+        text = (
+            f"Correlation triggered: {data.get('rule_id', 'unknown')}\n"
+            f"Events correlated: {data.get('event_count', 'N/A')}\n"
+            f"Severity: {data.get('severity', 'medium')}\n"
+            f"Details: {json.dumps(data, default=str)[:1500]}"
+        )
+        fire_and_forget(
+            self.ingest(
                 text,
                 {"rule_id": data.get("rule_id", ""), "severity": data.get("severity", "")},
                 doc_type="correlation",
-            )
-        except Exception as exc:
-            logger.debug("RAG auto-ingest correlation failed (non-fatal): %s", exc)
+            ),
+            label="rag_ingest_correlation",
+        )
 
     async def _on_honeypot_interaction(self, data: dict) -> None:
-        """Auto-ingest honeypot interaction data."""
-        try:
-            text = (
-                f"Honeypot interaction detected\n"
-                f"Attacker IP: {data.get('source_ip', 'N/A')}\n"
-                f"Service: {data.get('service', 'N/A')}\n"
-                f"Commands: {json.dumps(data.get('commands', []), default=str)[:1000]}\n"
-                f"Payload: {json.dumps(data.get('payload', {}), default=str)[:1000]}"
-            )
-            await self.ingest(
+        """Auto-ingest honeypot interaction data (off the bus hot path)."""
+        from app.core.bg_tasks import fire_and_forget
+
+        text = (
+            f"Honeypot interaction detected\n"
+            f"Attacker IP: {data.get('source_ip', 'N/A')}\n"
+            f"Service: {data.get('service', 'N/A')}\n"
+            f"Commands: {json.dumps(data.get('commands', []), default=str)[:1000]}\n"
+            f"Payload: {json.dumps(data.get('payload', {}), default=str)[:1000]}"
+        )
+        fire_and_forget(
+            self.ingest(
                 text,
                 {"source_ip": data.get("source_ip", ""), "service": data.get("service", "")},
                 doc_type="honeypot",
-            )
-        except Exception as exc:
-            logger.debug("RAG auto-ingest honeypot failed (non-fatal): %s", exc)
+            ),
+            label="rag_ingest_honeypot",
+        )
 
 
 # ---------------------------------------------------------------------------
