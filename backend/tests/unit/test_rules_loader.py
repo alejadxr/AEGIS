@@ -56,10 +56,13 @@ def test_brute_force_rule_fields(pack):
     rule = pack.by_id["brute_force_ssh"]
     assert rule["id"] == "brute_force_ssh"
     assert rule["severity"] == "high"
-    assert rule["title"] == "SSH Brute Force Detected"
+    # v1.6.3.8: title corrected (rule matches HTTP 401 auth failures, not
+    # sshd specifically) and threshold raised 5 -> 20 to stop incident
+    # inflation — see app/rules/sigma/authentication/brute_force_ssh.yaml.
+    assert rule["title"] == "Auth Brute Force (HTTP 401) Detected"
     cond = rule["condition"]
     assert cond.get("event_type") == "auth_failure"
-    assert cond["count_threshold"] == 5
+    assert cond["count_threshold"] == 20
     assert "count_threshold" in cond
 
 

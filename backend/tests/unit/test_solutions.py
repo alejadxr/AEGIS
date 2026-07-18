@@ -89,13 +89,14 @@ def repo_solutions_dir() -> Path:
 
 
 def test_discover_starter_solutions(repo_solutions_dir: Path) -> None:
-    """The 3 starter solutions must be discoverable."""
+    """The 4 starter solutions must be discoverable."""
     manager = SolutionManager(solutions_dir=repo_solutions_dir)
     solutions = manager.discover()
-    assert len(solutions) == 3, f"Expected 3 starter solutions, got {len(solutions)}: {list(solutions)}"
+    assert len(solutions) == 4, f"Expected 4 starter solutions, got {len(solutions)}: {list(solutions)}"
     assert "web-app-defense" in solutions
     assert "linux-server-hardening" in solutions
     assert "homelab-baseline" in solutions
+    assert "ransomware-defense" in solutions
 
 
 def test_starter_solution_rule_counts(repo_solutions_dir: Path) -> None:
