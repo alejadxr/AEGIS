@@ -466,6 +466,16 @@ async def get_counter_attack_analysis(
     db: AsyncSession = Depends(get_db),
 ):
     """Get cached counter-attack AI analysis for an incident."""
+    client = auth.client
+    owned = await db.execute(
+        select(Incident.id).where(
+            Incident.id == incident_id,
+            Incident.client_id == client.id,
+        )
+    )
+    if owned.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
     analysis = await counter_attack_engine.get_analysis(incident_id)
     if not analysis:
         raise HTTPException(status_code=404, detail="No counter-attack analysis found for this incident")

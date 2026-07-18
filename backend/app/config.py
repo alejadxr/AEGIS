@@ -143,6 +143,11 @@ class Settings(BaseSettings):
     AEGIS_DOS_NETSHIELD_SYN_RATE: int = 50    # per-source SYN pkts/sec (iptables hashlimit)
     AEGIS_DOS_NETSHIELD_CONNLIMIT: int = 100  # max concurrent conns/source (iptables connlimit)
 
+    # CORS — comma-separated explicit allow-list. Wildcard ("*") is invalid
+    # combined with allow_credentials=True and is never used here (P0-10).
+    # Prod overrides via env with the real dashboard origin(s).
+    AEGIS_CORS_ORIGINS: str = "http://localhost:3007,http://127.0.0.1:3007"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
