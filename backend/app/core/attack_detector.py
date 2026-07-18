@@ -747,10 +747,10 @@ class AttackDetectorMiddleware(BaseHTTPMiddleware):
         t0 = time.perf_counter_ns()
 
         # ---- OPTIMIZATION 4: Blocked IP as ABSOLUTE FIRST check ----
-        ip = request.client.host if request.client else "unknown"
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            ip = forwarded.split(",", 1)[0].strip()
+        # Local import to avoid a circular import: dos_middleware imports
+        # _is_safe_ip/SKIP_PATHS from this module at module load time.
+        from app.core.dos_middleware import _client_ip
+        ip = _client_ip(request)
 
         if ip in _blocked_ips:
             return _blocked_response()

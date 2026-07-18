@@ -151,6 +151,11 @@ _PATH_RE = re.compile(r'"(?:GET|POST|PUT|DELETE)\s+(\S+)\s+HTTP/')
 # EDR kind → correlation event_type mapping
 _EDR_EVENT_MAP = {
     "fim": "file_modification",
+    # real host_monitor kinds (v1.6.4.9 fix)
+    "file_create": "file_creation",
+    "file_modify": "file_modification",
+    "file_delete": "file_modification",
+    # legacy aliases kept for external agents
     "file_created": "file_creation",
     "file_modified": "file_modification",
     "file_deleted": "file_modification",
@@ -3267,20 +3272,23 @@ def _matches_filter(event: dict, filt: dict) -> bool:
         if isinstance(expected, list):
             # path_contains: any element must be a substring of actual
             if key == "path_contains":
-                path = event.get("path", "") or event.get("url", "") or ""
-                if not any(fragment in path for fragment in expected):
+                path = event.get("path", "") or event.get("request_path", "") or event.get("url", "") or ""
+                _p = path.lower()
+                if not any(str(fragment).lower() in _p for fragment in expected):
                     return False
                 continue
             # path_contains_all: every element must be a substring
             if key == "path_contains_all":
-                path = event.get("path", "") or event.get("url", "") or ""
-                if not all(fragment in path for fragment in expected):
+                path = event.get("path", "") or event.get("request_path", "") or event.get("url", "") or ""
+                _p = path.lower()
+                if not all(str(fragment).lower() in _p for fragment in expected):
                     return False
                 continue
             # v1.6.3.5: path_excludes — fail the rule if path contains ANY listed fragment
             if key == "path_excludes":
-                path = event.get("path", "") or event.get("url", "") or ""
-                if any(fragment in path for fragment in expected):
+                path = event.get("path", "") or event.get("request_path", "") or event.get("url", "") or ""
+                _p = path.lower()
+                if any(str(fragment).lower() in _p for fragment in expected):
                     return False
                 continue
             if actual not in expected:

@@ -104,7 +104,7 @@ def test_note_dropped_fields(pack):
     assert rule["severity"] == "high"
     assert "T1486" in rule["techniques"]
     cond = rule["condition"]
-    assert cond.get("event_type") == "file_create"
+    assert cond.get("event_type") == "file_creation"
     assert cond["count_threshold"] == 1
 
 
@@ -238,7 +238,7 @@ def test_note_dropped_regex_patterns(filename: str, should_match_regex: bool):
 
 def _note_dropped_event(filename: str = "README_FOR_DECRYPT.txt") -> dict:
     return {
-        "event_type": "file_create",
+        "event_type": "file_creation",
         "file_name": filename,
         "hostname": "host-1",
         "process_path": "/usr/bin/enc",
@@ -293,6 +293,6 @@ def test_canary_modified_in_event_index(pack):
 
 
 def test_note_dropped_in_event_index(pack):
-    rules_for_type = pack.rules.get("file_create", [])
+    rules_for_type = pack.rules.get("file_creation", [])
     ids = [r["id"] for r in rules_for_type]
     assert "ransomware_note_dropped" in ids

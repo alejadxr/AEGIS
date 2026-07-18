@@ -10,7 +10,7 @@ techniques:
 data_sources:
 - fim
 condition:
-  event_type: file_create
+  event_type: file_creation
   filter:
     path_contains:
     - .shinysp1d3r

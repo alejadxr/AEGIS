@@ -58,7 +58,7 @@ jobs:
           # (backend/) is prepended to sys.path — tests/unit/ has an
           # __init__.py but tests/ itself doesn't, which defeats pytest's
           # own rootdir insertion and makes `app.*` imports fail otherwise.
-          python -m pytest tests/unit -q
+          python -m pytest tests/unit tests/integration -q
 
   # ------------------------------------------------------------------
   # Frontend build

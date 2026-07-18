@@ -109,7 +109,7 @@ def test_winrm_exec_fields(pack):
     assert "T1021.006" in rule["techniques"]
     assert "T1059" in rule["techniques"]
     cond = rule["condition"]
-    assert cond.get("event_type") == "process_create"
+    assert cond.get("event_type") == "process_creation"
     assert cond["count_threshold"] == 1
     assert cond.get("group_by") == "hostname"
 
@@ -129,7 +129,7 @@ def test_smb_lateral_in_event_index(pack):
 
 
 def test_winrm_exec_in_event_index(pack):
-    ids = [r["id"] for r in pack.rules.get("process_create", [])]
+    ids = [r["id"] for r in pack.rules.get("process_creation", [])]
     assert "ransomware_winrm_exec" in ids
 
 
@@ -266,7 +266,7 @@ def _winrm_event(
     parent: str = r"C:\Windows\System32\svchost.exe",
 ) -> dict:
     return {
-        "event_type": "process_create",
+        "event_type": "process_creation",
         "hostname": "lateral-target",
         "username": "SYSTEM",
         "process_path": process_path,

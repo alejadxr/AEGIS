@@ -197,35 +197,49 @@ class ActiveResponder:
         return {"success": True, "action": "remove_firewall_rule", "target": target}
 
     async def _isolate_host(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Isolating host {target}")
-        return {"success": True, "action": "isolate_host", "target": target}
+        logger.info("RESPONSE: isolate_host requested for %s (not implemented)", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "isolate_host", "target": target,
+                "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _unisolate_host(self, target: str, params: dict) -> dict:
         return {"success": True, "action": "unisolate_host", "target": target}
 
     async def _kill_process(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Kill process on {target}")
-        return {"success": True, "action": "kill_process", "target": target}
+        logger.info("RESPONSE: kill_process requested for %s (not implemented)", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "kill_process", "target": target,
+                "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _quarantine_file(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Quarantine file on {target}")
-        return {"success": True, "action": "quarantine_file", "target": target}
+        logger.info("RESPONSE: quarantine_file requested for %s (not implemented)", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "quarantine_file", "target": target,
+                "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _revoke_credentials(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Revoking credentials for {target}")
-        return {"success": True, "action": "revoke_creds", "target": target}
+        logger.info("RESPONSE: revoke_creds requested for %s (not implemented)", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "revoke_creds", "target": target,
+                "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _disable_account(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Disabling account {target}")
-        return {"success": True, "action": "disable_account", "target": target}
+        logger.info("RESPONSE: disable_account requested for %s (not implemented)", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "disable_account", "target": target,
+                "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _shutdown_service(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Shutdown service {target}")
-        return {"success": True, "action": "shutdown_service", "target": target}
+        logger.info("RESPONSE: shutdown_service requested for %s (not implemented)", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "shutdown_service", "target": target,
+                "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _network_segment(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Network segmentation for {target}")
-        return {"success": True, "action": "network_segment", "target": target}
+        logger.info("RESPONSE: network_segment requested for %s (not implemented)", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "network_segment", "target": target,
+                "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _generic_action(self, target: str, params: dict) -> dict:
         logger.info(f"RESPONSE: Generic action on {target}")
