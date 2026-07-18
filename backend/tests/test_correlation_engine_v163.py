@@ -165,22 +165,22 @@ def test_sigma_supply_shai_hulud_hades_firedalazer_negative():
     assert "sigma_supply_shai_hulud_hades_firedalazer" not in rule_ids, f"sigma_supply_shai_hulud_hades_firedalazer false-positived on benign event"
 
 def test_sigma_ransomware_prinz_eugen_ext_positive():
-    matches = correlation_engine.evaluate({'event_type': 'file_create', 'source_ip': '10.0.0.10', 'file_path': '/home/user/Documents/report.docx.prinzeugen'})
+    matches = correlation_engine.evaluate({'event_type': 'file_creation', 'source_ip': '10.0.0.10', 'file_path': '/home/user/Documents/report.docx.prinzeugen'})
     rule_ids = [getattr(m, "rule_id", None) for m in matches]
     assert "sigma_ransomware_prinz_eugen_ext" in rule_ids, f"expected sigma_ransomware_prinz_eugen_ext to match, got {rule_ids}"
 
 def test_sigma_ransomware_prinz_eugen_ext_negative():
-    matches = correlation_engine.evaluate({'event_type': 'file_create', 'source_ip': '10.0.0.10', 'file_path': '/home/user/Documents/report.docx'})
+    matches = correlation_engine.evaluate({'event_type': 'file_creation', 'source_ip': '10.0.0.10', 'file_path': '/home/user/Documents/report.docx'})
     rule_ids = [getattr(m, "rule_id", None) for m in matches]
     assert "sigma_ransomware_prinz_eugen_ext" not in rule_ids, f"sigma_ransomware_prinz_eugen_ext false-positived on benign event"
 
 def test_sigma_ransomware_shinysp1d3r_ext_positive():
-    matches = correlation_engine.evaluate({'event_type': 'file_create', 'source_ip': '10.0.0.11', 'file_path': '/vmfs/volumes/datastore1/vm.vmdk.shinysp1d3r'})
+    matches = correlation_engine.evaluate({'event_type': 'file_creation', 'source_ip': '10.0.0.11', 'file_path': '/vmfs/volumes/datastore1/vm.vmdk.shinysp1d3r'})
     rule_ids = [getattr(m, "rule_id", None) for m in matches]
     assert "sigma_ransomware_shinysp1d3r_ext" in rule_ids, f"expected sigma_ransomware_shinysp1d3r_ext to match, got {rule_ids}"
 
 def test_sigma_ransomware_shinysp1d3r_ext_negative():
-    matches = correlation_engine.evaluate({'event_type': 'file_create', 'source_ip': '10.0.0.11', 'file_path': '/vmfs/volumes/datastore1/vm.vmdk'})
+    matches = correlation_engine.evaluate({'event_type': 'file_creation', 'source_ip': '10.0.0.11', 'file_path': '/vmfs/volumes/datastore1/vm.vmdk'})
     rule_ids = [getattr(m, "rule_id", None) for m in matches]
     assert "sigma_ransomware_shinysp1d3r_ext" not in rule_ids, f"sigma_ransomware_shinysp1d3r_ext false-positived on benign event"
 
