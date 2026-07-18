@@ -16,6 +16,7 @@ from app.core.auth import seed_demo_client, seed_default_admin
 from app.core.events import event_bus
 from app.core.event_stream import EventStream
 from app.core.ws_push import ws_push_manager
+from app.core.bg_tasks import fire_and_forget, drain as drain_bg_tasks
 from app.core.openrouter import openrouter_client
 from app.services.notifier import notifier
 from app.services.correlation_engine import correlation_engine
@@ -142,6 +143,13 @@ async def _get_client(client_id: str | None) -> Client | None:
 
 
 async def notify_alert_processed(data):
+    # DB fetch + outbound webhook/Telegram calls are too slow for the
+    # event-bus hot path (see core/bg_tasks.py) — offload and return
+    # immediately so the next queued event isn't stalled behind us.
+    fire_and_forget(_notify_alert_processed_impl(data), label="notify_alert_processed")
+
+
+async def _notify_alert_processed_impl(data):
     client = await _get_client(data.get("client_id"))
     if not client:
         return
@@ -173,6 +181,11 @@ async def notify_alert_processed(data):
 
 
 async def notify_action_executed(data):
+    # Offloaded — see notify_alert_processed above.
+    fire_and_forget(_notify_action_executed_impl(data), label="notify_action_executed")
+
+
+async def _notify_action_executed_impl(data):
     client = await _get_client(data.get("client_id"))
     if not client:
         return
@@ -243,6 +256,11 @@ async def handle_auto_approved_action(data):
 
 
 async def notify_action_requires_approval(data):
+    # Offloaded — see notify_alert_processed above.
+    fire_and_forget(_notify_action_requires_approval_impl(data), label="notify_action_requires_approval")
+
+
+async def _notify_action_requires_approval_impl(data):
     client = await _get_client(data.get("client_id"))
     if not client:
         return
@@ -721,6 +739,9 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     await event_bus.stop()
+    # Drain fire-and-forget notify/hub-push tasks (bg_tasks.py) before the DB
+    # engine and HTTP clients they depend on are torn down below.
+    await drain_bg_tasks()
     await event_stream.stop()
     await openrouter_client.close()
     await interaction_processor.stop()
@@ -743,7 +764,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.4.7",
+    version="1.6.4.8",
     lifespan=lifespan,
 )
 
@@ -862,7 +883,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.7",
+        "version": "1.6.4.8",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -874,7 +895,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.7",
+        "version": "1.6.4.8",
         "ai_mode": _ai_mode.value,
     }
 

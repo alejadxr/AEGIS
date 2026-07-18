@@ -13,6 +13,8 @@ import logging
 from collections import OrderedDict
 from datetime import datetime, timezone
 
+from app.core.bg_tasks import fire_and_forget
+
 logger = logging.getLogger("aegis.auto_sharer")
 
 # Deduplication: don't share the same IOC more than once per 5 min
@@ -23,7 +25,11 @@ _MAX_DEDUP_ENTRIES = 5000
 class AutoSharer:
     def __init__(self):
         self._recent: OrderedDict[str, float] = OrderedDict()
-        self._stats = {"shared": 0, "skipped_dedup": 0, "skipped_invalid": 0}
+        # "shared" counts IOCs handed off to the background push task, not
+        # confirmed hub deliveries (the push itself now happens off the
+        # event-bus hot path — see _share_ip). Ground-truth delivery counts
+        # live in hub_sync_client.stats (iocs_pushed / errors).
+        self._stats = {"shared": 0, "skipped_dedup": 0, "skipped_invalid": 0, "skipped_backpressure": 0}
 
     def _is_duplicate(self, key: str) -> bool:
         now = datetime.now(timezone.utc).timestamp()
@@ -82,21 +88,30 @@ class AutoSharer:
             self._stats["skipped_invalid"] += 1
             return
 
-        # Push to hub
+        # Push to hub — offloaded to a background task (see core/bg_tasks.py).
+        # The hub POST used to be awaited right here inside the event-bus
+        # handler, paying the full network round-trip (up to the client's
+        # 15s timeout) on every shareable event. fire_and_forget schedules it
+        # and returns immediately; the event bus is never blocked on it.
         try:
             from app.services.hub_sync_client import hub_sync_client
-            success = await hub_sync_client.push_ioc({
-                "ioc_type": "ip",
-                "ioc_value": ip,
-                "threat_type": threat_type,
-                "confidence": confidence,
-                "detection_source": source,
-            })
-            if success:
+            task = fire_and_forget(
+                hub_sync_client.push_ioc({
+                    "ioc_type": "ip",
+                    "ioc_value": ip,
+                    "threat_type": threat_type,
+                    "confidence": confidence,
+                    "detection_source": source,
+                }),
+                label="hub_push_ioc",
+            )
+            if task is not None:
                 self._stats["shared"] += 1
-                logger.info(f"Shared IOC: {ip} ({threat_type}, confidence={confidence})")
+                logger.debug(f"Queued IOC share: {ip} ({threat_type}, confidence={confidence})")
+            else:
+                self._stats["skipped_backpressure"] += 1
         except Exception as e:
-            logger.debug(f"Failed to share IOC: {e}")
+            logger.debug(f"Failed to queue IOC share: {e}")
 
     @property
     def stats(self) -> dict:
