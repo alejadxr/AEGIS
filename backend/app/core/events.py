@@ -60,6 +60,12 @@ class EventBus:
             "avg_process_time_ms": 0.0,
             "total_process_time_ms": 0.0,
         }
+        # Per-handler timing: "event_type:handler_qualname" -> aggregates.
+        # Naturally bounded — one entry per (event_type, handler) pair fixed
+        # at subscribe time (~100 entries). Exposed via stats() so the
+        # dominant hot-path handler can be identified from live data instead
+        # of guessed at.
+        self._handler_stats: dict[str, dict] = {}
 
     def set_event_stream(self, event_stream):
         """Wire up the Redis EventStream for dual publishing."""
@@ -154,10 +160,25 @@ class EventBus:
 
                 handlers = self._subscribers.get(item.event_type, [])
                 for handler in handlers:
+                    h_start_ns = time.monotonic_ns()
                     try:
                         await handler(item.data)
                     except Exception as e:
                         logger.error(f"Event handler error for '{item.event_type}': {e}")
+                    finally:
+                        h_ms = (time.monotonic_ns() - h_start_ns) / 1_000_000
+                        key = f"{item.event_type}:{getattr(handler, '__qualname__', repr(handler))}"
+                        hs = self._handler_stats.setdefault(
+                            key, {"count": 0, "total_ms": 0.0, "max_ms": 0.0}
+                        )
+                        hs["count"] += 1
+                        hs["total_ms"] += h_ms
+                        if h_ms > hs["max_ms"]:
+                            hs["max_ms"] = h_ms
+                        if h_ms > 1000:
+                            logger.warning(
+                                f"Slow event handler: {key} took {h_ms:.0f} ms"
+                            )
 
                 elapsed_ms = (time.monotonic_ns() - start_ns) / 1_000_000
                 self._stats["events_processed"] += 1
@@ -173,11 +194,25 @@ class EventBus:
                 break
 
     def stats(self) -> dict:
+        # Top handlers by cumulative time — the live answer to "what is the
+        # event loop actually spending its time on".
+        top_handlers = sorted(
+            self._handler_stats.items(), key=lambda kv: kv[1]["total_ms"], reverse=True
+        )[:15]
         return {
             **self._stats,
             "subscribers": {k: len(v) for k, v in self._subscribers.items()},
             "queue_size": self._queue.qsize(),
             "has_redis_stream": self._event_stream is not None,
+            "slow_handlers": {
+                k: {
+                    "count": v["count"],
+                    "total_ms": round(v["total_ms"], 1),
+                    "avg_ms": round(v["total_ms"] / v["count"], 2) if v["count"] else 0.0,
+                    "max_ms": round(v["max_ms"], 1),
+                }
+                for k, v in top_handlers
+            },
         }
 
 
