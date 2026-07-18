@@ -57,11 +57,13 @@ def test_message_translation_skips_empty():
 
 
 @pytest.mark.asyncio
-async def test_chat_no_key_returns_stub_without_http():
+async def test_chat_no_key_raises_runtime_error():
+    """Matches every other AIProvider (OpenRouter/Anthropic/OpenAI/Inception):
+    chat() raises RuntimeError when no api_key is configured, it does not
+    return a stub response. Callers (e.g. ai_engine) handle the fallback."""
     g = GeminiProvider(api_key="")
-    out = await g.chat([{"role": "user", "content": "Hi"}])
-    assert out["tokens_used"] == 0
-    assert "key not configured" in out["content"]
+    with pytest.raises(RuntimeError, match="gemini: no api_key configured"):
+        await g.chat([{"role": "user", "content": "Hi"}])
 
 
 @pytest.mark.asyncio

@@ -33,6 +33,34 @@ jobs:
           ruff check app/ --select E,F,W --ignore E501 --exit-zero
 
   # ------------------------------------------------------------------
+  # Backend unit tests (pytest)
+  # ------------------------------------------------------------------
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: |
+          cd backend
+          # `python -m pytest` (not the bare `pytest` script) so the cwd
+          # (backend/) is prepended to sys.path — tests/unit/ has an
+          # __init__.py but tests/ itself doesn't, which defeats pytest's
+          # own rootdir insertion and makes `app.*` imports fail otherwise.
+          python -m pytest tests/unit -q
+
+  # ------------------------------------------------------------------
   # Frontend build
   # ------------------------------------------------------------------
   build-frontend:

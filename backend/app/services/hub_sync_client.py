@@ -43,7 +43,12 @@ class HubSyncClient:
         self.hub_url = hub_url.rstrip("/")
         self.node_id = node_id
         self._running = True
-        self._client = httpx.AsyncClient(timeout=15.0)
+        # 5s (was 15s): registration/pull run in their own background loop
+        # and push_ioc() is now dispatched via bg_tasks.fire_and_forget from
+        # auto_sharer, so a slow/unreachable hub no longer holds up the
+        # event-bus hot path — a shorter timeout just frees the connection
+        # slot sooner under a semaphore-bounded burst of pushes.
+        self._client = httpx.AsyncClient(timeout=5.0)
 
         # Register with hub
         try:
