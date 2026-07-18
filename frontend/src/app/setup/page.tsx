@@ -183,8 +183,6 @@ export default function SetupWizard() {
   const nameRef = useRef<HTMLInputElement>(null);
   const apiKeyRef = useRef<HTMLInputElement>(null);
 
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-
   // Backend connectivity error UX
   const [backendError, setBackendError] = useState<string>('');
   const retryActionRef = useRef<(() => void) | null>(null);
@@ -444,10 +442,7 @@ export default function SetupWizard() {
   };
 
   const toggleHoneypot = (id: string, isPremium?: boolean) => {
-    if (isPremium) {
-      setShowUpgradeModal(true);
-      return;
-    }
+    // isPremium flag is deprecated — all honeypots are available
     update({
       selectedHoneypots: state.selectedHoneypots.includes(id)
         ? state.selectedHoneypots.filter(h => h !== id)
@@ -471,11 +466,7 @@ export default function SetupWizard() {
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.upgrade_required) {
-            setShowUpgradeModal(true);
-            setLoading(false);
-            return;
-          }
+          // upgrade_required flag is deprecated — all features available
         }
       }
     } catch (err) {
@@ -1692,53 +1683,6 @@ export default function SetupWizard() {
         </p>
       </div>
 
-      {/* Upgrade Modal */}
-      {showUpgradeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowUpgradeModal(false)} />
-          <div className="relative bg-[#18181B] border border-white/[0.06] rounded-2xl p-8 max-w-md w-full shadow-2xl">
-            <button
-              onClick={() => setShowUpgradeModal(false)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[var(--brand-accent)]/10 border border-[var(--brand-accent)]/20 mb-4">
-                <Crown className="w-7 h-7 text-[var(--brand-accent)]" />
-              </div>
-              <h3 className="text-xl font-bold text-white">Upgrade to Enterprise</h3>
-              <p className="text-sm text-zinc-500 mt-2">
-                Smart Honeypots use AI to create indistinguishable decoys that mirror your real services, catching even sophisticated attackers.
-              </p>
-            </div>
-            <div className="space-y-2 mb-6">
-              {['AI-powered deception that adapts to attackers', 'Automatically mimics your real applications', 'Advanced attacker profiling and forensics'].map(f => (
-                <div key={f} className="flex items-center gap-2 text-sm text-zinc-300">
-                  <Check className="w-4 h-4 text-[var(--brand-accent)] flex-shrink-0" />
-                  {f}
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setShowUpgradeModal(false);
-                router.push('/dashboard/settings');
-              }}
-              className="w-full bg-[var(--brand-accent)] hover:bg-[var(--brand-accent)] text-white font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[var(--brand-accent)]/20 active:scale-[0.98] flex items-center justify-center gap-2"
-            >
-              <Crown className="w-4 h-4" />
-              Contact Sales
-            </button>
-            <button
-              onClick={() => setShowUpgradeModal(false)}
-              className="w-full mt-2 py-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              Maybe later
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
