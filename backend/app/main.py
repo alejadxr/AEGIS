@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -13,6 +14,7 @@ from app.config import settings
 from app.database import engine, async_session
 from app.models import Base
 from app.core.auth import seed_demo_client, seed_default_admin
+from app.core.boot_guard import assert_production_secrets, DEFAULT_ADMIN_PASSWORD
 from app.core.events import event_bus
 from app.core.event_stream import EventStream
 from app.core.ws_push import ws_push_manager
@@ -300,20 +302,36 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Cayde-6 starting up...")
 
-    # --- Secret key check ---
-    if (
-        settings.AEGIS_SECRET_KEY == "aegis-dev-secret-key-change-in-production"
-        and settings.AEGIS_ENV != "development"
-    ):
-        logger.critical(
-            "!!! AEGIS_SECRET_KEY is still the default value. "
-            "Set a strong random key via AEGIS_SECRET_KEY env var before running in production. !!!"
-        )
+    # --- Secret key / admin password check ---
+    # P0-9: this used to be a log-only warning that allowed boot to continue
+    # with default secrets in production. It is now fatal -- refuses to boot.
+    assert_production_secrets(
+        env=settings.AEGIS_ENV,
+        secret_key=settings.AEGIS_SECRET_KEY,
+        admin_password=os.environ.get("AEGIS_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD),
+    )
+
+    # P0-7: DeceptionCampaign isn't imported by app/models/__init__.py (out of
+    # scope for this change), so its table wouldn't be registered on
+    # Base.metadata in time for create_all below without this explicit
+    # import. Must run BEFORE create_all.
+    from app.models.deception_campaign import DeceptionCampaign  # noqa: F401
 
     # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables created")
+
+    # P0-7: rehydrate Honey-AI deception campaigns from Postgres into the
+    # orchestrator's in-memory dict. Without this, every PM2 restart wiped
+    # the dict while honey_breadcrumbs rows survived, leaving orphaned
+    # breadcrumbs and an empty GET /deception/campaigns response.
+    try:
+        from app.services.honey_ai import deception_orchestrator
+        async with async_session() as db:
+            await deception_orchestrator.rehydrate(db)
+    except Exception as e:
+        logger.error(f"Deception campaign rehydration failed (non-fatal): {e}")
 
     # Seed demo client and default admin user
     async with async_session() as db:
@@ -790,7 +808,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in settings.AEGIS_CORS_ORIGINS.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

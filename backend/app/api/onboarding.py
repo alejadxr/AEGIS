@@ -108,15 +108,15 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
         },
         guardrails={
             "block_ip": "auto_approve",
-            "isolate_host": "auto_approve",
-            "revoke_creds": "auto_approve",
-            "shutdown_service": "auto_approve",
+            "isolate_host": "require_approval",
+            "revoke_creds": "require_approval",
+            "shutdown_service": "require_approval",
             "firewall_rule": "auto_approve",
-            "quarantine_file": "auto_approve",
-            "kill_process": "auto_approve",
-            "disable_account": "auto_approve",
-            "network_segment": "auto_approve",
-            "counter_attack": "auto_approve",
+            "quarantine_file": "require_approval",
+            "kill_process": "require_approval",
+            "disable_account": "require_approval",
+            "network_segment": "require_approval",
+            "counter_attack": "require_approval",
         },
     )
     db.add(client)

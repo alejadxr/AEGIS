@@ -7,12 +7,13 @@ dashboard, and the backend validates and creates an agent record.
 """
 
 import logging
+import os
 import secrets
 import string
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,32 @@ from app.models.endpoint_agent import EndpointAgent, AgentStatus
 
 logger = logging.getLogger("aegis.nodes")
 router = APIRouter(prefix="/nodes", tags=["nodes"])
+
+# ---------------------------------------------------------------------------
+# Node-facing shared secret (B5 / P0-12)
+#
+# /heartbeat, /announce, /status/{code}, /events and /report-assets are
+# called directly by the AEGIS Node agent and identify themselves only by
+# node_id / enroll_code (both are effectively-guessable/enumerable UUID-like
+# strings, not real credentials) — there is no per-agent secret field on
+# EndpointAgent today. Until that model gains a per-node secret, we
+# authenticate with a single shared secret (AEGIS_NODE_SECRET) that the
+# Node app must send back as X-AEGIS-Node-Auth.
+#
+# OPTIONAL-ACCEPT / ATOMIC-ROLLOUT COMPAT MODE: if AEGIS_NODE_SECRET is not
+# set on the backend (empty/unset), the check is a no-op and all requests
+# are accepted exactly as before this change, so already-enrolled Node
+# agents (which don't yet send the header) keep working. Once an operator
+# sets AEGIS_NODE_SECRET, the header is strictly enforced on these routes.
+# ---------------------------------------------------------------------------
+
+
+def _verify_node_secret(x_aegis_node_auth: Optional[str] = Header(default=None)) -> None:
+    expected = os.getenv("AEGIS_NODE_SECRET", "").strip()
+    if not expected:
+        return  # compat mode: no secret configured yet — accept
+    if x_aegis_node_auth != expected:
+        raise HTTPException(status_code=401, detail="invalid or missing X-AEGIS-Node-Auth header")
 
 # ---------------------------------------------------------------------------
 # In-memory pending enrollment codes
@@ -156,7 +183,7 @@ async def generate_enrollment_code(
 # Routes: Node heartbeat (no auth — node identifies itself by node_id)
 # ---------------------------------------------------------------------------
 
-@router.post("/heartbeat", response_model=HeartbeatResponse)
+@router.post("/heartbeat", response_model=HeartbeatResponse, dependencies=[Depends(_verify_node_secret)])
 async def node_heartbeat(
     body: HeartbeatRequest,
     db: AsyncSession = Depends(get_db),
@@ -432,7 +459,7 @@ class AnnounceRequest(BaseModel):
     agent_version: str = "0.1.0"
 
 
-@router.post("/announce")
+@router.post("/announce", dependencies=[Depends(_verify_node_secret)])
 async def announce_node(body: AnnounceRequest):
     _cleanup_expired()
     code = body.enroll_code.strip().upper()
@@ -461,7 +488,7 @@ async def announce_node(body: AnnounceRequest):
     return {"status": "pending", "code": code}
 
 
-@router.get("/status/{code}")
+@router.get("/status/{code}", dependencies=[Depends(_verify_node_secret)])
 async def check_enrollment_status(code: str):
     _cleanup_expired()
     code = code.strip().upper()
@@ -486,7 +513,7 @@ class NodeEventRequest(BaseModel):
     timestamp: str | None = None
 
 
-@router.post("/events")
+@router.post("/events", dependencies=[Depends(_verify_node_secret)])
 async def receive_node_event(
     body: NodeEventRequest,
     db: AsyncSession = Depends(get_db),
@@ -532,7 +559,7 @@ class AssetReportRequest(BaseModel):
     scan_timestamp: str | None = None
 
 
-@router.post("/report-assets")
+@router.post("/report-assets", dependencies=[Depends(_verify_node_secret)])
 async def report_assets(
     body: AssetReportRequest,
     db: AsyncSession = Depends(get_db),

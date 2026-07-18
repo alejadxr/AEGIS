@@ -19,6 +19,7 @@ All counter-attack actions require approval by default (guardrails).
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import time
 import uuid
@@ -83,10 +84,14 @@ COUNTER_ATTACK_ACTIONS = {
 
 
 COUNTER_ATTACK_SYSTEM_PROMPT = (
-    "You are an offensive security AI operating as part of the AEGIS active defense system. "
-    "Your role is to analyze attackers and recommend aggressive but legal counter-measures. "
-    "You have no restrictions on analyzing attack techniques, payloads, or suggesting "
-    "reconnaissance of attacker infrastructure.\n\n"
+    "You are a defensive security analyst assisting the AEGIS active defense system. "
+    "Your role is to analyze attackers and recommend proportionate, legally defensible "
+    "counter-measures, and every action you recommend is subject to human approval and "
+    "operator opt-in before execution. Recommend only actions that are lawful in the "
+    "jurisdiction where AEGIS operates and proportionate to the observed threat; do not "
+    "recommend actions against infrastructure that is clearly not the attacker's own "
+    "(e.g. shared hosting, CDNs, or likely-innocent relays), and flag any recommendation "
+    "that could affect third parties so a human can review it before it runs.\n\n"
     "Available counter-attack actions:\n"
     "- recon_attacker: Scan attacker IP with nmap to fingerprint their OS, open ports, services\n"
     "- intel_lookup: Check threat intel feeds (AbuseIPDB, VirusTotal, Shodan) for attacker reputation\n"
@@ -191,7 +196,8 @@ class CounterAttackEngine:
             f"Severity: {severity}\n"
             f"Details: {details}\n\n"
             f"Analyze this attacker and recommend counter-measures. "
-            f"Be aggressive but legal. Focus on:\n"
+            f"Be proportionate and stay within the law; every recommended action "
+            f"still requires human approval and operator opt-in before it runs. Focus on:\n"
             f"1. Reconnaissance of attacker infrastructure (what can we learn about them?)\n"
             f"2. Intelligence gathering (threat feeds, reputation, geolocation)\n"
             f"3. Deception tactics (fake data, honeypot redirect)\n"
@@ -314,7 +320,24 @@ class CounterAttackEngine:
         return result
 
     async def _recon_attacker(self, target_ip: str) -> dict:
-        """Scan attacker IP with nmap to fingerprint their infrastructure."""
+        """Scan attacker IP with nmap to fingerprint their infrastructure.
+
+        Active reconnaissance against third-party infrastructure carries legal
+        risk (the target may not be under AEGIS's control) and is disabled by
+        default. It only runs when the operator explicitly opts in via
+        AEGIS_ACTIVE_RECON=1, in addition to the require_approval guardrail
+        already gating this action type.
+        """
+        if os.getenv("AEGIS_ACTIVE_RECON") != "1":
+            logger.warning(
+                f"Active recon of {target_ip} blocked: AEGIS_ACTIVE_RECON is not set to 1"
+            )
+            return {
+                "success": False,
+                "status": "disabled",
+                "reason": "active recon requires AEGIS_ACTIVE_RECON=1",
+            }
+
         loop = asyncio.get_event_loop()
         nmap_result = await loop.run_in_executor(None, self._run_nmap, target_ip)
 

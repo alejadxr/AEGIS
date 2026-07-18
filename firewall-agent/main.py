@@ -34,6 +34,7 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -59,6 +60,11 @@ _SAFE_NETWORKS = [
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fe80::/10"),
 ]
+
+# Shared secret for the Mac Pro <-> Pi firewall channel (B5 / P0-12). See the
+# _enforce_shared_secret middleware below for the optional-accept/enforce
+# rollout behavior.
+AEGIS_FIREWALL_SECRET = os.getenv("AEGIS_FIREWALL_SECRET", "").strip()
 
 # Extra safe IPs from AEGIS_SAFE_IPS env var (comma-separated). Accepts both
 # literal IPs (auto-wrapped as /32 or /128) and CIDR ranges (e.g.
@@ -424,6 +430,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _enforce_shared_secret(request: Request, call_next):
+    """Authenticate the Mac Pro <-> Pi firewall channel (B5 / P0-12).
+
+    Every request must carry header `X-AEGIS-FW-Auth: <shared secret>`
+    matching this agent's AEGIS_FIREWALL_SECRET env var. `/health` is
+    exempt (used by uptime probes / systemd health checks that shouldn't
+    need the secret).
+
+    OPTIONAL-ACCEPT / ATOMIC-ROLLOUT COMPAT MODE:
+    If AEGIS_FIREWALL_SECRET is NOT set on this agent (empty/unset), the
+    check is skipped entirely and ALL requests are accepted, exactly as
+    before this change. This is intentional: the Mac Pro client and this
+    agent are deployed independently, so during a staged rollout one side
+    may be updated before the other. Requiring the secret unconditionally
+    here would risk locking AEGIS out of its own firewall executor mid
+    rollout. Once an operator sets AEGIS_FIREWALL_SECRET on the Pi's
+    systemd unit (matching the Mac Pro's value), enforcement turns on
+    automatically for every route except /health.
+    """
+    if request.url.path == "/health":
+        return await call_next(request)
+    if not AEGIS_FIREWALL_SECRET:
+        # Compat mode: no secret configured yet on this agent — accept.
+        return await call_next(request)
+    supplied = request.headers.get("X-AEGIS-FW-Auth", "")
+    if supplied != AEGIS_FIREWALL_SECRET:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "invalid or missing X-AEGIS-FW-Auth header"},
+        )
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------------------

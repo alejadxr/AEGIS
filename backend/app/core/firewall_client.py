@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional
 
 import httpx
@@ -11,6 +12,18 @@ FIREWALL_API = (settings.AEGIS_FIREWALL_URL or "").rstrip("/")
 TIMEOUT = 30.0
 
 
+def _auth_headers() -> dict:
+    """Shared-secret header attached to every request sent to the Pi agent.
+
+    Set AEGIS_FIREWALL_SECRET (same value on Mac Pro and the Pi) to
+    authenticate the Mac Pro <-> Pi firewall channel. If unset here, an
+    empty string is sent — the agent runs in optional-accept mode until
+    AEGIS_FIREWALL_SECRET is configured on both sides (see
+    firewall-agent/main.py for the enforcement/compat behavior).
+    """
+    return {"X-AEGIS-FW-Auth": os.getenv("AEGIS_FIREWALL_SECRET", "")}
+
+
 class FirewallClient:
     """Async HTTP client for an external firewall API.
 
@@ -20,11 +33,14 @@ class FirewallClient:
 
     If AEGIS_FIREWALL_URL is not set, all methods return graceful errors
     and local middleware blocking is used instead.
+
+    Every request carries the X-AEGIS-FW-Auth shared-secret header (see
+    _auth_headers()) so the Pi agent can authenticate the caller.
     """
 
     async def get_status(self) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/status")
                 resp.raise_for_status()
                 return resp.json()
@@ -34,7 +50,7 @@ class FirewallClient:
 
     async def get_attackers(self) -> list:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/attackers")
                 resp.raise_for_status()
                 data = resp.json()
@@ -45,7 +61,7 @@ class FirewallClient:
 
     async def get_attacker(self, ip: str) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/attacker/{ip}")
                 resp.raise_for_status()
                 return resp.json()
@@ -55,7 +71,7 @@ class FirewallClient:
 
     async def get_blocked(self) -> list:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/blocked")
                 resp.raise_for_status()
                 data = resp.json()
@@ -66,7 +82,7 @@ class FirewallClient:
 
     async def block_ip(self, ip: str) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.post(f"{FIREWALL_API}/block", json={"ip": ip})
                 resp.raise_for_status()
                 return {"success": True, "response": resp.json()}
@@ -76,7 +92,7 @@ class FirewallClient:
 
     async def unblock_ip(self, ip: str) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.delete(f"{FIREWALL_API}/block/{ip}")
                 resp.raise_for_status()
                 return {"success": True, "response": resp.json()}
@@ -86,7 +102,7 @@ class FirewallClient:
 
     async def analyze_ip(self, ip: str) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.post(f"{FIREWALL_API}/analyze", json={"ip": ip})
                 resp.raise_for_status()
                 return resp.json()
@@ -96,7 +112,7 @@ class FirewallClient:
 
     async def investigate_ip(self, ip: str) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.post(f"{FIREWALL_API}/ai/investigate", json={"ip": ip})
                 resp.raise_for_status()
                 return resp.json()
@@ -106,7 +122,7 @@ class FirewallClient:
 
     async def get_threat_summary(self) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/threat-summary")
                 resp.raise_for_status()
                 return resp.json()
@@ -116,7 +132,7 @@ class FirewallClient:
 
     async def get_visitors(self, minutes: int = 60) -> list:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/visitors/recent", params={"minutes": minutes})
                 resp.raise_for_status()
                 data = resp.json()
@@ -127,7 +143,7 @@ class FirewallClient:
 
     async def get_iptables_rules(self) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/iptables/rules")
                 resp.raise_for_status()
                 return resp.json()
@@ -137,7 +153,7 @@ class FirewallClient:
 
     async def get_events(self) -> list:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/events")
                 resp.raise_for_status()
                 data = resp.json()
@@ -148,7 +164,7 @@ class FirewallClient:
 
     async def get_auto_response_blocked(self) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/auto-response/blocked")
                 resp.raise_for_status()
                 return resp.json()
@@ -158,7 +174,7 @@ class FirewallClient:
 
     async def chat(self, message: str) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.post(f"{FIREWALL_API}/ai/chat", json={"message": message})
                 resp.raise_for_status()
                 return resp.json()
@@ -209,7 +225,7 @@ class FirewallClient:
             return {"success": False, "error": "AEGIS_FIREWALL_URL not set"}
         payload = {"rate": rate, "burst": burst, "connlimit": connlimit, "port": port}
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.post(
                     f"{FIREWALL_API}/dos/ratelimit",
                     json=payload,
@@ -231,7 +247,7 @@ class FirewallClient:
         if not FIREWALL_API:
             return {"success": False, "error": "AEGIS_FIREWALL_URL not set"}
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.post(
                     f"{FIREWALL_API}/dos/harden",
                     headers=self._NETSHIELD_HEADERS,
@@ -252,7 +268,7 @@ class FirewallClient:
         if not FIREWALL_API:
             return {"success": False, "error": "AEGIS_FIREWALL_URL not set"}
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.post(
                     f"{FIREWALL_API}/dos/revert",
                     headers=self._NETSHIELD_HEADERS,
@@ -268,7 +284,7 @@ class FirewallClient:
         if not FIREWALL_API:
             return {"error": "AEGIS_FIREWALL_URL not set", "available": False}
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/dos/status")
                 resp.raise_for_status()
                 return resp.json()
