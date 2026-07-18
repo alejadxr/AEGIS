@@ -67,16 +67,6 @@ export const TOP_NAV_SECTIONS: TopNavSection[] = [
       '/dashboard/attack-path',
     ],
   },
-  {
-    id: 'reports',
-    label: 'Reports',
-    href: '/dashboard/reports',
-    routes: [
-      '/dashboard/reports',
-      '/dashboard/compliance',
-      '/dashboard/quantum',
-    ],
-  },
 ];
 
 export function getActiveSectionId(pathname: string): string {

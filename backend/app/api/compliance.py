@@ -116,6 +116,7 @@ class ComplianceOverview(BaseModel):
     total_not_met: int
     gaps: list[dict]
     assessed_at: str
+    note: str = "Self-assessment mapping, not an audited certification."
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +127,7 @@ class ComplianceOverview(BaseModel):
 async def get_compliance_overview(
     auth: AuthContext = Depends(require_viewer),
 ):
-    """Return compliance posture across all frameworks with coverage percentages."""
+    """Return self-assessment mapping across all frameworks with control coverage percentages."""
     frameworks_out: list[FrameworkOut] = []
     all_gaps: list[dict] = []
     t_met = t_partial = t_not_met = 0

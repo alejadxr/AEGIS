@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Atom, AlertTriangle, CheckCircle, XCircle, Info, Loader2, Crown, Lock, Check, X } from 'lucide-react';
+import { Atom, AlertTriangle, CheckCircle, XCircle, Info, Loader2, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 
@@ -142,7 +141,6 @@ function responseNeedsUpgrade(data: unknown): boolean {
 type GatedSection = 'timeline' | 'assessments' | 'entropy';
 
 export default function QuantumPage() {
-  const router = useRouter();
   const [readiness, setReadiness] = useState<QuantumReadiness>(FALLBACK_READINESS);
   const [timeline, setTimeline] = useState<CryptoTimelineEntry[]>(FALLBACK_TIMELINE);
   const [assessments, setAssessments] = useState<AlgorithmAssessment[]>(FALLBACK_ASSESSMENTS);
@@ -150,7 +148,6 @@ export default function QuantumPage() {
   const [loading, setLoading] = useState(true);
   const [usingFallback, setUsingFallback] = useState(false);
   const [gatedSections, setGatedSections] = useState<Set<GatedSection>>(new Set());
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -273,9 +270,9 @@ export default function QuantumPage() {
         </div>
       ) : (
         <>
-          {/* Quantum Readiness Score */}
+          {/* PQC Algorithm Coverage Reference */}
           <div className="bg-card border border-border rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase mb-6">Quantum Readiness Score</h2>
+            <h2 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase mb-6">PQC Algorithm Coverage Reference</h2>
             <div className="flex items-center gap-8">
               <div className="relative w-36 h-36 shrink-0">
                 <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
@@ -331,7 +328,6 @@ export default function QuantumPage() {
             {gatedSections.has('timeline') ? (
               <UpgradeGateBanner
                 feature="Crypto Vulnerability Timeline"
-                onUpgrade={() => setShowUpgradeModal(true)}
               />
             ) : (
             <div className="space-y-2">
@@ -426,7 +422,6 @@ export default function QuantumPage() {
             {gatedSections.has('assessments') ? (
               <UpgradeGateBanner
                 feature="Algorithm Assessment"
-                onUpgrade={() => setShowUpgradeModal(true)}
               />
             ) : (
             <div className="overflow-x-auto">
@@ -495,7 +490,6 @@ export default function QuantumPage() {
               {gatedSections.has('entropy') ? (
                 <UpgradeGateBanner
                   feature="Advanced Entropy Analysis"
-                  onUpgrade={() => setShowUpgradeModal(true)}
                 />
               ) : (
               <div className="space-y-4">
@@ -551,81 +545,22 @@ export default function QuantumPage() {
         </>
       )}
 
-      {/* Upgrade Modal */}
-      {showUpgradeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowUpgradeModal(false)} />
-          <div className="relative bg-card border border-border rounded-2xl p-8 max-w-md w-full shadow-2xl">
-            <button
-              onClick={() => setShowUpgradeModal(false)}
-              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X size={20} />
-            </button>
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 mb-4">
-                <Atom size={28} className="text-[var(--brand)]" />
-              </div>
-              <h3 className="text-xl font-bold text-foreground">Upgrade to Enterprise</h3>
-              <p className="text-sm text-muted-foreground mt-2">
-                Unlock the full Quantum Security module with real-time cryptographic assessment of your infrastructure.
-              </p>
-            </div>
-            <div className="space-y-2 mb-6">
-              {[
-                'Live cryptographic inventory of your assets',
-                'Real-time vulnerability timeline updates',
-                'Advanced Renyi entropy analysis',
-                'AI-powered migration recommendations',
-              ].map(f => (
-                <div key={f} className="flex items-center gap-2 text-sm text-foreground/80">
-                  <Check size={16} className="text-[var(--brand)] flex-shrink-0" />
-                  {f}
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setShowUpgradeModal(false);
-                router.push('/dashboard/settings#billing');
-              }}
-              className="w-full bg-[var(--brand)] hover:bg-[var(--brand)] text-[#09090B] font-semibold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[var(--brand)]/20 active:scale-[0.98] flex items-center justify-center gap-2"
-            >
-              <Crown size={16} />
-              Upgrade to Enterprise
-            </button>
-            <button
-              onClick={() => setShowUpgradeModal(false)}
-              className="w-full mt-2 py-2 text-sm text-muted-foreground hover:text-foreground/80 transition-colors"
-            >
-              Maybe later
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// ─── Upgrade Gate Banner ─────────────────────────────────────────────────────
+// ─── Feature Gate Banner ─────────────────────────────────────────────────────
 
-function UpgradeGateBanner({ feature, onUpgrade }: { feature: string; onUpgrade: () => void }) {
+function UpgradeGateBanner({ feature }: { feature: string }) {
   return (
     <div className="rounded-xl border border-[var(--brand)]/10 bg-[var(--brand)]/[0.03] p-6 flex flex-col items-center text-center">
       <div className="w-10 h-10 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 flex items-center justify-center mb-3">
         <Lock size={18} className="text-[var(--brand)]" />
       </div>
-      <p className="text-sm font-medium text-foreground mb-1">Upgrade to unlock full analysis</p>
-      <p className="text-xs text-muted-foreground mb-4">
-        {feature} requires an Enterprise subscription for live data from your infrastructure.
+      <p className="text-sm font-medium text-foreground mb-1">Feature not available</p>
+      <p className="text-xs text-muted-foreground">
+        {feature} is not available with your current plan. Reference data is shown above.
       </p>
-      <button
-        onClick={onUpgrade}
-        className="px-5 py-2 rounded-xl bg-[var(--brand)]/10 border border-[var(--brand)]/20 text-[var(--brand)] text-sm font-medium hover:bg-[var(--brand)]/20 transition-all duration-200 flex items-center gap-2"
-      >
-        <Crown size={14} />
-        Upgrade to Enterprise
-      </button>
     </div>
   );
 }

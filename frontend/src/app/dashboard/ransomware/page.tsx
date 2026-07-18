@@ -63,7 +63,7 @@ export default function RansomwarePage() {
         });
       } catch {
         // stats endpoint may not be wired yet — show zeros
-        setStats({ rules_active: 12, raas_groups_tracked: 0, triggers_24h: 0 });
+        setStats({ rules_active: 0, raas_groups_tracked: 0, triggers_24h: 0 });
       } finally {
         setStatsLoaded(true);
       }

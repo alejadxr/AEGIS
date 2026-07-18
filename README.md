@@ -4,12 +4,10 @@
 
 ### Self-hosted. Deterministic-first. Offline-capable.
 
-*Detect, block, and recover from ransomware and intrusions in milliseconds — 168 Sigma rules, <1 ms in-memory evaluation, no LLM in the hot path.*
+*Detect, block, and recover from ransomware and intrusions in milliseconds — 168 Sigma rules + 6 chain detections, <1 ms in-memory evaluation, no LLM in the hot path.*
 
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Coverage](https://img.shields.io/badge/coverage-65%25-yellow)]()
+[![CI](https://github.com/alejadxr/AEGIS/actions/workflows/ci.yml/badge.svg)](https://github.com/alejadxr/AEGIS/actions)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-[![Detection](https://img.shields.io/badge/detection-11%2F11-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
 [![Docker](https://img.shields.io/badge/docker-compose-blue)]()
 [![Version](https://img.shields.io/badge/version-1.6.4.8-cyan)]()
@@ -24,7 +22,7 @@
 
 **AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time — without depending on a cloud AI service.**
 
-It owns your firewall, watches your logs, runs deception honeypots, and evaluates 168 Sigma rules + 6 chain detections in **<1 ms per event**. When it sees an attack — brute-force, shadow-copy delete, mass file encryption, ransom note drop, SMB lateral movement — it auto-blocks the attacker IP, kills the process tree, restores from snapshot, and writes a structured incident postmortem.
+It owns your firewall, watches your logs, runs deception honeypots, and evaluates 168 Sigma rules + 6 chain detections in **<1 ms per event**. When it sees an attack — brute-force, shadow-copy delete, mass file encryption, ransom note drop, SMB lateral movement — it auto-blocks the attacker IP and writes a structured incident postmortem. Process termination and snapshot recovery are in development (gated by `AEGIS_REAL_RECOVERY=1`).
 
 Set `AEGIS_AI_MODE=offline` and the entire stack runs on deterministic rules and Jinja2 templates. AI enrichment is available but never required.
 
@@ -49,7 +47,7 @@ AEGIS v1.6 ships **12 ransomware-specific Sigma rules + 1 kill-chain** mapped to
 
 Specific behaviors detected:
 - **Shadow-copy deletion** — `vssadmin delete shadows`, `wbadmin delete catalog`, `bcdedit /set {default} recoveryenabled No`, tmutil, btrfs snapshot delete
-- **Mass file encryption** — ≥50 write events/second + mean Shannon entropy ≥7.5 bits/byte (sliding window, measured by the Rust endpoint agent)
+- **Mass file encryption** — ≥50 write events/second via the Rust endpoint agent; entropy analysis (≥7.5 bits/byte) is in development
 - **Canary file trips** — 10 hidden sentinel files in Documents/Desktop/Downloads; any modification triggers an immediate critical incident
 - **Ransom note drop** — filename pattern detection for `README.txt`, `HOW_TO_DECRYPT`, `RECOVER_FILES`, and 40+ known ransom note variants
 - **LOLBin staging** — `certutil -urlcache`, `rundll32` abuse for payload delivery (MITRE T1105/T1218)
@@ -110,7 +108,7 @@ v1.6 ships full ransomware defense end-to-end. Everything below ships in the ope
 | `ransomware_mass_extension_change` | T1486 | ≥20 extension-change events in 5 s |
 | `ransomware_canary_tripped` | T1486 | Sentinel file modified |
 | `ransomware_ransom_note` | T1486 | Known ransom note filename patterns |
-| `ransomware_entropy_spike` | T1486 | ≥7.5 bits/byte mean entropy on ≥50 writes/s |
+| `ransomware_entropy_spike` | T1486 | ≥7.5 bits/byte mean entropy on ≥50 writes/s (experimental) |
 | `ransomware_vss_inhibit` | T1490 | Registry: DisableAutomaticSystemRestorePoint |
 | `ransomware_backup_delete` | T1490 | wbadmin delete backup / bcdedit recoveryenabled No |
 
@@ -145,7 +143,7 @@ GET /api/v1/ransomware/decryptors
 
 The hardened Rust agent in `agent-rust/` provides:
 - **Canary watcher** — filesystem notify on 10 hidden sentinel files
-- **Entropy classifier** — sliding-window: ≥50 writes/s AND mean ≥7.5 bits/byte triggers kill-chain
+- **Entropy classifier** — sliding-window entropy analysis (mean ≥7.5 bits/byte at ≥50 writes/s) is in development
 - **Process killer** — forensic snapshot captured before `SIGKILL` (Linux) / `TerminateProcess` (Windows)
 - **Self-protection** — `prctl(PR_SET_DUMPABLE, 0)` on Linux; `SetProcessMitigationPolicy` on Windows
 - **Rollback** — calls SnapshotManager via API (gated by `AEGIS_REAL_RECOVERY=1`)
@@ -498,7 +496,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
       "@type": "SoftwareApplication",
       "name": "AEGIS",
       "alternateName": "AEGIS Autonomous Defense Platform",
-      "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 168 Sigma rules. Offline-capable. No cloud AI required.",
+      "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 168 Sigma rules + 6 chain detections. Offline-capable. No cloud AI required.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux, macOS, Windows",
       "softwareVersion": "1.6.4.8",
@@ -546,7 +544,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
           "name": "What is AEGIS cybersecurity?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time. It evaluates 168 Sigma rules in <1 ms, runs deception honeypots, enforces firewall blocks via pfctl/iptables, and orchestrates snapshot recovery — all without requiring a cloud AI service."
+            "text": "AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time. It evaluates 168 Sigma rules + 6 chain detections in <1 ms, runs deception honeypots, and enforces firewall blocks via pfctl/iptables — all without requiring a cloud AI service."
           }
         },
         {
@@ -554,7 +552,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
           "name": "How does AEGIS detect ransomware?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "AEGIS v1.6 ships 12 ransomware-specific Sigma rules + 1 kill-chain detection mapped to MITRE ATT&CK techniques T1490, T1486, T1105, T1218, and T1021. It detects shadow-copy deletion, mass file encryption (entropy ≥7.5 bits/byte at ≥50 writes/s), canary file trips, ransom note drops, LOLBin staging (certutil/rundll32), SMB lateral movement, and WinRM remote execution. Events are evaluated in <1 ms using an O(1) type-indexed correlation engine."
+            "text": "AEGIS v1.6 ships 12 ransomware-specific Sigma rules + 1 kill-chain detection mapped to MITRE ATT&CK techniques T1490, T1486, T1105, T1218, and T1021. It detects shadow-copy deletion, mass file encryption (via write-event rate analysis), canary file trips, ransom note drops, LOLBin staging (certutil/rundll32), SMB lateral movement, and WinRM remote execution. Entropy-based analysis is in development. Events are evaluated in <1 ms using an O(1) type-indexed correlation engine."
           }
         },
         {
@@ -570,7 +568,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
           "name": "How does AEGIS compare to Wazuh or Elastic Security?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "AEGIS offers <1 ms in-memory Sigma evaluation versus 5–60 s pipeline latency in Wazuh or Elastic. It ships with a ransomware kill-chain out of the box, SSH/HTTP honeypots, RaaS threat intel, and snapshot recovery — none of which are available in Wazuh or OSSEC by default. Deployment is a single `docker compose up -d` versus multi-node agent rollout for Wazuh or weeks of Elasticsearch setup."
+            "text": "AEGIS offers <1 ms in-memory Sigma evaluation versus 5–60 s pipeline latency in Wazuh or Elastic. It ships with a ransomware kill-chain out of the box, SSH/HTTP honeypots, and RaaS threat intel — none of which are available in Wazuh or OSSEC by default. Snapshot recovery orchestration is in development. Deployment is a single `docker compose up -d` versus multi-node agent rollout for Wazuh or weeks of Elasticsearch setup."
           }
         },
         {
@@ -578,7 +576,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
           "name": "Is AEGIS free and open source?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes. AEGIS is licensed under AGPL-3.0 and free to use, modify, and deploy. The full feature set — including ransomware detection, honeypots, Sigma rules, firewall enforcement, and recovery orchestration — is included in the open-source release."
+            "text": "Yes. AEGIS is licensed under AGPL-3.0. The public repository includes ransomware detection, honeypots, Sigma rules, firewall enforcement, and recovery orchestration as open-source components. Core capabilities run fully offline without external dependencies."
           }
         }
       ]
