@@ -30,6 +30,7 @@ class User(Base, UUIDMixin, TimestampMixin):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     client = relationship("Client", backref="users")

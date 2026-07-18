@@ -13,26 +13,34 @@ logger = logging.getLogger("aegis.guardrails")
 # Action types whose target is an IP — guard against blocking safe IPs.
 _IP_TARGET_ACTIONS = frozenset({"block_ip", "firewall_rule", "isolate_host", "network_segment"})
 
-# Default guardrail policies — AEGIS runs fully autonomous by default.
-# Users can override any of these in client.guardrails to require manual approval.
+# Default guardrail policies.
+# Low-impact / reversible actions (blocking an IP, adding a firewall rule,
+# read-only intel lookups, abuse reporting) are auto-approved. Destructive or
+# legally-sensitive actions (host isolation, credential revocation, service
+# shutdown, network segmentation, process/file destructive ops, active
+# counter-attack/recon against third-party infrastructure, deception,
+# tarpitting) default to require_approval so a human signs off before AEGIS
+# acts. Users can still override any of these per-client in client.guardrails.
 DEFAULT_GUARDRAILS = {
     "block_ip": "auto_approve",
-    "isolate_host": "auto_approve",
-    "revoke_creds": "auto_approve",
-    "shutdown_service": "auto_approve",
+    "isolate_host": "require_approval",
+    "revoke_creds": "require_approval",
+    "shutdown_service": "require_approval",
     "firewall_rule": "auto_approve",
-    "quarantine_file": "auto_approve",
-    "kill_process": "auto_approve",
-    "disable_account": "auto_approve",
-    "network_segment": "auto_approve",
+    "quarantine_file": "require_approval",
+    "kill_process": "require_approval",
+    "disable_account": "require_approval",
+    "network_segment": "require_approval",
     "custom": "auto_approve",
-    # Counter-attack actions (active defense)
-    "counter_attack": "auto_approve",
-    "recon_attacker": "auto_approve",
+    # Counter-attack actions (active defense) — require_approval: recon touches
+    # third-party infrastructure and carries legal risk; counter_attack/
+    # deception/tarpit are similarly consequential and must be human-gated.
+    "counter_attack": "require_approval",
+    "recon_attacker": "require_approval",
     "intel_lookup": "auto_approve",
-    "deception": "auto_approve",
+    "deception": "require_approval",
     "report_abuse": "auto_approve",
-    "tarpit": "auto_approve",
+    "tarpit": "require_approval",
 }
 
 # Valid approval levels
