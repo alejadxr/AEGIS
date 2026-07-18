@@ -117,10 +117,19 @@ async def list_themes(auth: AuthContext = Depends(require_viewer)):
 
 
 @router.get("/campaigns", response_model=list[CampaignOut])
-async def list_campaigns(auth: AuthContext = Depends(require_viewer)):
-    """List all deception campaigns for the current client."""
+async def list_campaigns(
+    auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all deception campaigns for the current client.
+
+    Reads from the in-memory orchestrator dict (rehydrated from Postgres at
+    boot — see ``DeceptionOrchestrator.rehydrate`` / ``app.main.lifespan``),
+    falling back to a direct DB query if the dict is empty for this client
+    (e.g. rehydration hasn't run yet in this process).
+    """
     require_feature(auth.client, "honey_ai_deception", "enterprise")
-    campaigns = deception_orchestrator.list_campaigns(client_id=auth.client.id)
+    campaigns = await deception_orchestrator.list_from_db(db, client_id=auth.client.id)
     return [CampaignOut(**c.to_dict()) for c in campaigns]
 
 
@@ -175,10 +184,11 @@ async def create_campaign(
 async def get_campaign(
     campaign_id: str,
     auth: AuthContext = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Return a single campaign."""
+    """Return a single campaign (dict lookup with a DB fallback)."""
     require_feature(auth.client, "honey_ai_deception", "enterprise")
-    campaign = deception_orchestrator.get(campaign_id)
+    campaign = await deception_orchestrator.get_from_db(campaign_id, db)
     if not campaign or campaign.client_id != auth.client.id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return CampaignOut(**campaign.to_dict())
