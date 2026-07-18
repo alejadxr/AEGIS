@@ -32,6 +32,7 @@ from app.core.openrouter import openrouter_client
 from app.core.ai_mode import degrade_or_call
 from app.core.guardrails import guardrail_engine
 from app.core.events import event_bus, PRIORITY_HIGH
+from app.core.mem_bounds import cap_lru
 from app.database import async_session
 from app.models.client import Client
 from app.models.incident import Incident
@@ -101,6 +102,12 @@ COUNTER_ATTACK_SYSTEM_PROMPT = (
 
 class CounterAttackEngine:
     """Active defense engine that analyzes attackers and executes counter-measures."""
+
+    # Hard cap on retained analyses. Each entry is a full AI/static analysis
+    # dict (~1-4 KB), keyed by incident_id and never otherwise evicted, so an
+    # uncapped dict leaked one entry per high/critical incident for the life of
+    # the process. 5000 is far above any realistic in-flight incident count.
+    _MAX_ANALYSES = 5000
 
     def __init__(self):
         self._analyses: dict[str, dict] = {}  # incident_id -> analysis result
@@ -219,9 +226,13 @@ class CounterAttackEngine:
         analysis.setdefault("latency_ms", 0)
         analysis["timestamp"] = datetime.utcnow().isoformat()
         analysis["total_time_ms"] = int((time.time() - start_time) * 1000)
+        analysis["_stored_at"] = time.time()
 
-        # Store analysis
+        # Store analysis (LRU-capped so it can't grow one entry per incident
+        # forever — evicts the coldest entries once over _MAX_ANALYSES).
         self._analyses[incident_id] = analysis
+        cap_lru(self._analyses, self._MAX_ANALYSES,
+                idle_ts=lambda v: v.get("_stored_at", 0.0))
         self._stats["analyses_run"] += 1
         self._stats["actions_recommended"] += len(analysis.get("recommended_actions", []))
 

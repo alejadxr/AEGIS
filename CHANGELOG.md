@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.7] - 2026-07-18 (memory hardening — bound the four remaining unbounded caches)
+
+### Security note (unbounded-memory DoS vector)
+- The structures below grew without bound per unique attacker IP / incident / scan. Besides the slow leak (~60 MB/day observed at ~270k events/day), an attacker generating traffic from many spoofed/rotating source IPs could accelerate worker memory growth toward the PM2 2 GB restart ceiling — a low-severity, self-inflicted DoS vector. All four are now bounded; upgrading is recommended for internet-exposed deployments.
+
+### Fixed - residual slow leak after 1.6.4.5/1.6.4.6 (~2.5 MB/h at steady state)
+- Live introspection (vmmap) localized the growth to pymalloc arenas (small Python objects), i.e. the same "per-IP dict entries never evicted" class 1.6.4.5 fixed elsewhere. Four unbounded structures remained:
+  - `services/ip_intel.py` — `_CACHE`/`_DEEP_CACHE` only expired an entry when the **same IP** was looked up again after TTL; entries fed by every incident (via the `after_insert` enrichment listener) accumulated forever. Added a periodic `sweep()` (TTL expiry + `cap_lru` 50k), wired as a 300 s task in `main.py`.
+  - `services/counter_attack.py` — `_analyses` kept one ~1-4 KB analysis dict per incident forever. Capped at 5,000 entries (LRU).
+  - `services/host_monitor.py` — `_conn_tracker` pruned each PID's timestamp list but never removed dead-PID keys. Added a 60 s sweep loop (`prune_stale_list_map` + `cap_lru`), wired into start()/stop().
+  - `services/scanner.py` — `_active_scans` retained the full discovery+nuclei payload of completed scans indefinitely. Now popped once the terminal state is persisted (the `scans` table is the source of truth; reads already fall back to DB).
+- All bounding uses the existing `core/mem_bounds.py` helpers, off the hot path.
+
+### Docs
+- README: rule count corrected to the actual repo contents (168 Sigma + 6 chain rules — badge and JSON-LD previously said 134), version badge/JSON-LD bumped, `downloadUrl` now points to `releases/latest`.
+
+---
+
 ## [1.6.4.6] - 2026-07-17 (memory — GeoIP compact storage, the real leak)
 
 ### Fixed - GeoIP memory (dominant term of the 3.2 GB worker footprint)
