@@ -18,7 +18,7 @@ data_sources:
   - process_creation
   - edr
 condition:
-  event_type: process_create
+  event_type: process_creation
   count_threshold: 1
   time_window_seconds: 60
   group_by: hostname
