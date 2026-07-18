@@ -15,7 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `notify_alert_processed` / `notify_action_executed` / `notify_action_requires_approval` (main.py) each did an unconditional DB round-trip (Client fetch) + webhook/Telegram POST per event.
 - New `core/bg_tasks.py`: bounded fire-and-forget offloader (semaphore 50 concurrent, hard cap 500 in-flight with drop counter — same bounding philosophy as `mem_bounds.py`), `drain()` wired into lifespan shutdown before DB/HTTP teardown. All four handlers now return immediately.
 - `hub_sync_client` timeout lowered 15 s → 5 s (all call sites now off the hot path).
-- Known remaining candidate (not touched): `rag_service._on_alert_processed` runs an embedding + Qdrant upsert per alert — needs separate evaluation.
+- `rag_service`: the four auto-ingest handlers (embedding + Qdrant upsert per alert/scan/honeypot event) also moved to `bg_tasks` (no-op where RAG deps aren't installed, but awaited-embedding cost removed where they are).
+- **New per-handler timing instrumentation** in `EventBus` (`slow_handlers` in `/api/v1/pipeline/stats`: count/total/avg/max per `event_type:handler`, warn on runs >1 s) — added because marginal latency stayed high after the fixes above, proving the dominant term was elsewhere.
+- **Dominant term found and fixed — `edr_chain_handler`: 2.4 s avg / 4.2 s max per `process_start` event** (95 s of a 95 s sample; every other handler measured microseconds). Root cause: `build_process_tree` materialized ALL `agent_events` of the last 24 h per evaluation — an unindexed sequential scan over a 3.4 M-row / 1.5 GB table — then built the full descendant subtree when only ancestors are used. Fixes:
+  - `process_tree`: scan bounded to newest 5,000 events (latest-per-pid semantics preserved), new `ancestors_only` fast path;
+  - composite index `agent_events(agent_id, category, timestamp)` (model + `CREATE INDEX CONCURRENTLY` applied in prod);
+  - evaluation offloaded to `bg_tasks` with its own DB session — detection semantics unchanged.
+- **Measured result in prod: `avg_process_time_ms` 168 → 0.05** (3,400×, well under the <5 ms design target).
 
 ### Fixed - test suite (189/189 green) and CI coverage gap
 - CI never ran pytest, so stale tests accumulated silently. New **blocking `test-backend` job** in ci.yml (Python 3.12, `python -m pytest tests/unit` — `python -m` is required: `tests/__init__.py` is absent so bare `pytest` mis-roots `sys.path`).
