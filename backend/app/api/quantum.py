@@ -10,7 +10,7 @@ POST /api/v1/quantum/crypto/assess          - Assess specific algorithm
 GET  /api/v1/quantum/crypto/timeline        - Quantum vulnerability timeline
 GET  /api/v1/quantum/adversarial/status     - Model drift monitoring status
 POST /api/v1/quantum/adversarial/check      - Check model for poisoning
-GET  /api/v1/quantum/readiness              - Overall quantum readiness score
+GET  /api/v1/quantum/readiness              - PQC algorithm coverage reference
 """
 
 import base64
@@ -348,16 +348,17 @@ async def verify_baseline(
 # Quantum Readiness Score
 # ---------------------------------------------------------------------------
 
-@router.get("/readiness", summary="Overall quantum readiness score")
+@router.get("/readiness", summary="PQC algorithm coverage reference")
 async def quantum_readiness(
     auth: AuthContext = Depends(require_viewer),
 ):
     """
-    Compute an overall quantum readiness score (0-100) based on:
-    - Cryptographic algorithm assessment
-    - Adversarial monitoring status
-    - Post-quantum algorithm adoption
+    Compute a reference coverage score (0-100) based on:
+    - Post-quantum cryptography (PQC) algorithm adoption
+    - Algorithm vulnerability timeline tracking
+    - Adversarial monitoring baseline status
 
+    This is a static reference calculation, not a live scan of infrastructure assets.
     Available to ALL tiers.  Free tier receives a simplified summary;
     Pro/Enterprise tiers get the full breakdown.
     """
@@ -428,7 +429,5 @@ async def quantum_readiness(
             "adversarial_monitoring": round(monitoring_score, 1),
             "post_quantum_adoption": round(pq_score, 1),
         }
-    else:
-        result["upgrade_hint"] = "Upgrade to Pro for detailed quantum readiness breakdown and crypto assessment tools."
 
     return result

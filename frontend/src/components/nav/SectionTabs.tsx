@@ -33,7 +33,6 @@ const SUB_TABS: Record<string, SubTab[]> = {
     { label: 'Attack Path', href: '/dashboard/attack-path' },
   ],
   reports: [
-    { label: 'Reports', href: '/dashboard/reports' },
     { label: 'Compliance', href: '/dashboard/compliance' },
     { label: 'Quantum', href: '/dashboard/quantum' },
   ],
