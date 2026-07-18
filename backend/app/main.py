@@ -204,9 +204,22 @@ async def _notify_action_executed_impl(data):
 
 
 async def edr_chain_handler(data):
-    """Feed host-monitor process_start events into the attack chain detector."""
+    """Feed host-monitor process_start events into the attack chain detector.
+
+    Measured at ~2.4 s avg per event on the bus hot path (unbounded 24 h
+    agent_events scan per evaluation) — the dominant term of
+    avg_process_time_ms. The evaluation now runs as a bounded background
+    task (bg_tasks) with its own DB session; detection semantics are
+    unchanged, it just no longer stalls delivery of every queued event.
+    """
     if not isinstance(data, dict) or data.get("kind") != "process_start":
         return
+    from app.core.bg_tasks import fire_and_forget
+
+    fire_and_forget(_edr_chain_eval_impl(data), label="edr_chain_eval")
+
+
+async def _edr_chain_eval_impl(data):
     try:
         from app.services.attack_chain_detector import evaluate_event
         from app.services.process_tree import build_process_tree
@@ -219,7 +232,9 @@ async def edr_chain_handler(data):
                 return
 
             async def ancestry_fetcher(pid: int) -> list[dict]:
-                tree = await build_process_tree(db, agent_id, pid)
+                tree = await build_process_tree(
+                    db, agent_id, pid, ancestors_only=True
+                )
                 return tree.get("ancestors", [])
 
             matches = await evaluate_event(db, agent, data, ancestry_fetcher)

@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
-    String, JSON, Integer, DateTime, Enum, ForeignKey, Text, func,
+    String, JSON, Integer, DateTime, Enum, ForeignKey, Index, Text, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,6 +67,12 @@ class EndpointAgent(Base, UUIDMixin, TimestampMixin):
 
 class AgentEvent(Base, UUIDMixin):
     __tablename__ = "agent_events"
+    # process_tree.build_process_tree filters by (agent_id, category, timestamp)
+    # on every EDR chain evaluation — without this index that's a sequential
+    # scan of the whole table per process_start event.
+    __table_args__ = (
+        Index("ix_agent_events_agent_cat_ts", "agent_id", "category", "timestamp"),
+    )
 
     agent_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("endpoint_agents.id", ondelete="CASCADE"), nullable=False,
