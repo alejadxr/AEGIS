@@ -180,7 +180,7 @@ export default function CompliancePage() {
           <div>
             <h1 className="text-2xl font-semibold text-foreground tracking-tight">Compliance</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Security framework mapping and compliance posture
+              Security framework self-assessment mapping
             </p>
           </div>
         </div>

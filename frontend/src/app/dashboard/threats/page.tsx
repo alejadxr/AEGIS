@@ -25,18 +25,6 @@ interface IOCRow {
   [key: string]: unknown;
 }
 
-const DEMO_IOCS: IOCRow[] = [
-  { id: '1', ioc_type: 'ip', ioc_value: '45.33.32.156', threat_type: 'Brute Force', confidence: 0.95, source: 'honeypot', tags: ['ssh', 'bruteforce', 'russia'], first_seen: new Date(Date.now() - 2592000000).toISOString(), last_seen: new Date(Date.now() - 300000).toISOString() },
-  { id: '2', ioc_type: 'ip', ioc_value: '185.220.101.34', threat_type: 'Web Scanner', confidence: 0.88, source: 'honeypot', tags: ['http', 'scanner', 'tor-exit'], first_seen: new Date(Date.now() - 604800000).toISOString(), last_seen: new Date(Date.now() - 900000).toISOString() },
-  { id: '3', ioc_type: 'domain', ioc_value: 'evil-c2.darknet.to', threat_type: 'C2 Infrastructure', confidence: 0.97, source: 'internal', tags: ['c2', 'cobalt-strike', 'apt'], first_seen: new Date(Date.now() - 172800000).toISOString(), last_seen: new Date(Date.now() - 3600000).toISOString() },
-  { id: '4', ioc_type: 'hash', ioc_value: 'a1b2c3d4e5f6789012345678abcdef01', threat_type: 'Malware', confidence: 0.99, source: 'internal', tags: ['cobalt-strike', 'beacon', 'windows'], first_seen: new Date(Date.now() - 86400000).toISOString(), last_seen: new Date(Date.now() - 86400000).toISOString() },
-  { id: '5', ioc_type: 'url', ioc_value: 'http://198.51.100.42/update.bin', threat_type: 'Malware Delivery', confidence: 0.92, source: 'internal', tags: ['malware', 'dropper'], first_seen: new Date(Date.now() - 172800000).toISOString(), last_seen: new Date(Date.now() - 86400000).toISOString() },
-  { id: '6', ioc_type: 'ip', ioc_value: '198.51.100.23', threat_type: 'APT Activity', confidence: 0.93, source: 'honeypot', tags: ['apt', 'metasploit', 'china'], first_seen: new Date(Date.now() - 5184000000).toISOString(), last_seen: new Date(Date.now() - 1800000).toISOString() },
-  { id: '7', ioc_type: 'domain', ioc_value: 'phish-portal.example.xyz', threat_type: 'Phishing', confidence: 0.85, source: 'community', tags: ['phishing', 'credential-harvest'], first_seen: new Date(Date.now() - 259200000).toISOString(), last_seen: new Date(Date.now() - 172800000).toISOString() },
-  { id: '8', ioc_type: 'email', ioc_value: 'admin@phish-portal.example.xyz', threat_type: 'Phishing', confidence: 0.82, source: 'community', tags: ['phishing', 'sender'], first_seen: new Date(Date.now() - 259200000).toISOString(), last_seen: new Date(Date.now() - 172800000).toISOString() },
-  { id: '9', ioc_type: 'ip', ioc_value: '203.0.113.42', threat_type: 'SQL Injection', confidence: 0.78, source: 'honeypot', tags: ['sqli', 'scanner', 'brazil'], first_seen: new Date(Date.now() - 172800000).toISOString(), last_seen: new Date(Date.now() - 3600000).toISOString() },
-  { id: '10', ioc_type: 'hash', ioc_value: 'ff0011223344556677889900aabbccdd', threat_type: 'Ransomware', confidence: 0.96, source: 'community', tags: ['ransomware', 'lockbit', 'windows'], first_seen: new Date(Date.now() - 432000000).toISOString(), last_seen: new Date(Date.now() - 259200000).toISOString() },
-];
 
 const typeIcons: Record<string, typeof Monitor> = {
   ip: Monitor,
@@ -72,7 +60,7 @@ export default function ThreatsPage() {
         setIocs(data as IOCRow[]);
         setIsDemo(false);
       } catch {
-        setIocs(DEMO_IOCS);
+        setIocs([]);
         setIsDemo(true);
       } finally {
         setLoading(false);
@@ -87,9 +75,7 @@ export default function ThreatsPage() {
       const results = await api.threats.search(searchQuery);
       setIocs(results as IOCRow[]);
     } catch {
-      setIocs(DEMO_IOCS.filter((i) =>
-        i.ioc_value.includes(searchQuery) || i.threat_type.toLowerCase().includes(searchQuery.toLowerCase())
-      ));
+      setIocs([]);
     }
   };
 
