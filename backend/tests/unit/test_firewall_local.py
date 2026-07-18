@@ -262,7 +262,11 @@ class TestLinuxFirewall:
         assert self.fw.block("bad-ip") is False
 
     @patch("app.services.firewall_local._run")
-    def test_setup_creates_chain_and_inserts_jump(self, mock_run):
+    def test_setup_creates_chain_and_inserts_jump(self, mock_run, tmp_path):
+        # Isolate from any real BLOCKED_IPS_FILE on the host — setup() also
+        # calls _reload_from_file(), which would otherwise add one _run() call
+        # per persisted IP and make this test's call count host-dependent.
+        self.m._BLOCKED_IPS_FILE = tmp_path / "nonexistent.txt"
         # First call: -N chain (idempotent), second: -C check (fails → not present),
         # third: -I INPUT insert
         mock_run.side_effect = [
@@ -277,13 +281,25 @@ class TestLinuxFirewall:
         assert calls[2].args[0] == ["iptables", "-I", "INPUT", "-j", "AEGIS_BLOCK"]
 
     @patch("app.services.firewall_local._run")
-    def test_setup_skips_insert_if_jump_already_present(self, mock_run):
+    def test_setup_skips_insert_if_jump_already_present(self, mock_run, tmp_path):
+        # Isolate from any real BLOCKED_IPS_FILE on the host (see comment above).
+        self.m._BLOCKED_IPS_FILE = tmp_path / "nonexistent.txt"
         mock_run.side_effect = [
             _make_proc(0),   # -N (idempotent)
             _make_proc(0),   # -C (already exists)
         ]
         self.fw.setup()
-        assert mock_run.call_count == 2  # no -I call
+        # Assert on behavior (no INPUT jump insertion), not on a specific total
+        # call count — the latter is fragile because setup() also reloads
+        # persisted IPs via _reload_from_file(), whose call count depends on
+        # how many entries the file has, not on the jump-check logic under test.
+        insert_calls = [
+            c for c in mock_run.call_args_list
+            if c.args[0][:2] == ["iptables", "-I"]
+        ]
+        assert insert_calls == []
+        assert mock_run.call_args_list[0].args[0] == ["iptables", "-N", "AEGIS_BLOCK"]
+        assert mock_run.call_args_list[1].args[0] == ["iptables", "-C", "INPUT", "-j", "AEGIS_BLOCK"]
 
 
 # ---------------------------------------------------------------------------

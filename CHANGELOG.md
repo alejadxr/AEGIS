@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.8] - 2026-07-18 (event-bus latency — move slow I/O off the hot path; test suite green + CI test job)
+
+### Fixed - event-bus hot-path latency (avg_process_time_ms 126-182 → target <5 ms)
+- `EventBus._process_events` runs all subscriber handlers sequentially and awaited — one slow handler stalls delivery of every queued event. Four handlers performed slow I/O inline:
+  - `auto_sharer._share_ip` awaited `hub_sync_client.push_ioc()` (outbound httpx POST, 15 s timeout) per shareable event.
+  - `notify_alert_processed` / `notify_action_executed` / `notify_action_requires_approval` (main.py) each did an unconditional DB round-trip (Client fetch) + webhook/Telegram POST per event.
+- New `core/bg_tasks.py`: bounded fire-and-forget offloader (semaphore 50 concurrent, hard cap 500 in-flight with drop counter — same bounding philosophy as `mem_bounds.py`), `drain()` wired into lifespan shutdown before DB/HTTP teardown. All four handlers now return immediately.
+- `hub_sync_client` timeout lowered 15 s → 5 s (all call sites now off the hot path).
+- Known remaining candidate (not touched): `rag_service._on_alert_processed` runs an embedding + Qdrant upsert per alert — needs separate evaluation.
+
+### Fixed - test suite (189/189 green) and CI coverage gap
+- CI never ran pytest, so stale tests accumulated silently. New **blocking `test-backend` job** in ci.yml (Python 3.12, `python -m pytest tests/unit` — `python -m` is required: `tests/__init__.py` is absent so bare `pytest` mis-roots `sys.path`).
+- `test_firewall_local`: two setup tests never isolated `_BLOCKED_IPS_FILE`, so `_reload_from_file()` replayed the host's real blocklist into the mock (the mysterious "34 calls" = 2 + 32 persisted IPs). Now isolated to tmp_path and asserting behavior (no `-I` when jump exists) instead of fragile exact call counts.
+- `test_gemini_provider`: expected a no-key stub; provider (like the other four) raises `RuntimeError` — test now asserts the raise.
+- `test_rules_loader`: expected pre-1.6.3.8 SSH brute-force title/threshold; updated to the corrected rule (HTTP 401, threshold 20).
+- `test_solutions`: expected 3 starter solutions; repo ships 4 — updated and added the missing `ransomware-defense` assert.
+- `requirements.txt`: added `requests>=2.31.0` — `decryptor_library.refresh()` imports it at runtime; it was missing from prod venvs (NoMoreRansom refresh silently failing).
+
+---
+
 ## [1.6.4.7] - 2026-07-18 (memory hardening — bound the four remaining unbounded caches)
 
 ### Security note (unbounded-memory DoS vector)
