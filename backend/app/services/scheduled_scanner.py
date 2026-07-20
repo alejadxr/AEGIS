@@ -19,6 +19,7 @@ from app.models.vulnerability import Vulnerability
 from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.core.events import event_bus
+from app.services.scanner import scan_orchestrator
 
 logger = logging.getLogger("aegis.scheduled_scanner")
 
@@ -240,14 +241,51 @@ class ScheduledScanner:
                 logger.info("No assets registered — skipping full scan")
                 return
 
-            logger.info(f"Full-scanning {len(assets)} assets")
+            # Group by client so each tenant gets its own `scans` row.
+            by_client: dict[str, list[Asset]] = {}
             for asset in assets:
-                try:
-                    await self._scan_single_asset(asset, db, quick=False)
-                    await db.commit()
-                except Exception as e:
-                    logger.error(f"Error scanning asset {asset.hostname}: {e}")
-                    await db.rollback()
+                by_client.setdefault(asset.client_id, []).append(asset)
+
+            logger.info(f"Full-scanning {len(assets)} assets across {len(by_client)} client(s)")
+
+            for group_client_id, group in by_client.items():
+                started_at = datetime.utcnow()
+                state = {
+                    "id": f"sched_full_{started_at.strftime('%Y%m%d_%H%M%S')}_{group_client_id}",
+                    "type": "scheduled_full",
+                    "target": f"{len(group)} assets",
+                    "status": "running",
+                    "started_at": started_at.isoformat(),
+                    "client_id": group_client_id,
+                    "results": {},
+                    "assets_found": 0,
+                }
+                await scan_orchestrator.persist_scan(db, state)
+
+                ok_count = 0
+                vuln_count_total = 0
+                failures: list[tuple[str, str]] = []
+                for asset in group:
+                    try:
+                        new_vulns = await self._scan_single_asset(asset, db, quick=False)
+                        await db.commit()
+                        ok_count += 1
+                        vuln_count_total += new_vulns
+                    except Exception as e:
+                        logger.error(f"Error scanning asset {asset.hostname}: {e}")
+                        await db.rollback()
+                        failures.append((asset.hostname, str(e)))
+
+                state["status"] = "completed"
+                state["completed_at"] = datetime.utcnow().isoformat()
+                state["assets_found"] = ok_count
+                state["results"] = {
+                    "assets_total": len(group),
+                    "assets_scanned_ok": ok_count,
+                    "vulns_found": vuln_count_total,
+                    "failures": failures,
+                }
+                await scan_orchestrator.persist_scan(db, state)
 
         logger.info("Full scan complete")
 
@@ -261,27 +299,61 @@ class ScheduledScanner:
             if not assets:
                 return
 
-            loop = asyncio.get_event_loop()
+            # Group by client so each tenant gets its own `scans` row.
+            by_client: dict[str, list[Asset]] = {}
             for asset in assets:
-                target = asset.ip_address or asset.hostname
-                if not target:
-                    continue
-                try:
-                    nmap_results = await loop.run_in_executor(
-                        None, self._run_nmap_quick, target
-                    )
-                    if nmap_results.get("ports"):
-                        # Merge new ports into existing (keep ports not seen in quick scan)
-                        existing_ports = {p["port"]: p for p in (asset.ports or []) if isinstance(p, dict)}
-                        for p in nmap_results["ports"]:
-                            existing_ports[p["port"]] = p
-                        asset.ports = list(existing_ports.values())
-                        asset.last_scan_at = datetime.utcnow()
-                        await db.commit()
-                        logger.info(f"Quick scan {target}: {len(nmap_results['ports'])} open ports")
-                except Exception as e:
-                    logger.error(f"Quick scan error for {asset.hostname}: {e}")
-                    await db.rollback()
+                by_client.setdefault(asset.client_id, []).append(asset)
+
+            loop = asyncio.get_event_loop()
+            for group_client_id, group in by_client.items():
+                started_at = datetime.utcnow()
+                state = {
+                    "id": f"sched_quick_{started_at.strftime('%Y%m%d_%H%M%S')}_{group_client_id}",
+                    "type": "scheduled_quick",
+                    "target": f"{len(group)} assets",
+                    "status": "running",
+                    "started_at": started_at.isoformat(),
+                    "client_id": group_client_id,
+                    "results": {},
+                    "assets_found": 0,
+                }
+                await scan_orchestrator.persist_scan(db, state)
+
+                ok_count = 0
+                failures: list[tuple[str, str]] = []
+                for asset in group:
+                    target = asset.ip_address or asset.hostname
+                    if not target:
+                        continue
+                    try:
+                        nmap_results = await loop.run_in_executor(
+                            None, self._run_nmap_quick, target
+                        )
+                        if nmap_results.get("ports"):
+                            # Merge new ports into existing (keep ports not seen in quick scan)
+                            existing_ports = {p["port"]: p for p in (asset.ports or []) if isinstance(p, dict)}
+                            for p in nmap_results["ports"]:
+                                existing_ports[p["port"]] = p
+                            asset.ports = list(existing_ports.values())
+                            asset.last_scan_at = datetime.utcnow()
+                            await db.commit()
+                            logger.info(f"Quick scan {target}: {len(nmap_results['ports'])} open ports")
+                        ok_count += 1
+                    except Exception as e:
+                        logger.error(f"Quick scan error for {asset.hostname}: {e}")
+                        await db.rollback()
+                        failures.append((asset.hostname, str(e)))
+
+                state["status"] = "completed"
+                state["completed_at"] = datetime.utcnow().isoformat()
+                state["assets_found"] = ok_count
+                state["results"] = {
+                    "assets_total": len(group),
+                    "assets_scanned_ok": ok_count,
+                    "vulns_found": 0,
+                    "failures": failures,
+                }
+                await scan_orchestrator.persist_scan(db, state)
 
         logger.info("Quick scan complete")
 
@@ -296,18 +368,51 @@ class ScheduledScanner:
             if not asset:
                 logger.warning(f"Asset {asset_id} not found for re-scan")
                 return
+
+            started_at = datetime.utcnow()
+            state = {
+                "id": f"sched_rescan_{started_at.strftime('%Y%m%d_%H%M%S')}_{asset_id}",
+                "type": "scheduled_rescan",
+                "target": asset.ip_address or asset.hostname,
+                "status": "running",
+                "started_at": started_at.isoformat(),
+                "client_id": client_id,
+                "results": {},
+                "assets_found": 1,
+            }
+            await scan_orchestrator.persist_scan(db, state)
+
+            failures: list[tuple[str, str]] = []
+            vuln_count_total = 0
             try:
-                await self._scan_single_asset(asset, db, quick=False)
+                new_vulns = await self._scan_single_asset(asset, db, quick=False)
                 await db.commit()
+                vuln_count_total = new_vulns
             except Exception as e:
                 logger.error(f"Re-scan error for asset {asset_id}: {e}")
                 await db.rollback()
+                failures.append((asset.hostname, str(e)))
 
-    async def _scan_single_asset(self, asset: Asset, db: AsyncSession, quick: bool = False):
-        """Run nmap (+ optional nuclei) + AI risk score for one asset."""
+            state["status"] = "completed"
+            state["completed_at"] = datetime.utcnow().isoformat()
+            state["assets_found"] = 1
+            state["results"] = {
+                "assets_total": 1,
+                "assets_scanned_ok": 0 if failures else 1,
+                "vulns_found": vuln_count_total,
+                "failures": failures,
+            }
+            await scan_orchestrator.persist_scan(db, state)
+
+    async def _scan_single_asset(self, asset: Asset, db: AsyncSession, quick: bool = False) -> int:
+        """Run nmap (+ optional nuclei) + AI risk score for one asset.
+
+        Returns the number of new vulnerabilities persisted for this asset
+        (0 for quick scans, which skip the nuclei stage entirely).
+        """
         target = asset.ip_address or asset.hostname
         if not target:
-            return
+            return 0
 
         logger.info(f"Scanning asset: {target} (id={asset.id}, quick={quick})")
         loop = asyncio.get_event_loop()
@@ -343,6 +448,7 @@ class ScheduledScanner:
                 nuclei_vulns = await loop.run_in_executor(None, self._run_nuclei, url)
 
         # Stage 3: Store vulnerabilities
+        new_vuln_count = 0
         for vuln_data in nuclei_vulns:
             existing = await db.execute(
                 select(Vulnerability).where(
@@ -367,6 +473,7 @@ class ScheduledScanner:
                 status="open",
             )
             db.add(vuln)
+            new_vuln_count += 1
 
         # Stage 4: AI risk scoring
         await db.flush()
@@ -420,6 +527,8 @@ class ScheduledScanner:
             f"{len(nmap_results.get('ports', []))} ports, "
             f"{len(nuclei_vulns)} new vulns, risk={ai_result['risk_score']:.1f}"
         )
+
+        return new_vuln_count
 
     # ------------------------------------------------------------------ #
     #  nmap                                                                #
@@ -777,7 +886,6 @@ class ScheduledScanner:
                         technologies=[],
                         status="active",
                         risk_score=0.0,
-                        last_scan_at=datetime.utcnow(),
                     )
                     db.add(new_asset)
                     db.add(AuditLog(

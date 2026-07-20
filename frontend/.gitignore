@@ -1,1 +1,4 @@
 node_modules
+
+# Local design-review screenshots (not source)
+.design-review/

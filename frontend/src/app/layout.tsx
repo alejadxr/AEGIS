@@ -1,9 +1,30 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Noto_Sans } from "next/font/google";
+import { Outfit, Azeret_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
 
-const notoSans = Noto_Sans({subsets:['latin'],variable:'--font-sans'});
+// v1.6.4.8: self-hosted via next/font — no runtime fetch to fonts.googleapis.com.
+// Previously globals.css did a render-blocking @import of these same families
+// while this file separately loaded Noto_Sans into a --font-sans variable that
+// @theme inline never read (it hardcoded the literal string 'Outfit'). Net
+// effect: a whole font family downloaded and discarded, and the real
+// typography depended on a live third-party fetch in a product whose own
+// metadata claims "Offline-capable. No cloud AI required." Both variables
+// below are now the single source of truth for --font-sans / --font-mono.
+const outfit = Outfit({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-outfit',
+  display: 'swap',
+});
+const azeret = Azeret_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-azeret',
+  display: 'swap',
+});
+
+const AEGIS_VERSION = process.env.NEXT_PUBLIC_AEGIS_VERSION;
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://aegis.somoswilab.com'),
@@ -55,7 +76,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning className={cn("font-sans dark", notoSans.variable)}>
+    <html lang="en" data-theme="dark" suppressHydrationWarning className={cn("font-sans dark", outfit.variable, azeret.variable)}>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -75,11 +96,13 @@ export default function RootLayout({
                   "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 134 Sigma rules. Offline-capable. No cloud AI required.",
                   "applicationCategory": "SecurityApplication",
                   "operatingSystem": "Linux, macOS, Windows",
-                  "softwareVersion": "1.6.2",
+                  "softwareVersion": AEGIS_VERSION || "1.6.2",
                   "datePublished": "2026-05-01",
                   "license": "https://www.gnu.org/licenses/agpl-3.0.html",
                   "url": "https://github.com/alejadxr/AEGIS",
-                  "downloadUrl": "https://github.com/alejadxr/AEGIS/releases/tag/v1.6.2",
+                  "downloadUrl": AEGIS_VERSION
+                    ? `https://github.com/alejadxr/AEGIS/releases/tag/v${AEGIS_VERSION}`
+                    : "https://github.com/alejadxr/AEGIS/releases/tag/v1.6.2",
                   "codeRepository": "https://github.com/alejadxr/AEGIS",
                   "programmingLanguage": ["Python", "TypeScript", "Rust"],
                   "keywords": "open source EDR, self-hosted ransomware defense, deterministic SOAR, open source SIEM alternative, MITRE ATT&CK detection, ransomware kill-chain, offline security platform",
