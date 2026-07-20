@@ -6,7 +6,9 @@ import Link from 'next/link';
 import { ShieldCheck, KeyRound, ArrowRight, AlertCircle } from 'lucide-react';
 import { setApiKey, hasAuth } from '@/lib/api';
 
-const BUILD_VERSION = '1.6.3.3';
+// Read from package.json via next.config.mjs — this used to be hand-typed and had
+// drifted to 1.6.3.3 while the product shipped 1.6.4.8.
+const BUILD_VERSION = process.env.NEXT_PUBLIC_AEGIS_VERSION || '';
 
 function StatusPing() {
   return (
