@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     # Core
     AEGIS_ENV: str = "production"
     AEGIS_SECRET_KEY: str = "aegis-dev-secret-key-change-in-production"
+    # Read from .env via pydantic (os.environ does NOT carry .env values);
+    # the boot guard and admin seed both read this field, not os.environ.
+    AEGIS_ADMIN_PASSWORD: str = "changeme-on-first-login"
     AEGIS_API_PORT: int = 8000
 
     # OpenRouter
