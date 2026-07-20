@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Azeret+Mono:wght@400;500;600;700&display=swap');
-
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -14,8 +12,8 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Outfit', system-ui, -apple-system, sans-serif;
-    --font-mono: 'Azeret Mono', ui-monospace, monospace;
+    --font-sans: var(--font-outfit), system-ui, -apple-system, sans-serif;
+    --font-mono: var(--font-azeret), ui-monospace, SFMono-Regular, monospace;
 
     /* shadcn semantic tokens (both modes) */
     --color-background: var(--background);
@@ -54,12 +52,16 @@
     --color-chart-3: var(--chart-3);
     --color-chart-4: var(--chart-4);
     --color-chart-5: var(--chart-5);
+    /* AA-safe text variant of --chart-5, used where it doubles as text
+       (StatusBadge 'info' variant — see :root / .dark below for ratios). */
+    --color-chart-5-text: var(--chart-5-text);
 
     /* AEGIS brand + status tokens (both modes swap via .dark) */
     --color-brand: var(--brand);
     --color-brand-foreground: var(--brand-foreground);
     --color-brand-muted: var(--brand-muted);
     --color-brand-accent: var(--brand-accent);
+    --color-brand-accent-text: var(--brand-accent-text);
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
     --color-warning: var(--warning);
@@ -69,11 +71,29 @@
     --color-info: var(--info);
     --color-info-foreground: var(--info-foreground);
 
+    /* AA-safe TEXT variants of the status tokens above. --success/--warning/
+       --danger stay vivid (dots, borders, the ~14% tinted pill background);
+       *-text is a darker same-hue value for anything that RENDERS as text on
+       that tint, e.g. StatusBadge (see :root / .dark below for ratios). */
+    --color-success-text: var(--success-text);
+    --color-warning-text: var(--warning-text);
+    --color-danger-text: var(--danger-text);
+
     /* Elevation */
     --color-surface: var(--surface);
     --color-elevated: var(--elevated);
     --color-subtle: var(--subtle);
     --color-border-strong: var(--border-strong);
+
+    /* Severity ramp — semantic ONLY, never decorative. Also exposes
+       --brand-text, the AA-safe text/link variant of --brand (see :root /
+       .dark below for the fill-vs-text rationale). */
+    --color-sev-critical: var(--sev-critical);
+    --color-sev-high: var(--sev-high);
+    --color-sev-medium: var(--sev-medium);
+    --color-sev-low: var(--sev-low);
+    --color-sev-info: var(--sev-info);
+    --color-brand-text: var(--brand-text);
 
     /* c6-* legacy (aliases — used by older components) */
     --color-c6-bg: var(--background);
@@ -103,8 +123,6 @@
     --animate-fade-up: fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     --animate-slide-up: slide-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     --animate-slide-right: slide-right 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    --animate-pulse-subtle: pulse-subtle 2.4s ease-in-out infinite;
-    --animate-shimmer: shimmer 2.2s linear infinite;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -153,6 +171,10 @@
     --brand-foreground: #FFFFFF;
     --brand-muted: rgba(8, 145, 178, 0.10);
     --brand-accent: #EA580C;
+    --brand-accent-text: #9A3412;  /* AA fix: --brand-accent used as StatusBadge 'accent'
+                                       text measures 3.00:1 on its own tinted background
+                                       (14% mix over #FFFFFF = rgb(252,232,221)) and FAILS.
+                                       #9A3412 = 6.17:1 on that same background. */
 
     /* Status */
     --success: #16A34A;
@@ -164,12 +186,27 @@
     --info: #2563EB;
     --info-foreground: #FFFFFF;
 
+    /* Status TEXT variants — --success/--warning/--danger above stay vivid
+       for dots, borders and the ~14% tinted pill background; these are the
+       darker same-hue values StatusBadge.tsx uses for the pill TEXT, each
+       measured against its own real tinted background (14% mix of the
+       vivid token, composited over the #FFFFFF card — not pure white):
+         --success 14%-tint = rgb(222,242,230); #16A34A on it = 2.82:1 (FAILS)
+         --warning 14%-tint = rgb(250,236,220); #D97706 on it = 2.75:1 (FAILS)
+         --danger  14%-tint = rgb(250,225,225); #DC2626 on it = 3.89:1 (FAILS) */
+    --success-text: #166534;  /* 6.09:1 on rgb(222,242,230) */
+    --warning-text: #92400E;  /* 6.11:1 on rgb(250,236,220) */
+    --danger-text:  #B91C1C;  /* 5.21:1 on rgb(250,225,225) */
+
     /* Charts */
     --chart-1: #0891B2;
     --chart-2: #EA580C;
     --chart-3: #16A34A;
     --chart-4: #D97706;
     --chart-5: #9333EA;
+    --chart-5-text: #7E22CE;  /* AA fix: --chart-5 used as StatusBadge 'info' text measures
+                                  4.35:1 on its own tinted bg (14% mix over #FFFFFF =
+                                  rgb(240,226,252)) and FAILS. #7E22CE = 5.65:1 on it. */
 
     /* Sidebar */
     --sidebar: #FFFFFF;
@@ -180,6 +217,25 @@
     --sidebar-accent-foreground: #0F1114;
     --sidebar-border: rgba(15, 17, 20, 0.08);
     --sidebar-ring: #0891B2;
+
+    /* Severity ramp — light. Independently contrast-checked, NOT a dark
+       inversion (measured against #FFFFFF card / #FAFBFC background). */
+    --sev-critical: #DC2626;   /* 4.83:1 on white — passes AA already, no change */
+    --sev-high:     #C2410C;   /* NOT #EA580C: measures 3.56:1 on white, fails AA (rendered
+                                   directly as text in TriageQueue/WatchPanel/Ledger/
+                                   OriginMap, same single-value convention as --sev-medium
+                                   below — not a fill/text split). #C2410C = 5.18:1 on white,
+                                   5.00:1 on --background #FAFBFC. */
+    --sev-medium:   #B45309;   /* NOT #D97706: measures 3.9:1 on white, fails AA. #B45309 = 5.1:1 */
+    --sev-low:      #0E7490;
+    --sev-info:     #5B6473;
+    --brand-text:   #0E7490;   /* AA fix: --brand #0891B2 on #FFFFFF measures 3.68:1 and FAILS
+                                   normal-text AA. #0E7490 = 5.36:1 on white, 5.17:1 on
+                                   --background. Use --brand for fills/borders/meters ONLY;
+                                   use --brand-text for any text or link. */
+    --map-land:     rgba(15, 17, 20, 0.58);   /* ~4.6:1 on white — must read as land, not haze */
+    --map-ocean:    rgba(15, 17, 20, 0.05);   /* faint texture only, well below --map-land */
+    --border-hover: rgba(15, 17, 20, 0.18);
 
     /* Legacy c6 aliases */
     --c6-bg: var(--background);
@@ -250,6 +306,7 @@
     --brand-foreground: #16181D;
     --brand-muted: rgba(34, 211, 238, 0.14);
     --brand-accent: #F97316;
+    --brand-accent-text: var(--brand-accent);  /* 14%-tint on --card = 4.74:1, already passes */
 
     /* Status — recalibrated for warmer bg */
     --success: #34D399;
@@ -261,12 +318,22 @@
     --info: #60A5FA;
     --info-foreground: #16181D;
 
+    /* Status TEXT variants — dark already clears AA using the vivid token
+       itself against the pill's own 14%-tint (over --card #1D2027), so
+       these alias rather than add a second dark palette:
+         --success tint = 6.42:1 · --warning tint = 7.19:1 (the ~7.2:1
+         measured in the audit) · --danger tint = 4.80:1 */
+    --success-text: var(--success);
+    --warning-text: var(--warning);
+    --danger-text:  var(--danger);
+
     /* Charts — kept saturated for visibility on the warmer bg */
     --chart-1: #22D3EE;
     --chart-2: #F97316;
     --chart-3: #34D399;
     --chart-4: #FBBF24;
     --chart-5: #C084FC;
+    --chart-5-text: var(--chart-5);  /* 14%-tint on --card = 4.90:1, already passes */
 
     /* Sidebar */
     --sidebar: #131519;
@@ -277,6 +344,18 @@
     --sidebar-accent-foreground: #ECEEF2;
     --sidebar-border: rgba(255, 255, 255, 0.06);
     --sidebar-ring: #22D3EE;
+
+    /* Severity ramp — dark */
+    --sev-critical: #F87171;   /* 5.89:1 on --card — passes AA, no change */
+    --sev-high:     #F97316;   /* 5.82:1 on --card — passes AA, no change (light theme's
+                                   --sev-high needed a value change; dark already clears it) */
+    --sev-medium:   #FBBF24;
+    --sev-low:      #22D3EE;
+    --sev-info:     #8E96A6;
+    --brand-text:   var(--brand);   /* #22D3EE on #16181D = 9.83:1, already passes */
+    --map-land:     rgba(236, 238, 242, 0.52);   /* ~3.9:1 on --card — legible continents */
+    --map-ocean:    rgba(236, 238, 242, 0.07);   /* faint texture only, well below --map-land */
+    --border-hover: rgba(255, 255, 255, 0.14);
 
     color-scheme: dark;
 }
@@ -301,7 +380,7 @@
     body {
         background: var(--background);
         color: var(--foreground);
-        font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+        font-family: var(--font-sans);
         font-weight: 400;
         letter-spacing: -0.011em;
         -webkit-font-smoothing: antialiased;
@@ -394,13 +473,13 @@
 
 /* Typography systems */
 .text-data {
-    font-family: 'Azeret Mono', ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-feature-settings: "zero", "ss01";
     letter-spacing: -0.02em;
 }
 
 .text-label {
-    font-family: 'Outfit', system-ui, sans-serif;
+    font-family: var(--font-sans);
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -410,6 +489,7 @@
 }
 
 .text-label-xs {
+    font-family: var(--font-sans);
     font-size: 9px;
     font-weight: 600;
     letter-spacing: 0.1em;
@@ -419,14 +499,14 @@
 }
 
 .text-heading {
-    font-family: 'Outfit', system-ui, sans-serif;
+    font-family: var(--font-sans);
     font-weight: 600;
     letter-spacing: -0.02em;
     line-height: 1.15;
 }
 
 .text-display {
-    font-family: 'Outfit', system-ui, sans-serif;
+    font-family: var(--font-sans);
     font-weight: 700;
     letter-spacing: -0.035em;
     line-height: 1.05;
@@ -458,7 +538,7 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     border-radius: 999px;
-    font-family: 'Azeret Mono', monospace;
+    font-family: var(--font-mono);
     line-height: 1.6;
 }
 
@@ -524,27 +604,6 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulse-subtle {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.45; }
-}
-
-@keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-}
-
-.shimmer {
-    background: linear-gradient(
-        90deg,
-        transparent,
-        color-mix(in oklab, var(--foreground) 5%, transparent),
-        transparent
-    );
-    background-size: 200% 100%;
-    animation: shimmer 2s linear infinite;
-}
-
 /* Stagger children */
 .stagger-children > * {
     opacity: 0;
@@ -560,8 +619,57 @@
 .stagger-children > *:nth-child(8) { animation-delay: 0.30s; }
 
 /* ═══════════════════════════════════════════════════════════════
+   COMMAND-CENTER UTILITIES — severity spine, tabular numerals,
+   the one shared hover-lift transition, and the global idle-motion
+   kill-switch. ZERO idle animation anywhere: no pulse, no ping, no
+   shimmer, no bounce, no auto-rotating anything.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Severity spine — the structural (non-colour) carrier of severity on
+   incident/ledger cards. Colour is never the sole signal; the element
+   using this must also print the severity word. */
+.sev-spine {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+}
+
+/* Tabular numerals for every metric/count. */
+.num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+.hover-lift {
+    transition: border-color 150ms cubic-bezier(0.22, 1, 0.36, 1),
+                transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hover-lift:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+}
+
+/* Global kill-switch for idle motion. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+    .hover-lift:hover { transform: none !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
    LEGACY HEX OVERRIDES — temporary bridge for un-migrated code.
    New code: use shadcn tokens (bg-card, text-foreground, etc.)
+   LEGACY SHIM — do not extend. New components must use CSS custom
+   properties only (see the Command-Center primitives above and the
+   dashboard/* redesign, which never depend on this block).
    ═══════════════════════════════════════════════════════════════ */
 
 /* Light-mode maps hardcoded dark hex → card/surface */

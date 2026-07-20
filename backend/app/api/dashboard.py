@@ -73,6 +73,17 @@ class ThreatMapEntry(BaseModel):
     country: str
     country_code: str
     count: int
+    # v1.6.4.9: ASN attribution. A country bucket can span several ASNs (e.g.
+    # a residential ISP AND a cloud provider both geolocating to the same
+    # country), so we don't try to name "the" operator for a country — we
+    # surface the argmax-by-count ASN as top_asn/top_asn_owner plus
+    # distinct_operators (count of distinct ASNs seen) so the frontend can
+    # show "predominantly X (+N more)". All three are None until the
+    # offline_geoip CSV warmup completes, and None for any IP whose ASN
+    # can't be resolved (e.g. TEST-NET ranges) — never guessed.
+    top_asn: str | None = None
+    top_asn_owner: str | None = None
+    distinct_operators: int | None = None
 
 
 _OVERVIEW_CACHE: dict = {"ts": 0.0, "client": None, "data": None}
@@ -604,6 +615,13 @@ async def get_threat_map(
 
     Resolves attacker IPs to countries via offline GeoIP and returns
     {country, country_code, count} for the GlobalThreatMap component.
+
+    v1.6.4.9: also carries ASN attribution through (top_asn/top_asn_owner/
+    distinct_operators) instead of discarding it. This is the fix for
+    "country alone can't tell ME from an ATTACKER when I live in that
+    country" — offline_geoip.lookup() already resolves asn/asn_owner for
+    every IP in the loop below, it was just never surfaced. See
+    ThreatMapEntry for field semantics.
     """
     from app.services import offline_geoip
 
@@ -660,24 +678,43 @@ async def get_threat_map(
         if ip:
             ip_counts[ip] = ip_counts.get(ip, 0) + int(row[1] or 0)
 
-    # Resolve IPs to countries and aggregate count per country
+    # Resolve IPs to countries and aggregate count per country. Also bucket
+    # per-country ASN counts (country_asn) so we can attach an argmax-by-count
+    # "top operator" per country below — v1.6.4.9. A country can legitimately
+    # contain several ASNs (residential ISP, cloud provider, mobile carrier
+    # all geolocating the same country), so we keep the full per-ASN tally
+    # and only collapse to "the top one" at response-build time, never
+    # discarding the fact that other operators exist (distinct_operators).
     country_counts: dict[str, int] = {}
+    country_asn: dict[str, dict[tuple[str, str], int]] = {}
     for ip, count in ip_counts.items():
-        geo = offline_geoip.lookup(ip)
-        country_code = (geo or {}).get("country", "??")
-        if not country_code:
-            country_code = "??"
+        geo = offline_geoip.lookup(ip) or {}
+        country_code = geo.get("country") or "??"
         country_counts[country_code] = country_counts.get(country_code, 0) + count
+        asn = geo.get("asn")
+        if asn:
+            # Never guess an owner: fall back to the bare ASN id if db-ip
+            # didn't resolve a name for it.
+            key = (asn, geo.get("asn_owner") or asn)
+            bucket = country_asn.setdefault(country_code, {})
+            bucket[key] = bucket.get(key, 0) + count
 
     # Build response sorted by count descending — v1.6.2: removed [:50] cap so
     # every ISO-3166 code with activity is returned to the frontend.
     entries = []
     for cc, count in sorted(country_counts.items(), key=lambda x: -x[1]):
         country_name = _COUNTRY_NAMES.get(cc, cc if cc != "??" else "Unknown")
+        bucket = country_asn.get(cc) or {}
+        # argmax by count, NOT a sum — top_asn is "the biggest single
+        # operator in this country's traffic", not an aggregate.
+        top = max(bucket.items(), key=lambda kv: kv[1])[0] if bucket else None
         entries.append(ThreatMapEntry(
             country=country_name,
             country_code=cc,
             count=count,
+            top_asn=top[0] if top else None,
+            top_asn_owner=top[1] if top else None,
+            distinct_operators=len(bucket) or None,
         ))
     return entries
 
