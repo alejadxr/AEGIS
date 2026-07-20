@@ -988,7 +988,17 @@ export default function IPIntelPage() {
 
   useEffect(() => {
     setRecent(loadRecent());
-    inputRef.current?.focus();
+    // Pre-fill + auto-run the lookup when navigated to with ?ip= (e.g. clicking
+    // an IP elsewhere in the dashboard links to /dashboard/ip-intel?ip=...).
+    const ipParam = new URLSearchParams(window.location.search).get('ip');
+    if (ipParam && validIp(ipParam.trim())) {
+      const ip = ipParam.trim();
+      setQuery(ip);
+      lookup(ip);
+    } else {
+      inputRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function lookup(target: string, deepFlag: boolean = deep) {
