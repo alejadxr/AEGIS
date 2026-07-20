@@ -225,10 +225,10 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
       variant="default"
       padding="none"
       aria-label="Threat origin map"
-      className="col-span-12 flex flex-col min-[1100px]:flex-row min-[1100px]:h-[440px] overflow-hidden"
+      className="col-span-12 flex flex-col min-[820px]:flex-row min-[820px]:h-[440px] overflow-hidden"
     >
       {/* ═══ LEFT — THE MAP ═══ */}
-      <div className="relative flex-1 min-w-0 h-[300px] min-[1100px]:h-full p-5">
+      <div className="relative flex-1 min-w-0 h-[300px] min-[820px]:h-full p-5">
         <svg
           viewBox={`0 ${VIEW_Y} ${MAP_W} ${VIEW_H}`}
           preserveAspectRatio="xMidYMid meet"
@@ -377,7 +377,7 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
       </div>
 
       {/* ═══ RIGHT — SOURCE RANK ═══ */}
-      <div className="w-full min-[1100px]:w-[320px] min-[1100px]:h-full shrink-0 border-t min-[1100px]:border-t-0 min-[1100px]:border-l border-border flex flex-col pt-5 pr-5 pb-5 pl-5 min-[1100px]:pl-[18px]">
+      <div className="w-full min-[820px]:w-[320px] min-[820px]:h-full shrink-0 border-t min-[820px]:border-t-0 min-[820px]:border-l border-border flex flex-col pt-5 pr-5 pb-5 pl-5 min-[820px]:pl-[18px]">
         <h3 className="mb-3.5 shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           By Volume
         </h3>
@@ -434,7 +434,7 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
         {!loading && !error && sorted.length > 0 && (
           <>
             {/* Desktop / wide: ranked rows, keyboard-operable, linked to map markers. */}
-            <ol className="hidden min-[1100px]:flex min-[1100px]:flex-col flex-1 gap-0.5 overflow-y-auto -mx-1.5 pr-0.5">
+            <ol className="hidden min-[820px]:flex min-[820px]:flex-col flex-1 gap-0.5 overflow-y-auto -mx-1.5 pr-0.5">
               {sorted.map((entry, i) => {
                 const code = entry.country_code?.toUpperCase() ?? '??';
                 const tier = tierFor(entry.count, maxCount);
@@ -512,7 +512,7 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
             <div
               role="list"
               aria-label="Attack sources by volume"
-              className="grid grid-cols-2 gap-2 min-[1100px]:hidden"
+              className="grid grid-cols-2 gap-2 min-[820px]:hidden"
             >
               {sorted.map((entry, i) => {
                 const code = entry.country_code?.toUpperCase() ?? '??';

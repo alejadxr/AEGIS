@@ -407,6 +407,7 @@ export default function DashboardPage() {
         />
 
         {/* BAND 2 — TRIAGE QUEUE (8) / WATCH PANEL (4) */}
+        <div className="col-span-12 lg:col-span-8 flex flex-col gap-6 min-w-0">
         <TriageQueue
           incidents={triageIncidents}
           pendingActions={triagePendingActions}
@@ -419,21 +420,7 @@ export default function DashboardPage() {
           onRetry={handleRefresh}
         />
 
-        <WatchPanel
-          blockedIps={blockedIps}
-          piReachable={piReachable}
-          realFirewallActive={realFirewallActive}
-          actionsExecuted30d={actionsExecuted30d}
-          totalAssets={overview?.total_assets ?? 0}
-          activeAssets={activeAssets}
-          apps={monitoredApps}
-          honeypotsRunning={honeypotsRunning}
-          honeypotHits30d={overview?.honeypot_interactions ?? 0}
-          openVulnerabilities={overview?.open_vulnerabilities ?? 0}
-          lastScanAt={lastScanAt}
-          loading={watchPanelLoading}
-          firewallError={firewallError}
-        />
+        
 
         {/* BAND 3 — ORIGIN MAP */}
         <OriginMap
@@ -461,6 +448,33 @@ export default function DashboardPage() {
           error={timelineError}
           onRetry={handleRefresh}
         />
+        </div>
+
+        {/* RIGHT RAIL — its OWN grid column for the whole scroll region.
+            Previously WatchPanel was a col-span-4 sibling in row 2 while
+            OriginMap/AssetRiskPanel/Ledger were col-span-12 rows beneath it,
+            so the sticky rail travelled DOWN OVER them: measured at 1600px it
+            covered 1040-1488px of panels that spanned 112-1488px, clipping the
+            map legend, the risk list and the ledger's EVENT column. Giving the
+            rail its own column makes the overlap structurally impossible. */}
+        <div className="col-span-12 lg:col-span-4 min-w-0">
+        <WatchPanel
+          blockedIps={blockedIps}
+          piReachable={piReachable}
+          realFirewallActive={realFirewallActive}
+          actionsExecuted30d={actionsExecuted30d}
+          totalAssets={overview?.total_assets ?? 0}
+          activeAssets={activeAssets}
+          apps={monitoredApps}
+          honeypotsRunning={honeypotsRunning}
+          honeypotHits30d={overview?.honeypot_interactions ?? 0}
+          openVulnerabilities={overview?.open_vulnerabilities ?? 0}
+          lastScanAt={lastScanAt}
+          loading={watchPanelLoading}
+          firewallError={firewallError}
+        />
+        </div>
+
         </div>
       </div>
     </>
