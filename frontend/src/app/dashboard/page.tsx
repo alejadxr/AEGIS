@@ -7,24 +7,27 @@ import { subscribeTopic } from '@/lib/ws';
 import { CommandBar, type TimeWindow } from '@/components/dashboard/CommandBar';
 import { VerdictLine } from '@/components/dashboard/VerdictLine';
 import { TriageQueue, type TriageIncident, type TriagePendingAction } from '@/components/dashboard/TriageQueue';
-import { WatchPanel, type MonitoredApp } from '@/components/dashboard/WatchPanel';
-import { OriginMap } from '@/components/dashboard/OriginMap';
+import { WatchPanel, type WatchPanelApp } from '@/components/dashboard/WatchPanel';
+import { OriginMap, type OriginMapEntry } from '@/components/dashboard/OriginMap';
+import { AssetRiskPanel, type AssetRiskItem } from '@/components/dashboard/AssetRiskPanel';
 import { Ledger, type LedgerEntry } from '@/components/dashboard/Ledger';
 
 /**
  * Dashboard — Command Center.
  *
- * Five bands (CommandBar is full-bleed outside the grid; VerdictLine,
- * TriageQueue/WatchPanel, OriginMap and Ledger share one 12-col grid):
- *   0. CommandBar   — sticky instrument strip + first-run strip
- *   1. VerdictLine  — the one display-size sentence, the 3am answer
+ * Six bands (CommandBar is full-bleed outside the grid; VerdictLine,
+ * TriageQueue/WatchPanel, OriginMap, AssetRiskPanel and Ledger share one
+ * 12-col grid):
+ *   0. CommandBar    — sticky instrument strip + first-run strip
+ *   1. VerdictLine   — the one display-size sentence, the 3am answer
  *   2. TriageQueue (8) / WatchPanel (4) — the hero + the evidence rail
- *   3. OriginMap    — full-width world map + SourceRank
- *   4. Ledger       — chronological incident/audit log
+ *   3. OriginMap     — full-width world map + SourceRank + ASN attribution
+ *   4. AssetRiskPanel — full attack-surface inventory (distribution + top risk)
+ *   5. Ledger        — chronological incident/audit log
  *
  * No component in this tree fetches its own list data (IncidentDossier is
  * the sole exception — it fetches its own detail on expand). Every band is
- * pure props-in, mirroring the six-call Promise.allSettled below so a
+ * pure props-in, mirroring the ten-call Promise.allSettled below so a
  * single endpoint failure degrades only its own panel.
  */
 
@@ -45,6 +48,10 @@ type RawIncident = Awaited<ReturnType<typeof api.response.incidents>>[number];
 type RawAction = Awaited<ReturnType<typeof api.response.actions>>[number];
 type MonitoredAppsResponse = Awaited<ReturnType<typeof api.dashboard.monitoredApps>>;
 type ThreatMapResponse = Awaited<ReturnType<typeof api.dashboard.threatMap>>;
+type FirewallBlocked = Awaited<ReturnType<typeof api.firewall.blocked>>;
+type FirewallStats = Awaited<ReturnType<typeof api.firewall.stats>>;
+type AssetsResponse = Awaited<ReturnType<typeof api.surface.assets>>;
+type HoneypotsResponse = Awaited<ReturnType<typeof api.phantom.honeypots>>;
 
 interface RawTimelineEvent {
   id: string;
@@ -90,6 +97,14 @@ function withinWindow(iso: string, win: TimeWindow): boolean {
   return Date.now() - ms <= WINDOW_DAYS[win] * 86400_000;
 }
 
+/** Backend emits naive UTC datetimes without a trailing Z — normalize before
+ * parsing, matching the convention already used throughout this tree
+ * (formatRelativeTime, Ledger.toDate, AssetRiskPanel.toUtcMillis). */
+function toUtcMillis(iso: string): number {
+  const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`;
+  return Date.parse(normalized);
+}
+
 export default function DashboardPage() {
   const [timeWindow, setTimeWindow] = useState<TimeWindow>('7d');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -115,12 +130,24 @@ export default function DashboardPage() {
   const [timelineRaw, setTimelineRaw] = useState<RawTimelineEvent[] | null>(null);
   const [timelineError, setTimelineError] = useState(false);
 
+  const [firewallBlocked, setFirewallBlocked] = useState<FirewallBlocked | null>(null);
+  const [firewallBlockedError, setFirewallBlockedError] = useState(false);
+
+  const [firewallStats, setFirewallStats] = useState<FirewallStats | null>(null);
+  const [firewallStatsError, setFirewallStatsError] = useState(false);
+
+  const [assetsData, setAssetsData] = useState<AssetsResponse | null>(null);
+  const [assetsError, setAssetsError] = useState(false);
+
+  const [honeypotsData, setHoneypotsData] = useState<HoneypotsResponse | null>(null);
+  const [honeypotsError, setHoneypotsError] = useState(false);
+
   // ── Initial load + refresh (WS events / mutations bump refreshKey) ──────
   useEffect(() => {
     let mounted = true;
 
     async function load() {
-      const [ov, inc, act, tm, apps, tl] = await Promise.allSettled([
+      const [ov, inc, act, tm, apps, tl, fwBlocked, fwStats, assets, honeypots] = await Promise.allSettled([
         api.dashboard.overview(),
         // Fixed 7d/50 window regardless of the CommandBar/Ledger time-window
         // control — TriageQueue must always show the true current backlog,
@@ -135,6 +162,10 @@ export default function DashboardPage() {
         api.dashboard.threatMap(),
         api.dashboard.monitoredApps(),
         api.get<RawTimelineEvent[]>('/dashboard/timeline?limit=200'),
+        api.firewall.blocked(),
+        api.firewall.stats(),
+        api.surface.assets(),
+        api.phantom.honeypots(),
       ]);
       if (!mounted) return;
 
@@ -155,6 +186,18 @@ export default function DashboardPage() {
 
       if (tl.status === 'fulfilled') { setTimelineRaw(tl.value); setTimelineError(false); }
       else setTimelineError(true);
+
+      if (fwBlocked.status === 'fulfilled') { setFirewallBlocked(fwBlocked.value); setFirewallBlockedError(false); }
+      else setFirewallBlockedError(true);
+
+      if (fwStats.status === 'fulfilled') { setFirewallStats(fwStats.value); setFirewallStatsError(false); }
+      else setFirewallStatsError(true);
+
+      if (assets.status === 'fulfilled') { setAssetsData(assets.value); setAssetsError(false); }
+      else setAssetsError(true);
+
+      if (honeypots.status === 'fulfilled') { setHoneypotsData(honeypots.value); setHoneypotsError(false); }
+      else setHoneypotsError(true);
     }
 
     load();
@@ -254,7 +297,6 @@ export default function DashboardPage() {
         title: e.title,
         description: null,
         severity: severityKeyOrNull(e.severity),
-        module: '',
         timestamp: e.timestamp,
       })),
     [cleanTimeline, timeWindow],
@@ -262,7 +304,40 @@ export default function DashboardPage() {
 
   const lastEventAt = cleanTimeline[0]?.timestamp ?? null;
 
-  const monitoredApps: MonitoredApp[] = monitoredAppsData?.apps ?? [];
+  const monitoredApps: WatchPanelApp[] = monitoredAppsData?.apps ?? [];
+
+  // Firewall/enforcement derivations — null means "we could not ask", never
+  // collapsed into a fake 0. See WatchPanelProps docblock.
+  const blockedIps = firewallBlocked ? firewallBlocked.items.map((i) => i.ip) : null;
+  const blockedIpsNow = firewallBlocked ? firewallBlocked.count : null;
+  const piReachable = firewallBlocked ? firewallBlocked.pi_reachable : null;
+  const realFirewallActive = firewallStats ? firewallStats.real_firewall_active : null;
+  const actionsExecuted30d = overview ? overview.actions_taken : null;
+  const firewallError = firewallBlockedError || firewallStatsError;
+
+  const activeAssets = assetsData ? assetsData.filter((a) => a.status === 'active').length : null;
+  const honeypotsRunning = honeypotsData ? honeypotsData.filter((h) => h.status === 'running').length : null;
+
+  // max(assets[].last_scan_at) — the one honestly-derivable "last scan" the
+  // approved call set can produce; null when no asset has ever been scanned.
+  const lastScanAt = useMemo(() => {
+    if (!assetsData) return null;
+    let newest: string | null = null;
+    let newestMs = -Infinity;
+    for (const a of assetsData) {
+      if (!a.last_scan_at) continue;
+      const ms = toUtcMillis(a.last_scan_at);
+      if (!Number.isNaN(ms) && ms > newestMs) {
+        newestMs = ms;
+        newest = a.last_scan_at;
+      }
+    }
+    return newest;
+  }, [assetsData]);
+
+  const originMapData: OriginMapEntry[] = threatMapData ?? [];
+  const assetRiskItems: AssetRiskItem[] = assetsData ?? [];
+  const homeAsn = process.env.NEXT_PUBLIC_AEGIS_HOME_ASN ?? null;
 
   // ── Per-panel loading flags — no single blanket spinner. Each band shows
   // its own skeleton on first paint and its own error state on failure. ──
@@ -271,20 +346,42 @@ export default function DashboardPage() {
   const monitoredAppsLoading = monitoredAppsData === null && !monitoredAppsError;
   const threatMapLoading = threatMapData === null && !threatMapError;
   const timelineLoading = timelineRaw === null && !timelineError;
+  const firewallBlockedLoading = firewallBlocked === null && !firewallBlockedError;
+  const firewallStatsLoading = firewallStats === null && !firewallStatsError;
+  const assetsLoading = assetsData === null && !assetsError;
+  const honeypotsLoading = honeypotsData === null && !honeypotsError;
+
   // VerdictLine and CommandBar both read totalAssets/monitoredApps counts
   // sourced from overview() and monitoredApps() respectively — wait on both
-  // so neither ever flashes "0" before the real numbers land.
-  const verdictLoading = overviewLoading || incidentsLoading || monitoredAppsLoading;
+  // (plus the firewall count VerdictLine's sub-line also reports) so none
+  // ever flashes a zero/absent segment before the real numbers land.
+  const verdictLoading = overviewLoading || incidentsLoading || monitoredAppsLoading || firewallBlockedLoading;
   const commandBarLoading = overviewLoading || monitoredAppsLoading;
-  const watchPanelLoading = overviewLoading || monitoredAppsLoading;
+  // WatchPanel renders all three of its regions (Enforcement/Coverage/Blind
+  // Spots) behind one shared `loading` flag — wait on every call any region
+  // reads so no region resolves ahead of its siblings.
+  const watchPanelLoading =
+    overviewLoading ||
+    monitoredAppsLoading ||
+    firewallBlockedLoading ||
+    firewallStatsLoading ||
+    assetsLoading ||
+    honeypotsLoading;
   const apiOnline = !overviewError && overview !== null;
 
   return (
     <>
-      {/* BAND 0 — COMMAND BAR. Full-bleed within <main>'s max-w-[1440px]
-          container: negative margins cancel dashboard/layout.tsx's
-          px-4/sm:px-6/lg:px-8 and py-6 so the sticky strip sits flush
-          under TopNav instead of floating inset inside page padding. */}
+      {/* BAND 0 — COMMAND BAR + grid, ONE shared containing block.
+          Full-bleed within <main>'s max-w-[1440px] container: negative
+          margins cancel dashboard/layout.tsx's px-4/sm:px-6/lg:px-8 and
+          py-6 so the sticky strip sits flush under TopNav instead of
+          floating inset inside page padding. The grid re-applies that same
+          horizontal padding to itself so its own content stays inset.
+          CommandBar and the grid MUST share one wrapper: `position: sticky`
+          can only "stick" while scrolling through its containing block, and
+          a wrapper sized to CommandBar alone (the previous structure) gives
+          it zero room to travel — it was verified via getBoundingClientRect
+          to scroll away 1:1 with the page instead of pinning under TopNav. */}
       <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-8">
         <CommandBar
           monitoredApps={monitoredAppsData?.count ?? 0}
@@ -295,18 +392,17 @@ export default function DashboardPage() {
           loading={commandBarLoading}
           apiOnline={apiOnline}
         />
-      </div>
 
-      <div className="grid grid-cols-12 gap-x-4 gap-y-6 pb-10">
+        <div className="grid grid-cols-12 gap-x-4 gap-y-6 px-4 pb-10 sm:px-6 lg:px-8">
         {/* BAND 1 — VERDICT LINE */}
         <VerdictLine
           activeIncidents={openIncidents.length}
           pendingActions={pendingActions.length}
           totalAssets={overview?.total_assets ?? 0}
-          openVulnerabilities={overview?.open_vulnerabilities ?? 0}
-          honeypotInteractions={overview?.honeypot_interactions ?? 0}
           monitoredApps={monitoredAppsData?.count ?? 0}
           lastIncidentAt={lastIncidentAt}
+          actionsExecuted30d={actionsExecuted30d}
+          blockedIpsNow={blockedIpsNow}
           loading={verdictLoading}
         />
 
@@ -324,31 +420,39 @@ export default function DashboardPage() {
         />
 
         <WatchPanel
+          blockedIps={blockedIps}
+          piReachable={piReachable}
+          realFirewallActive={realFirewallActive}
+          actionsExecuted30d={actionsExecuted30d}
           totalAssets={overview?.total_assets ?? 0}
-          openVulnerabilities={overview?.open_vulnerabilities ?? 0}
-          activeIncidents={overview?.active_incidents ?? 0}
-          honeypotInteractions={overview?.honeypot_interactions ?? 0}
-          assetsTrend={overview?.assets_trend ?? 0}
-          vulnsTrend={overview?.vulns_trend ?? 0}
-          incidentsTrend={overview?.incidents_trend ?? 0}
-          interactionsTrend={overview?.interactions_trend ?? 0}
+          activeAssets={activeAssets}
           apps={monitoredApps}
-          // No surface-scan endpoint is among the six approved calls for
-          // this page, so there is no honest source for "last scan" —
-          // WatchPanel renders this as "never" rather than inventing one.
-          lastScanAt={null}
+          honeypotsRunning={honeypotsRunning}
+          honeypotHits30d={overview?.honeypot_interactions ?? 0}
+          openVulnerabilities={overview?.open_vulnerabilities ?? 0}
+          lastScanAt={lastScanAt}
           loading={watchPanelLoading}
+          firewallError={firewallError}
         />
 
         {/* BAND 3 — ORIGIN MAP */}
         <OriginMap
-          data={threatMapData ?? []}
+          data={originMapData}
+          homeAsn={homeAsn}
           loading={threatMapLoading}
           error={threatMapError}
           onRetry={handleRefresh}
         />
 
-        {/* BAND 4 — LEDGER */}
+        {/* BAND 4 — ATTACK SURFACE / ASSET RISK */}
+        <AssetRiskPanel
+          assets={assetRiskItems}
+          loading={assetsLoading}
+          error={assetsError}
+          onRetry={handleRefresh}
+        />
+
+        {/* BAND 5 — LEDGER */}
         <Ledger
           entries={ledgerEntries}
           window={timeWindow}
@@ -357,6 +461,7 @@ export default function DashboardPage() {
           error={timelineError}
           onRetry={handleRefresh}
         />
+        </div>
       </div>
     </>
   );

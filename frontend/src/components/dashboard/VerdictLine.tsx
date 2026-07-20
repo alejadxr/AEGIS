@@ -7,40 +7,56 @@ import { formatRelativeTime } from '@/lib/utils';
  *
  * The single apex of the dashboard hierarchy: one display-size sentence
  * stating whether anything needs the operator right now, plus one mono
- * line of the four supporting counts. Sits directly on the page
- * background (NOT a Panel) — the highest element in the hierarchy needs
- * no container.
+ * line of the supporting receipts. Sits directly on the page background
+ * (NOT a Panel) — the highest element in the hierarchy needs no container.
  *
  * The zero case ("Nothing needs you.") is the PRIMARY state of this
  * dashboard, not an empty state. It renders at full weight, full
  * foreground color — never muted, never an icon, never the word "empty".
+ *
+ * The sub-line's job is to make that silence credible: it states what is
+ * actually being watched and what has actually been done, rather than
+ * repeating the same zero-valued counters WatchPanel prints below it.
+ * actionsExecuted30d / blockedIpsNow are `null` (not 0) when their fetch
+ * failed — a dead endpoint must never render as an honest "0", so a null
+ * segment is omitted entirely instead of printed as zero.
  */
 export interface VerdictLineProps {
-  /** FP-filtered incident count with status open|investigating. */
+  /** FP-filtered incidents with status open|investigating. Drives the headline. */
   activeIncidents: number;
-  /** Count of actions with status === 'pending' from api.response.actions(). */
+  /** actions with status === 'pending'. Takes headline priority over incidents. */
   pendingActions: number;
-  /** From api.dashboard.overview(). */
   totalAssets: number;
-  openVulnerabilities: number;
-  honeypotInteractions: number;
-  /** From api.dashboard.monitoredApps().count. */
   monitoredApps: number;
-  /** ISO timestamp of the newest FP-filtered incident, or null. */
+  /** ISO timestamp of newest FP-filtered incident, or null. */
   lastIncidentAt: string | null;
+  /** overview.actions_taken — executed actions, trailing 30d. null = fetch failed, omit segment. */
+  actionsExecuted30d: number | null;
+  /** firewall.blocked.count — IPs enforced at this instant. null = fetch failed, omit segment. */
+  blockedIpsNow: number | null;
   loading?: boolean;
 }
 
 const MIDDOT = '·';
 
+/** A single sub-line segment: numeral in foreground, label in muted-foreground. */
+function Segment({ numeral, label }: { numeral: string; label: string }) {
+  return (
+    <>
+      <span className="text-[var(--foreground)] tabular-nums">{numeral}</span>
+      <span className="text-[var(--muted-foreground)]"> {label}</span>
+    </>
+  );
+}
+
 export function VerdictLine({
   activeIncidents,
   pendingActions,
   totalAssets,
-  openVulnerabilities,
-  honeypotInteractions,
   monitoredApps,
   lastIncidentAt,
+  actionsExecuted30d,
+  blockedIpsNow,
   loading = false,
 }: VerdictLineProps) {
   if (loading) {
@@ -73,21 +89,28 @@ export function VerdictLine({
     rest = 'Nothing needs you.';
   }
 
-  // Sub-line segments, in exact spec order. The last-incident segment is
-  // omitted entirely when there is no known last incident.
-  const segments: string[] = [
-    `${totalAssets} assets watched`,
-    `${monitoredApps} apps`,
-    `${openVulnerabilities} open vulns`,
-    `${honeypotInteractions} honeypot hits`,
+  // Sub-line segments, in exact spec order. Segments whose backing value is
+  // null (fetch failure) are omitted entirely — never rendered as 0.
+  const segments: Array<{ numeral: string; label: string }> = [
+    { numeral: String(totalAssets), label: 'assets' },
+    { numeral: String(monitoredApps), label: 'apps' },
   ];
+  if (actionsExecuted30d !== null) {
+    segments.push({
+      numeral: actionsExecuted30d.toLocaleString(),
+      label: 'actions executed · 30d',
+    });
+  }
+  if (blockedIpsNow !== null) {
+    segments.push({ numeral: String(blockedIpsNow), label: 'IPs blocked now' });
+  }
+  let lastIncidentLabel: string | null = null;
   if (lastIncidentAt) {
     const rel = formatRelativeTime(lastIncidentAt);
     if (rel && rel !== '—') {
-      segments.push(`last incident ${rel}`);
+      lastIncidentLabel = rel;
     }
   }
-  const subLine = segments.join(` ${MIDDOT} `);
 
   return (
     <section aria-label="Current verdict" className="col-span-12 pt-8">
@@ -99,8 +122,20 @@ export function VerdictLine({
         )}
         {rest}
       </h1>
-      <p className="mt-3 font-mono text-[12px] font-medium leading-[18px] text-[var(--muted-foreground)] sm:leading-[16px]">
-        {subLine}
+      <p className="mt-3 font-mono text-[12px] font-medium leading-[18px] sm:leading-[16px]">
+        {segments.map((seg, i) => (
+          <span key={`${seg.label}-${i}`}>
+            {i > 0 && <span className="text-[var(--muted-foreground)]"> {MIDDOT} </span>}
+            <Segment numeral={seg.numeral} label={seg.label} />
+          </span>
+        ))}
+        {lastIncidentLabel && (
+          <span>
+            <span className="text-[var(--muted-foreground)]"> {MIDDOT} </span>
+            <span className="text-[var(--muted-foreground)]">last incident </span>
+            <span className="text-[var(--foreground)] tabular-nums">{lastIncidentLabel}</span>
+          </span>
+        )}
       </p>
     </section>
   );

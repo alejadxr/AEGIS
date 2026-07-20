@@ -30,15 +30,32 @@ import { resolveCountryName } from '@/lib/geo/country-names';
  * and a plain lon/lat -> xy linear projection helper.
  */
 
-export interface ThreatMapEntry {
+export interface OriginMapEntry {
   country: string;
   country_code: string;
   count: number;
+  /**
+   * Operator/ASN attribution, resolved server-side from the same GeoIP
+   * lookup that produced `country`. All three fields are OPTIONAL — the
+   * backend returns them as null until the GeoIP CSV warmup completes
+   * after an API restart. Absent data means an absent line, never a
+   * placeholder: see the per-change null rules below.
+   */
+  top_asn?: string | null;
+  top_asn_owner?: string | null;
+  distinct_operators?: number | null;
 }
 
 export interface OriginMapProps {
   /** From api.dashboard.threatMap(). ALREADY FP-filtered server-side — do not re-filter. */
-  data: ThreatMapEntry[];
+  data: OriginMapEntry[];
+  /**
+   * The operator's own uplink ASN, e.g. 'AS6400' (from
+   * process.env.NEXT_PUBLIC_AEGIS_HOME_ASN, read and passed through by the
+   * page). When it case-insensitively matches a row's top_asn, that row is
+   * marked 'YOUR UPLINK'. Configuration only — never inferred from data.
+   */
+  homeAsn?: string | null;
   loading?: boolean;
   error?: boolean;
   /**
@@ -73,6 +90,43 @@ function markerRadius(count: number, maxCount: number): number {
   return Math.min(11, 3 + 7 * Math.sqrt(ratio));
 }
 
+// ---------------------------------------------------------------------------
+// ASN attribution — the "your uplink vs. Starlink vs. Amazon" answer. Every
+// helper here degrades to `null` (an omitted line) the instant top_asn_owner
+// is missing; nothing is ever guessed or filled with a placeholder.
+// ---------------------------------------------------------------------------
+
+/** Rail-row / chip line 2: "{owner} · {asn}[ +N]". Raw db-ip strings — no
+ * cleanup, may contain quotes or exceed 50 chars; callers must `truncate`. */
+function formatAsnLine(entry: OriginMapEntry): string | null {
+  if (!entry.top_asn_owner) return null;
+  const asnPart = entry.top_asn ? ` · ${entry.top_asn}` : '';
+  let line = `${entry.top_asn_owner}${asnPart}`;
+  if (entry.distinct_operators != null && entry.distinct_operators > 1) {
+    line += ` +${entry.distinct_operators - 1}`;
+  }
+  return line;
+}
+
+/** Map-marker annotation: same "{owner} · {asn}" pair, hard-truncated to
+ * `max` chars with an ellipsis (SVG <text> has no CSS text-overflow). */
+function truncateAsnForMarker(entry: OriginMapEntry, max = 32): string | null {
+  if (!entry.top_asn_owner) return null;
+  const asnPart = entry.top_asn ? ` · ${entry.top_asn}` : '';
+  const full = `${entry.top_asn_owner}${asnPart}`;
+  if (full.length <= max) return full;
+  return `${full.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
+/** True when the row's top ASN is the operator's own uplink — configured
+ * via `homeAsn`, never inferred. Case-insensitive, whitespace-tolerant. */
+function isHomeUplink(entry: OriginMapEntry, homeAsn: string | null | undefined): boolean {
+  const home = homeAsn?.trim();
+  const rowAsn = entry.top_asn?.trim();
+  if (!home || !rowAsn) return false;
+  return home.toLowerCase() === rowAsn.toLowerCase();
+}
+
 /** Local, self-contained — does not depend on globals.css having a media
  * query for this. Disables the marker-ring hover transition only. */
 function usePrefersReducedMotion(): boolean {
@@ -97,12 +151,14 @@ interface Marker {
   tier: Tier;
   isTop: boolean;
   showLabel: boolean;
+  /** Truncated "{owner} · {asn}" annotation, or null when unattributed. */
+  asnLabel: string | null;
 }
 
 const rowFocusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-1 focus-visible:ring-offset-card';
 
-export function OriginMap({ data, loading = false, error = false, onRetry }: OriginMapProps) {
+export function OriginMap({ data, homeAsn, loading = false, error = false, onRetry }: OriginMapProps) {
   const reactId = React.useId();
   const oceanPatternId = `aegis-ocean-${reactId}`;
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -138,6 +194,7 @@ export function OriginMap({ data, loading = false, error = false, onRetry }: Ori
         tier: tierFor(entry.count, maxCount),
         isTop: code === topCode,
         showLabel: top5Codes.has(code),
+        asnLabel: truncateAsnForMarker(entry),
       });
     }
     return out;
@@ -230,6 +287,27 @@ export function OriginMap({ data, loading = false, error = false, onRetry }: Ori
                       strokeWidth={2.5}
                     >
                       {m.code}
+                    </text>
+                  )}
+                  {/* Supplementary ASN annotation — purely additive, stacked
+                      above the code label so it never overlaps the marker
+                      itself. The rail row (below) already carries this same
+                      string without hovering, so this satisfies the
+                      no-hover-only-information rule even though it renders
+                      unconditionally alongside the top-5 code label. */}
+                  {m.showLabel && m.asnLabel && (
+                    <text
+                      x={m.cx}
+                      y={m.cy - m.r - 13}
+                      textAnchor="middle"
+                      fontSize={7}
+                      fontFamily="var(--font-mono)"
+                      fill="var(--muted-foreground)"
+                      paintOrder="stroke"
+                      stroke="var(--background)"
+                      strokeWidth={2.5}
+                    >
+                      {m.asnLabel}
                     </text>
                   )}
                 </g>
@@ -362,6 +440,8 @@ export function OriginMap({ data, loading = false, error = false, onRetry }: Ori
                 const tier = tierFor(entry.count, maxCount);
                 const barPct = maxCount > 0 ? (entry.count / maxCount) * 100 : 0;
                 const resolved = resolveCountryName(code);
+                const asnLine = formatAsnLine(entry);
+                const isUplink = isHomeUplink(entry, homeAsn);
                 return (
                   <li key={code + i}>
                     <button
@@ -371,32 +451,57 @@ export function OriginMap({ data, loading = false, error = false, onRetry }: Ori
                       onFocus={() => setHoveredCode(code)}
                       onBlur={() => setHoveredCode((c) => (c === code ? null : c))}
                       className={cn(
-                        'flex h-7 w-full items-center gap-2.5 rounded-md px-1.5 text-left transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                        'flex w-full flex-col justify-center gap-0.5 rounded-md px-1.5 text-left transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                        asnLine ? 'min-h-[44px] py-1.5' : 'h-7',
                         'hover:bg-[color-mix(in_oklab,var(--foreground)_3%,transparent)]',
                         'focus-visible:bg-[color-mix(in_oklab,var(--foreground)_3%,transparent)]',
                         rowFocusRing,
                       )}
                     >
-                      <span className="w-[22px] shrink-0 font-mono tabular-nums text-[11px] font-semibold uppercase text-foreground">
-                        {code}
-                      </span>
-                      <span
-                        className={cn(
-                          'min-w-0 flex-1 truncate text-[12px] font-normal text-muted-foreground',
-                          !resolved.known && 'italic text-muted-foreground/60',
-                        )}
-                      >
-                        {resolved.name}
-                      </span>
-                      <span className="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-border">
+                      <span className="flex items-center gap-2.5">
+                        <span className="w-[22px] shrink-0 font-mono tabular-nums text-[11px] font-semibold uppercase text-foreground">
+                          {code}
+                        </span>
                         <span
-                          className="block h-1 rounded-full"
-                          style={{ width: `${barPct}%`, background: SEV_VAR[tier] }}
-                        />
+                          className={cn(
+                            'min-w-0 flex-1 truncate text-[12px] font-normal text-muted-foreground',
+                            !resolved.known && 'italic text-muted-foreground/60',
+                          )}
+                        >
+                          {resolved.name}
+                        </span>
+                        {isUplink && (
+                          <span
+                            className="shrink-0 rounded-[4px] border px-1.5 py-[1px] font-mono text-[9px] font-semibold uppercase tracking-[0.1em]"
+                            style={{
+                              color: 'var(--brand-accent-text)',
+                              background: 'color-mix(in oklab, var(--brand-accent) 14%, transparent)',
+                              borderColor: 'color-mix(in oklab, var(--brand-accent) 30%, transparent)',
+                            }}
+                          >
+                            Your Uplink
+                          </span>
+                        )}
+                        <span className="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-border">
+                          <span
+                            className="block h-1 rounded-full"
+                            style={{ width: `${barPct}%`, background: SEV_VAR[tier] }}
+                          />
+                        </span>
+                        <span className="w-[34px] shrink-0 text-right font-mono tabular-nums text-[11px] font-semibold text-foreground">
+                          {entry.count}
+                        </span>
                       </span>
-                      <span className="w-[34px] shrink-0 text-right font-mono tabular-nums text-[11px] font-semibold text-foreground">
-                        {entry.count}
-                      </span>
+                      {asnLine && (
+                        <span className="block pl-[32px]">
+                          <span
+                            title={asnLine}
+                            className="block truncate font-mono text-[10.5px] leading-[14px] text-muted-foreground"
+                          >
+                            {asnLine}
+                          </span>
+                        </span>
+                      )}
                     </button>
                   </li>
                 );
@@ -413,31 +518,45 @@ export function OriginMap({ data, loading = false, error = false, onRetry }: Ori
                 const code = entry.country_code?.toUpperCase() ?? '??';
                 const tier = tierFor(entry.count, maxCount);
                 const resolved = resolveCountryName(code);
+                const asnLine = formatAsnLine(entry);
                 return (
                   <div
                     key={code + i}
                     role="listitem"
-                    className="flex h-9 items-center gap-2 rounded-lg border border-border px-2.5"
+                    className={cn(
+                      'flex flex-col justify-center gap-0.5 rounded-lg border border-border px-2.5',
+                      asnLine ? 'min-h-[44px] py-1.5' : 'h-9',
+                    )}
                   >
-                    <span
-                      aria-hidden
-                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: SEV_VAR[tier] }}
-                    />
-                    <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold uppercase text-foreground">
-                      {code}
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden
+                        className="h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ background: SEV_VAR[tier] }}
+                      />
+                      <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold uppercase text-foreground">
+                        {code}
+                      </span>
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate text-[11px] text-muted-foreground',
+                          !resolved.known && 'italic text-muted-foreground/60',
+                        )}
+                      >
+                        {resolved.name}
+                      </span>
+                      <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold text-foreground">
+                        {entry.count}
+                      </span>
                     </span>
-                    <span
-                      className={cn(
-                        'min-w-0 flex-1 truncate text-[11px] text-muted-foreground',
-                        !resolved.known && 'italic text-muted-foreground/60',
-                      )}
-                    >
-                      {resolved.name}
-                    </span>
-                    <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold text-foreground">
-                      {entry.count}
-                    </span>
+                    {asnLine && (
+                      <span
+                        title={asnLine}
+                        className="block truncate pl-[18px] text-[10px] text-muted-foreground"
+                      >
+                        {asnLine}
+                      </span>
+                    )}
                   </div>
                 );
               })}
