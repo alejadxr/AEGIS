@@ -126,6 +126,18 @@ class AIDecisionEngine:
         start_ns = time.monotonic_ns()
         self._fast_triage_stats["total"] += 1
 
+        # Resolve the safelist gate ONCE, up front, so every decision below
+        # (incident creation, AI enrichment, the WS payload itself) reflects
+        # it consistently. Cheap: O(1) set lookup + small CIDR loop.
+        source_ip = event.get("source_ip")
+        is_safe_source = False
+        if source_ip:
+            try:
+                from app.core.attack_detector import _is_safe_ip
+                is_safe_source = _is_safe_ip(source_ip)
+            except Exception:
+                is_safe_source = False
+
         result = {
             "triage_id": str(uuid.uuid4()),
             "triage_type": "fast",
@@ -136,6 +148,7 @@ class AIDecisionEngine:
             "actions_taken": [],
             "incident_created": False,
             "ai_enrichment_queued": False,
+            "safelisted": is_safe_source,
             "timestamp": datetime.utcnow().isoformat(),
         }
 
@@ -176,17 +189,31 @@ class AIDecisionEngine:
         incident_title = f"{severity.upper()}: {', '.join(filter(None, rule_titles)) or threat_type.replace('_', ' ').title()}"
         result["incident_title"] = incident_title
         result["incident_severity"] = severity
-        result["source_ip"] = event.get("source_ip")
+        result["source_ip"] = source_ip
 
-        # Always create an incident record when we have sigma matches
-        if sigma_matches or result["actions_taken"]:
+        # Always create an incident record when we have sigma matches --
+        # UNLESS the source IP is safelisted (AEGIS_SAFE_IPS/AEGIS_INTERNAL_IPS,
+        # private ranges, or a published crawler CIDR). Checked up front so
+        # the WS payload's `incident_created` flag is never a lie: previously
+        # this was set True unconditionally and only the fire-and-forget
+        # `_create_fast_incident` task (running after this function had
+        # already returned) decided whether to actually skip the DB write.
+        if is_safe_source:
+            if sigma_matches or result["actions_taken"]:
+                logger.debug(
+                    f"fast_triage: suppressing incident for safelisted IP "
+                    f"{source_ip} (threat={threat_type})"
+                )
+        elif sigma_matches or result["actions_taken"]:
             result["incident_created"] = True
             asyncio.create_task(
                 self._create_fast_incident(event, threat_type, severity, sigma_matches, result)
             )
 
-        # Queue async AI enrichment for complex analysis (non-blocking)
-        if sigma_matches or (ioc_check and ioc_check.get("verdict") != "clean"):
+        # Queue async AI enrichment for complex analysis (non-blocking).
+        # Skipped for safelisted IPs too -- no incident will exist for it to
+        # enrich, so this would just be a wasted AI call.
+        if not is_safe_source and (sigma_matches or (ioc_check and ioc_check.get("verdict") != "clean")):
             result["ai_enrichment_queued"] = True
             self._fast_triage_stats["ai_enrichments_queued"] += 1
             asyncio.create_task(

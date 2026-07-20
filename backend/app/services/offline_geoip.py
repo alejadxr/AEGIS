@@ -127,6 +127,13 @@ def _load_asn_csv() -> None:
     _asn_ends = ends
     _asn_data = data
     _asn_loaded_at = now
+    # v1.6.4.9: drop memoized negatives. `lookup` is lru_cached and returns None
+    # while the CSVs are still parsing; anything queried during that window (the
+    # dashboard warmup pre-runs the /threat-map aggregates ~80s before the city
+    # CSV finishes) would otherwise stay None for the life of the process —
+    # which is exactly how the threat map ended up reporting every attacker as
+    # "Unknown / ??" after a restart.
+    lookup.cache_clear()
     logger.info("offline_geoip: loaded %d ASN ranges from %s", len(starts), _ASN_CSV.name)
 
 
@@ -176,6 +183,9 @@ def _load_city_csv() -> None:
     _city_country_idx = country_idx
     _city_country_table = table
     _city_loaded_at = now
+    # v1.6.4.9: see _load_asn_csv — country resolution only becomes possible
+    # here, so every entry memoized before this point is a false negative.
+    lookup.cache_clear()
     logger.info(
         "offline_geoip: loaded %d city ranges (%d distinct countries) from %s",
         len(starts), len(table), _CITY_CSV.name,

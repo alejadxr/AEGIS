@@ -41,12 +41,40 @@ FIREWALL_URL    = os.getenv("AEGIS_FIREWALL_URL", "")
 _BLOCKED_BODY = b'{"detail":"blocked"}'
 _BLOCKED_MEDIA = "application/json"
 
-# IPs that must NEVER be blocked — configured via AEGIS_SAFE_IPS env var
+# IPs that must NEVER be blocked or turned into an incident — configured via
+# the AEGIS_SAFE_IPS and/or AEGIS_INTERNAL_IPS env vars (both are merged into
+# the same SAFE_IPS/_SAFE_NETWORKS sets below; use whichever name reads
+# better for the entry -- e.g. AEGIS_INTERNAL_IPS for "this is one of MY
+# IPs", AEGIS_SAFE_IPS for "this third party is known-benign").
 # Entries may be single IPs ("127.0.0.1") OR CIDR ranges ("66.249.0.0/16").
 # Auto-detect the host's own IPs + Tailscale/private ranges
 import ipaddress as _ipaddress
 
-_safe_ips_str = os.getenv("AEGIS_SAFE_IPS", "127.0.0.1,::1,localhost")
+
+def _parse_ip_safelist_env(var_name: str, default: str = "") -> tuple[set[str], list]:
+    """Parse a comma-separated env var of literal IPs and/or CIDR ranges.
+
+    Entries containing "/" are parsed as CIDR ranges via `ipaddress.ip_network`
+    (non-strict, so host bits may be set); everything else is treated as a
+    literal IP/hostname string. Invalid CIDR entries are logged and skipped —
+    this never raises, so a typo in an env var can never crash boot.
+
+    Returns (literal_ips, networks).
+    """
+    raw = os.getenv(var_name, default)
+    literals: set[str] = set()
+    networks: list = []
+    for entry in (e.strip() for e in raw.split(",") if e.strip()):
+        if "/" in entry:
+            try:
+                networks.append(_ipaddress.ip_network(entry, strict=False))
+            except (ValueError, TypeError):
+                logger.warning(f"{var_name}: ignoring invalid CIDR {entry!r}")
+        else:
+            literals.add(entry)
+    return literals, networks
+
+
 _auto_ips: set[str] = set()
 try:
     hostname = socket.gethostname()
@@ -139,25 +167,40 @@ def _is_crawler_ip(ip: str) -> bool:
         return False
     return any(addr in net for net in _CRAWLER_NETWORKS)
 
-# Parse AEGIS_SAFE_IPS: literal IPs go to SAFE_IPS set; CIDR entries go to _SAFE_NETWORKS.
+# Parse AEGIS_SAFE_IPS (default: loopback/localhost) AND AEGIS_INTERNAL_IPS
+# (no default -- purely additive). Both feed the SAME SAFE_IPS / _SAFE_NETWORKS
+# sets so every downstream consumer of _is_safe_ip() -- blocking, incident
+# creation across log_watcher/ai_engine/correlation_engine, guardrails,
+# phantom, firewall_sync -- honors either variable identically. Fail-safe:
+# if both are unset, AEGIS_SAFE_IPS keeps its historical default and nothing
+# about today's behavior changes.
 _safe_literals: set[str] = set()
-for _entry in (e.strip() for e in _safe_ips_str.split(",") if e.strip()):
-    if "/" in _entry:
-        try:
-            _SAFE_NETWORKS.append(_ipaddress.ip_network(_entry, strict=False))
-        except (ValueError, TypeError):
-            logger.warning(f"AEGIS_SAFE_IPS: ignoring invalid CIDR {_entry!r}")
-    else:
-        _safe_literals.add(_entry)
+
+_safe_ips_literals, _safe_ips_nets = _parse_ip_safelist_env(
+    "AEGIS_SAFE_IPS", "127.0.0.1,::1,localhost"
+)
+_safe_literals |= _safe_ips_literals
+_SAFE_NETWORKS.extend(_safe_ips_nets)
+
+_internal_ips_literals, _internal_ips_nets = _parse_ip_safelist_env("AEGIS_INTERNAL_IPS")
+if _internal_ips_literals or _internal_ips_nets:
+    logger.info(
+        f"AEGIS_INTERNAL_IPS loaded: {sorted(_internal_ips_literals)} + "
+        f"{len(_internal_ips_nets)} CIDR range(s) -- merged into the safe-IP gate"
+    )
+_safe_literals |= _internal_ips_literals
+_SAFE_NETWORKS.extend(_internal_ips_nets)
+
 SAFE_IPS = frozenset(_safe_literals) | _auto_ips
 
 
 def _is_safe_ip(ip: str) -> bool:
     """Check if an IP is safe (never block / never create incident).
 
-    Safe = literal SAFE_IPS, a private/Tailscale/AEGIS_SAFE_IPS range, OR a
-    published crawler/CDN network (`_is_crawler_ip`). Folding crawlers in here
-    means every downstream safelist gate covers them for free.
+    Safe = literal SAFE_IPS (includes AEGIS_SAFE_IPS + AEGIS_INTERNAL_IPS
+    literals), loopback, a private/Tailscale/AEGIS_SAFE_IPS/AEGIS_INTERNAL_IPS
+    CIDR range, OR a published crawler/CDN network (`_is_crawler_ip`). Folding
+    crawlers in here means every downstream safelist gate covers them for free.
     """
     if ip in SAFE_IPS:
         return True
@@ -165,6 +208,11 @@ def _is_safe_ip(ip: str) -> bool:
         addr = _ipaddress.ip_address(ip)
     except (ValueError, TypeError):
         return False
+    # Loopback is always safe regardless of how AEGIS_SAFE_IPS was
+    # configured -- an operator overriding the env var entirely (rather than
+    # extending it) must never accidentally lose this.
+    if addr.is_loopback:
+        return True
     if any(addr in net for net in _SAFE_NETWORKS):
         return True
     return any(addr in net for net in _CRAWLER_NETWORKS)
