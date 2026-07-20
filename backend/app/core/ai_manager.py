@@ -63,6 +63,7 @@ def _is_transient_error(exc: BaseException) -> bool:
 from app.core.ai_providers import (
     AIProvider,
     OpenRouterProvider,
+    OmniRouteProvider,
     AnthropicProvider,
     OpenAIProvider,
     OllamaProvider,
@@ -360,6 +361,7 @@ def init_default_providers(
     inception_base_url: str = "https://api.inceptionlabs.ai/v1",
     gemini_api_key: str = "",
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta",
+    omniroute_url: str = "",
 ) -> AIManager:
     """Register the default set of providers using env-level keys.
 
@@ -390,8 +392,29 @@ def init_default_providers(
             GeminiProvider(api_key=gemini_api_key, base_url=gemini_base_url),
         )
 
-    # Set active provider precedence: Inception → OpenRouter → Gemini
-    if inception_api_key:
+    # OmniRoute self-hosted gateway (optional PRIMARY). When AEGIS_OMNIROUTE_URL
+    # is set, it becomes the first provider tried for every task; the direct
+    # providers registered above stay in the fallback chain, so a slow/exhausted
+    # or down gateway transparently degrades to Inception/OpenRouter/Gemini.
+    if omniroute_url:
+        ai_manager.register_provider(
+            "omniroute",
+            OmniRouteProvider(api_key="omniroute-local", base_url=omniroute_url.rstrip("/")),
+        )
+        # Prepend to the fallback chain and make it the active primary.
+        ai_manager.fallback_chain = ["omniroute"] + [
+            p for p in ai_manager.fallback_chain if p != "omniroute"
+        ]
+        # Route the hot enrichment task through the gateway's fast combo, and
+        # override any task that was hard-pinned to another provider.
+        ai_manager.task_routing = {k: "omniroute" for k in ai_manager.task_routing}
+        ai_manager.task_routing["ip_threat_brief"] = "omniroute"
+        ai_manager.task_model_defaults.setdefault("ip_threat_brief", {})["omniroute"] = ["auto/cheap"]
+
+    # Set active provider precedence: OmniRoute → Inception → OpenRouter → Gemini
+    if omniroute_url:
+        ai_manager.set_active_provider("omniroute")
+    elif inception_api_key:
         ai_manager.set_active_provider("inception")
     elif openrouter_api_key:
         ai_manager.set_active_provider("openrouter")
