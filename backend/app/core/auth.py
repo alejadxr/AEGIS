@@ -274,7 +274,7 @@ async def seed_default_admin(db: AsyncSession, client: Client) -> None:
 
     admin_user = User(
         email="admin@aegis.local",
-        password_hash=hash_password(os.environ.get("AEGIS_ADMIN_PASSWORD", "changeme-on-first-login")),
+        password_hash=hash_password(settings.AEGIS_ADMIN_PASSWORD),
         name="Admin",
         role=UserRole.admin,
         client_id=client.id,

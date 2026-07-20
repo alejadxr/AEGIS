@@ -308,7 +308,7 @@ async def lifespan(app: FastAPI):
     assert_production_secrets(
         env=settings.AEGIS_ENV,
         secret_key=settings.AEGIS_SECRET_KEY,
-        admin_password=os.environ.get("AEGIS_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD),
+        admin_password=settings.AEGIS_ADMIN_PASSWORD,
     )
 
     # P0-7: DeceptionCampaign isn't imported by app/models/__init__.py (out of
@@ -555,7 +555,9 @@ async def lifespan(app: FastAPI):
     # --- Threat Sharing Hub Sync ---
     from app.services.hub_sync_client import hub_sync_client
     from app.services.auto_sharer import auto_sharer
-    import os, uuid
+    import uuid  # os is imported at module level; a local `import os` here would
+                 # shadow it for the whole lifespan scope (UnboundLocalError at the
+                 # boot-guard os.environ call above)
 
     hub_url = os.environ.get("AEGIS_HUB_URL", settings.AEGIS_HUB_URL)
     if hub_url:
