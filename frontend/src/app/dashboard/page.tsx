@@ -1,332 +1,468 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import dynamic from 'next/dynamic';
-import Link from 'next/link';
-import { Download, Radar } from 'lucide-react';
-import { LoadingState } from '@/components/shared/LoadingState';
-import { KPITile } from '@/components/dashboard/KPITile';
-import { IncidentTimeline } from '@/components/dashboard/IncidentTimeline';
-import { ThreatDetectionChart } from '@/components/dashboard/ThreatDetectionChart';
-import { AssetRiskTable, type AssetRiskRow } from '@/components/dashboard/AssetRiskTable';
-import { Panel, SectionHeader } from '@/components/aegis';
-import FeaturedIncidentHero, { type FeaturedIncidentData } from '@/components/dashboard/FeaturedIncidentHero';
-import { LoginAttemptsMatrix } from '@/components/dashboard/LoginAttemptsMatrix';
-import AISuggestedActionsList from '@/components/dashboard/AISuggestedActionsList';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import { getLiveWS, subscribeTopic, type WSStatus } from '@/lib/ws';
-import { cn } from '@/lib/utils';
-import { mitreInfo } from '@/lib/mitre';
+import { subscribeTopic } from '@/lib/ws';
 
-// Lazy-load the (heavy) world map for CLS budget
-const GlobalThreatMap = dynamic(
-  () => import('@/components/shared/GlobalThreatMap').then((m) => m.GlobalThreatMap),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-[360px] grid place-items-center text-[11px] text-muted-foreground/60">
-        Loading global map…
-      </div>
-    ),
-  },
-);
+import { CommandBar, type TimeWindow } from '@/components/dashboard/CommandBar';
+import { VerdictLine } from '@/components/dashboard/VerdictLine';
+import { TriageQueue, type TriageIncident, type TriagePendingAction } from '@/components/dashboard/TriageQueue';
+import { WatchPanel, type WatchPanelApp } from '@/components/dashboard/WatchPanel';
+import { OriginMap, type OriginMapEntry } from '@/components/dashboard/OriginMap';
+import { AssetRiskPanel, type AssetRiskItem } from '@/components/dashboard/AssetRiskPanel';
+import { Ledger, type LedgerEntry } from '@/components/dashboard/Ledger';
 
-type Incident = {
+/**
+ * Dashboard — Command Center.
+ *
+ * Six bands (CommandBar is full-bleed outside the grid; VerdictLine,
+ * TriageQueue/WatchPanel, OriginMap, AssetRiskPanel and Ledger share one
+ * 12-col grid):
+ *   0. CommandBar    — sticky instrument strip + first-run strip
+ *   1. VerdictLine   — the one display-size sentence, the 3am answer
+ *   2. TriageQueue (8) / WatchPanel (4) — the hero + the evidence rail
+ *   3. OriginMap     — full-width world map + SourceRank + ASN attribution
+ *   4. AssetRiskPanel — full attack-surface inventory (distribution + top risk)
+ *   5. Ledger        — chronological incident/audit log
+ *
+ * No component in this tree fetches its own list data (IncidentDossier is
+ * the sole exception — it fetches its own detail on expand). Every band is
+ * pure props-in, mirroring the ten-call Promise.allSettled below so a
+ * single endpoint failure degrades only its own panel.
+ */
+
+// ---------------------------------------------------------------------------
+// Raw wire types — mirrored from lib/api.ts (Overview/Incident/Action) or,
+// for /dashboard/timeline, from the ACTUAL backend response model
+// (backend/app/api/dashboard.py TimelineEvent: id/type/title/severity/
+// timestamp only — no description/module field exists server-side, even
+// though lib/api.ts's typed wrapper over-promises them). Fetched directly
+// via api.get() with an explicit ?limit= because api.dashboard.timeline()
+// takes no parameters and the backend default of 50 (25 incidents + 25
+// audit rows) is too easily starved once FP-titled incidents are stripped
+// client-side below.
+// ---------------------------------------------------------------------------
+
+type Overview = Awaited<ReturnType<typeof api.dashboard.overview>>;
+type RawIncident = Awaited<ReturnType<typeof api.response.incidents>>[number];
+type RawAction = Awaited<ReturnType<typeof api.response.actions>>[number];
+type MonitoredAppsResponse = Awaited<ReturnType<typeof api.dashboard.monitoredApps>>;
+type ThreatMapResponse = Awaited<ReturnType<typeof api.dashboard.threatMap>>;
+type FirewallBlocked = Awaited<ReturnType<typeof api.firewall.blocked>>;
+type FirewallStats = Awaited<ReturnType<typeof api.firewall.stats>>;
+type AssetsResponse = Awaited<ReturnType<typeof api.surface.assets>>;
+type HoneypotsResponse = Awaited<ReturnType<typeof api.phantom.honeypots>>;
+
+interface RawTimelineEvent {
   id: string;
+  type: string;
   title: string;
-  severity: string;
-  status: string;
-  source_ip: string | null;
-  mitre_technique: string | null;
-  ai_analysis: Record<string, unknown> | null;
-  detected_at: string;
-  source: string;
-};
-type Action = {
-  id: string;
-  incident_id: string;
-  action_type: string;
-  target: string;
-  status: string;
-  requires_approval: boolean;
-  ai_reasoning: string | null;
-  created_at: string;
-};
-type Interaction = { id: string; timestamp: string; source_ip: string };
-type ThreatMapEntry = { country: string; country_code: string; count: number };
-type MonthlyAuthAttempts = {
-  months: Array<{ month: string; count: number }>;
-  total: number;
-  peak_month: string | null;
-};
-
-// Fallback if backend monitored-apps fetch fails
-const FALLBACK_MONITORED_APPS = ['sable', 'wilabia-frontend', 'wilabia-backend', 'sid-wilab', 'landing-wilab', 'sid', 'sid-backend', 'landing-wilab', 'contable-rd', 'cayde6-api', 'cayde6-frontend'];
-
-function toTitleCase(s: string): string {
-  // Turn "wilabia-backend" → "Wilabia Backend", "sable" → "Sable"
-  return s.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  severity: string | null;
+  timestamp: string;
 }
 
-function StatusPill({ status }: { status: WSStatus }) {
-  const cfg: Record<WSStatus, { label: string; pill: string }> = {
-    idle:       { label: 'IDLE',    pill: 'pill pill-muted' },
-    connecting: { label: 'SYNC',    pill: 'pill pill-warning' },
-    open:       { label: 'LIVE',    pill: 'pill pill-success' },
-    closed:     { label: 'OFFLINE', pill: 'pill pill-danger' },
-    error:      { label: 'ERROR',   pill: 'pill pill-danger' },
-  };
-  const c = cfg[status];
-  const pulsing = status === 'connecting' || status === 'open' || status === 'error';
-  return (
-    <div className={c.pill}>
-      <span className={cn('pill-dot', pulsing && 'animate-pulse')} style={{ background: 'currentColor' }} />
-      {c.label}
-    </div>
-  );
+// ---------------------------------------------------------------------------
+// Severity normalization — explicit allow-list, never template-literal
+// interpolation, matching the SEV_VAR convention already established in
+// Ledger.tsx / TriageQueue.tsx / OriginMap.tsx. An unrecognised or missing
+// severity string must never reach a component typed to the 5-key union.
+// ---------------------------------------------------------------------------
+
+type SevKey = 'critical' | 'high' | 'medium' | 'low' | 'info';
+const SEV_KEYS: readonly SevKey[] = ['critical', 'high', 'medium', 'low', 'info'];
+
+function severityKey(sev: string | null | undefined): SevKey {
+  const lower = (sev ?? '').toLowerCase();
+  return (SEV_KEYS as readonly string[]).includes(lower) ? (lower as SevKey) : 'info';
 }
 
-function shortId(id: string): string {
-  // Render an incident id as a short uppercase token (#INC-2050 style)
-  const m = id.match(/(\d+)/);
-  if (m) return m[1].slice(-4).padStart(4, '0');
-  return id.slice(0, 6).toUpperCase();
+function severityKeyOrNull(sev: string | null | undefined): SevKey | null {
+  return sev ? severityKey(sev) : null;
 }
 
-function severityBadgeColor(sev?: string): string {
-  switch ((sev || '').toLowerCase()) {
-    case 'critical': return 'var(--danger)';
-    case 'high':     return 'var(--brand-accent)';
-    case 'medium':   return 'var(--warning)';
-    case 'low':      return 'var(--chart-5, #22D3EE)';
-    default:         return 'var(--muted-foreground)';
-  }
+// ---------------------------------------------------------------------------
+// Window filter — /dashboard/timeline has no server-side `since` param (only
+// `limit`), so the CommandBar/Ledger time-window control is applied
+// client-side against the already-fetched 200-row page. Backend datetimes
+// are naive UTC without a trailing Z (documented gotcha in lib/utils.ts);
+// normalize the same way formatRelativeTime does before parsing.
+// ---------------------------------------------------------------------------
+
+const WINDOW_DAYS: Record<TimeWindow, number> = { '24h': 1, '7d': 7, '30d': 30 };
+
+function withinWindow(iso: string, win: TimeWindow): boolean {
+  const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`;
+  const ms = Date.parse(normalized);
+  if (Number.isNaN(ms)) return true; // never hide on a parse failure
+  return Date.now() - ms <= WINDOW_DAYS[win] * 86400_000;
 }
 
-function relativeTime(iso?: string): string {
-  if (!iso) return '—';
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return '—';
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+/** Backend emits naive UTC datetimes without a trailing Z — normalize before
+ * parsing, matching the convention already used throughout this tree
+ * (formatRelativeTime, Ledger.toDate, AssetRiskPanel.toUtcMillis). */
+function toUtcMillis(iso: string): number {
+  const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`;
+  return Date.parse(normalized);
 }
 
 export default function DashboardPage() {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [actions, setActions] = useState<Action[]>([]);
-  const [interactions, setInteractions] = useState<Interaction[]>([]);
-  const [threatMap, setThreatMap] = useState<ThreatMapEntry[]>([]);
-  const [monitoredApps, setMonitoredApps] = useState<string[]>(FALLBACK_MONITORED_APPS);
-  const [dailyCounts, setDailyCounts] = useState<Array<{ day: string; count: number }>>([]);
-  const [loading, setLoading] = useState(true);
-  const [wsStatus, setWsStatus] = useState<WSStatus>('idle');
+  const [timeWindow, setTimeWindow] = useState<TimeWindow>('7d');
   const [refreshKey, setRefreshKey] = useState(0);
-  const [featuredIncident, setFeaturedIncident] = useState<FeaturedIncidentData | null>(null);
-  const [monthlyAuthAttempts, setMonthlyAuthAttempts] = useState<MonthlyAuthAttempts>({ months: [], total: 0, peak_month: null });
-  const [loadingFeatured, setLoadingFeatured] = useState(true);
 
-  // Initial load
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [overviewError, setOverviewError] = useState(false);
+
+  const [incidentsRaw, setIncidentsRaw] = useState<RawIncident[] | null>(null);
+  const [incidentsError, setIncidentsError] = useState(false);
+
+  // No dedicated UI surface exists for "actions failed to load" (TriageQueue's
+  // `error` prop is documented as scoped to response.incidents() only), so a
+  // failed fetch here degrades to an empty pending-actions list rather than
+  // tracking a boolean nothing would ever read.
+  const [actionsRaw, setActionsRaw] = useState<RawAction[] | null>(null);
+
+  const [threatMapData, setThreatMapData] = useState<ThreatMapResponse | null>(null);
+  const [threatMapError, setThreatMapError] = useState(false);
+
+  const [monitoredAppsData, setMonitoredAppsData] = useState<MonitoredAppsResponse | null>(null);
+  const [monitoredAppsError, setMonitoredAppsError] = useState(false);
+
+  const [timelineRaw, setTimelineRaw] = useState<RawTimelineEvent[] | null>(null);
+  const [timelineError, setTimelineError] = useState(false);
+
+  const [firewallBlocked, setFirewallBlocked] = useState<FirewallBlocked | null>(null);
+  const [firewallBlockedError, setFirewallBlockedError] = useState(false);
+
+  const [firewallStats, setFirewallStats] = useState<FirewallStats | null>(null);
+  const [firewallStatsError, setFirewallStatsError] = useState(false);
+
+  const [assetsData, setAssetsData] = useState<AssetsResponse | null>(null);
+  const [assetsError, setAssetsError] = useState(false);
+
+  const [honeypotsData, setHoneypotsData] = useState<HoneypotsResponse | null>(null);
+  const [honeypotsError, setHoneypotsError] = useState(false);
+
+  // ── Initial load + refresh (WS events / mutations bump refreshKey) ──────
   useEffect(() => {
     let mounted = true;
+
     async function load() {
-      const [inc, daily, act, ints, tm, apps, fi, mauth] = await Promise.allSettled([
-        api.response.incidents({ since: '24h', limit: 200 }),
-        api.response.dailyCounts(7),
+      const [ov, inc, act, tm, apps, tl, fwBlocked, fwStats, assets, honeypots] = await Promise.allSettled([
+        api.dashboard.overview(),
+        // Fixed 7d/50 window regardless of the CommandBar/Ledger time-window
+        // control — TriageQueue must always show the true current backlog,
+        // not a slice the operator could accidentally window out. /response/
+        // incidents already excludes [FP-titled rows server-side by default
+        // (include_fp=false) — the client-side filter below is defense in
+        // depth, not the primary filter.
+        api.response.incidents({ since: '7d', limit: 50 }),
         api.response.actions(),
-        api.phantom.interactions({ limit: '500' }),
+        // /dashboard/threat-map already excludes [FP- rows server-side —
+        // must NOT be re-filtered here.
         api.dashboard.threatMap(),
         api.dashboard.monitoredApps(),
-        api.dashboard.featuredIncident(),
-        api.dashboard.authAttemptsMonthly(6),
+        api.get<RawTimelineEvent[]>('/dashboard/timeline?limit=200'),
+        api.firewall.blocked(),
+        api.firewall.stats(),
+        api.surface.assets(),
+        api.phantom.honeypots(),
       ]);
       if (!mounted) return;
-      if (inc.status === 'fulfilled') setIncidents(inc.value as Incident[]);
-      if (daily.status === 'fulfilled') {
-        const dd = (daily.value as { days: Array<{ day: string; count: number }> }).days || [];
-        setDailyCounts(dd);
-      }
-      if (act.status === 'fulfilled') setActions(act.value as Action[]);
-      if (ints.status === 'fulfilled') setInteractions(ints.value as Interaction[]);
-      if (tm.status === 'fulfilled') setThreatMap(tm.value as ThreatMapEntry[]);
-      if (apps.status === 'fulfilled') {
-        const appData = apps.value as { apps: Array<{ name: string }>; count: number };
-        const names = appData.apps.map((a) => a.name).filter(Boolean);
-        if (names.length > 0) setMonitoredApps(names);
-      }
-      if (fi.status === 'fulfilled') setFeaturedIncident(fi.value as FeaturedIncidentData | null);
-      if (mauth.status === 'fulfilled') setMonthlyAuthAttempts(mauth.value as MonthlyAuthAttempts);
-      setLoading(false);
-      setLoadingFeatured(false);
+
+      if (ov.status === 'fulfilled') { setOverview(ov.value); setOverviewError(false); }
+      else setOverviewError(true);
+
+      if (inc.status === 'fulfilled') { setIncidentsRaw(inc.value); setIncidentsError(false); }
+      else setIncidentsError(true);
+
+      if (act.status === 'fulfilled') setActionsRaw(act.value);
+      else setActionsRaw((prev) => prev ?? []);
+
+      if (tm.status === 'fulfilled') { setThreatMapData(tm.value); setThreatMapError(false); }
+      else setThreatMapError(true);
+
+      if (apps.status === 'fulfilled') { setMonitoredAppsData(apps.value); setMonitoredAppsError(false); }
+      else setMonitoredAppsError(true);
+
+      if (tl.status === 'fulfilled') { setTimelineRaw(tl.value); setTimelineError(false); }
+      else setTimelineError(true);
+
+      if (fwBlocked.status === 'fulfilled') { setFirewallBlocked(fwBlocked.value); setFirewallBlockedError(false); }
+      else setFirewallBlockedError(true);
+
+      if (fwStats.status === 'fulfilled') { setFirewallStats(fwStats.value); setFirewallStatsError(false); }
+      else setFirewallStatsError(true);
+
+      if (assets.status === 'fulfilled') { setAssetsData(assets.value); setAssetsError(false); }
+      else setAssetsError(true);
+
+      if (honeypots.status === 'fulfilled') { setHoneypotsData(honeypots.value); setHoneypotsError(false); }
+      else setHoneypotsError(true);
     }
+
     load();
     return () => { mounted = false; };
   }, [refreshKey]);
 
-  // Live WS status + soft re-pull on incident/action events
+  // ── Live WS: soft re-pull on incident/action/honeypot events ────────────
   useEffect(() => {
-    const ws = getLiveWS();
-    const offStatus = ws.onStatus(setWsStatus);
     const offIncidents = subscribeTopic('incidents.new', () => setRefreshKey((k) => k + 1));
     const offActions = subscribeTopic('actions.new', () => setRefreshKey((k) => k + 1));
     const offHoneypot = subscribeTopic('honeypot.interactions', () => setRefreshKey((k) => k + 1));
     return () => {
-      offStatus();
       offIncidents();
       offActions();
       offHoneypot();
     };
   }, []);
 
-  // Derived — v1.6.3.9: hide [FP-*]-prefixed and auto_responded from active view
+  const handleRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const handleApprove = useCallback(async (actionId: string) => {
+    await api.response.approveAction(actionId);
+    handleRefresh();
+  }, [handleRefresh]);
+
+  const handleReject = useCallback(async (actionId: string, reason?: string) => {
+    await api.response.rejectAction(actionId, reason);
+    handleRefresh();
+  }, [handleRefresh]);
+
+  // ── Derived data ──────────────────────────────────────────────────────
+  // MANDATORY DEFENSIVE FILTER — /response/incidents already excludes
+  // [FP-titled rows by default, but this line must never be removed: it is
+  // the only thing standing between the operator and 1741 incidents from
+  // their own device (179.52.12.148, tagged "[FP-USER-DEVICE-179]") if the
+  // backend default is ever flipped.
+  const clean = useMemo(
+    () => (incidentsRaw ?? []).filter((i) => !i.title.startsWith('[FP-')),
+    [incidentsRaw],
+  );
+
+  // VerdictLine's count and TriageQueue's list are derived from this SAME
+  // array so the headline and the queue can never contradict each other.
   const openIncidents = useMemo(
-    () => incidents.filter((i) => {
-      const status = (i.status || '').toLowerCase();
-      if (status === 'resolved' || status === 'closed' || status === 'auto_responded') return false;
-      if ((i.title || '').startsWith('[FP-')) return false;
-      return true;
-    }),
-    [incidents],
+    () => clean.filter((i) => ['open', 'investigating'].includes((i.status || '').toLowerCase())),
+    [clean],
   );
 
-  const latest = openIncidents[0]; // backend already returns newest-first
   const pendingActions = useMemo(
-    () => actions.filter((a) => (a.status || '').toLowerCase() === 'pending').slice(0, 5),
-    [actions],
+    () => (actionsRaw ?? []).filter((a) => (a.status || '').toLowerCase() === 'pending'),
+    [actionsRaw],
   );
 
-  const assetRows: AssetRiskRow[] = useMemo(() => {
-    const rows: AssetRiskRow[] = monitoredApps.map((app) => {
-      const appIncs = incidents.filter((i) => {
-        const hay = `${i.source} ${i.title}`.toLowerCase();
-        return hay.includes(app);
-      });
-      const resolved = appIncs.filter((i) => (i.status || '').toLowerCase() === 'resolved').length;
-      const open = appIncs.length - resolved;
-      // Risk: weight open critical/high heavily
-      const crit = appIncs.filter((i) => i.severity?.toLowerCase() === 'critical').length;
-      const high = appIncs.filter((i) => i.severity?.toLowerCase() === 'high').length;
-      const score = Math.min(10, crit * 3 + high * 1.5 + open * 0.4);
-      return {
-        asset: app,
-        account: 'aegis-monitored',
-        totalThreats: appIncs.length,
-        resolved,
-        riskScore: score,
-      };
-    });
-    return rows.sort((a, b) => b.riskScore - a.riskScore);
-  }, [incidents, monitoredApps]);
+  const lastIncidentAt = clean[0]?.detected_at ?? null;
 
-  // Hero KPIs
-  const latestIp = latest?.source_ip ?? incidents.find((i) => !!i.source_ip)?.source_ip ?? '—';
+  const triageIncidents: TriageIncident[] = useMemo(
+    () => openIncidents.map((i) => ({
+      id: i.id,
+      title: i.title,
+      severity: severityKey(i.severity),
+      status: i.status,
+      source: i.source ?? null,
+      source_ip: i.source_ip,
+      mitre_technique: i.mitre_technique,
+      mitre_tactic: i.mitre_tactic,
+      detected_at: i.detected_at,
+    })),
+    [openIncidents],
+  );
 
-  // MITRE: prefer incident-level field, then triage sub-object
-  const mitre = useMemo(() => {
-    if (!latest) return '—';
-    if (latest.mitre_technique) return latest.mitre_technique;
-    const a = latest.ai_analysis as Record<string, unknown> | null;
-    const triage = a?.triage as Record<string, unknown> | undefined;
-    const fromTriage = triage?.mitre_technique as string | undefined;
-    if (fromTriage) return fromTriage;
-    return '—';
-  }, [latest]);
+  const triagePendingActions: TriagePendingAction[] = useMemo(
+    () => pendingActions.map((a) => ({
+      id: a.id,
+      incident_id: a.incident_id,
+      action_type: a.action_type,
+      target: a.target ?? null,
+      status: a.status,
+      created_at: a.created_at,
+    })),
+    [pendingActions],
+  );
 
-  // Affected Asset: use backend-sourced app list, search incident title + description + ai_analysis fields
-  const affectedAsset = useMemo(() => {
-    if (!latest) return '—';
-    const a = latest.ai_analysis as Record<string, unknown> | null;
-    const triage = a?.triage as Record<string, unknown> | undefined;
-    // Try explicit app field from AI analysis first
-    const fromAI = (a?.app ?? triage?.app ?? (a as Record<string, unknown> | null)?.affected_asset) as string | undefined;
-    if (fromAI && typeof fromAI === 'string') return toTitleCase(fromAI);
-    // Search in title + description against known app names
-    const hay = `${latest.title} ${latest.source}`.toLowerCase();
-    const matched = monitoredApps.find((app) => hay.includes(app.toLowerCase()));
-    if (matched) return toTitleCase(matched);
-    // Do NOT fall back to source (log_watcher, correlation_engine, etc.)
-    return '—';
-  }, [latest, monitoredApps]);
+  // Same defensive filter applied to the ledger — /dashboard/timeline does
+  // NOT exclude [FP- rows server-side (unlike /response/incidents and
+  // /dashboard/threat-map), so this one is load-bearing, not redundant.
+  const cleanTimeline = useMemo(
+    () => (timelineRaw ?? []).filter((e) => !(e.type === 'incident' && e.title.startsWith('[FP-'))),
+    [timelineRaw],
+  );
 
-  // Confidence: try triage.confidence first, then top-level
-  const confidence = useMemo(() => {
-    if (!latest?.ai_analysis) return '—';
-    const a = latest.ai_analysis as Record<string, unknown>;
-    const triage = a?.triage as Record<string, unknown> | undefined;
-    let c: number | string | undefined = triage?.confidence as number | string | undefined;
-    if (c === undefined) c = a?.confidence as number | string | undefined;
-    if (typeof c === 'string') c = parseFloat(c);
-    if (typeof c !== 'number' || isNaN(c)) return '—';
-    return c <= 1 ? `${Math.round(c * 100)}%` : `${Math.round(c)}%`;
-  }, [latest]);
+  const ledgerEntries: LedgerEntry[] = useMemo(
+    () => cleanTimeline
+      .filter((e) => withinWindow(e.timestamp, timeWindow))
+      .map((e) => ({
+        id: e.id,
+        type: e.type,
+        title: e.title,
+        description: null,
+        severity: severityKeyOrNull(e.severity),
+        timestamp: e.timestamp,
+      })),
+    [cleanTimeline, timeWindow],
+  );
 
-  if (loading) return <LoadingState message="Loading dashboard..." />;
+  const lastEventAt = cleanTimeline[0]?.timestamp ?? null;
+
+  const monitoredApps: WatchPanelApp[] = monitoredAppsData?.apps ?? [];
+
+  // Firewall/enforcement derivations — null means "we could not ask", never
+  // collapsed into a fake 0. See WatchPanelProps docblock.
+  const blockedIps = firewallBlocked ? firewallBlocked.items.map((i) => i.ip) : null;
+  const blockedIpsNow = firewallBlocked ? firewallBlocked.count : null;
+  const piReachable = firewallBlocked ? firewallBlocked.pi_reachable : null;
+  const realFirewallActive = firewallStats ? firewallStats.real_firewall_active : null;
+  const actionsExecuted30d = overview ? overview.actions_taken : null;
+  const firewallError = firewallBlockedError || firewallStatsError;
+
+  const activeAssets = assetsData ? assetsData.filter((a) => a.status === 'active').length : null;
+  const honeypotsRunning = honeypotsData ? honeypotsData.filter((h) => h.status === 'running').length : null;
+
+  // max(assets[].last_scan_at) — the one honestly-derivable "last scan" the
+  // approved call set can produce; null when no asset has ever been scanned.
+  const lastScanAt = useMemo(() => {
+    if (!assetsData) return null;
+    let newest: string | null = null;
+    let newestMs = -Infinity;
+    for (const a of assetsData) {
+      if (!a.last_scan_at) continue;
+      const ms = toUtcMillis(a.last_scan_at);
+      if (!Number.isNaN(ms) && ms > newestMs) {
+        newestMs = ms;
+        newest = a.last_scan_at;
+      }
+    }
+    return newest;
+  }, [assetsData]);
+
+  const originMapData: OriginMapEntry[] = threatMapData ?? [];
+  const assetRiskItems: AssetRiskItem[] = assetsData ?? [];
+  const homeAsn = process.env.NEXT_PUBLIC_AEGIS_HOME_ASN ?? null;
+
+  // ── Per-panel loading flags — no single blanket spinner. Each band shows
+  // its own skeleton on first paint and its own error state on failure. ──
+  const overviewLoading = overview === null && !overviewError;
+  const incidentsLoading = incidentsRaw === null && !incidentsError;
+  const monitoredAppsLoading = monitoredAppsData === null && !monitoredAppsError;
+  const threatMapLoading = threatMapData === null && !threatMapError;
+  const timelineLoading = timelineRaw === null && !timelineError;
+  const firewallBlockedLoading = firewallBlocked === null && !firewallBlockedError;
+  const firewallStatsLoading = firewallStats === null && !firewallStatsError;
+  const assetsLoading = assetsData === null && !assetsError;
+  const honeypotsLoading = honeypotsData === null && !honeypotsError;
+
+  // VerdictLine and CommandBar both read totalAssets/monitoredApps counts
+  // sourced from overview() and monitoredApps() respectively — wait on both
+  // (plus the firewall count VerdictLine's sub-line also reports) so none
+  // ever flashes a zero/absent segment before the real numbers land.
+  const verdictLoading = overviewLoading || incidentsLoading || monitoredAppsLoading || firewallBlockedLoading;
+  const commandBarLoading = overviewLoading || monitoredAppsLoading;
+  // WatchPanel renders all three of its regions (Enforcement/Coverage/Blind
+  // Spots) behind one shared `loading` flag — wait on every call any region
+  // reads so no region resolves ahead of its siblings.
+  const watchPanelLoading =
+    overviewLoading ||
+    monitoredAppsLoading ||
+    firewallBlockedLoading ||
+    firewallStatsLoading ||
+    assetsLoading ||
+    honeypotsLoading;
+  const apiOnline = !overviewError && overview !== null;
 
   return (
-    <div className="space-y-4 animate-fade-in pb-6">
-      {/* FEATURED INCIDENT HERO — incident-centric hero with #INC-XXXX + 4 stat cards */}
-      <div className="flex items-end justify-between gap-3 pt-1">
-        <FeaturedIncidentHero data={featuredIncident} loading={loadingFeatured} />
-        <div className="flex items-center gap-2 shrink-0">
-          <StatusPill status={wsStatus} />
-          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground/50">
-            {`${openIncidents.length} open · ${pendingActions.length} pending`}
-          </span>
-        </div>
-      </div>
-
-      {/* INCIDENT TIMELINE — signature feature */}
-      <IncidentTimeline incidents={openIncidents.length > 0 ? openIncidents : incidents} days={14} />
-
-      {/* Row: AI Suggested Actions · Login Attempts Matrix · Threat Detection Chart */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <AISuggestedActionsList
-          actions={pendingActions.map((a) => ({
-            id: a.id,
-            title: a.action_type
-              ? a.action_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-              : 'Action',
-            created_at: a.created_at,
-            status: a.status,
-            target: a.target,
-          }))}
-          onApprove={async (id: string) => {
-            await api.response.approveAction(id);
-            setRefreshKey((k) => k + 1);
-          }}
-          onReject={async (id: string) => {
-            await api.response.rejectAction(id);
-            setRefreshKey((k) => k + 1);
-          }}
+    <>
+      {/* BAND 0 — COMMAND BAR + grid, ONE shared containing block.
+          Full-bleed within <main>'s max-w-[1440px] container: negative
+          margins cancel dashboard/layout.tsx's px-4/sm:px-6/lg:px-8 and
+          py-6 so the sticky strip sits flush under TopNav instead of
+          floating inset inside page padding. The grid re-applies that same
+          horizontal padding to itself so its own content stays inset.
+          CommandBar and the grid MUST share one wrapper: `position: sticky`
+          can only "stick" while scrolling through its containing block, and
+          a wrapper sized to CommandBar alone (the previous structure) gives
+          it zero room to travel — it was verified via getBoundingClientRect
+          to scroll away 1:1 with the page instead of pinning under TopNav. */}
+      <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-8">
+        <CommandBar
+          monitoredApps={monitoredAppsData?.count ?? 0}
+          totalAssets={overview?.total_assets ?? 0}
+          lastEventAt={lastEventAt}
+          window={timeWindow}
+          onWindowChange={setTimeWindow}
+          loading={commandBarLoading}
+          apiOnline={apiOnline}
         />
-        <LoginAttemptsMatrix
-          data={monthlyAuthAttempts.months}
-          total={monthlyAuthAttempts.total}
-          peak_month={monthlyAuthAttempts.peak_month ?? undefined}
-        />
-        <ThreatDetectionChart dailyCounts={dailyCounts} days={7} />
-      </div>
 
-      {/* Row: Asset Risk Table + Global Threat Map */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        <div className="lg:col-span-8">
-          <AssetRiskTable rows={assetRows} />
-        </div>
-        <div className="lg:col-span-4">
-          <Panel className="h-full flex flex-col">
-            <SectionHeader
-              title="Global Threat Map"
-              icon={<Radar size={13} />}
-              count={`${threatMap.length} sources`}
-            />
-            <div className="flex-1 min-h-[360px] relative">
-              <GlobalThreatMap data={threatMap} />
-            </div>
-          </Panel>
+        <div className="grid grid-cols-12 gap-x-4 gap-y-6 px-4 pb-10 sm:px-6 lg:px-8">
+        {/* BAND 1 — VERDICT LINE */}
+        <VerdictLine
+          activeIncidents={openIncidents.length}
+          pendingActions={pendingActions.length}
+          totalAssets={overview?.total_assets ?? 0}
+          monitoredApps={monitoredAppsData?.count ?? 0}
+          lastIncidentAt={lastIncidentAt}
+          actionsExecuted30d={actionsExecuted30d}
+          blockedIpsNow={blockedIpsNow}
+          loading={verdictLoading}
+        />
+
+        {/* BAND 2 — TRIAGE QUEUE (8) / WATCH PANEL (4) */}
+        <TriageQueue
+          incidents={triageIncidents}
+          pendingActions={triagePendingActions}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          loading={incidentsLoading}
+          error={incidentsError}
+          totalAssets={overview?.total_assets}
+          monitoredApps={monitoredAppsData?.count}
+          onRetry={handleRefresh}
+        />
+
+        <WatchPanel
+          blockedIps={blockedIps}
+          piReachable={piReachable}
+          realFirewallActive={realFirewallActive}
+          actionsExecuted30d={actionsExecuted30d}
+          totalAssets={overview?.total_assets ?? 0}
+          activeAssets={activeAssets}
+          apps={monitoredApps}
+          honeypotsRunning={honeypotsRunning}
+          honeypotHits30d={overview?.honeypot_interactions ?? 0}
+          openVulnerabilities={overview?.open_vulnerabilities ?? 0}
+          lastScanAt={lastScanAt}
+          loading={watchPanelLoading}
+          firewallError={firewallError}
+        />
+
+        {/* BAND 3 — ORIGIN MAP */}
+        <OriginMap
+          data={originMapData}
+          homeAsn={homeAsn}
+          loading={threatMapLoading}
+          error={threatMapError}
+          onRetry={handleRefresh}
+        />
+
+        {/* BAND 4 — ATTACK SURFACE / ASSET RISK */}
+        <AssetRiskPanel
+          assets={assetRiskItems}
+          loading={assetsLoading}
+          error={assetsError}
+          onRetry={handleRefresh}
+        />
+
+        {/* BAND 5 — LEDGER */}
+        <Ledger
+          entries={ledgerEntries}
+          window={timeWindow}
+          onWindowChange={setTimeWindow}
+          loading={timelineLoading}
+          error={timelineError}
+          onRetry={handleRefresh}
+        />
         </div>
       </div>
-    </div>
+    </>
   );
 }

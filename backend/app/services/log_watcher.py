@@ -11,7 +11,9 @@ v1.6.4 refactor (Opus #3):
 What this module still owns (kept):
   * File tailing for PM2 logs (rotation-aware) and journalctl fallback.
   * Internal-line filtering (`_is_internal_line` and friends).
-  * Safe-IP gating (`AEGIS_SAFE_IPS`, RFC1918, CGNAT, KNOWN_SAFE_IPS).
+  * Safe-IP gating (`AEGIS_SAFE_IPS`/`AEGIS_INTERNAL_IPS`, RFC1918, CGNAT,
+    KNOWN_SAFE_IPS) — the range list itself is owned by
+    `app.core.attack_detector` and imported here, never duplicated.
   * Inline behavioural detectors that operate ACROSS multiple events and
     are therefore not expressible as a single Sigma rule:
         - brute_force_401 tracker (per-source-IP)
@@ -54,16 +56,6 @@ def _resolve_extra_log_paths(raw: str = "") -> list[str]:
 
 logger = logging.getLogger("aegis.log_watcher")
 
-# Private/internal IP ranges that should NEVER trigger alerts
-# Includes RFC1918 + CGNAT/Tailscale (100.64.0.0/10)
-_SAFE_NETWORKS = [
-    _ipaddress.ip_network("10.0.0.0/8"),
-    _ipaddress.ip_network("172.16.0.0/12"),
-    _ipaddress.ip_network("192.168.0.0/16"),
-    _ipaddress.ip_network("100.64.0.0/10"),   # CGNAT / Tailscale
-]
-
-
 # Well-known IPs that appear in logs but are NOT attackers
 _KNOWN_SAFE_IPS = frozenset({
     "8.8.8.8", "8.8.4.4",           # Google DNS
@@ -76,12 +68,20 @@ _KNOWN_SAFE_IPS = frozenset({
 # Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
 from app.config import settings as _settings
 
-# Import the canonical safe-IP checker that respects AEGIS_SAFE_IPS env var.
+# Import the canonical safe-IP gate. `_SAFE_NETWORKS` (RFC1918 + CGNAT/
+# Tailscale, plus any CIDRs an operator added via AEGIS_SAFE_IPS or
+# AEGIS_INTERNAL_IPS) and `_is_safe_ip` both live in attack_detector.py --
+# this module must never keep its own copy of the private-range list, or the
+# two would silently drift apart.
 try:
-    from app.core.attack_detector import _is_safe_ip as _attack_detector_is_safe_ip
+    from app.core.attack_detector import (
+        _is_safe_ip as _attack_detector_is_safe_ip,
+        _SAFE_NETWORKS as _CORE_SAFE_NETWORKS,
+    )
 except Exception:  # pragma: no cover - defensive
     def _attack_detector_is_safe_ip(ip: str) -> bool:
         return False
+    _CORE_SAFE_NETWORKS: list = []
 
 _ATTACKER_IPS: set[str] = {
     ip.strip()
@@ -95,8 +95,12 @@ if _ATTACKER_IPS:
 def _is_private_ip(ip: str) -> bool:
     """Check if an IP is internal, private, Tailscale, or a known safe IP.
 
-    An IP in `AEGIS_ATTACKER_IPS` always returns False — the explicit
-    allow-list wins over the network-range classification.
+    Private/CGNAT ranges are read from the single copy owned by
+    `app.core.attack_detector._SAFE_NETWORKS` (which also picks up any
+    CIDRs added via AEGIS_SAFE_IPS/AEGIS_INTERNAL_IPS) -- this function
+    never maintains its own duplicate range list. An IP in
+    `AEGIS_ATTACKER_IPS` always returns False — the explicit allow-list
+    wins over the network-range classification.
     """
     if ip in _ATTACKER_IPS:
         return False
@@ -104,15 +108,23 @@ def _is_private_ip(ip: str) -> bool:
         return True
     try:
         addr = _ipaddress.ip_address(ip)
-        return addr.is_loopback or addr.is_private or any(addr in net for net in _SAFE_NETWORKS)
+        return addr.is_loopback or addr.is_private or any(addr in net for net in _CORE_SAFE_NETWORKS)
     except (ValueError, TypeError):
         return False
 
 
 IP_PATTERN = re.compile(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b')
 
-# IPs that belong to AEGIS itself - never create incidents for these
-# Extend via AEGIS_INTERNAL_IPS env var (comma-separated)
+# IPs that belong to AEGIS itself - used for the cheap literal-match fast
+# path in `_is_internal_line` below (self-referential log-noise filtering).
+# Extend via AEGIS_INTERNAL_IPS env var (comma-separated literal IPs only --
+# CIDR entries here are silently ignored by this frozenset since it is a
+# plain string-equality check). For CIDR ranges (e.g. an operator's
+# residential /24), set AEGIS_INTERNAL_IPS or AEGIS_SAFE_IPS as usual: both
+# are parsed CIDR-aware by `app.core.attack_detector` and every
+# incident-creation path additionally calls `_attack_detector_is_safe_ip`
+# (see below), which DOES honor CIDRs. This literal set is just a fast-path
+# subset of that broader, canonical gate.
 _internal_default = {"127.0.0.1", "::1", "localhost"}
 _internal_extra = os.environ.get("AEGIS_INTERNAL_IPS", "")
 if _internal_extra:

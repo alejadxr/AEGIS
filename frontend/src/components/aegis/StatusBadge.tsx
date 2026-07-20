@@ -48,6 +48,26 @@ const VARIANT_TOKEN: Record<StatusVariant, string> = {
   accent: 'var(--brand-accent)',
 };
 
+/**
+ * AA-safe TEXT colour per variant — distinct from VARIANT_TOKEN above.
+ * VARIANT_TOKEN stays vivid and drives the dot plus the ~14% tinted pill
+ * background; VARIANT_TEXT_TOKEN is a darker same-hue value guaranteed to
+ * measure >=4.5:1 against that tinted background in both themes (see the
+ * --success-text / --warning-text / --danger-text / --brand-accent-text /
+ * --chart-5-text tokens in globals.css for the measured ratios). 'muted'
+ * already clears AA on its own (4.92:1 light, passes dark), so it
+ * intentionally reuses VARIANT_TOKEN instead of a redundant token.
+ */
+const VARIANT_TEXT_TOKEN: Record<StatusVariant, string> = {
+  muted: 'var(--muted-foreground)',
+  info: 'var(--chart-5-text, var(--chart-5, #22D3EE))',
+  success: 'var(--success-text, var(--success))',
+  warning: 'var(--warning-text, var(--warning))',
+  danger: 'var(--danger-text, var(--danger))',
+  critical: 'var(--danger-text, var(--danger))',
+  accent: 'var(--brand-accent-text, var(--brand-accent))',
+};
+
 const SIZE_CLASS: Record<StatusSize, string> = {
   sm: 'px-1.5 py-[2px] text-[10px] gap-1',
   md: 'px-2 py-[3px] text-[11px] gap-1.5',
@@ -65,6 +85,7 @@ export function StatusBadge({
   ...rest
 }: StatusBadgeProps) {
   const token = VARIANT_TOKEN[variant];
+  const textToken = VARIANT_TEXT_TOKEN[variant];
   return (
     <span
       role="status"
@@ -79,7 +100,7 @@ export function StatusBadge({
       style={{
         background: `color-mix(in oklab, ${token} 14%, transparent)`,
         borderColor: `color-mix(in oklab, ${token} 28%, transparent)`,
-        color: token,
+        color: textToken,
       }}
       {...rest}
     >

@@ -263,10 +263,8 @@ export const api = {
         open_vulnerabilities: number;
         active_incidents: number;
         honeypot_interactions: number;
-        assets_trend: number;
-        vulns_trend: number;
-        incidents_trend: number;
-        interactions_trend: number;
+        /** Executed actions, trailing 30d (OverviewStats.actions_taken, backend/app/api/dashboard.py). */
+        actions_taken: number;
       }>('/dashboard/overview'),
     timeline: () =>
       request<Array<{
@@ -283,6 +281,10 @@ export const api = {
         country: string;
         country_code: string;
         count: number;
+        /** Operator/ASN attribution — null until GeoIP CSV warmup completes or unresolved. */
+        top_asn?: string | null;
+        top_asn_owner?: string | null;
+        distinct_operators?: number | null;
       }>>('/dashboard/threat-map'),
     monitoredApps: () =>
       request<{
