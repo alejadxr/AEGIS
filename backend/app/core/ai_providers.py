@@ -192,7 +192,13 @@ class OmniRouteProvider(OpenRouterProvider):
         temperature: float = 0.3,
         max_tokens: int = 4096,
     ) -> dict:
-        if not model or not str(model).startswith("auto/"):
+        # The gateway exposes raw provider ids (openrouter/*, tllm/*, oc/*, aug/*)
+        # alongside the auto/* combos, so a specific model must NOT be silently
+        # downgraded. It used to coerce anything non-auto/ to auto/cheap, which
+        # meant asking for a stronger model appeared to work and changed nothing.
+        # Now only a MISSING model falls back to the default; a bad id surfaces a
+        # real gateway error and the fallback chain handles it.
+        if not model:
             model = self.DEFAULT_MODEL
         return await super().chat(
             messages, model=model, temperature=temperature, max_tokens=max_tokens
