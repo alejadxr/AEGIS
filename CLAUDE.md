@@ -32,19 +32,19 @@ cd frontend && npm run build        # Build check (zero TS errors required)
 # SSH
 ssh $AEGIS_SSH_USER@$AEGIS_HOST_IP
 
-# PM2 management
-pm2 restart aegis-api              # Backend on port 8000
-pm2 restart aegis-frontend         # Frontend on port 3007 (uses npx next start)
-pm2 logs aegis-api --lines 30 --nostream
+# PM2 management (actual prod process names -- NOT aegis-api/aegis-frontend)
+pm2 restart cayde6-api              # Backend on port 8000, runs from ~/Cayde-6/backend
+pm2 restart cayde6-frontend         # Frontend on port 3007 (uses npx next start), runs from ~/Cayde-6/frontend
+pm2 logs cayde6-api --lines 30 --nostream
 
 # Deploy frontend
-cd /path/to/aegis/frontend && npm run build
-rsync -avz --delete --exclude='node_modules' --exclude='.git' --exclude='.env' frontend/ $AEGIS_SSH_USER@$AEGIS_HOST_IP:~/AEGIS/frontend-prod/
-# Then: pm2 restart aegis-frontend
+cd frontend && npm run build
+rsync -avz --delete --exclude='node_modules' --exclude='.git' --exclude='.env' frontend/ $AEGIS_SSH_USER@$AEGIS_HOST_IP:~/Cayde-6/frontend/
+# Then: pm2 restart cayde6-frontend
 
 # Deploy backend
-rsync -avz --exclude='__pycache__' --exclude='venv' --exclude='*.db' --exclude='.env' backend/ $AEGIS_SSH_USER@$AEGIS_HOST_IP:~/AEGIS/backend/
-# Then: pm2 restart aegis-api
+rsync -avz --exclude='__pycache__' --exclude='venv' --exclude='*.db' --exclude='.env' backend/ $AEGIS_SSH_USER@$AEGIS_HOST_IP:~/Cayde-6/backend/
+# Then: pm2 restart cayde6-api
 
 # Trigger scan
 curl -X POST -H "X-API-Key: YOUR_API_KEY" http://YOUR_SERVER_IP:8000/api/v1/surface/scan/now
@@ -121,7 +121,9 @@ Honeypots  → Interactions → Attacker Profiler → Threat Intel → local ipt
 | `AEGIS_AI_MODE` | `full` | `full` / `local` / `offline` — AI call gating |
 | `AEGIS_FIREWALL_URL` | unset | Remote firewall agent URL (e.g. `http://pi:8765`) |
 | `AEGIS_MONITORED_APPS` | all PM2 apps | Comma-separated PM2 app names to tail |
-| `AEGIS_ATTACKER_IPS` | unset | Comma-separated IPs that bypass internal-IP filter |
+| `AEGIS_ATTACKER_IPS` | unset | Comma-separated IPs that bypass internal-IP filter (pentest lab machines that must still generate real incidents despite living in Tailscale CGNAT) |
+| `AEGIS_SAFE_IPS` | `127.0.0.1,::1,localhost` | Comma-separated IPs and/or CIDR ranges (e.g. `66.249.0.0/16`) that are never blocked and never turned into an incident, on **every** detection path (log_watcher, ai_engine fast_triage + process_alert, correlation_engine, attack_chain_detector, dos_shield, guardrails, phantom honeypots). Parsed by `app/core/attack_detector.py::_is_safe_ip` — the single shared gate all of the above import. Also folds in RFC1918/CGNAT/Tailscale ranges and published crawler/CDN CIDRs (Googlebot, Bingbot, etc.) unconditionally. |
+| `AEGIS_INTERNAL_IPS` | unset | Comma-separated IPs and/or CIDR ranges an operator wants treated as "one of mine" — e.g. a home/office IP that must never spawn an incident even though it isn't a private range. Merged into the exact same gate as `AEGIS_SAFE_IPS` (both are additive, use either name). Example for a residential IP: `AEGIS_INTERNAL_IPS=179.52.12.148` (or widen to a `/24` if the ISP rotates the address within a known block). |
 | `BLOCKED_IPS_FILE` | `~/.aegis/blocked_ips.txt` | Path to blocked IPs persistence file |
 | `GEMINI_API_KEY` | unset | Google Gemini API key (provider name `gemini`, default model `gemini-flash-lite-latest`) |
 | `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini base URL override |
