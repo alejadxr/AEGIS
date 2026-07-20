@@ -16,6 +16,27 @@ from typing import Optional
 # round-trip on every request and floods logs with the same WARNING.
 _QUARANTINE_TTL_SECONDS = 3600
 
+# Shorter quarantine for infrastructure failures (dead gateway / exhausted
+# upstream connection pool) as opposed to quota errors. The 3600s TTL above
+# was sized for quota resets, which are calendar/hourly. A self-hosted
+# gateway container (e.g. OmniRoute) can come back in well under an hour —
+# sidelining it for a full hour after a transient pool exhaustion wastes
+# healthy time. Configurable via env for ops tuning without a redeploy.
+_INFRA_QUARANTINE_TTL_SECONDS = int(
+    os.environ.get("AEGIS_AI_INFRA_QUARANTINE_TTL", "300")
+)
+
+# Consecutive infra-failure signals (see _is_infra_error) required before a
+# provider is quarantined. Must be >1 so a single blip (e.g. a container
+# mid-restart) doesn't sideline a provider that's actually fine. The default
+# ip_threat_brief task config for a gateway-style provider tries 2 models per
+# call, so at the default threshold=2 a fully-dead pool is detected and
+# quarantined within its FIRST chat() call — the damage is capped at one
+# paid timeout total instead of one per request forever.
+_INFRA_QUARANTINE_THRESHOLD = int(
+    os.environ.get("AEGIS_AI_INFRA_QUARANTINE_THRESHOLD", "2")
+)
+
 _QUOTA_ERROR_MARKERS = (
     "402",
     "free_tier",
@@ -42,6 +63,48 @@ _TRANSIENT_ERROR_MARKERS = (
     "502",                       # bad gateway
 )
 
+# Infrastructure-level failure signatures: these mean the *provider's own
+# upstream pool* is exhausted/dead, not that a single model or request was
+# throttled. Deliberately narrow and deliberately does NOT include bare
+# "403": the observed OmniRoute failure nests `"[403] Forbidden"` *inside* a
+# 502 `bad_gateway` envelope (`{"error": {"code": "bad_gateway", "message":
+# "[403] Forbidden"}}`) — matching the envelope (502 / bad_gateway /
+# exhausted_connection / the combo-retry message) catches the dead-pool case
+# precisely without quarantining a provider that legitimately returned a
+# one-off downstream 403 for a single request.
+#
+# Bare "502"/"503" are deliberately NOT here, though an earlier draft had them.
+# Two regressions were reproduced with them in place:
+#   1. OpenRouter's ip_threat_brief list has 9 free models precisely so a
+#      throttled one falls through to the next. Two ordinary 502s in one call
+#      would have quarantined the WHOLE provider for 300s and abandoned the
+#      other 7 healthy models — destroying the documented safety net.
+#   2. A genuine 429 whose body reads "retry after 503 milliseconds" matched
+#      as infrastructure, because a bare 3-digit substring is not anchored to
+#      the status field.
+# The three signatures below are specific to a gateway whose upstream pool is
+# gone, and they still match both real observed failures: the 502 envelope
+# carries "bad_gateway" + "exhausted_connection", and the 503 carries
+# "maximum combo retry limit reached". A single 502/503 remains purely
+# transient (next-model retry), which is the correct cost for a one-off.
+#
+# The list below was assembled by driving the real gateway until it failed and
+# capturing every distinct signature it produced, rather than guessing:
+#   502 {"code":"bad_gateway"} wrapping an upstream [403]
+#   503 {"code":"ALL_ACCOUNTS_INACTIVE","message":"...all upstream accounts are inactive"}
+#   503 "Maximum combo retry limit reached"
+#   403 {"code":"insufficient_quota"}   <- already handled by _is_quota_error
+#   401 "Model X is not supported"      <- deliberately NOT infra: one bad model id,
+#                                          the next model in the list should be tried
+_INFRA_ERROR_MARKERS = (
+    "bad_gateway",
+    "exhausted_connection",
+    "maximum combo retry limit reached",
+    "all_accounts_inactive",
+    "all upstream accounts are inactive",
+    "all accounts exhausted",
+)
+
 
 def _is_quota_error(exc: BaseException) -> bool:
     """Hard quota / auth error — quarantine the provider."""
@@ -59,6 +122,18 @@ def _is_transient_error(exc: BaseException) -> bool:
     """Transient throttle — try next model first, don't quarantine yet."""
     msg = str(exc).lower()
     return any(marker in msg for marker in _TRANSIENT_ERROR_MARKERS)
+
+
+def _is_infra_error(exc: BaseException) -> bool:
+    """Gateway/pool-level infrastructure failure (see _INFRA_ERROR_MARKERS).
+
+    A subset of what _is_transient_error also matches (502/503 overlap on
+    purpose — a single 502 still only costs a next-model retry). What's new
+    is that repeated infra errors accumulate towards a provider-level
+    quarantine, independent of the hard-quota path.
+    """
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _INFRA_ERROR_MARKERS)
 
 from app.core.ai_providers import (
     AIProvider,
@@ -121,6 +196,10 @@ class AIManager:
         self.fallback_chain: list[str] = ["inception", "openrouter", "openai", "anthropic", "ollama"]
         # provider name -> unix timestamp until which the provider is skipped
         self._quarantined: dict[str, float] = {}
+        # provider name -> count of consecutive infra-classified failures
+        # (see _is_infra_error). Reset to 0 on any success; drives the
+        # infra-quarantine path independent of the hard-quota path.
+        self._infra_failures: dict[str, int] = {}
 
     def _is_quarantined(self, name: str) -> bool:
         until = self._quarantined.get(name)
@@ -131,10 +210,12 @@ class AIManager:
             return False
         return True
 
-    def _quarantine(self, name: str, reason: str) -> None:
-        self._quarantined[name] = time.time() + _QUARANTINE_TTL_SECONDS
+    def _quarantine(
+        self, name: str, reason: str, ttl_seconds: int = _QUARANTINE_TTL_SECONDS
+    ) -> None:
+        self._quarantined[name] = time.time() + ttl_seconds
         logger.warning(
-            f"Provider {name} quarantined for {_QUARANTINE_TTL_SECONDS}s: {reason}"
+            f"Provider {name} quarantined for {ttl_seconds}s: {reason}"
         )
 
     # ------------------------------------------------------------------
@@ -233,6 +314,10 @@ class AIManager:
         last_error: Exception | None = None
         for pname in providers_to_try:
             if self._is_quarantined(pname):
+                logger.debug(
+                    f"Provider {pname} skipped for task_type={task_type}: "
+                    f"currently quarantined"
+                )
                 continue
             try:
                 provider = self._resolve_provider(pname, client_settings)
@@ -265,6 +350,7 @@ class AIManager:
                     result["provider"] = pname
                     if not result.get("model") and effective_model:
                         result["model"] = effective_model
+                    self._infra_failures.pop(pname, None)
                     return result
                 except Exception as exc:
                     logger.warning(
@@ -273,9 +359,28 @@ class AIManager:
                     )
                     last_error = exc
                     if _is_quota_error(exc):
-                        self._quarantine(pname, f"quota error: {exc}")
+                        self._quarantine(
+                            pname, f"quota error: {exc}", _QUARANTINE_TTL_SECONDS
+                        )
+                        self._infra_failures.pop(pname, None)
                         provider_exhausted = True
                         break  # skip remaining models for this provider
+                    if _is_infra_error(exc):
+                        failures = self._infra_failures.get(pname, 0) + 1
+                        self._infra_failures[pname] = failures
+                        if failures >= _INFRA_QUARANTINE_THRESHOLD:
+                            self._quarantine(
+                                pname,
+                                f"{failures} consecutive infrastructure failures "
+                                f"(upstream pool exhausted/gateway down): {exc}",
+                                _INFRA_QUARANTINE_TTL_SECONDS,
+                            )
+                            self._infra_failures.pop(pname, None)
+                            provider_exhausted = True
+                            break  # skip remaining models for this provider
+                        # below threshold — treat like a transient error and
+                        # try the next model under the same provider first
+                        continue
                     # transient (429 etc.) — try the next model under same provider
                     if not _is_transient_error(exc):
                         # Other error class (timeout, connect, auth) — move on
@@ -409,6 +514,13 @@ def init_default_providers(
         # override any task that was hard-pinned to another provider.
         ai_manager.task_routing = {k: "omniroute" for k in ai_manager.task_routing}
         ai_manager.task_routing["ip_threat_brief"] = "omniroute"
+        # Measured, not assumed: auto/best-reasoning and auto/cheap both resolve
+        # to the SAME upstream model on this gateway today (MiMo-v2.5), so
+        # asking for the "better" combo buys no quality — it only costs more on
+        # failure (33.2s vs 19.1s to the same error). Kept at auto/cheap until
+        # the gateway actually routes the reasoning combo somewhere stronger.
+        # Kept INSIDE the `if omniroute_url` block on purpose — a model default
+        # for a provider that was never registered is dead config.
         ai_manager.task_model_defaults.setdefault("ip_threat_brief", {})["omniroute"] = ["auto/cheap"]
 
     # Set active provider precedence: OmniRoute → Inception → OpenRouter → Gemini
