@@ -34,12 +34,17 @@ import { Panel, SectionHeader, EmptyState } from '@/components/aegis';
  * grouped, even if adjacent/duplicated — they are always individually
  * significant and individually navigable.
  *
- * Module column: the backend's TimelineEvent has no `module` field, so
- * page.tsx currently always sends `module: ''`. Rendering a whole column of
- * "—" teaches the eye to skip it. This component renders the Module column
- * only when at least one incoming entry actually carries a module value —
- * today that means the column simply doesn't render, and the Event column
- * reclaims the width instead.
+ * Type column: the backend's TimelineEvent has no `module` field — page.tsx
+ * previously always sent a permanently-empty `module: ''`, rendering 113
+ * blank cells. This component instead renders the real `type` field
+ * ('incident' | 'audit') in the same 120px column: uppercase, muted, no
+ * colour and no pill, since severity already owns the colour channel in
+ * this table.
+ *
+ * Progressive disclosure, not a nested scroll region: only `initialRows`
+ * (default 40) entries render at first; a "SHOW N MORE" control at the
+ * foot of the table reveals the rest 40 at a time. The page scrolls — this
+ * panel never traps the wheel inside its own `overflow-y-auto` box.
  */
 
 export interface LedgerEntry {
@@ -48,7 +53,6 @@ export interface LedgerEntry {
   title: string;
   description: string | null;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info' | null;
-  module: string;
   timestamp: string;
 }
 
@@ -56,9 +60,15 @@ type LedgerWindow = '24h' | '7d' | '30d';
 
 export interface LedgerProps {
   entries: LedgerEntry[];
-  /** Current page-wide window, mirrored in the header. */
+  /** Current page-wide window, mirrored in the header subtitle. */
   window: LedgerWindow;
-  /** Widens the window from the empty state. */
+  /**
+   * Mirrors the shared window-control contract used by CommandBar and its
+   * sibling panels. This component does not call it directly — the window
+   * switch itself lives in the page-level command bar, not in this panel's
+   * empty state — but the prop stays required so `window`/`onWindowChange`
+   * keep travelling together at every call site.
+   */
   onWindowChange: (w: LedgerWindow) => void;
   loading?: boolean;
   error?: boolean;
@@ -69,6 +79,8 @@ export interface LedgerProps {
    * never a decorative no-op button) when omitted.
    */
   onRetry?: () => void;
+  /** Rows rendered before the SHOW MORE control. Default 40. */
+  initialRows?: number;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -96,14 +108,9 @@ const SEV_LABEL: Record<SeverityKey, string> = {
   info: 'INFO',
 };
 
-const NEXT_WINDOW: Partial<Record<LedgerWindow, LedgerWindow>> = {
-  '24h': '7d',
-  '7d': '30d',
-};
-
 const COL_TIME = 110;
 const COL_SEVERITY = 128;
-const COL_MODULE = 120;
+const COL_TYPE = 120;
 
 const TH_CLASS =
   'px-4 align-middle text-left text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground border-b border-border';
@@ -119,6 +126,15 @@ function severityKey(severity: string | null | undefined): SeverityKey {
   const s = (severity ?? '').toLowerCase();
   if (s === 'critical' || s === 'high' || s === 'medium' || s === 'low' || s === 'info') return s;
   return 'info';
+}
+
+/** 'incident' -> 'INCIDENT', 'audit' -> 'AUDIT', anything else -> the raw
+ * value uppercased — never a blank cell, since `type` is a real, always-
+ * populated backend field (unlike the retired `module` field). */
+function typeLabel(type: string): string {
+  if (type === 'incident') return 'INCIDENT';
+  if (type === 'audit') return 'AUDIT';
+  return type.toUpperCase();
 }
 
 function pad2(n: number): string {
@@ -170,9 +186,18 @@ interface LedgerGroup {
   id: string;
   title: string;
   severity: SeverityKey;
+  /** Always 'audit' today — only audit-type runs are grouped — but sourced
+   * from the real entry rather than hardcoded, so the TYPE column stays
+   * correct if that ever changes. */
+  type: string;
   /** Newest-first, mirrors the source order of `entries`. */
   members: LedgerEntry[];
 }
+
+/** Rows required before the header is worth pinning. Each row is 34px, so 12
+ *  rows is ~408px — comfortably taller than the sticky offset the header would
+ *  travel to, which is what keeps it from overlapping its own tbody. */
+const STICKY_HEAD_MIN_ROWS = 12;
 
 type LedgerDisplayItem =
   | { kind: 'single'; entry: LedgerEntry }
@@ -201,6 +226,7 @@ function buildDisplayItems(entries: LedgerEntry[]): LedgerDisplayItem[] {
             id: `group-${head.id}`,
             title: head.title,
             severity: severityKey(head.severity),
+            type: head.type,
             members: entries.slice(i, j),
           },
         });
@@ -242,12 +268,12 @@ function flattenDisplayItems(
 
 // ─── Skeleton row ───────────────────────────────────────────────────────────
 
-const SKELETON_WIDTHS_FULL = [56, 64, 50, '55%'] as const;
-const SKELETON_WIDTHS_COMPACT = [56, 64, '55%'] as const;
+const SKELETON_WIDTHS = [56, 64, 50, '55%'] as const;
+const SKELETON_COL_WIDTHS = [COL_TIME, COL_SEVERITY, COL_TYPE];
 
-function LedgerSkeletonRow({ last, hasModuleData }: { last: boolean; hasModuleData: boolean }) {
-  const widths = hasModuleData ? SKELETON_WIDTHS_FULL : SKELETON_WIDTHS_COMPACT;
-  const colWidths = hasModuleData ? [COL_TIME, COL_SEVERITY, COL_MODULE] : [COL_TIME, COL_SEVERITY];
+function LedgerSkeletonRow({ last }: { last: boolean }) {
+  const widths = SKELETON_WIDTHS;
+  const colWidths = SKELETON_COL_WIDTHS;
   return (
     <tr className="h-9">
       {widths.map((w, i) => (
@@ -271,33 +297,20 @@ function LedgerSkeletonRow({ last, hasModuleData }: { last: boolean; hasModuleDa
 
 function LedgerEmptyRow({
   windowValue,
-  onWindowChange,
   colSpan,
 }: {
   windowValue: LedgerWindow;
-  onWindowChange: (w: LedgerWindow) => void;
   colSpan: number;
 }) {
-  const next = NEXT_WINDOW[windowValue];
   return (
     <tr>
       <td colSpan={colSpan} className="h-[88px] px-4 text-center align-middle">
         <p className="font-mono text-[12px] leading-[16px] text-muted-foreground opacity-70">
-          — no entries in the last {windowValue} —
+          No events in the last {windowValue}.
         </p>
-        {next ? (
-          <button
-            type="button"
-            onClick={() => onWindowChange(next)}
-            className="mt-1 rounded-sm text-[12px] font-semibold text-[color:var(--brand-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] hover:underline"
-          >
-            Widen to {next}
-          </button>
-        ) : (
-          <p className="mt-1 font-mono text-[11px] leading-[16px] text-muted-foreground">
-            Nothing recorded in 30 days.
-          </p>
-        )}
+        <p className="mt-1 font-mono text-[11px] leading-[16px] text-muted-foreground">
+          Widen the window to see more history.
+        </p>
       </td>
     </tr>
   );
@@ -310,21 +323,20 @@ interface LedgerRowProps {
   isLast: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
-  hasModuleData: boolean;
   /** True for a row rendered under an expanded group — indented and
    * slightly muted so it visually reads as "detail of the row above". */
   nested?: boolean;
 }
 
-function LedgerRow({ entry, isLast, expanded, onToggleExpand, hasModuleData, nested = false }: LedgerRowProps) {
+function LedgerRow({ entry, isLast, expanded, onToggleExpand, nested = false }: LedgerRowProps) {
   const router = useRouter();
   const sevKey = severityKey(entry.severity);
   const sevColor = SEV_VAR[sevKey];
   const isIncident = entry.type === 'incident';
   const timeLabel = formatLedgerTime(entry.timestamp);
-  const moduleLabel = entry.module ? entry.module.toLowerCase() : '—';
+  const typeLabelText = typeLabel(entry.type);
 
-  const rowAriaLabel = `${timeLabel}, ${SEV_LABEL[sevKey]} severity, ${moduleLabel}, ${entry.title}${
+  const rowAriaLabel = `${timeLabel}, ${SEV_LABEL[sevKey]} severity, ${typeLabelText}, ${entry.title}${
     isIncident ? ', opens incident details' : ''
   }`;
 
@@ -395,16 +407,14 @@ function LedgerRow({ entry, isLast, expanded, onToggleExpand, hasModuleData, nes
         </span>
       </td>
 
-      {hasModuleData && (
-        <td
-          className={cn('max-[719px]:hidden px-4 align-middle', cellBorder)}
-          style={{ width: COL_MODULE }}
-        >
-          <span className="block truncate font-mono text-[11px] lowercase text-muted-foreground">
-            {moduleLabel}
-          </span>
-        </td>
-      )}
+      <td
+        className={cn('max-[719px]:hidden px-4 align-middle', cellBorder)}
+        style={{ width: COL_TYPE }}
+      >
+        <span className="block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
+          {typeLabelText}
+        </span>
+      </td>
 
       <td className={cn('px-4 align-middle', cellBorder)}>
         <div className="flex min-w-0 items-center gap-1.5">
@@ -437,11 +447,10 @@ interface LedgerGroupRowProps {
   group: LedgerGroup;
   isLast: boolean;
   expanded: boolean;
-  hasModuleData: boolean;
   onToggle: () => void;
 }
 
-function LedgerGroupRow({ group, isLast, expanded, hasModuleData, onToggle }: LedgerGroupRowProps) {
+function LedgerGroupRow({ group, isLast, expanded, onToggle }: LedgerGroupRowProps) {
   const sevColor = SEV_VAR[group.severity];
   const count = group.members.length;
   // members[] is newest-first (source order); the range reads oldest→newest,
@@ -476,14 +485,14 @@ function LedgerGroupRow({ group, isLast, expanded, hasModuleData, onToggle }: Le
         </span>
       </td>
 
-      {hasModuleData && (
-        <td
-          className={cn('max-[719px]:hidden px-4 align-middle', cellBorder)}
-          style={{ width: COL_MODULE }}
-        >
-          <span className="block truncate font-mono text-[11px] lowercase text-muted-foreground">—</span>
-        </td>
-      )}
+      <td
+        className={cn('max-[719px]:hidden px-4 align-middle', cellBorder)}
+        style={{ width: COL_TYPE }}
+      >
+        <span className="block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
+          {typeLabel(group.type)}
+        </span>
+      </td>
 
       <td className={cn('px-4 align-middle', cellBorder)}>
         <button
@@ -517,13 +526,21 @@ function LedgerGroupRow({ group, isLast, expanded, hasModuleData, onToggle }: Le
 export function Ledger({
   entries,
   window: windowValue,
-  onWindowChange,
   loading = false,
   error = false,
   onRetry,
+  initialRows = 40,
 }: LedgerProps) {
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(new Set());
+  const [visibleRows, setVisibleRows] = React.useState(initialRows);
+
+  // A window switch (24h/7d/30d) is a fresh view of the ledger — start it
+  // back at the top instead of carrying over however far a previous window
+  // had been expanded.
+  React.useEffect(() => {
+    setVisibleRows(initialRows);
+  }, [windowValue, initialRows]);
 
   const toggleExpand = React.useCallback((id: string) => {
     setExpandedIds((prev) => {
@@ -543,14 +560,14 @@ export function Ledger({
     });
   }, []);
 
-  // Only render the Module column at all if something in the current data
-  // actually populates it — see the class doc comment above.
-  const hasModuleData = React.useMemo(
-    () => entries.some((e) => !!e.module && e.module.trim().length > 0),
-    [entries],
-  );
-
-  const displayItems = React.useMemo(() => buildDisplayItems(entries), [entries]);
+  // Progressive disclosure, not a nested scroll region: the page scrolls,
+  // this table just grows. Grouping (buildDisplayItems) runs on the visible
+  // slice only, so a "SHOW MORE" click never re-buckets rows already on
+  // screen into a different group.
+  const visibleEntries = React.useMemo(() => entries.slice(0, visibleRows), [entries, visibleRows]);
+  const remainingCount = entries.length - visibleEntries.length;
+  const nextRevealCount = Math.min(40, remainingCount);
+  const displayItems = React.useMemo(() => buildDisplayItems(visibleEntries), [visibleEntries]);
   const flatRows = React.useMemo(
     () => flattenDisplayItems(displayItems, expandedGroups),
     [displayItems, expandedGroups],
@@ -591,10 +608,22 @@ export function Ledger({
     <Panel variant="default" padding="none" as="section" className="col-span-12" aria-busy={loading}>
       <SectionHeader flush title="LEDGER" subtitle={subtitle} count={`${entries.length} entries`} />
 
-      <div className="max-h-[420px] overflow-y-auto">
+      <div>
         <table className="w-full table-fixed border-collapse">
           <caption className="sr-only">Recent incidents and AI decisions</caption>
-          <thead className="sticky top-0 z-10 bg-card">
+          {/* Sticky only when the table is genuinely taller than the viewport it
+              would scroll through. A sticky thead inside a SHORT table has too
+              little containing-block room to travel, so it lands pinned mid-table
+              and paints over a real data row (reproduced: a whole AUDIT row was
+              hidden underneath it). Below the threshold the header just scrolls
+              with the page, which is the correct behaviour when the whole table
+              already fits on screen. */}
+          <thead
+            className={cn(
+              'bg-card',
+              flatRows.length >= STICKY_HEAD_MIN_ROWS && 'sticky top-[var(--sticky-top)] z-10',
+            )}
+          >
             <tr className="h-[34px]">
               <th scope="col" className={TH_CLASS} style={{ width: COL_TIME }}>
                 Time
@@ -602,15 +631,13 @@ export function Ledger({
               <th scope="col" className={TH_CLASS} style={{ width: COL_SEVERITY }}>
                 Severity
               </th>
-              {hasModuleData && (
-                <th
-                  scope="col"
-                  className={cn(TH_CLASS, 'max-[719px]:hidden')}
-                  style={{ width: COL_MODULE }}
-                >
-                  Module
-                </th>
-              )}
+              <th
+                scope="col"
+                className={cn(TH_CLASS, 'max-[719px]:hidden')}
+                style={{ width: COL_TYPE }}
+              >
+                Type
+              </th>
               <th scope="col" className={TH_CLASS}>
                 Event
               </th>
@@ -619,15 +646,11 @@ export function Ledger({
           <tbody>
             {loading &&
               Array.from({ length: 8 }).map((_, i) => (
-                <LedgerSkeletonRow key={i} last={i === 7} hasModuleData={hasModuleData} />
+                <LedgerSkeletonRow key={i} last={i === 7} />
               ))}
 
             {!loading && showEmpty && (
-              <LedgerEmptyRow
-                windowValue={windowValue}
-                onWindowChange={onWindowChange}
-                colSpan={hasModuleData ? 4 : 3}
-              />
+              <LedgerEmptyRow windowValue={windowValue} colSpan={4} />
             )}
 
             {!loading &&
@@ -641,7 +664,6 @@ export function Ledger({
                       group={row.group}
                       isLast={isLast}
                       expanded={row.expanded}
-                      hasModuleData={hasModuleData}
                       onToggle={() => toggleGroup(row.group.id)}
                     />
                   );
@@ -654,13 +676,22 @@ export function Ledger({
                     isLast={isLast}
                     expanded={expandedIds.has(entry.id)}
                     onToggleExpand={() => toggleExpand(entry.id)}
-                    hasModuleData={hasModuleData}
                     nested={row.kind === 'nested'}
                   />
                 );
               })}
           </tbody>
         </table>
+
+        {!loading && !showEmpty && remainingCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setVisibleRows((n) => n + 40)}
+            className="h-9 w-full border-t border-[var(--border)] font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--brand-text)] hover:bg-[color-mix(in_oklab,var(--brand)_6%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] transition-colors duration-150"
+          >
+            Show {nextRevealCount} more
+          </button>
+        )}
       </div>
     </Panel>
   );

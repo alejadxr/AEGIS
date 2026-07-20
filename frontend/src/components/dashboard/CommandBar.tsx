@@ -121,8 +121,14 @@ export function CommandBar({
     },
   ];
 
+  // top-[var(--nav-h)], not top-16: TopNav measures 65px, so a hardcoded 64px
+  // left a 1px sliver of page content showing through between the two bars.
+  // The variable is defined once in dashboard/layout.tsx so the two cannot
+  // drift apart again. Rendered as a plain <div>, not <header role="banner">:
+  // TopNav already declares that landmark and two banners is an a11y violation.
   return (
-    <header role="banner" className="sticky top-16 z-30 w-full">
+    <>
+    <div className="sticky top-[var(--nav-h)] z-30 w-full">
       <div
         className="border-b border-border"
         style={{
@@ -167,8 +173,15 @@ export function CommandBar({
           </div>
         </div>
       </div>
+    </div>
 
-      {/* FIRST-RUN STRIP — the entire replacement for the blocking 11-step modal */}
+      {/* FIRST-RUN STRIP — the entire replacement for the blocking 11-step modal.
+          Deliberately OUTSIDE the sticky wrapper: while it lived inside, the
+          sticky element measured 88px instead of 53px, so --sticky-top (118px)
+          was 35px too small and the CommandBar painted over the top of the
+          sticky WatchPanel. Out here the strip scrolls away normally and the
+          pinned element keeps a constant height, which is also better UX for a
+          dismissible tip. */}
       {showFirstRun && (
         <div
           className="w-full border-b"
@@ -198,7 +211,7 @@ export function CommandBar({
           </div>
         </div>
       )}
-    </header>
+    </>
   );
 }
 

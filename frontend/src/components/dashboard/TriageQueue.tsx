@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import type { CSSProperties, KeyboardEvent, MouseEvent } from 'react';
+import type { KeyboardEvent, MouseEvent } from 'react';
 import { Panel, SectionHeader, EmptyState, StatusBadge } from '@/components/aegis';
 import type { StatusVariant } from '@/components/aegis';
 import { IncidentDossier } from '@/components/dashboard/IncidentDossier';
@@ -475,6 +475,7 @@ export function TriageQueue({
 }: TriageQueueProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionState, setActionState] = useState<Record<string, ActionUiState>>({});
+  const [visibleCount, setVisibleCount] = useState(8);
 
   const handleToggle = useCallback((id: string) => {
     setExpandedId((cur) => (cur === id ? null : id));
@@ -543,13 +544,11 @@ export function TriageQueue({
 
   const pendingIncidentIds = new Set(pendingActions.map((a) => a.incident_id));
   const isEmpty = !loading && !error && incidents.length === 0 && pendingActions.length === 0;
-  const isScrollable = sortedIncidents.length > 8;
-  const maskStyle: CSSProperties | undefined = isScrollable
-    ? {
-        WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 8px), transparent 100%)',
-        maskImage: 'linear-gradient(to bottom, black calc(100% - 8px), transparent 100%)',
-      }
-    : undefined;
+  // Progressive disclosure, not a nested scroll region: the page scrolls,
+  // this list just grows. Dormant today (0 incidents), a live trap the
+  // moment 9+ incidents exist if it were still a wheel-eating max-h box.
+  const visibleIncidents = sortedIncidents.slice(0, visibleCount);
+  const remainingCount = sortedIncidents.length - visibleIncidents.length;
 
   return (
     <Panel
@@ -613,11 +612,8 @@ export function TriageQueue({
               />
             )}
 
-            <div
-              className={cn(isScrollable && 'max-h-[720px] overflow-y-auto pr-1')}
-              style={maskStyle}
-            >
-              {sortedIncidents.map((incident, i) => (
+            <div>
+              {visibleIncidents.map((incident, i) => (
                 <IncidentCard
                   key={incident.id}
                   incident={incident}
@@ -631,6 +627,16 @@ export function TriageQueue({
                 />
               ))}
             </div>
+
+            {remainingCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setVisibleCount((n) => n + 20)}
+                className="h-9 w-full border-t border-[var(--border)] font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--brand-text)] hover:bg-[color-mix(in_oklab,var(--brand)_6%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] transition-colors duration-150"
+              >
+                Show {remainingCount} more
+              </button>
+            )}
           </>
         )}
       </div>

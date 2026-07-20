@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { hasAuth } from '@/lib/api';
 import { TopNav } from '@/components/shared/TopNav';
@@ -43,7 +44,22 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div
+      className="min-h-screen bg-background text-foreground"
+      style={
+        {
+          // Sticky header stack height. TopNav (TopNav.tsx, inner h-16 + 1px
+          // border-b) = 65px. CommandBar (CommandBar.tsx, inner h-[52px] +
+          // 1px border-b) = 53px. Stuck bottom edge of the pair = 118px.
+          // Defined once here (the layout every dashboard page shares) so
+          // WatchPanel.tsx, Ledger.tsx and CommandBar.tsx all read the same
+          // value instead of repeating a magic number that can drift.
+          '--nav-h': '65px',
+          '--cmdbar-h': '53px',
+          '--sticky-top': '118px',
+        } as CSSProperties
+      }
+    >
       <TopNav />
       <SectionTabs />
       <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
