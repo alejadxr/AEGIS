@@ -224,9 +224,11 @@ export function TopNav() {
           </div>
           <div className="flex items-baseline gap-1.5 min-w-0">
             <span className="text-foreground font-semibold text-[14px] tracking-tight">AEGIS</span>
-            <span className="hidden sm:inline text-[9px] font-mono text-muted-foreground/60 tracking-widest uppercase">
-              v1.6.2
-            </span>
+            {process.env.NEXT_PUBLIC_AEGIS_VERSION && (
+              <span className="hidden sm:inline text-[9px] font-mono text-muted-foreground/60 tracking-widest uppercase">
+                v{process.env.NEXT_PUBLIC_AEGIS_VERSION}
+              </span>
+            )}
           </div>
         </Link>
 

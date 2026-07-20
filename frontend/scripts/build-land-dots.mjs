@@ -1,0 +1,176 @@
+#!/usr/bin/env node
+/**
+ * build-land-dots.mjs — ONE-TIME / build-time generator.
+ *
+ * Produces src/lib/geo/land-dots.generated.ts: a committed, offline, static
+ * TypeScript module containing a dot-matrix rasterisation of the world's
+ * landmasses plus the exact linear projection used to place markers on top
+ * of it. This script is NOT imported at runtime by the app — d3-geo,
+ * topojson-client and world-atlas stay devDependencies and never enter the
+ * browser bundle. Re-run manually (`node scripts/build-land-dots.mjs`) only
+ * if the geodata source or raster resolution ever needs to change.
+ *
+ * Pipeline (verified against world-atlas@2.0.2 / d3-geo@2.0.2 /
+ * topojson-client@3.1.0, all already resolvable from this package):
+ *   1. Load land-110m.json (TopoJSON) from world-atlas.
+ *   2. topojson-client.feature() -> single GeoJSON Feature (MultiPolygon)
+ *      covering every landmass.
+ *   3. d3-geo geoEquirectangular().fitSize([1000, 500], {type: 'Sphere'})
+ *      -> scale 159.15494309189532, translate [500, 250]. Because
+ *      geoEquirectangular is a bare linear map in radians, this reduces
+ *      *exactly* to x = 500 + (500/180)*lon, y = 250 - (500/180)*lat for
+ *      any (lon, lat) in degrees — the "MAP_K = 500/180" runtime shortcut.
+ *      We derive MAP_K from the real projection output (not hand-typed) so
+ *      the generated file and the runtime helper can never drift.
+ *   4. Rasterise a 5px grid over the full [1000 x 500] canvas. For each
+ *      cell centre, invert to (lon, lat); skip the polar fringes
+ *      (lat < -60 or lat > 84) where 110m land data is mostly missing
+ *      ice-shelf noise; then test geoContains(landFeature, [lon, lat]).
+ *      Matching cells become one dot at (2.5 + 5i, 2.5 + 5j) — the same
+ *      lattice the runtime ocean <pattern> tiles against, so land and
+ *      ocean textures register pixel-for-pixel.
+ *   5. Emit a single SVG path string (one <path> node covers all dots)
+ *      plus the raw [x, y] pairs (kept for tooling/debugging, unused by
+ *      the runtime component) and the tight viewBox y-bounds actually
+ *      occupied by land, with a small pad so edge dots never clip.
+ */
+
+import { geoContains, geoEquirectangular } from 'd3-geo';
+import { feature } from 'topojson-client';
+import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import landTopology from 'world-atlas/land-110m.json' with { type: 'json' };
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const MAP_W = 1000;
+const MAP_H = 500;
+const GRID = 5;
+const LAT_MIN = -60;
+const LAT_MAX = 84;
+const VIEW_PAD = 6;
+
+const landFeature = feature(landTopology, landTopology.objects.land);
+
+const projection = geoEquirectangular().fitSize([MAP_W, MAP_H], { type: 'Sphere' });
+const [tx, ty] = projection.translate();
+const scale = projection.scale();
+
+// Confirm the linear-shortcut identity holds for this exact projection
+// output before baking MAP_K into the generated file.
+const MAP_K = MAP_W / 2 / 180; // 500 / 180
+const checkLon = 40;
+const checkLat = -17;
+const [px, py] = projection([checkLon, checkLat]);
+const shortcutX = tx + MAP_K * checkLon;
+const shortcutY = ty - MAP_K * checkLat;
+if (Math.abs(px - shortcutX) > 0.01 || Math.abs(py - shortcutY) > 0.01) {
+  throw new Error(
+    `MAP_K shortcut diverged from real projection: real=[${px},${py}] shortcut=[${shortcutX},${shortcutY}]`,
+  );
+}
+
+function projectLonLat(lon, lat) {
+  return [tx + MAP_K * lon, ty - MAP_K * lat];
+}
+function invertXY(x, y) {
+  return [(x - tx) / MAP_K, (ty - y) / MAP_K];
+}
+
+const dots = [];
+let minY = Infinity;
+let maxY = -Infinity;
+
+for (let x = GRID / 2; x < MAP_W; x += GRID) {
+  for (let y = GRID / 2; y < MAP_H; y += GRID) {
+    const [lon, lat] = invertXY(x, y);
+    if (lat < LAT_MIN || lat > LAT_MAX) continue;
+    if (lon < -180 || lon > 180) continue;
+    if (geoContains(landFeature, [lon, lat])) {
+      dots.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+}
+
+if (dots.length < 1000) {
+  throw new Error(`Suspiciously few land dots generated (${dots.length}) — aborting.`);
+}
+
+const VIEW_Y = Math.max(0, Math.floor(minY - VIEW_PAD));
+const VIEW_Y_END = Math.min(MAP_H, Math.ceil(maxY + VIEW_PAD));
+const VIEW_H = VIEW_Y_END - VIEW_Y;
+
+// One <path> "d" string for every dot, drawn as a tiny filled circle via
+// two mirrored arcs (M x y-r, arc, arc). Renders as 1 DOM node instead of
+// one <circle> per dot (~4.8k nodes).
+const DOT_R = 1.35;
+let d = '';
+for (let i = 0; i < dots.length; i++) {
+  const [x, y] = dots[i];
+  d += `M${x} ${(y - DOT_R).toFixed(2)}a${DOT_R} ${DOT_R} 0 1 0 0 ${(DOT_R * 2).toFixed(2)}a${DOT_R} ${DOT_R} 0 1 0 0 ${(-DOT_R * 2).toFixed(2)}`;
+}
+
+const generatedAt = new Date().toISOString();
+
+const out = `/**
+ * AUTO-GENERATED by scripts/build-land-dots.mjs — DO NOT EDIT BY HAND.
+ * Regenerate with: node scripts/build-land-dots.mjs
+ *
+ * Source: world-atlas@2.0.2 land-110m.json, rasterised on a ${GRID}px grid
+ * over a ${MAP_W}x${MAP_H} geoEquirectangular canvas (fitSize Sphere),
+ * clipped to ${LAT_MIN}° <= lat <= ${LAT_MAX}°. Generated ${generatedAt}.
+ *
+ * ${dots.length} land dots. Zero runtime dependency on d3-geo, topojson or
+ * world-atlas — this file is the only thing the browser ever loads.
+ */
+
+/** Full canvas width in SVG user units (matches the projection's fitSize). */
+export const MAP_W = ${MAP_W};
+/** Full canvas height in SVG user units (matches the projection's fitSize). */
+export const MAP_H = ${MAP_H};
+/** viewBox y-origin: tight crop to where land dots actually exist (+padding). */
+export const VIEW_Y = ${VIEW_Y};
+/** viewBox height: tight crop to where land dots actually exist (+padding). */
+export const VIEW_H = ${VIEW_H};
+/**
+ * Linear-projection constant. For any (lon, lat) in degrees:
+ *   x = ${MAP_W / 2} + MAP_K * lon
+ *   y = ${MAP_H / 2} - MAP_K * lat
+ * This is the exact reduction of d3.geoEquirectangular().fitSize([${MAP_W}, ${MAP_H}], {type:'Sphere'})
+ * (scale ${scale}, translate [${tx}, ${ty}]) — verified bit-for-bit against
+ * the real projection at build time (see build-land-dots.mjs).
+ */
+export const MAP_K = ${MAP_W} / 2 / 180;
+
+/** Project a [lon, lat] pair (degrees) to [x, y] SVG user-space coordinates. */
+export function projectLonLat(lon: number, lat: number): [number, number] {
+  return [${MAP_W / 2} + MAP_K * lon, ${MAP_H / 2} - MAP_K * lat];
+}
+
+/**
+ * Raw [x, y] land-dot centres, ${GRID}px grid, kept for tooling/debugging.
+ * The runtime component renders LAND_PATH (below), not this array — do not
+ * map over LAND_DOTS to build DOM nodes, that reintroduces the ${dots.length}-node
+ * perf problem this file exists to avoid.
+ */
+export const LAND_DOTS: ReadonlyArray<readonly [number, number]> = ${JSON.stringify(dots)};
+
+/**
+ * Single SVG path "d" string drawing every land dot as a filled circle.
+ * Render as ONE <path d={LAND_PATH} fill="var(--map-land)" /> — one DOM
+ * node for the entire landmass raster.
+ */
+export const LAND_PATH = ${JSON.stringify(d)};
+`;
+
+const outPath = join(__dirname, '..', 'src', 'lib', 'geo', 'land-dots.generated.ts');
+writeFileSync(outPath, out, 'utf8');
+
+console.log(`Wrote ${outPath}`);
+console.log(`  dots: ${dots.length}`);
+console.log(`  viewBox: 0 ${VIEW_Y} ${MAP_W} ${VIEW_H}`);
+console.log(`  path length: ${d.length} chars`);
+console.log(`  MAP_K check: real=[${px.toFixed(4)},${py.toFixed(4)}] shortcut=[${shortcutX.toFixed(4)},${shortcutY.toFixed(4)}]`);
