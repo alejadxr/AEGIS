@@ -55,7 +55,7 @@ class ScanOrchestrator:
     def __init__(self):
         self._active_scans: dict[str, dict] = {}
 
-    async def _persist_scan(self, db: AsyncSession, state: dict) -> None:
+    async def persist_scan(self, db: AsyncSession, state: dict) -> None:
         """Upsert the in-memory scan state into the scans table (best-effort)."""
         try:
             row = await db.get(Scan, state["id"])
@@ -73,7 +73,7 @@ class ScanOrchestrator:
             row.assets_found = int(state.get("assets_found", 0) or 0)
             await db.commit()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to persist scan %s: %s", state.get("id"), exc)
+            logger.error("Failed to persist scan %s: %s", state.get("id"), exc, exc_info=True)
             try:
                 await db.rollback()
             except Exception:  # noqa: BLE001
@@ -101,7 +101,7 @@ class ScanOrchestrator:
             "results": {},
         }
         # Persist the running record immediately so it survives a restart mid-scan.
-        await self._persist_scan(db, self._active_scans[scan_id])
+        await self.persist_scan(db, self._active_scans[scan_id])
 
         try:
             # Stage 1: Discovery
@@ -173,7 +173,7 @@ class ScanOrchestrator:
             state["assets_found"] = len(assets_created)
 
             # Persist the completed scan (assets already committed above).
-            await self._persist_scan(db, state)
+            await self.persist_scan(db, state)
 
             await event_bus.publish("scan_completed", {
                 "scan_id": scan_id,
@@ -198,7 +198,7 @@ class ScanOrchestrator:
                 await db.rollback()
             except Exception:  # noqa: BLE001
                 pass
-            await self._persist_scan(db, state)
+            await self.persist_scan(db, state)
             # Terminal state persisted — evict from the hot cache (see above).
             return self._active_scans.pop(scan_id, state)
 
