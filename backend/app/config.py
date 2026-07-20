@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     # OpenRouter
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    # OmniRoute self-hosted gateway (optional). When set, it becomes the
+    # PRIMARY AI provider; the direct providers below remain as fallback.
+    AEGIS_OMNIROUTE_URL: str = ""
 
     # Database (PostgreSQL only)
     DATABASE_URL: str = "postgresql+asyncpg://cayde6:cayde6pass@localhost:5432/cayde6"

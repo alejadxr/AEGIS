@@ -128,6 +128,10 @@ class OpenRouterProvider(AIProvider):
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
+                # Explicit non-streaming: OpenRouter defaults to this anyway, but
+                # an OmniRoute gateway (OmniRouteProvider) defaults to SSE and
+                # would break resp.json() below without it.
+                "stream": False,
             },
         )
         latency_ms = int((time.time() - start) * 1000)
@@ -158,6 +162,41 @@ class OpenRouterProvider(AIProvider):
             raise Exception(f"OpenRouter /models returned {resp.status_code}")
         data = resp.json().get("data", [])
         return [{"id": m["id"], "name": m.get("name", m["id"])} for m in data[:100]]
+
+
+# ---------------------------------------------------------------------------
+# OmniRoute (self-hosted OpenAI-compatible gateway)
+# ---------------------------------------------------------------------------
+
+class OmniRouteProvider(OpenRouterProvider):
+    """Self-hosted OmniRoute gateway, OpenAI-compatible on /v1.
+
+    Reuses OpenRouterProvider's transport (which now sends ``stream: false``)
+    but adapts to OmniRoute's own model namespace: it routes through *combo*
+    ids like ``auto/cheap`` / ``auto/fast`` rather than raw OpenRouter model
+    ids (those 404 on the gateway). Any non-combo model id is coerced to the
+    fast combo so callers passing OpenRouter ids still resolve. The gateway
+    runs on localhost with REQUIRE_API_KEY=false, so a placeholder api_key is
+    enough to satisfy the base class's "key configured" guard.
+    """
+
+    DEFAULT_MODEL = "auto/cheap"
+
+    def get_name(self) -> str:
+        return "omniroute"
+
+    async def chat(
+        self,
+        messages: list[dict],
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+    ) -> dict:
+        if not model or not str(model).startswith("auto/"):
+            model = self.DEFAULT_MODEL
+        return await super().chat(
+            messages, model=model, temperature=temperature, max_tokens=max_tokens
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -716,6 +755,7 @@ class GeminiProvider(AIProvider):
 
 PROVIDER_CLASSES: dict[str, type[AIProvider]] = {
     "openrouter": OpenRouterProvider,
+    "omniroute": OmniRouteProvider,
     "anthropic": AnthropicProvider,
     "openai": OpenAIProvider,
     "ollama": OllamaProvider,
