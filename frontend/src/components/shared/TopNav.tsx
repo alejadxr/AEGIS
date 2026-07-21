@@ -11,9 +11,7 @@ import {
   Sun01Icon,
   Moon02Icon,
   Settings01Icon,
-  Menu01Icon,
 } from 'hugeicons-react';
-import { X as CloseIcon } from 'lucide-react';
 import { clearApiKey, clearJwtToken } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -127,7 +125,6 @@ export function TopNav() {
   const router = useRouter();
   const activeId = getActiveSectionId(pathname);
 
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -170,11 +167,6 @@ export function TopNav() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  // close mobile drawer when route changes
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
-
   // preload unread
   useEffect(() => {
     fetchRecentIncidents()
@@ -209,13 +201,13 @@ export function TopNav() {
   return (
     <header
       role="banner"
-      className="sticky top-0 z-40 bg-background border-b border-border"
+      className="sticky top-0 z-40 bg-background border-b border-border max-md:pl-[var(--safe-left)] max-md:pr-[var(--safe-right)]"
     >
-      <div className="max-w-[1440px] mx-auto h-16 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
+      <div className="max-w-[1440px] mx-auto h-[52px] md:h-16 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
         {/* LEFT: Logo + brand */}
         <Link
           href="/dashboard"
-          className="flex items-center gap-2.5 shrink-0 group"
+          className="tap-44 flex items-center gap-2.5 shrink-0 group min-h-[44px] md:min-h-0"
           aria-label="AEGIS home"
         >
           <div className="relative w-7 h-7 rounded-md bg-gradient-to-br from-[color-mix(in_oklab,var(--brand-accent)_30%,transparent)] to-[color-mix(in_oklab,var(--brand-accent)_5%,transparent)] border border-[color-mix(in_oklab,var(--brand-accent)_35%,transparent)] flex items-center justify-center shrink-0">
@@ -271,7 +263,7 @@ export function TopNav() {
         </nav>
 
         {/* RIGHT: Actions */}
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center max-md:gap-2 gap-1 shrink-0">
           {/* Search (desktop) */}
           <div ref={searchRef} className="relative hidden md:block">
             <button
@@ -307,7 +299,7 @@ export function TopNav() {
               aria-label="Notifications"
               aria-haspopup="menu"
               aria-expanded={showNotifications}
-              className="relative w-9 h-9 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--brand-accent)_55%,transparent)]"
+              className="tap-44 relative w-9 h-9 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--brand-accent)_55%,transparent)] motion-safe:active:opacity-70 motion-safe:transition-opacity motion-safe:duration-100"
             >
               <Notification03Icon size={16} />
               {hasUnread && (
@@ -358,7 +350,7 @@ export function TopNav() {
               aria-label="User menu"
               aria-haspopup="menu"
               aria-expanded={showUserMenu}
-              className="inline-flex items-center gap-2 h-9 px-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--brand-accent)_55%,transparent)]"
+              className="tap-44 inline-flex items-center gap-2 h-9 px-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--brand-accent)_55%,transparent)] motion-safe:active:opacity-70 motion-safe:transition-opacity motion-safe:duration-100"
             >
               <div className="w-7 h-7 rounded-md bg-muted border border-border flex items-center justify-center">
                 <UserIcon size={13} className="text-muted-foreground" />
@@ -374,7 +366,7 @@ export function TopNav() {
                   href="/dashboard/settings"
                   role="menuitem"
                   onClick={() => setShowUserMenu(false)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-150"
+                  className="w-full flex items-center gap-2 px-3 py-2 max-md:py-3 text-[12px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-150 motion-safe:active:opacity-70"
                 >
                   <Settings01Icon size={14} />
                   Settings
@@ -382,7 +374,7 @@ export function TopNav() {
                 <button
                   role="menuitem"
                   onClick={() => { toggleTheme(); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-150"
+                  className="w-full flex items-center gap-2 px-3 py-2 max-md:py-3 text-[12px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-150 motion-safe:active:opacity-70"
                 >
                   {isDark ? <Sun01Icon size={14} /> : <Moon02Icon size={14} />}
                   {isDark ? 'Light mode' : 'Dark mode'}
@@ -391,7 +383,7 @@ export function TopNav() {
                 <button
                   role="menuitem"
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-muted-foreground hover:text-[var(--danger)] hover:bg-muted/50 transition-all duration-150"
+                  className="w-full flex items-center gap-2 px-3 py-2 max-md:py-3 text-[12px] text-muted-foreground hover:text-[var(--danger)] hover:bg-muted/50 transition-all duration-150 motion-safe:active:opacity-70"
                 >
                   <Logout01Icon size={14} />
                   Sign out
@@ -400,57 +392,14 @@ export function TopNav() {
             )}
           </div>
 
-          {/* Mobile hamburger */}
-          <button
-            type="button"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={mobileOpen}
-            className="md:hidden w-9 h-9 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--brand-accent)_55%,transparent)]"
-          >
-            {mobileOpen ? <CloseIcon size={18} /> : <Menu01Icon size={18} />}
-          </button>
+          {/* Mobile hamburger + drawer removed: navigation now lives in
+              MobileTabBar (bottom tab bar owns top-level sections below
+              md). The drawer's only unique control was a search <input>
+              whose value (searchQuery) was never read by anything — a
+              non-functional control the project's honesty rule forbids
+              shipping. Desktop search above is untouched. */}
         </div>
       </div>
-
-      {/* Mobile drawer */}
-      {mobileOpen && (
-        <div className="md:hidden border-t border-border bg-background">
-          <nav role="navigation" aria-label="Mobile primary" className="px-4 py-3">
-            <div className="relative mb-3">
-              <Search01Icon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60" size={14} />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-9 rounded-md bg-card border border-border pl-8 pr-2 text-[13px] text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-[color-mix(in_oklab,var(--brand-accent)_50%,transparent)]"
-              />
-            </div>
-            <ul className="flex flex-col gap-px">
-              {TOP_NAV_SECTIONS.map((section) => {
-                const isActive = section.id === activeId;
-                return (
-                  <li key={section.id}>
-                    <Link
-                      href={section.href}
-                      aria-current={isActive ? 'page' : undefined}
-                      className={cn(
-                        'flex items-center px-3 py-2.5 rounded-md text-[13px] font-medium transition-colors',
-                        isActive
-                          ? 'bg-[color-mix(in_oklab,var(--brand-accent)_12%,transparent)] text-foreground'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                      )}
-                    >
-                      {section.label}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
-        </div>
-      )}
     </header>
   );
 }

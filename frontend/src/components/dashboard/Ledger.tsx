@@ -521,6 +521,178 @@ function LedgerGroupRow({ group, isLast, expanded, onToggle }: LedgerGroupRowPro
   );
 }
 
+// ─── Mobile list row (single/nested) ───────────────────────────────────────
+//
+// Below `md` a 4-column fixed-width table cannot survive a 390px viewport —
+// Time (110px) + Severity (128px) alone reserve 238px of a ~350px content
+// box. This renders the exact same `flatRows` as a card/list instead of a
+// second data path: same `severityKey`, `formatLedgerTime`, `SEV_VAR`,
+// `SEV_LABEL`, `typeLabel`, same expand/group state from the root component.
+
+interface LedgerListRowProps {
+  entry: LedgerEntry;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  /** True for a row rendered under an expanded group — indented and
+   * slightly muted, mirroring the table's `nested` treatment. */
+  nested?: boolean;
+}
+
+function LedgerListRow({ entry, expanded, onToggleExpand, nested = false }: LedgerListRowProps) {
+  const router = useRouter();
+  const sevKey = severityKey(entry.severity);
+  const sevColor = SEV_VAR[sevKey];
+  const isIncident = entry.type === 'incident';
+  const timeLabel = formatLedgerTime(entry.timestamp);
+  const typeLabelText = typeLabel(entry.type);
+
+  const rowAriaLabel = `${timeLabel}, ${SEV_LABEL[sevKey]} severity, ${typeLabelText}, ${entry.title}${
+    isIncident ? ', opens incident details' : ''
+  }`;
+
+  const navigate = React.useCallback(() => {
+    router.push(`/dashboard/response/${entry.id}`);
+  }, [router, entry.id]);
+
+  const handleExpandClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onToggleExpand();
+  };
+
+  const mainTargetClass = cn(
+    'flex min-w-0 flex-1 items-stretch gap-3 py-3 pr-1 text-left min-h-[56px]',
+    nested ? 'pl-8' : 'pl-4',
+    'motion-safe:transition-colors motion-safe:duration-100',
+    isIncident
+      ? 'active:bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]'
+      : 'cursor-default',
+  );
+
+  const mainContent = (
+    <>
+      <span
+        aria-hidden
+        className="w-[3px] shrink-0 self-stretch rounded-full"
+        style={{ background: sevColor }}
+      />
+      <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+        <span className="flex items-center gap-1.5 font-mono text-[11px] leading-[14px] tabular-nums text-muted-foreground">
+          <span className="whitespace-nowrap">{timeLabel}</span>
+          <span aria-hidden>{'·'}</span>
+          <span className="font-semibold uppercase tracking-[0.08em]" style={{ color: sevColor }}>
+            {SEV_LABEL[sevKey]}
+          </span>
+          <span aria-hidden>{'·'}</span>
+          <span className="uppercase tracking-[0.08em]">{typeLabelText}</span>
+        </span>
+        <span
+          className={cn(
+            'text-[15px] leading-[20px] text-foreground',
+            expanded ? 'whitespace-normal' : 'line-clamp-2',
+          )}
+        >
+          {entry.title}
+        </span>
+      </span>
+    </>
+  );
+
+  return (
+    <li
+      className={cn(
+        'relative border-b border-border last:border-b-0',
+        nested && 'bg-[color-mix(in_oklab,var(--foreground)_1.5%,transparent)] opacity-80',
+      )}
+    >
+      <div className="flex items-stretch">
+        {isIncident ? (
+          <button type="button" onClick={navigate} aria-label={rowAriaLabel} className={mainTargetClass}>
+            {mainContent}
+          </button>
+        ) : (
+          <div className={mainTargetClass}>{mainContent}</div>
+        )}
+        <button
+          type="button"
+          onClick={handleExpandClick}
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Collapse event text' : 'Expand event text'}
+          className="flex w-11 shrink-0 items-center justify-center self-stretch text-muted-foreground/60 motion-safe:transition-opacity motion-safe:duration-100 active:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]"
+        >
+          {expanded ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+// ─── Mobile list row (collapsed group) ─────────────────────────────────────
+
+interface LedgerListGroupRowProps {
+  group: LedgerGroup;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+function LedgerListGroupRow({ group, expanded, onToggle }: LedgerListGroupRowProps) {
+  const sevColor = SEV_VAR[group.severity];
+  const count = group.members.length;
+  // members[] is newest-first (source order); the range reads oldest→newest,
+  // matching the table's LedgerGroupRow.
+  const newest = group.members[0];
+  const oldest = group.members[group.members.length - 1];
+  const timeLabel = formatLedgerTime(newest.timestamp);
+  const rangeLabel = `${formatShortTime(oldest.timestamp)}–${formatShortTime(newest.timestamp)}`;
+
+  return (
+    <li className="relative border-b border-border last:border-b-0">
+      <div className="flex items-stretch">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${count} grouped "${group.title}" events, ${rangeLabel}`}
+          className="flex min-h-[56px] w-full min-w-0 items-stretch gap-3 py-3 pl-4 pr-4 text-left motion-safe:transition-colors motion-safe:duration-100 active:bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]"
+        >
+          <span
+            aria-hidden
+            className="w-[3px] shrink-0 self-stretch rounded-full"
+            style={{ background: sevColor }}
+          />
+          <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+            <span className="flex items-center gap-1.5 font-mono text-[11px] leading-[14px] tabular-nums text-muted-foreground">
+              <span className="whitespace-nowrap">{timeLabel}</span>
+              <span aria-hidden>{'·'}</span>
+              <span className="font-semibold uppercase tracking-[0.08em]" style={{ color: sevColor }}>
+                {SEV_LABEL[group.severity]}
+              </span>
+              <span aria-hidden>{'·'}</span>
+              <span className="uppercase tracking-[0.08em]">{typeLabel(group.type)}</span>
+            </span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="min-w-0 flex-1 line-clamp-2 text-[15px] leading-[20px] text-foreground">
+                {group.title}
+              </span>
+              <span className="shrink-0 rounded-full bg-[color-mix(in_oklab,var(--foreground)_8%,transparent)] px-1.5 py-[1px] font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">
+                {'×'}
+                {count}
+              </span>
+            </span>
+            <span className="font-mono text-[11px] leading-[14px] text-muted-foreground/70">
+              {rangeLabel}
+            </span>
+          </span>
+          {expanded ? (
+            <ChevronUp size={16} aria-hidden className="ml-auto shrink-0 self-center text-muted-foreground/50" />
+          ) : (
+            <ChevronDown size={16} aria-hidden className="ml-auto shrink-0 self-center text-muted-foreground/50" />
+          )}
+        </button>
+      </div>
+    </li>
+  );
+}
+
 // ─── Root component ─────────────────────────────────────────────────────────
 
 export function Ledger({
@@ -609,6 +781,7 @@ export function Ledger({
       <SectionHeader flush title="LEDGER" subtitle={subtitle} count={`${entries.length} entries`} />
 
       <div>
+        <div className="hidden md:block">
         <table className="w-full table-fixed border-collapse">
           <caption className="sr-only">Recent incidents and AI decisions</caption>
           {/* Sticky only when the table is genuinely taller than the viewport it
@@ -682,12 +855,72 @@ export function Ledger({
               })}
           </tbody>
         </table>
+        </div>
+
+        <div className="md:hidden">
+          <ul role="list" className="md:hidden">
+            {loading &&
+              Array.from({ length: 8 }).map((_, i) => (
+                <li
+                  key={i}
+                  className="flex flex-col gap-2 border-b border-border px-4 py-4 last:border-b-0"
+                >
+                  <div
+                    className="h-[8px] rounded-full bg-[var(--muted-foreground)] opacity-30"
+                    style={{ width: '96px' }}
+                    aria-hidden
+                  />
+                  <div
+                    className="h-[8px] rounded-full bg-[var(--muted-foreground)] opacity-30"
+                    style={{ width: '70%' }}
+                    aria-hidden
+                  />
+                </li>
+              ))}
+
+            {!loading && showEmpty && (
+              <li className="px-4 py-8 text-center">
+                <p className="font-mono text-[12px] leading-[16px] text-muted-foreground opacity-70">
+                  No events in the last {windowValue}.
+                </p>
+                <p className="mt-1 font-mono text-[11px] leading-[16px] text-muted-foreground">
+                  Widen the window to see more history.
+                </p>
+              </li>
+            )}
+
+            {!loading &&
+              !showEmpty &&
+              flatRows.map((row) => {
+                if (row.kind === 'groupHeader') {
+                  return (
+                    <LedgerListGroupRow
+                      key={row.key}
+                      group={row.group}
+                      expanded={row.expanded}
+                      onToggle={() => toggleGroup(row.group.id)}
+                    />
+                  );
+                }
+                const entry = row.entry;
+                return (
+                  <LedgerListRow
+                    key={row.key}
+                    entry={entry}
+                    expanded={expandedIds.has(entry.id)}
+                    onToggleExpand={() => toggleExpand(entry.id)}
+                    nested={row.kind === 'nested'}
+                  />
+                );
+              })}
+          </ul>
+        </div>
 
         {!loading && !showEmpty && remainingCount > 0 && (
           <button
             type="button"
             onClick={() => setVisibleRows((n) => n + 40)}
-            className="h-9 w-full border-t border-[var(--border)] font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--brand-text)] hover:bg-[color-mix(in_oklab,var(--brand)_6%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] transition-colors duration-150"
+            className="h-11 md:h-9 w-full border-t border-[var(--border)] font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--brand-text)] hover:bg-[color-mix(in_oklab,var(--brand)_6%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] transition-colors duration-150"
           >
             Show {nextRevealCount} more
           </button>

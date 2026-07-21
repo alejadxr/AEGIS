@@ -128,7 +128,10 @@ export function CommandBar({
   // TopNav already declares that landmark and two banners is an a11y violation.
   return (
     <>
-    <div className="sticky top-[var(--nav-h)] z-30 w-full">
+    {/* Below md the strip scrolls away with the page; TopNav is the only
+        pinned top chrome, and --sticky-top collapses to --nav-h in
+        globals.css to match (nothing is pinned below TopNav on mobile). */}
+    <div className="static w-full md:sticky md:top-[var(--nav-h)] md:z-30">
       <div
         className="border-b border-border"
         style={{
@@ -137,9 +140,11 @@ export function CommandBar({
           WebkitBackdropFilter: 'blur(12px)',
         }}
       >
-        <div className="max-w-[1400px] mx-auto px-6 h-[52px] flex items-center">
-          {/* LEFT CLUSTER */}
-          <div className="flex items-center gap-[10px] shrink-0">
+        <div className="max-w-[1400px] mx-auto px-4 md:px-6 h-[52px] flex items-center">
+          {/* LEFT CLUSTER — hidden below md: TopNav already shows the AEGIS
+              wordmark + version, so duplicating it here below md wasted the
+              entire left slot on a phone. */}
+          <div className="hidden md:flex items-center gap-[10px] shrink-0">
             <span className="font-sans font-semibold text-[15px] tracking-[-0.4px] text-foreground">
               AEGIS
             </span>
@@ -148,6 +153,18 @@ export function CommandBar({
                 v{version}
               </span>
             )}
+          </div>
+
+          {/* Mobile-only: the DETECT readout is hidden below 900px on desktop,
+              which left the whole bar duplicating TopNav's wordmark. Below md it
+              is the ONLY thing in the left slot — the one fact that matters at 3am. */}
+          <div className="md:hidden flex items-center min-w-0 shrink">
+            <StatusReadout
+              dotColor={readouts[0].dotColor}
+              label={readouts[0].label}
+              value={readouts[0].value}
+              loading={loading}
+            />
           </div>
 
           {/* CENTRE CLUSTER — hidden below 900px */}
@@ -190,8 +207,8 @@ export function CommandBar({
             borderColor: 'color-mix(in oklab, var(--brand) 20%, transparent)',
           }}
         >
-          <div className="max-w-[1400px] mx-auto px-6 h-[34px] flex items-center justify-between gap-4">
-            <p className="text-[12px] font-normal text-foreground truncate">
+          <div className="max-w-[1400px] mx-auto px-4 md:px-6 min-h-[44px] md:h-[34px] py-2 md:py-0 flex items-center justify-between gap-3 md:gap-4">
+            <p className="text-[12px] leading-[16px] font-normal text-foreground line-clamp-2 md:truncate md:leading-normal">
               New to AEGIS? An 11-step walkthrough explains every module.{' '}
               <Link
                 href="/dashboard/guide"
@@ -204,7 +221,7 @@ export function CommandBar({
               type="button"
               onClick={dismissFirstRun}
               aria-label="Dismiss"
-              className="shrink-0 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors duration-150"
+              className="tap-44 w-11 h-11 md:w-auto md:h-auto shrink-0 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors duration-150"
             >
               <X size={20} />
             </button>
@@ -291,8 +308,9 @@ function WindowControl({ value, onChange }: { value: TimeWindow; onChange: (w: T
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(opt.id)}
             className={cn(
-              'h-[28px] px-[10px] rounded-[6px] flex items-center justify-center',
+              'h-[28px] px-[10px] max-md:h-[44px] max-md:min-w-[54px] max-md:px-[14px] rounded-[6px] flex items-center justify-center',
               'text-[11px] font-mono uppercase tracking-wide transition-colors duration-150',
+              'motion-safe:active:scale-[0.97] motion-safe:duration-[120ms]',
               active
                 ? 'bg-brand-muted text-[var(--brand-text,var(--brand))] font-semibold'
                 : 'bg-transparent text-muted-foreground hover:text-foreground',
@@ -331,7 +349,7 @@ function ThemeToggle() {
       onClick={toggle}
       aria-label="Toggle theme"
       className={cn(
-        'w-8 h-8 shrink-0 flex items-center justify-center rounded-[8px]',
+        'hidden md:flex w-8 h-8 shrink-0 items-center justify-center rounded-[8px]',
         'border border-border text-muted-foreground',
         'transition-colors duration-150',
         'hover:border-[var(--border-hover,var(--border-strong))] hover:text-foreground',
