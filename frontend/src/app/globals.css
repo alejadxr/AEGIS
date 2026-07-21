@@ -812,3 +812,145 @@
 
 :root:not(.dark) .bg-black\/60 { background-color: rgba(15, 17, 20, 0.35) !important; }
 :root:not(.dark) .bg-black\/70 { background-color: rgba(15, 17, 20, 0.45) !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE APP SHELL (v1.6.4.9) — additive, breakpoint-guarded.
+   Nothing in this block can reach a viewport >= 768px: every custom
+   property is restored to its exact pre-existing desktop value in the
+   min-width:768px query below, and every rule is inside max-width:767px.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+    /* Safe areas. These are 0px unless src/app/layout.tsx exports
+       viewport-fit: 'cover' — see the viewport export there. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+
+    /* Chrome heights. MOBILE values are the defaults; the desktop numbers
+       (65 / 53 / 118) are restored below. These three used to be a hardcoded
+       inline style object on the root div of dashboard/layout.tsx — an inline
+       style can never be overridden by a media query, which is why they moved
+       here. Read by CommandBar (sticky top), Ledger (sticky thead),
+       WatchPanel (sticky rail). */
+    --nav-h: 53px;          /* TopNav: inner 52px + 1px border-b */
+    --cmdbar-h: 0px;        /* CommandBar is not sticky below md */
+    --sticky-top: 53px;     /* = --nav-h + --cmdbar-h */
+
+    /* Bottom tab bar */
+    --mobile-tab-h: 56px;                                        /* content height, excludes safe area */
+    --tabbar-total: calc(var(--mobile-tab-h) + var(--safe-bottom));
+    --fab-bottom: calc(var(--tabbar-total) + 16px);              /* AskAI FAB clearance */
+}
+
+@media (min-width: 768px) {
+    :root {
+        /* EXACT pre-existing values from dashboard/layout.tsx:57-59. */
+        --nav-h: 65px;
+        --cmdbar-h: 53px;
+        --sticky-top: 118px;
+        /* No bottom bar on desktop; --fab-bottom == the old `bottom-6`. */
+        --mobile-tab-h: 0px;
+        --tabbar-total: 0px;
+        --fab-bottom: 24px;
+    }
+}
+
+@media (max-width: 767px) {
+    /* ── 44pt hit-area expansion without visual enlargement ──────────
+       The control keeps its painted 32-36px box; a transparent, centred
+       pseudo-element extends the pointer target to 44x44 (or to the
+       element's own box, whichever is larger). The class is a NO-OP at
+       >=768px because this rule does not exist there. */
+    .tap-44 { position: relative; }
+    .tap-44::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 44px;
+        height: 44px;
+        min-width: 100%;
+        min-height: 100%;
+        transform: translate(-50%, -50%);
+    }
+
+    /* Native tap feel: kill the grey flash, keep our own :active states. */
+    a, button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+
+    /* iOS never auto-zooms a focused field at >=16px. */
+    input, textarea, select { font-size: 16px; }
+
+    /* Anchors must not land under the pinned header. */
+    html { scroll-padding-top: calc(var(--nav-h) + 8px); }
+    body { overscroll-behavior-y: contain; }
+
+    /* ── Sub-44pt controls in panels this plan does not own, reached
+       through stable aria hooks that already exist in the markup.
+       min-height beats the components' height utilities. ───────────── */
+
+    /* TriageQueue h-7 (28px) and IncidentDossier h-[26px] approve/reject.
+       NOTE: matched by prefix on the FIRST word only ("Approve"/"Reject",
+       not "Approve "/"Reject " with a trailing space) — Next 15.5.20's
+       bundled CSS minifier (cssnano-simple) crashes the production build
+       ("Cannot read properties of undefined (reading '0')") on any
+       attribute-selector value containing a literal space once an earlier
+       pass (Tailwind v4 / Lightning CSS) rewrites it to an unquoted,
+       backslash-escaped form its own compat-check re-parser can't read.
+       Verified against src/ that no other aria-label starts with these
+       words, so the match stays unique without the trailing space. */
+    button[aria-label^="Approve"],
+    button[aria-label^="Reject"] { min-height: 44px; padding-inline: 16px; }
+
+    /* TriageQueue "Show N more" (h-9) and the empty-state CTA (h-[34px]).
+       Substring match on "Triage" (one word) for the same minifier-crash
+       reason as above — the exact-match value "Triage queue" contains a
+       space and reproduces the same build failure. */
+    [aria-label*="Triage"] button,
+    [aria-label*="Triage"] a[href] { min-height: 44px; }
+
+    /* IncidentDossier's own controls when expanded. Prefix "Details" (no
+       trailing space) — same minifier-crash reason as above. */
+    [aria-label^="Details"] button { min-height: 44px; }
+
+    /* SectionTabs (px-3 py-1.5 ~= 30px) — the second-level nav on
+       Threats/Defense/Assets. 8px between targets per the tap-spacing rule. */
+    nav[aria-label="Section"] { gap: 8px; padding-block: 6px; }
+    nav[aria-label="Section"] a { min-height: 44px; padding-inline: 14px; }
+
+    /* ── VerdictLine sub-line: 3 mono lines -> 2 at 390px ───────────
+       88 chars at Azeret 12px/0.6em advance = 49 chars/line = 3 lines
+       after greedy wrapping. 11px + -0.02em = 56 chars/line = 2 lines.
+       Prefix "Current" (no trailing space) — same minifier-crash reason
+       as above; the exact-match value "Current verdict" contains a space. */
+    section[aria-label^="Current"] > p {
+        font-size: 11px;
+        line-height: 17px;
+        letter-spacing: -0.02em;
+    }
+
+    /* ── AskAI (src/components/shared/AskAI.tsx) ─────────────────────
+       Handled here rather than in the component so the 6-component budget
+       goes to the shell. Selectors are the exact utility chains at
+       AskAI.tsx:110 (FAB) and AskAI.tsx:121 (panel); both are the only
+       elements in the app with those chains. Specificity 0,4,0 beats
+       Tailwind's 0,1,0 without !important. If those classNames change,
+       this block must move into the component. */
+
+    /* FAB: lifted clear of the tab bar. */
+    button.fixed.bottom-6.right-6 {
+        bottom: var(--fab-bottom);
+    }
+    /* Chat panel: corner card -> full-width bottom sheet that covers the
+       tab bar (panel z-50 > bar z-40) and clears the home indicator. */
+    div.fixed.bottom-3.right-3.left-3 {
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 86dvh;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        padding-bottom: var(--safe-bottom);
+    }
+}
