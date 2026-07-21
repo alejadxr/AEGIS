@@ -25,7 +25,7 @@ from app.services import asset_risk
 logger = logging.getLogger("aegis.scheduled_scanner")
 
 # Default scan intervals (can be overridden per client via client.settings)
-DEFAULT_FULL_SCAN_HOURS = 2
+DEFAULT_FULL_SCAN_HOURS = int(os.environ.get("AEGIS_FULL_SCAN_HOURS", "8"))
 DEFAULT_QUICK_SCAN_MINUTES = 30
 DEFAULT_DISCOVERY_HOURS = 1
 ALERT_MODE_SCAN_MINUTES = 30      # interval during alert mode
@@ -439,19 +439,23 @@ class ScheduledScanner:
         if not quick:
             web_ports = [
                 p for p in (nmap_results.get("ports") or [])
-                if p.get("service") in ("http", "https", "ssl/http")
-                or p.get("port") in (80, 443, 8080, 8443, 3000, 3001, 3006, 8000)
+                if p.get("service") in ("http", "https", "ssl/http", "http-proxy", "ssl/https")
+                or p.get("port") in (80, 443, 8080, 8443, 3000, 3001, 3006, 3007, 8000, 8888, 9090)
             ]
 
+            # Scan ALL web ports, not just the first — each service can
+            # have different vulns (e.g. API on 8000 vs frontend on 3007).
             if web_ports:
-                port_num = web_ports[0]["port"]
-                scheme = "https" if port_num in (443, 8443) else "http"
-                url = (
-                    f"{scheme}://{target}:{port_num}"
-                    if port_num not in (80, 443)
-                    else f"{scheme}://{target}"
-                )
-                nuclei_vulns = await loop.run_in_executor(None, self._run_nuclei, url)
+                for wp in web_ports:
+                    port_num = wp["port"]
+                    scheme = "https" if port_num in (443, 8443) else "http"
+                    url = (
+                        f"{scheme}://{target}:{port_num}"
+                        if port_num not in (80, 443)
+                        else f"{scheme}://{target}"
+                    )
+                    findings = await loop.run_in_executor(None, self._run_nuclei, url)
+                    nuclei_vulns.extend(findings)
             elif asset.asset_type in ("web", "api", "web_application", "api_server"):
                 url = f"https://{target}"
                 nuclei_vulns = await loop.run_in_executor(None, self._run_nuclei, url)
@@ -573,11 +577,12 @@ class ScheduledScanner:
     # ------------------------------------------------------------------ #
 
     def _run_nmap(self, target: str) -> dict:
-        """Full nmap -sV -sC -T4 top-1000 ports."""
+        """Full nmap -sV -sC --script vuln,auth,default -O -T4 top-3000 ports."""
         nmap_bin = NMAP_PATH if os.path.isfile(NMAP_PATH) else (shutil.which("nmap") or "nmap")
         cmd = [
-            nmap_bin, "-sV", "-sC", "-T4",
-            "--top-ports", "1000",
+            nmap_bin, "-sV", "-sC", "-O", "-T4",
+            "--script", "vuln,auth,default",
+            "--top-ports", "3000",
             "--exclude-ports", "2222,8888",
             "--open",
             "-oG", "-",
@@ -585,10 +590,10 @@ class ScheduledScanner:
         ]
         logger.info(f"Running nmap (full): {' '.join(cmd)}")
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             ports = self._parse_nmap_greppable(result.stdout)
             logger.info(f"nmap found {len(ports)} open ports on {target}")
-            return {"target": target, "ports": ports, "raw": result.stdout[:2000]}
+            return {"target": target, "ports": ports, "raw": result.stdout[:4000]}
         except subprocess.TimeoutExpired:
             logger.warning(f"nmap timed out for {target}")
             return {"target": target, "ports": [], "error": "timeout"}
@@ -663,13 +668,15 @@ class ScheduledScanner:
             "-u", url,
             "-jsonl",
             "-silent",
-            "-severity", "critical,high,medium",
-            "-timeout", "10",
-            "-retries", "1",
+            "-severity", "critical,high,medium,low",
+            "-tags", "cve,misconfig,exposure,default-login,takeover,xss,sqli,lfi,rfi,ssrf,rce",
+            "-timeout", "20",
+            "-retries", "2",
+            "-rl", "100",
         ]
         logger.info(f"Running nuclei: {' '.join(cmd)}")
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             vulns = []
             for line in result.stdout.strip().split("\n"):
                 if not line.strip():
