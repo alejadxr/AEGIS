@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Float, JSON, DateTime, ForeignKey
+from sqlalchemy import String, Float, JSON, DateTime, ForeignKey, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, UUIDMixin, TimestampMixin
 
@@ -23,3 +23,19 @@ class Asset(Base, UUIDMixin, TimestampMixin):
     client = relationship("Client", back_populates="assets")
     vulnerabilities = relationship("Vulnerability", back_populates="asset", cascade="all, delete-orphan")
     incidents = relationship("Incident", back_populates="target_asset")
+
+    __table_args__ = (
+        # Makes asset identity actually unique at the DB level: one row per
+        # (client, IP) instead of relying on every writer (auto-discovery,
+        # /register, /report-assets, ...) correctly matching existing rows
+        # before inserting. A violated constraint fails loudly instead of
+        # silently forking a duplicate Asset. NULL/empty IPs are excluded so
+        # hostname-only assets (no IP discovered yet) aren't constrained.
+        Index(
+            "uq_assets_client_ip",
+            "client_id",
+            "ip_address",
+            unique=True,
+            postgresql_where=text("ip_address IS NOT NULL AND ip_address <> ''"),
+        ),
+    )
