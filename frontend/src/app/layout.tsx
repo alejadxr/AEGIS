@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Outfit, Azeret_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,25 @@ const azeret = Azeret_Mono({
 
 const AEGIS_VERSION = process.env.NEXT_PUBLIC_AEGIS_VERSION;
 
+// v1.6.4.9: viewport-fit=cover is what makes env(safe-area-inset-*) resolve to
+// a real value instead of 0 — required for the mobile bottom tab bar to clear
+// the home indicator. This has to live here (a server component) because
+// dashboard/layout.tsx is a client component and Next.js forbids a `viewport`
+// export there. themeColor is intentionally static per color-scheme (not tied
+// to the app's actual localStorage-driven theme toggle below), so the
+// address-bar tint can briefly disagree with the chosen theme on load — that
+// mismatch is accepted, it's still strictly better than the browser default.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  interactiveWidget: 'resizes-content',
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#16181D' }, // == --background (.dark), globals.css:270
+    { media: '(prefers-color-scheme: light)', color: '#FAFBFC' }, // == --background (:root), globals.css:135
+  ],
+};
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://aegis.somoswilab.com'),
   title: 'AEGIS | Open-Source Ransomware Defense and EDR Platform',
@@ -43,6 +62,7 @@ export const metadata: Metadata = {
     'autonomous incident response',
   ],
   authors: [{ name: 'AEGIS Contributors' }],
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'AEGIS' },
   openGraph: {
     type: 'website',
     siteName: 'AEGIS',
@@ -158,7 +178,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-screen antialiased">
+      <body className="min-h-dvh antialiased">
         {children}
       </body>
     </html>
