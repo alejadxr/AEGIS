@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.openrouter import openrouter_client
 from app.core.ai_mode import degrade_or_call
+from app.services import asset_risk
 from app.models.asset import Asset
 from app.models.client import Client
 from app.models.vulnerability import Vulnerability
@@ -263,10 +264,72 @@ async def _fetch_client(client_id: str, db: AsyncSession) -> Optional[Client]:
 
 
 async def _fetch_assets(client_id: str, db: AsyncSession) -> list[Asset]:
-    result = await db.execute(
-        select(Asset).where(Asset.client_id == client_id).order_by(Asset.risk_score.desc())
-    )
+    # No order_by(Asset.risk_score) here — that column is a stale, possibly
+    # AI-scored write from a legacy path (see _score_assets_live below) and
+    # can disagree with the live number the report actually prints. Callers
+    # sort by the freshly computed score instead, once it's available.
+    result = await db.execute(select(Asset).where(Asset.client_id == client_id))
     return list(result.scalars().all())
+
+
+async def _score_assets_live(
+    client_id: str, db: AsyncSession, assets: list[Asset]
+) -> dict[str, dict]:
+    """Compute the live ``service_weighted_v1`` risk score for each asset.
+
+    Mirrors ``app.api.surface.list_assets`` exactly: same open-vulnerability
+    GROUP BY aggregation and the same fleet-wide ``host_index`` for host-wide
+    port damping, then delegates to ``asset_risk.score_asset()`` — the same
+    function the live dashboard calls. This guarantees a report's risk
+    numbers can never diverge from what the dashboard shows for the same
+    asset, independent of whatever last wrote the stored (and often stale —
+    see asset auto-discovery) ``Asset.risk_score`` column.
+
+    Returns ``{asset.id: score_asset()-result-dict}``.
+    """
+    asset_ids = [a.id for a in assets]
+    vuln_stats: dict[str, dict[str, int]] = {}
+    if asset_ids:
+        agg = await db.execute(
+            select(
+                Vulnerability.asset_id,
+                Vulnerability.severity,
+                func.count(Vulnerability.id).label("cnt"),
+            )
+            .where(
+                Vulnerability.asset_id.in_(asset_ids),
+                Vulnerability.status == "open",
+            )
+            .group_by(Vulnerability.asset_id, Vulnerability.severity)
+        )
+        for row in agg.all():
+            asset_id, severity, cnt = row[0], row[1], int(row[2] or 0)
+            stats = vuln_stats.setdefault(asset_id, {"critical": 0, "high": 0, "total": 0})
+            stats["total"] += cnt
+            if severity == "critical":
+                stats["critical"] += cnt
+            elif severity == "high":
+                stats["high"] += cnt
+
+    fleet_result = await db.execute(
+        select(Asset.id, Asset.ip_address, Asset.hostname, Asset.ports)
+        .where(Asset.client_id == client_id)
+    )
+    host_index = asset_risk.build_host_index(fleet_result.all())
+
+    scores: dict[str, dict] = {}
+    for a in assets:
+        stats = vuln_stats.get(a.id, {"critical": 0, "high": 0, "total": 0})
+        scores[a.id] = asset_risk.score_asset(
+            ports=a.ports or [],
+            ip_address=a.ip_address,
+            hostname=a.hostname,
+            critical_vulns=stats["critical"],
+            high_vulns=stats["high"],
+            total_vulns=stats["total"],
+            host_index=host_index,
+        )
+    return scores
 
 
 async def _fetch_vulns(
@@ -571,7 +634,7 @@ class PDFReportGenerator:
         elements.append(Spacer(1, 6))
         return elements
 
-    def _build_asset_inventory(self, assets: list[Asset]) -> list:
+    def _build_asset_inventory(self, assets: list[Asset], risk_scores: dict[str, dict]) -> list:
         elements = []
         elements.append(Paragraph("2. Asset Inventory", self.styles["SectionTitle"]))
 
@@ -586,11 +649,14 @@ class PDFReportGenerator:
         headers = ["Hostname / IP", "Type", "Status", "Risk Score", "Last Scan"]
         rows = []
         for a in assets[:50]:  # cap at 50 for readability
+            # Freshly computed — never a.risk_score (stale/legacy-scored
+            # stored column). Matches app.api.surface.list_assets exactly.
+            risk_score = risk_scores.get(a.id, {}).get("risk_score", a.risk_score)
             rows.append([
                 _truncate(a.hostname or a.ip_address or "N/A", 40),
                 (a.asset_type or "unknown").title(),
                 a.status.title(),
-                f"{a.risk_score:.1f}",
+                f"{risk_score:.1f}",
                 a.last_scan_at.strftime("%Y-%m-%d") if a.last_scan_at else "Never",
             ])
 
@@ -927,6 +993,14 @@ class PDFReportGenerator:
 
         # Fetch data
         assets = await _fetch_assets(client_id, db)
+        asset_risk_scores = await _score_assets_live(client_id, db, assets)
+        # Sort by the freshly computed score (was previously ORDER BY the
+        # stored column — see _fetch_assets).
+        assets = sorted(
+            assets,
+            key=lambda a: asset_risk_scores[a.id]["risk_score"],
+            reverse=True,
+        )
         vulns = await _fetch_vulns(client_id, db, since)
         incidents = await _fetch_incidents(client_id, db, since)
         actions = await _fetch_actions(client_id, db, since)
@@ -1013,7 +1087,7 @@ class PDFReportGenerator:
             narrative=narrative,
         ))
         elements.append(PageBreak())
-        elements.extend(self._build_asset_inventory(assets))
+        elements.extend(self._build_asset_inventory(assets, asset_risk_scores))
         elements.append(PageBreak())
         elements.extend(self._build_vulnerability_analysis(vulns))
         elements.append(PageBreak())
