@@ -10,12 +10,25 @@ import { cn } from '@/lib/utils';
    Types
    ────────────────────────────────────────── */
 
+interface AssetPort {
+  port: number;
+  protocol?: string;
+  service?: string;
+  version?: string;
+  state?: string;
+}
+
 interface Asset {
   id: string;
   hostname: string;
   ip_address: string;
   asset_type: string;
-  ports: number[];
+  // Real backend shape (service_weighted_v1): an object per open port, not a
+  // bare number — was previously mistyped as number[] here, which silently
+  // broke every ports.some()/join() call below (objects never matched the
+  // port-number Sets, and joined as "[object Object]"). Fixed to read
+  // `.port` off each entry rather than the entry itself.
+  ports: AssetPort[];
   technologies: string[];
   status: string;
   risk_score: number;
@@ -78,9 +91,9 @@ const DB_PORTS = new Set([5432, 3306, 27017, 6379, 11211]);
 const API_PORTS = new Set([8000, 8080, 8443, 9000, 11434]);
 
 function classifyNode(asset: Asset): GraphNode['type'] {
-  const hasExternalPort = asset.ports.some((p) => EXTERNAL_PORTS.has(p));
-  const hasDBPort = asset.ports.some((p) => DB_PORTS.has(p));
-  const hasAPIPort = asset.ports.some((p) => API_PORTS.has(p));
+  const hasExternalPort = asset.ports.some((p) => EXTERNAL_PORTS.has(p.port));
+  const hasDBPort = asset.ports.some((p) => DB_PORTS.has(p.port));
+  const hasAPIPort = asset.ports.some((p) => API_PORTS.has(p.port));
 
   if (hasDBPort) return 'database';
   if (hasAPIPort && !hasExternalPort) return 'api';
@@ -111,7 +124,7 @@ function buildGraph(assets: Asset[]): { nodes: GraphNode[]; edges: GraphEdge[] }
 
   // Create nodes for each asset
   for (const asset of assets) {
-    const portsList = asset.ports.slice(0, 3).join(', ');
+    const portsList = asset.ports.slice(0, 3).map((p) => p.port).join(', ');
     const portsLabel = asset.ports.length > 3 ? `${portsList}...` : portsList;
 
     nodes.push({
@@ -637,7 +650,7 @@ export default function AttackPathPage() {
                     </div>
                     <div className="flex justify-between text-[11px]">
                       <span className="text-muted-foreground">Ports</span>
-                      <span className="text-foreground/80 font-mono">{hoveredNode.asset.ports.join(', ') || 'None'}</span>
+                      <span className="text-foreground/80 font-mono">{hoveredNode.asset.ports.map((p) => p.port).join(', ') || 'None'}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
                       <span className="text-muted-foreground">Risk Score</span>
@@ -712,7 +725,7 @@ export default function AttackPathPage() {
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
                     <span className="text-[11px] text-muted-foreground font-mono hidden sm:block">
-                      {asset.ports.slice(0, 4).join(', ')}
+                      {asset.ports.slice(0, 4).map((p) => p.port).join(', ')}
                     </span>
                     <span
                       className="text-[12px] font-mono font-semibold min-w-[50px] text-right"

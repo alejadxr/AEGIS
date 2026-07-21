@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { InformationCircleIcon } from 'hugeicons-react';
+import { RotateCcw } from 'lucide-react';
 import { Panel, EmptyState } from '@/components/aegis';
 import { cn } from '@/lib/utils';
 import { CC_TO_LATLON } from '@/lib/geo-centroids';
@@ -28,6 +29,10 @@ import { resolveCountryName } from '@/lib/geo/country-names';
  * Zero runtime dependency on d3-geo / topojson-client / world-atlas — those
  * only run inside the build script. The browser loads a static path string
  * and a plain lon/lat -> xy linear projection helper.
+ *
+ * The map is also operable: wheel/pinch to zoom, drag to pan, keyboard
+ * (+/-/arrows/0), and bidirectional marker<->list selection. See the
+ * "ZOOM / PAN TRANSFORM MODEL" section below for the mechanics.
  */
 
 export interface OriginMapEntry {
@@ -141,6 +146,128 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
+/** True below the 820px two-pane breakpoint this component uses elsewhere
+ * (`min-[820px]:`). SSR-safe: defaults false, corrected post-mount — same
+ * pattern as usePrefersReducedMotion above. */
+function useIsNarrowViewport(): boolean {
+  const [narrow, setNarrow] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia('(max-width: 819px)');
+    setNarrow(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setNarrow(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return narrow;
+}
+
+/** '⌘' on Apple platforms, 'Ctrl' everywhere else. SSR-safe default. */
+function useModifierKeyLabel(): string {
+  const [label, setLabel] = React.useState('Ctrl');
+  React.useEffect(() => {
+    const nav = window.navigator as Navigator & { userAgentData?: { platform?: string } };
+    const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent || '';
+    if (/mac/i.test(platform)) setLabel('⌘');
+  }, []);
+  return label;
+}
+
+// ---------------------------------------------------------------------------
+// ZOOM / PAN TRANSFORM MODEL
+//
+// State is {k, tx, ty}: the group is rendered as
+//   translate(tx, ty) scale(k)
+// applied directly in the SVG's own viewBox coordinate space (never the
+// viewBox itself, which stays fixed). k in [1, 8]. tx/ty are clamped after
+// every change so land can never leave the frame; at k===1 the clamp
+// collapses both to a single point, so pan is structurally impossible at
+// rest.
+// ---------------------------------------------------------------------------
+
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 8;
+const ZOOM_STEP = 1.6;
+const MOBILE_INITIAL_K = 1.6;
+const WHEEL_SENSITIVITY = 0.002;
+const ARROW_PAN_STEP = 40;
+const DOUBLE_TAP_MAX_MS = 300;
+const DOUBLE_TAP_MAX_DIST = 24;
+const HINT_DURATION_MS = 1600;
+const HINT_MAX_SHOWS = 2;
+
+/** Centre of the cropped viewBox — the pivot for button/keyboard zoom. */
+const CENTER_POINT = { x: MAP_W / 2, y: VIEW_Y + VIEW_H / 2 };
+
+interface ViewTransform {
+  k: number;
+  tx: number;
+  ty: number;
+  /** Whether THIS state change should animate (button/keyboard/double-tap
+   * steps) or apply instantly (wheel/drag/pinch — continuous gestures). */
+  smooth: boolean;
+}
+
+const IDENTITY_TRANSFORM: ViewTransform = { k: 1, tx: 0, ty: 0, smooth: false };
+
+function clampK(k: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k));
+}
+
+/** Clamp tx/ty so the cropped viewBox frame always stays over land+ocean,
+ * never past the edge of the projected world. */
+function clampPan(k: number, tx: number, ty: number): { tx: number; ty: number } {
+  const txMin = MAP_W * (1 - k);
+  const tyMin = (VIEW_Y + VIEW_H) * (1 - k);
+  const tyMax = VIEW_Y * (1 - k);
+  return {
+    tx: Math.min(0, Math.max(txMin, tx)),
+    ty: Math.min(tyMax, Math.max(tyMin, ty)),
+  };
+}
+
+/** Zoom so that SVG-space point `p` stays fixed on screen: t' = p - (k'/k)(p - t). */
+function zoomAbout(prev: ViewTransform, p: { x: number; y: number }, newKRaw: number, smooth: boolean): ViewTransform {
+  const k = clampK(newKRaw);
+  const ratio = k / prev.k;
+  const rawTx = p.x - ratio * (p.x - prev.tx);
+  const rawTy = p.y - ratio * (p.y - prev.ty);
+  const { tx, ty } = clampPan(k, rawTx, rawTy);
+  return { k, tx, ty, smooth };
+}
+
+function panBy(prev: ViewTransform, dx: number, dy: number, smooth: boolean): ViewTransform {
+  const { tx, ty } = clampPan(prev.k, prev.tx + dx, prev.ty + dy);
+  return { ...prev, tx, ty, smooth };
+}
+
+/** Screen (client) coords -> this SVG's own user-space coords, via the
+ * live CTM — never a hand-rolled offset (the SVG is letterboxed by
+ * preserveAspectRatio, so naive bounding-box math drifts). */
+function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } {
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return { x: 0, y: 0 };
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const transformed = pt.matrixTransform(ctm.inverse());
+  return { x: transformed.x, y: transformed.y };
+}
+
+/** Mobile-only initial view: centred on the top-5 markers' centroid at
+ * MOBILE_INITIAL_K, so a 125px-tall phone viewport opens on the active
+ * region instead of a postage-stamp world. Falls back to all markers, then
+ * to identity, when there is nothing to centre on. */
+function computeMobileInitialTransform(markers: Marker[], top5: Set<string>): ViewTransform {
+  const top5Markers = markers.filter((m) => top5.has(m.code));
+  const pool = top5Markers.length > 0 ? top5Markers : markers;
+  if (pool.length === 0) return { ...IDENTITY_TRANSFORM };
+  const cx = pool.reduce((sum, m) => sum + m.cx, 0) / pool.length;
+  const cy = pool.reduce((sum, m) => sum + m.cy, 0) / pool.length;
+  const k = MOBILE_INITIAL_K;
+  const { tx, ty } = clampPan(k, CENTER_POINT.x - k * cx, CENTER_POINT.y - k * cy);
+  return { k, tx, ty, smooth: false };
+}
+
 interface Marker {
   code: string;
   country: string;
@@ -150,19 +277,40 @@ interface Marker {
   r: number;
   tier: Tier;
   isTop: boolean;
-  showLabel: boolean;
-  /** Truncated "{owner} · {asn}" annotation, or null when unattributed. */
+  /** Truncated "{owner} · {asn}" annotation for the on-map label, or null. */
   asnLabel: string | null;
+  /** Full "{owner} · {asn}[ +N]" line for the <title> tooltip, or null. */
+  asnLine: string | null;
 }
 
 const rowFocusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-1 focus-visible:ring-offset-card';
 
+const zoomButtonClass =
+  'flex items-center justify-center rounded-[8px] border border-[var(--border)] bg-[color-mix(in_oklab,var(--card)_92%,transparent)] backdrop-blur-[2px] text-foreground h-11 w-11 md:h-7 md:w-7 disabled:cursor-not-allowed';
+
 export function OriginMap({ data, homeAsn, loading = false, error = false, onRetry }: OriginMapProps) {
   const reactId = React.useId();
   const oceanPatternId = `aegis-ocean-${reactId}`;
+  const instructionsId = `aegis-map-instructions-${reactId}`;
   const prefersReducedMotion = usePrefersReducedMotion();
+  const isNarrow = useIsNarrowViewport();
+  const modifierLabel = useModifierKeyLabel();
   const [hoveredCode, setHoveredCode] = React.useState<string | null>(null);
+  const [selectedCode, setSelectedCode] = React.useState<string | null>(null);
+  const [transform, setTransform] = React.useState<ViewTransform>(IDENTITY_TRANSFORM);
+  const [pointerCount, setPointerCount] = React.useState(0);
+  const [hintVisible, setHintVisible] = React.useState(false);
+
+  const svgRef = React.useRef<SVGSVGElement>(null);
+  const mapDivRef = React.useRef<HTMLDivElement>(null);
+  const pointersRef = React.useRef<Map<number, { x: number; y: number }>>(new Map());
+  const lastTapRef = React.useRef<{ x: number; y: number; time: number } | null>(null);
+  const hintTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hintCountRef = React.useRef(0);
+  const mobileInitDoneRef = React.useRef(false);
+  const desktopRowRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
+  const chipRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
 
   const sorted = React.useMemo(() => [...data].sort((a, b) => b.count - a.count), [data]);
   const maxCount = React.useMemo(
@@ -193,12 +341,12 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
         r: markerRadius(entry.count, maxCount),
         tier: tierFor(entry.count, maxCount),
         isTop: code === topCode,
-        showLabel: top5Codes.has(code),
         asnLabel: truncateAsnForMarker(entry),
+        asnLine: formatAsnLine(entry),
       });
     }
     return out;
-  }, [sorted, maxCount, topCode, top5Codes]);
+  }, [sorted, maxCount, topCode]);
 
   const unmappedCount = sorted.length - markers.length;
 
@@ -218,6 +366,214 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
 
   const showMarkers = !loading && !error && markers.length > 0;
   const showLegend = !loading && !error && sorted.length > 0;
+  /** Gates all zoom/pan/keyboard affordances — there is nothing to zoom
+   * toward while loading, on error, or with zero attributed sources. */
+  const mapInteractive = !loading && !error && sorted.length > 0;
+
+  // ── Mobile: on first real data, open on the top-5 centroid at 1.6x ──
+  React.useEffect(() => {
+    if (!isNarrow || mobileInitDoneRef.current || !mapInteractive) return;
+    mobileInitDoneRef.current = true;
+    setTransform(computeMobileInitialTransform(markers, top5Codes));
+  }, [isNarrow, mapInteractive, markers, top5Codes]);
+
+  // ── Discrete zoom/pan actions (button, keyboard, double-click/-tap) ──
+  const zoomInStep = React.useCallback(() => {
+    setTransform((prev) => zoomAbout(prev, CENTER_POINT, prev.k * ZOOM_STEP, true));
+  }, []);
+  const zoomOutStep = React.useCallback(() => {
+    setTransform((prev) => zoomAbout(prev, CENTER_POINT, prev.k / ZOOM_STEP, true));
+  }, []);
+  const resetView = React.useCallback(() => {
+    setTransform({ ...IDENTITY_TRANSFORM, smooth: true });
+  }, []);
+  const zoomAtClientPoint = React.useCallback((clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const p = screenToSvgPoint(svg, clientX, clientY);
+    setTransform((prev) => {
+      if (prev.k >= ZOOM_MAX) return { ...IDENTITY_TRANSFORM, smooth: true };
+      return zoomAbout(prev, p, prev.k * ZOOM_STEP, true);
+    });
+  }, []);
+
+  // ── Wheel: Cmd/Ctrl+wheel zooms about the pointer; plain wheel scrolls
+  // the page and shows a one-shot hint instead. Native listener because
+  // React's onWheel is passive and cannot preventDefault. ──
+  const triggerHint = React.useCallback(() => {
+    if (hintCountRef.current >= HINT_MAX_SHOWS) return;
+    hintCountRef.current += 1;
+    setHintVisible(true);
+    if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
+    hintTimeoutRef.current = setTimeout(() => setHintVisible(false), HINT_DURATION_MS);
+  }, []);
+
+  React.useEffect(() => {
+    const el = mapDivRef.current;
+    if (!el || !mapInteractive) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) {
+        triggerHint();
+        return;
+      }
+      e.preventDefault();
+      const svg = svgRef.current;
+      if (!svg) return;
+      const p = screenToSvgPoint(svg, e.clientX, e.clientY);
+      const factor = Math.exp(-e.deltaY * WHEEL_SENSITIVITY);
+      setTransform((prev) => zoomAbout(prev, p, prev.k * factor, false));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [mapInteractive, triggerHint]);
+
+  React.useEffect(
+    () => () => {
+      if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
+    },
+    [],
+  );
+
+  // ── Pointer pan (1 finger, k>1) + pinch (2 fingers) ──
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!mapInteractive) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    setPointerCount(pointersRef.current.size);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!mapInteractive) return;
+    const pointers = pointersRef.current;
+    const prevPoint = pointers.get(e.pointerId);
+    if (!prevPoint) return;
+
+    if (pointers.size === 1) {
+      if (transform.k > 1) {
+        e.preventDefault();
+        const svg = svgRef.current;
+        const ctm = svg?.getScreenCTM();
+        const scale = ctm?.a || 1;
+        const dx = (e.clientX - prevPoint.x) / scale;
+        const dy = (e.clientY - prevPoint.y) / scale;
+        setTransform((prev) => panBy(prev, dx, dy, false));
+      }
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    } else if (pointers.size === 2) {
+      e.preventDefault();
+      const otherId = Array.from(pointers.keys()).find((id) => id !== e.pointerId);
+      const other = otherId != null ? pointers.get(otherId) : undefined;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (other) {
+        const prevDist = Math.hypot(prevPoint.x - other.x, prevPoint.y - other.y);
+        const currDist = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+        const svg = svgRef.current;
+        if (prevDist > 0 && svg) {
+          const factor = currDist / prevDist;
+          const midX = (e.clientX + other.x) / 2;
+          const midY = (e.clientY + other.y) / 2;
+          const p = screenToSvgPoint(svg, midX, midY);
+          setTransform((prev) => zoomAbout(prev, p, prev.k * factor, false));
+        }
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    const wasSolo = pointersRef.current.size === 1 && pointersRef.current.has(e.pointerId);
+    pointersRef.current.delete(e.pointerId);
+    setPointerCount(pointersRef.current.size);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    if (wasSolo && mapInteractive && e.pointerType === 'touch') {
+      const now = performance.now();
+      const last = lastTapRef.current;
+      if (last && now - last.time < DOUBLE_TAP_MAX_MS && Math.hypot(e.clientX - last.x, e.clientY - last.y) < DOUBLE_TAP_MAX_DIST) {
+        lastTapRef.current = null;
+        zoomAtClientPoint(e.clientX, e.clientY);
+      } else {
+        lastTapRef.current = { x: e.clientX, y: e.clientY, time: now };
+      }
+    }
+  };
+
+  const handlePointerCancelOrLeave = (e: React.PointerEvent<SVGSVGElement>) => {
+    pointersRef.current.delete(e.pointerId);
+    setPointerCount(pointersRef.current.size);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!mapInteractive) return;
+    e.preventDefault();
+    zoomAtClientPoint(e.clientX, e.clientY);
+  };
+
+  // ── Keyboard: +/-/arrows/0/Escape on the map region itself ──
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!mapInteractive) return;
+    switch (e.key) {
+      case '+':
+      case '=':
+        e.preventDefault();
+        zoomInStep();
+        break;
+      case '-':
+      case '_':
+        e.preventDefault();
+        zoomOutStep();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setTransform((prev) => panBy(prev, 0, ARROW_PAN_STEP / prev.k, true));
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        setTransform((prev) => panBy(prev, 0, -ARROW_PAN_STEP / prev.k, true));
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        setTransform((prev) => panBy(prev, ARROW_PAN_STEP / prev.k, 0, true));
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        setTransform((prev) => panBy(prev, -ARROW_PAN_STEP / prev.k, 0, true));
+        break;
+      case '0':
+        e.preventDefault();
+        resetView();
+        break;
+      case 'Escape':
+        e.preventDefault();
+        resetView();
+        setSelectedCode(null);
+        e.currentTarget.blur();
+        break;
+      default:
+        break;
+    }
+  };
+
+  // ── Marker <-> list selection sync ──
+  const toggleSelected = (code: string) => {
+    setSelectedCode((c) => (c === code ? null : code));
+  };
+
+  React.useEffect(() => {
+    if (!selectedCode) return;
+    const map = isNarrow ? chipRefs.current : desktopRowRefs.current;
+    const el = map.get(selectedCode);
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+  }, [selectedCode, isNarrow, prefersReducedMotion]);
+
+  const cursorClass = !mapInteractive || transform.k <= 1
+    ? ''
+    : pointerCount === 1
+      ? 'cursor-grabbing'
+      : 'cursor-grab';
+
+  const touchAction = !mapInteractive ? 'pan-y' : transform.k > 1 || pointerCount >= 2 ? 'none' : 'pan-y';
 
   return (
     <Panel
@@ -228,8 +584,22 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
       className="col-span-12 flex flex-col min-[820px]:flex-row min-[820px]:h-[440px] overflow-hidden"
     >
       {/* ═══ LEFT — THE MAP ═══ */}
-      <div className="relative flex-1 min-w-0 h-[300px] min-[820px]:h-full p-5">
+      <div
+        ref={mapDivRef}
+        className="relative flex-1 min-w-0 aspect-[1000/393] min-[820px]:aspect-auto min-[820px]:h-full p-5"
+        style={{ touchAction }}
+        tabIndex={mapInteractive ? 0 : undefined}
+        role={mapInteractive ? 'application' : undefined}
+        aria-roledescription={mapInteractive ? 'Interactive world map' : undefined}
+        aria-label={mapInteractive ? ariaLabel : undefined}
+        aria-describedby={mapInteractive ? instructionsId : undefined}
+        onKeyDown={handleKeyDown}
+      >
+        <p id={instructionsId} className="sr-only">
+          Use plus and minus to zoom, arrow keys to pan, zero to reset. Country totals are also listed in the panel beside the map.
+        </p>
         <svg
+          ref={svgRef}
           viewBox={`0 ${VIEW_Y} ${MAP_W} ${VIEW_H}`}
           preserveAspectRatio="xMidYMid meet"
           role="img"
@@ -237,7 +607,13 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
           width="100%"
           height="100%"
           shapeRendering="geometricPrecision"
-          className="block w-full h-full"
+          className={cn('block w-full h-full', cursorClass)}
+          onDoubleClick={handleDoubleClick}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancelOrLeave}
+          onPointerLeave={handlePointerCancelOrLeave}
         >
           <defs>
             <pattern id={oceanPatternId} width="5" height="5" patternUnits="userSpaceOnUse">
@@ -245,75 +621,118 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
             </pattern>
           </defs>
           <rect x={0} y={VIEW_Y} width={MAP_W} height={VIEW_H} fill={`url(#${oceanPatternId})`} />
-          <path d={LAND_PATH} fill="var(--map-land)" fillRule="nonzero" opacity={error ? 0.5 : 1} />
-          {showMarkers &&
-            markers.map((m) => {
-              const showRing = m.isTop || hoveredCode === m.code;
-              const ringOpacity = hoveredCode === m.code ? 0.55 : 0.28;
-              const ringWidth = hoveredCode === m.code ? 1.5 : 1;
-              return (
-                <g key={m.code}>
-                  {showRing && (
+          <g
+            transform={`translate(${transform.tx} ${transform.ty}) scale(${transform.k})`}
+            style={
+              !prefersReducedMotion && transform.smooth
+                ? { transition: 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)' }
+                : undefined
+            }
+          >
+            <path d={LAND_PATH} fill="var(--map-land)" fillRule="nonzero" opacity={error ? 0.5 : 1} />
+            {showMarkers &&
+              markers.map((m) => {
+                const k = transform.k;
+                const isActive = hoveredCode === m.code || selectedCode === m.code;
+                const showRing = m.isTop || isActive;
+                const ringOpacity = isActive ? 0.55 : 0.28;
+                const ringWidth = isActive ? 1.5 : 1;
+                const showLabel = top5Codes.has(m.code) || k >= 2.5;
+                const titleText = `${m.country} · ${m.count} events${m.asnLine ? ' · ' + m.asnLine : ''}`;
+                return (
+                  <g key={m.code}>
+                    {/* Hit target FIRST in paint order — larger than the
+                        visible marker so it stays tappable at every zoom. */}
                     <circle
                       cx={m.cx}
                       cy={m.cy}
-                      r={m.r + 3.5}
-                      fill="none"
+                      r={Math.max(m.r, 11) / k}
+                      fill="transparent"
+                      onPointerEnter={() => setHoveredCode(m.code)}
+                      onPointerLeave={() => setHoveredCode((c) => (c === m.code ? null : c))}
+                      onClick={() => toggleSelected(m.code)}
+                      style={{ cursor: mapInteractive ? 'pointer' : undefined }}
+                    >
+                      <title>{titleText}</title>
+                    </circle>
+                    {showRing && (
+                      <circle
+                        cx={m.cx}
+                        cy={m.cy}
+                        r={(m.r + 3.5) / k}
+                        fill="none"
+                        stroke={SEV_VAR[m.tier]}
+                        strokeOpacity={ringOpacity}
+                        strokeWidth={ringWidth / k}
+                        style={prefersReducedMotion ? undefined : { transition: TRANSITION }}
+                      />
+                    )}
+                    <circle
+                      cx={m.cx}
+                      cy={m.cy}
+                      r={m.r / k}
+                      fill={SEV_VAR[m.tier]}
+                      fillOpacity={0.55}
                       stroke={SEV_VAR[m.tier]}
-                      strokeOpacity={ringOpacity}
-                      strokeWidth={ringWidth}
-                      style={prefersReducedMotion ? undefined : { transition: TRANSITION }}
+                      strokeWidth={1.25 / k}
                     />
-                  )}
-                  <circle
-                    cx={m.cx}
-                    cy={m.cy}
-                    r={m.r}
-                    fill={SEV_VAR[m.tier]}
-                    fillOpacity={0.55}
-                    stroke={SEV_VAR[m.tier]}
-                    strokeWidth={1.25}
-                  />
-                  {m.showLabel && (
-                    <text
-                      x={m.cx}
-                      y={m.cy - m.r - 4}
-                      textAnchor="middle"
-                      fontSize={9}
-                      fontFamily="var(--font-mono)"
-                      fill="var(--foreground)"
-                      paintOrder="stroke"
-                      stroke="var(--background)"
-                      strokeWidth={2.5}
-                    >
-                      {m.code}
-                    </text>
-                  )}
-                  {/* Supplementary ASN annotation — purely additive, stacked
-                      above the code label so it never overlaps the marker
-                      itself. The rail row (below) already carries this same
-                      string without hovering, so this satisfies the
-                      no-hover-only-information rule even though it renders
-                      unconditionally alongside the top-5 code label. */}
-                  {m.showLabel && m.asnLabel && (
-                    <text
-                      x={m.cx}
-                      y={m.cy - m.r - 13}
-                      textAnchor="middle"
-                      fontSize={7}
-                      fontFamily="var(--font-mono)"
-                      fill="var(--muted-foreground)"
-                      paintOrder="stroke"
-                      stroke="var(--background)"
-                      strokeWidth={2.5}
-                    >
-                      {m.asnLabel}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
+                    {showLabel && (
+                      <text
+                        x={m.cx}
+                        y={m.cy - (m.r + 4) / k}
+                        textAnchor="middle"
+                        fontSize={9 / k}
+                        fontFamily="var(--font-mono)"
+                        fill="var(--foreground)"
+                        paintOrder="stroke"
+                        stroke="var(--background)"
+                        strokeWidth={2.5 / k}
+                      >
+                        {m.code}
+                      </text>
+                    )}
+                    {/* Supplementary ASN annotation — purely additive, stacked
+                        above the code label so it never overlaps the marker
+                        itself. The rail row (below) already carries this same
+                        string without hovering, so this satisfies the
+                        no-hover-only-information rule even though it renders
+                        unconditionally alongside the top-5 code label. */}
+                    {showLabel && m.asnLabel && (
+                      <text
+                        x={m.cx}
+                        y={m.cy - (m.r + 13) / k}
+                        textAnchor="middle"
+                        fontSize={7 / k}
+                        fontFamily="var(--font-mono)"
+                        fill="var(--muted-foreground)"
+                        paintOrder="stroke"
+                        stroke="var(--background)"
+                        strokeWidth={2.5 / k}
+                      >
+                        {m.asnLabel}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+          </g>
         </svg>
+
+        {/* One-shot hint: plain wheel over the map lets the page scroll and
+            explains how to zoom instead. At most twice per mount. */}
+        {mapInteractive && (
+          <div aria-hidden className="pointer-events-none absolute inset-0 z-[4] flex items-center justify-center">
+            <span
+              className={cn(
+                'rounded-full bg-[color-mix(in_oklab,var(--background)_88%,transparent)] border border-[var(--border)] px-3 py-1.5 text-[12px] text-foreground',
+                'pointer-events-none motion-safe:transition-opacity motion-safe:duration-[120ms]',
+                hintVisible ? 'opacity-100' : 'opacity-0',
+              )}
+            >
+              Hold {modifierLabel} to zoom
+            </span>
+          </div>
+        )}
 
         {/* Overlay — top-left: identity + the ONE count on the page. */}
         <div className="pointer-events-none absolute top-5 left-5 z-[2] max-w-[70%]">
@@ -359,8 +778,9 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
           </div>
         )}
 
-        {/* Overlay — bottom-right: honesty disclosure about server-side FP filtering. */}
-        <div className="absolute bottom-5 right-5 z-[2] flex items-center gap-1.5">
+        {/* Overlay — bottom-right (bottom-left on mobile, out of the zoom
+            controls' way): honesty disclosure about server-side FP filtering. */}
+        <div className="absolute z-[2] bottom-3 left-3 min-[820px]:bottom-5 min-[820px]:left-auto min-[820px]:right-5 flex items-center gap-1.5">
           <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/80">
             Excludes known false positives
           </span>
@@ -374,6 +794,42 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
             <InformationCircleIcon size={12} strokeWidth={1.8} />
           </span>
         </div>
+
+        {/* Zoom controls — always visible, never hover-revealed. */}
+        {mapInteractive && (
+          <div className="absolute z-[3] bottom-3 right-3 min-[820px]:bottom-5 min-[820px]:right-5 flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={zoomInStep}
+              disabled={transform.k >= ZOOM_MAX}
+              aria-disabled={transform.k >= ZOOM_MAX}
+              aria-label="Zoom in"
+              className={cn(zoomButtonClass, transform.k >= ZOOM_MAX && 'opacity-40', rowFocusRing)}
+            >
+              <span aria-hidden className="text-[15px] leading-none font-semibold">+</span>
+            </button>
+            <button
+              type="button"
+              onClick={zoomOutStep}
+              disabled={transform.k <= ZOOM_MIN}
+              aria-disabled={transform.k <= ZOOM_MIN}
+              aria-label="Zoom out"
+              className={cn(zoomButtonClass, transform.k <= ZOOM_MIN && 'opacity-40', rowFocusRing)}
+            >
+              <span aria-hidden className="text-[15px] leading-none font-semibold">&minus;</span>
+            </button>
+            <button
+              type="button"
+              onClick={resetView}
+              disabled={transform.k <= ZOOM_MIN}
+              aria-disabled={transform.k <= ZOOM_MIN}
+              aria-label="Reset view"
+              className={cn(zoomButtonClass, transform.k <= ZOOM_MIN && 'opacity-40', rowFocusRing)}
+            >
+              <RotateCcw size={13} strokeWidth={1.8} aria-hidden />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ═══ RIGHT — SOURCE RANK ═══ */}
@@ -442,18 +898,28 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
                 const resolved = resolveCountryName(code);
                 const asnLine = formatAsnLine(entry);
                 const isUplink = isHomeUplink(entry, homeAsn);
+                const isSelected = selectedCode === code;
                 return (
                   <li key={code + i}>
                     <button
                       type="button"
+                      ref={(el) => {
+                        if (el) desktopRowRefs.current.set(code, el);
+                        else desktopRowRefs.current.delete(code);
+                      }}
+                      aria-current={isSelected ? 'true' : undefined}
                       onMouseEnter={() => setHoveredCode(code)}
                       onMouseLeave={() => setHoveredCode((c) => (c === code ? null : c))}
                       onFocus={() => setHoveredCode(code)}
                       onBlur={() => setHoveredCode((c) => (c === code ? null : c))}
+                      onClick={() => toggleSelected(code)}
+                      style={isSelected ? { borderLeftColor: SEV_VAR[tier] } : undefined}
                       className={cn(
-                        'flex w-full flex-col justify-center gap-0.5 rounded-md px-1.5 text-left transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                        'flex w-full flex-col justify-center gap-0.5 rounded-md border-l-2 border-transparent px-1.5 text-left transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
                         asnLine ? 'min-h-[44px] py-1.5' : 'h-7',
-                        'hover:bg-[color-mix(in_oklab,var(--foreground)_3%,transparent)]',
+                        isSelected
+                          ? 'bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)]'
+                          : 'hover:bg-[color-mix(in_oklab,var(--foreground)_3%,transparent)]',
                         'focus-visible:bg-[color-mix(in_oklab,var(--foreground)_3%,transparent)]',
                         rowFocusRing,
                       )}
@@ -508,55 +974,67 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
               })}
             </ol>
 
-            {/* Narrow (<1100px): 2-col chip grid — full rows don't fit a stacked half-width panel. */}
+            {/* Narrow (<820px): 2-col chip grid — full rows don't fit a stacked half-width panel. */}
             <div
               role="list"
               aria-label="Attack sources by volume"
-              className="grid grid-cols-2 gap-2 min-[820px]:hidden"
+              className="grid grid-cols-2 gap-2 max-h-[46vh] overflow-y-auto overscroll-contain min-[820px]:hidden"
             >
               {sorted.map((entry, i) => {
                 const code = entry.country_code?.toUpperCase() ?? '??';
                 const tier = tierFor(entry.count, maxCount);
                 const resolved = resolveCountryName(code);
                 const asnLine = formatAsnLine(entry);
+                const isSelected = selectedCode === code;
                 return (
-                  <div
-                    key={code + i}
-                    role="listitem"
-                    className={cn(
-                      'flex flex-col justify-center gap-0.5 rounded-lg border border-border px-2.5',
-                      asnLine ? 'min-h-[44px] py-1.5' : 'h-9',
-                    )}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span
-                        aria-hidden
-                        className="h-1.5 w-1.5 shrink-0 rounded-full"
-                        style={{ background: SEV_VAR[tier] }}
-                      />
-                      <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold uppercase text-foreground">
-                        {code}
+                  <div key={code + i} role="listitem">
+                    <button
+                      type="button"
+                      ref={(el) => {
+                        if (el) chipRefs.current.set(code, el);
+                        else chipRefs.current.delete(code);
+                      }}
+                      aria-current={isSelected ? 'true' : undefined}
+                      onPointerEnter={() => setHoveredCode(code)}
+                      onPointerLeave={() => setHoveredCode((c) => (c === code ? null : c))}
+                      onClick={() => toggleSelected(code)}
+                      style={isSelected ? { borderLeftColor: SEV_VAR[tier] } : undefined}
+                      className={cn(
+                        'flex w-full min-h-[44px] flex-col justify-center gap-0.5 rounded-lg border border-border border-l-2 px-2.5 py-1.5 text-left',
+                        isSelected && 'bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)]',
+                        rowFocusRing,
+                      )}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span
+                          aria-hidden
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: SEV_VAR[tier] }}
+                        />
+                        <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold uppercase text-foreground">
+                          {code}
+                        </span>
+                        <span
+                          className={cn(
+                            'min-w-0 flex-1 truncate text-[11px] text-muted-foreground',
+                            !resolved.known && 'italic text-muted-foreground/60',
+                          )}
+                        >
+                          {resolved.name}
+                        </span>
+                        <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold text-foreground">
+                          {entry.count}
+                        </span>
                       </span>
-                      <span
-                        className={cn(
-                          'min-w-0 flex-1 truncate text-[11px] text-muted-foreground',
-                          !resolved.known && 'italic text-muted-foreground/60',
-                        )}
-                      >
-                        {resolved.name}
-                      </span>
-                      <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold text-foreground">
-                        {entry.count}
-                      </span>
-                    </span>
-                    {asnLine && (
-                      <span
-                        title={asnLine}
-                        className="block truncate pl-[18px] text-[10px] text-muted-foreground"
-                      >
-                        {asnLine}
-                      </span>
-                    )}
+                      {asnLine && (
+                        <span
+                          title={asnLine}
+                          className="block truncate pl-[18px] text-[10px] text-muted-foreground"
+                        >
+                          {asnLine}
+                        </span>
+                      )}
+                    </button>
                   </div>
                 );
               })}

@@ -1,5 +1,7 @@
 'use client';
 
+import { ChevronDown } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { Panel, SectionHeader, DataRow } from '@/components/aegis';
 
@@ -34,6 +36,20 @@ import { Panel, SectionHeader, DataRow } from '@/components/aegis';
  * Null vs. zero is load-bearing throughout: `null` means "we could not ask",
  * a number (including 0) means "we asked and this is the honest answer".
  * Region A never collapses "cannot reach the firewall" into a fake "0".
+ *
+ * MOBILE (<md): this panel is tall (~600px of stacked regions), and on a
+ * phone it is being promoted to the #2 scroll position (see dashboard/page.tsx),
+ * so a collapsed shape matters. Below md the three regions become:
+ *   - a static 3-up strip (~96px) answering "is enforcement running" at a
+ *     glance: IPs blocked now, Pi/firewall up-or-down, actions in 30d.
+ *   - a native <details> disclosure, closed by default, holding the
+ *     existing COVERAGE and BLIND SPOTS blocks verbatim.
+ * The full EnforcementRegion (blocked-IP list, StatusLines, IP grid) is not
+ * shown on mobile — the strip supersedes it — but the element is rendered
+ * once and hidden via a wrapper, never duplicated or forked.
+ * Desktop (>=md) is byte-for-byte the same three bordered regions as before;
+ * every mobile addition is gated on wrapper elements via md:hidden /
+ * hidden md:block pairs.
  */
 
 export interface WatchPanelApp {
@@ -359,6 +375,182 @@ function BlindSpotsRegion({
 }
 
 // ---------------------------------------------------------------------------
+// MOBILE — enforcement strip (<md only)
+// ---------------------------------------------------------------------------
+
+/** One cell of the 3-up mobile strip. Value/label stack, 72px tall. */
+function StripCell({
+  value,
+  valueClassName,
+  label,
+  labelClassName,
+  children,
+}: {
+  value?: ReactNode;
+  valueClassName?: string;
+  label: string;
+  labelClassName?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-[72px] flex-col items-start gap-1 px-3 py-3">
+      {children ?? (
+        <span
+          className={cn(
+            'font-mono text-[22px] font-semibold leading-[24px] tabular-nums text-foreground',
+            valueClassName,
+          )}
+        >
+          {value}
+        </span>
+      )}
+      <span className={cn('text-[10px] uppercase tracking-[0.1em] text-muted-foreground', labelClassName)}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/** dot + word readout for the strip's ENFORCER cell — colour is never the sole signal. */
+function StripStatus({ ok, onText, offText }: { ok: boolean | null; onText: string; offText: string }) {
+  return (
+    <span className="flex items-center gap-1.5 font-mono text-[11px] leading-[14px] text-foreground">
+      <span
+        aria-hidden="true"
+        className="h-[6px] w-[6px] shrink-0 rounded-full"
+        style={{ background: ok ? 'var(--success)' : 'var(--danger)' }}
+      />
+      {ok ? onText : offText}
+    </span>
+  );
+}
+
+function MobileEnforcementStrip({
+  blockedIps,
+  piReachable,
+  realFirewallActive,
+  actionsExecuted30d,
+  loading,
+  firewallError,
+}: Pick<
+  WatchPanelProps,
+  'blockedIps' | 'piReachable' | 'realFirewallActive' | 'actionsExecuted30d' | 'loading' | 'firewallError'
+>) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-3 divide-x divide-[var(--border)]" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex min-h-[72px] flex-col justify-center gap-1.5 px-3 py-3">
+            <SkeletonBar w="40px" h="22px" />
+            <SkeletonBar w="56px" h="9px" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const unavailable = firewallError === true || blockedIps === null;
+  const ips = blockedIps ?? [];
+
+  return (
+    <div className="grid grid-cols-3 divide-x divide-[var(--border)]">
+      <StripCell
+        value={unavailable ? '—' : ips.length}
+        valueClassName={unavailable ? 'text-[var(--sev-high)]' : undefined}
+        label={unavailable ? 'FIREWALL UNAVAILABLE' : 'IPS BLOCKED'}
+        labelClassName={unavailable ? 'text-[var(--sev-high)]' : undefined}
+      />
+      <StripCell label="ENFORCEMENT">
+        <span className="flex flex-col gap-1">
+          <StripStatus ok={piReachable === true} onText="PI UP" offText="PI DOWN" />
+          <StripStatus ok={realFirewallActive === true} onText="FW ACTIVE" offText="FW OFF" />
+        </span>
+      </StripCell>
+      <StripCell
+        value={actionsExecuted30d != null ? actionsExecuted30d.toLocaleString() : '—'}
+        label="ACTIONS 30D"
+      />
+    </div>
+  );
+}
+
+/** Coverage + Blind Spots, rendered together — reused verbatim on desktop and inside the mobile disclosure. */
+function CoverageAndBlindSpots(
+  props: Pick<
+    WatchPanelProps,
+    | 'totalAssets'
+    | 'activeAssets'
+    | 'apps'
+    | 'honeypotsRunning'
+    | 'honeypotHits30d'
+    | 'openVulnerabilities'
+    | 'lastScanAt'
+    | 'loading'
+  >,
+) {
+  return (
+    <>
+      <div className="border-t border-[var(--border)]">
+        <SectionHeader flush title="COVERAGE" />
+        <CoverageRegion
+          totalAssets={props.totalAssets}
+          activeAssets={props.activeAssets}
+          apps={props.apps}
+          honeypotsRunning={props.honeypotsRunning}
+          loading={props.loading}
+        />
+      </div>
+      <div className="border-t border-[var(--border)]">
+        <SectionHeader flush title="BLIND SPOTS" />
+        <BlindSpotsRegion
+          honeypotHits30d={props.honeypotHits30d}
+          honeypotsRunning={props.honeypotsRunning}
+          openVulnerabilities={props.openVulnerabilities}
+          totalAssets={props.totalAssets}
+          lastScanAt={props.lastScanAt}
+          loading={props.loading}
+        />
+      </div>
+    </>
+  );
+}
+
+function MobileCoverageDisclosure(
+  props: Pick<
+    WatchPanelProps,
+    | 'totalAssets'
+    | 'activeAssets'
+    | 'apps'
+    | 'honeypotsRunning'
+    | 'honeypotHits30d'
+    | 'openVulnerabilities'
+    | 'lastScanAt'
+    | 'loading'
+  >,
+) {
+  return (
+    <details className="group">
+      <summary
+        className={cn(
+          'flex min-h-[44px] list-none items-center justify-between border-t border-[var(--border)] px-4 text-[12px] text-[var(--brand-text,var(--brand))]',
+          '[&::-webkit-details-marker]:hidden',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]',
+          props.loading && 'pointer-events-none opacity-50',
+        )}
+      >
+        Coverage and blind spots
+        <ChevronDown
+          size={13}
+          aria-hidden="true"
+          className="shrink-0 motion-safe:transition-transform motion-safe:duration-150 group-open:rotate-180"
+        />
+      </summary>
+      <CoverageAndBlindSpots {...props} />
+    </details>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
 
@@ -392,8 +584,14 @@ export function WatchPanel({
         </span>
       )}
 
-      <div>
-        <SectionHeader flush title="ENFORCEMENT" />
+      {/* HEADER — desktop keeps the original per-region "ENFORCEMENT" title;
+          mobile gets one combined title so the collapsed disclosure below it
+          is not orphaned under a header describing only a third of it. */}
+      <SectionHeader flush title="ENFORCEMENT" className="hidden md:flex" />
+      <SectionHeader flush title="ENFORCEMENT & COVERAGE" className="md:hidden" />
+
+      {/* DESKTOP (>=md) — unchanged: full enforcement region under its own header. */}
+      <div className="hidden md:block">
         <EnforcementRegion
           blockedIps={blockedIps}
           piReachable={piReachable}
@@ -404,24 +602,38 @@ export function WatchPanel({
         />
       </div>
 
-      <div className="border-t border-[var(--border)]">
-        <SectionHeader flush title="COVERAGE" />
-        <CoverageRegion
+      {/* MOBILE (<md) — 3-up strip supersedes the full enforcement region,
+          followed by a closed-by-default disclosure for coverage/blind spots. */}
+      <div className="md:hidden">
+        <MobileEnforcementStrip
+          blockedIps={blockedIps}
+          piReachable={piReachable}
+          realFirewallActive={realFirewallActive}
+          actionsExecuted30d={actionsExecuted30d}
+          loading={loading}
+          firewallError={firewallError}
+        />
+        <MobileCoverageDisclosure
           totalAssets={totalAssets}
           activeAssets={activeAssets}
           apps={apps}
           honeypotsRunning={honeypotsRunning}
+          honeypotHits30d={honeypotHits30d}
+          openVulnerabilities={openVulnerabilities}
+          lastScanAt={lastScanAt}
           loading={loading}
         />
       </div>
 
-      <div className="border-t border-[var(--border)]">
-        <SectionHeader flush title="BLIND SPOTS" />
-        <BlindSpotsRegion
-          honeypotHits30d={honeypotHits30d}
-          honeypotsRunning={honeypotsRunning}
-          openVulnerabilities={openVulnerabilities}
+      {/* DESKTOP (>=md) — unchanged: COVERAGE + BLIND SPOTS under their own headers. */}
+      <div className="hidden md:block">
+        <CoverageAndBlindSpots
           totalAssets={totalAssets}
+          activeAssets={activeAssets}
+          apps={apps}
+          honeypotsRunning={honeypotsRunning}
+          honeypotHits30d={honeypotHits30d}
+          openVulnerabilities={openVulnerabilities}
           lastScanAt={lastScanAt}
           loading={loading}
         />
