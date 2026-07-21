@@ -25,6 +25,7 @@ from app.models.asset import Asset
 from app.models.user import User
 from app.services.auto_discovery import auto_discovery, DiscoveredService
 from app.services.ai_configurator import ai_configurator
+from app.services import asset_risk
 
 logger = logging.getLogger("aegis.setup")
 
@@ -279,18 +280,20 @@ async def register_assets(
     created_assets: list[RegisteredAssetOut] = []
 
     for item in body.assets:
-        # Calculate risk score from ports/services instead of leaving at 0
-        risk = 0.0
         port_objects: list[dict] = []
         for p in item.ports:
             _, friendly = auto_discovery.identify_service(p, "")
-            port_objects.append({"port": p, "service": friendly})
-            port_risk = auto_discovery.estimate_risk(friendly, p, "")
-            if port_risk > risk:
-                risk = port_risk
+            port_objects.append({"port": p, "protocol": "tcp", "service": friendly, "state": "open"})
 
-        # Scale from 0-100 to 0-10 for display
-        risk_score = round(risk / 10.0, 1)
+        # Persisted floor at creation time via the deterministic scorer —
+        # never the legacy 0-100 auto_discovery.estimate_risk() heuristic,
+        # which disagreed with what the dashboard recomputes live (surface.py
+        # always calls asset_risk.score_asset() fresh for display).
+        risk_score = asset_risk.score_asset(
+            ports=port_objects,
+            ip_address=item.ip,
+            hostname=item.hostname,
+        )["risk_score"]
 
         asset = Asset(
             client_id=client.id,
