@@ -9,7 +9,7 @@ import { VerdictLine } from '@/components/dashboard/VerdictLine';
 import { TriageQueue, type TriageIncident, type TriagePendingAction } from '@/components/dashboard/TriageQueue';
 import { WatchPanel, type WatchPanelApp } from '@/components/dashboard/WatchPanel';
 import { OriginMap, type OriginMapEntry } from '@/components/dashboard/OriginMap';
-import { AssetRiskPanel, type AssetRiskItem } from '@/components/dashboard/AssetRiskPanel';
+import { AssetRiskPanel, type AssetRiskItem, type RiskBand, type AssetExposure } from '@/components/dashboard/AssetRiskPanel';
 import { Ledger, type LedgerEntry } from '@/components/dashboard/Ledger';
 
 /**
@@ -34,13 +34,12 @@ import { Ledger, type LedgerEntry } from '@/components/dashboard/Ledger';
 // ---------------------------------------------------------------------------
 // Raw wire types — mirrored from lib/api.ts (Overview/Incident/Action) or,
 // for /dashboard/timeline, from the ACTUAL backend response model
-// (backend/app/api/dashboard.py TimelineEvent: id/type/title/severity/
-// timestamp only — no description/module field exists server-side, even
-// though lib/api.ts's typed wrapper over-promises them). Fetched directly
-// via api.get() with an explicit ?limit= because api.dashboard.timeline()
-// takes no parameters and the backend default of 50 (25 incidents + 25
-// audit rows) is too easily starved once FP-titled incidents are stripped
-// client-side below.
+// (backend/app/api/dashboard.py TimelineEvent). TimelineEvent gained
+// description/module/decision/confidence/model_used/linked_incident_id/
+// navigable in this change. Fetched directly via api.get() with an explicit
+// ?limit= because api.dashboard.timeline() takes no parameters and the
+// backend default of 50 (25 incidents + 25 audit rows) is too easily
+// starved once FP-titled incidents are stripped client-side below.
 // ---------------------------------------------------------------------------
 
 type Overview = Awaited<ReturnType<typeof api.dashboard.overview>>;
@@ -57,9 +56,29 @@ interface RawTimelineEvent {
   id: string;
   type: string;
   title: string;
+  description: string | null;
   severity: string | null;
+  module: string | null;
   timestamp: string;
+  decision: string | null;
+  confidence: number | null;
+  model_used: string | null;
+  linked_incident_id: string | null;
+  navigable: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Asset risk wire type — the backend's `/surface/assets` scorer is now the
+// deterministic, service-aware model (service_weighted_v1): `ports` is an
+// object array (was number[]) and the response carries the full risk
+// breakdown (risk_band/risk_method/risk_ai_used/exposure/
+// exposure_multiplier/base_score/vuln_term/risk_drivers/service_classes/
+// host_wide_count/owned_count). lib/api.ts's `surface.assets()` wrapper
+// already returns this exact shape (kept in sync with AssetRiskPanel.tsx's
+// AssetRiskItem/AssetRiskPort/AssetRiskDriver/AssetServiceClass), so
+// `AssetsResponse[number]` is used directly below with no widening/
+// Partial<> — a real backend contract, not a defensive guess.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Severity normalization — explicit allow-list, never template-literal
@@ -89,6 +108,12 @@ function severityKeyOrNull(sev: string | null | undefined): SevKey | null {
 // ---------------------------------------------------------------------------
 
 const WINDOW_DAYS: Record<TimeWindow, number> = { '24h': 1, '7d': 7, '30d': 30 };
+
+// Module-scope (not per-render) so the assetRiskItems useMemo below never
+// needs to list them as dependencies — narrows a live backend response's
+// risk_band/exposure strings to their literal unions rather than casting.
+const RISK_BANDS: readonly RiskBand[] = ['contained', 'watch', 'elevated', 'exposed', 'critical'];
+const ASSET_EXPOSURES: readonly AssetExposure[] = ['local', 'lan', 'tailnet', 'public', 'unknown'];
 
 function withinWindow(iso: string, win: TimeWindow): boolean {
   const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`;
@@ -295,9 +320,15 @@ export default function DashboardPage() {
         id: e.id,
         type: e.type,
         title: e.title,
-        description: null,
+        description: e.description,
         severity: severityKeyOrNull(e.severity),
         timestamp: e.timestamp,
+        module: e.module,
+        decision: e.decision,
+        confidence: e.confidence,
+        model_used: e.model_used,
+        linked_incident_id: e.linked_incident_id,
+        navigable: e.navigable,
       })),
     [cleanTimeline, timeWindow],
   );
@@ -336,7 +367,45 @@ export default function DashboardPage() {
   }, [assetsData]);
 
   const originMapData: OriginMapEntry[] = threatMapData ?? [];
-  const assetRiskItems: AssetRiskItem[] = assetsData ?? [];
+
+  // Defensive defaults per field, never a fabricated value: 'contained' is
+  // the lowest/safest risk band (never over-flag on a stale response),
+  // count/array fields default to 0/[] so the panel can iterate without
+  // crashing, and every other risk-provenance field is still defensively
+  // guarded even though lib/api.ts's contract now declares them non-optional
+  // — a live backend response is never guaranteed to match its TS type, so
+  // `risk_band`/`exposure` are narrowed to their literal unions (falling
+  // back to the lowest/safest values, 'contained'/null) rather than cast.
+  const assetRiskItems: AssetRiskItem[] = useMemo(
+    () => (assetsData ?? []).map((a) => ({
+      id: a.id,
+      hostname: a.hostname,
+      ip_address: a.ip_address,
+      asset_type: a.asset_type,
+      ports: a.ports ?? [],
+      technologies: a.technologies ?? [],
+      status: a.status,
+      risk_score: a.risk_score,
+      last_scan_at: a.last_scan_at,
+      risk_band: (RISK_BANDS as readonly string[]).includes(a.risk_band)
+        ? (a.risk_band as RiskBand)
+        : 'contained',
+      risk_method: a.risk_method ?? null,
+      risk_ai_used: a.risk_ai_used ?? false,
+      exposure: (ASSET_EXPOSURES as readonly string[]).includes(a.exposure)
+        ? (a.exposure as AssetExposure)
+        : null,
+      exposure_multiplier: a.exposure_multiplier ?? null,
+      base_score: a.base_score ?? null,
+      vuln_term: a.vuln_term ?? null,
+      risk_drivers: a.risk_drivers ?? [],
+      service_classes: a.service_classes ?? [],
+      host_wide_count: a.host_wide_count ?? 0,
+      owned_count: a.owned_count ?? 0,
+    })),
+    [assetsData],
+  );
+
   const homeAsn = process.env.NEXT_PUBLIC_AEGIS_HOME_ASN ?? null;
 
   // ── Per-panel loading flags — no single blanket spinner. Each band shows
@@ -394,7 +463,11 @@ export default function DashboardPage() {
         />
 
         <div className="grid grid-cols-12 gap-x-4 gap-y-6 px-4 pb-10 sm:px-6 lg:px-8">
-        {/* BAND 1 — VERDICT LINE */}
+        {/* BAND 1 — VERDICT LINE. Wrapped (rather than passing a className
+            prop VerdictLine does not accept) so the mobile order swap below
+            can move it without touching VerdictLine.tsx — mirrors the same
+            wrap-for-grid-placement pattern already used for WatchPanel. */}
+        <div className="col-span-12 max-lg:order-1 lg:order-none">
         <VerdictLine
           activeIncidents={openIncidents.length}
           pendingActions={pendingActions.length}
@@ -405,9 +478,14 @@ export default function DashboardPage() {
           blockedIpsNow={blockedIpsNow}
           loading={verdictLoading}
         />
+        </div>
 
-        {/* BAND 2 — TRIAGE QUEUE (8) / WATCH PANEL (4) */}
-        <div className="col-span-12 lg:col-span-8 flex flex-col gap-6 min-w-0">
+        {/* BAND 2 — TRIAGE QUEUE (8) / WATCH PANEL (4). On phones this band
+            moves to position 3 (after WatchPanel) via CSS order only — the
+            TriageQueue → Map → Surface → Ledger sequence inside it is
+            untouched, and at >=lg order-none restores byte-identical grid
+            auto-placement. */}
+        <div className="col-span-12 lg:col-span-8 flex flex-col gap-6 min-w-0 max-lg:order-3 lg:order-none">
         <TriageQueue
           incidents={triageIncidents}
           pendingActions={triagePendingActions}
@@ -457,7 +535,7 @@ export default function DashboardPage() {
             covered 1040-1488px of panels that spanned 112-1488px, clipping the
             map legend, the risk list and the ledger's EVENT column. Giving the
             rail its own column makes the overlap structurally impossible. */}
-        <div className="col-span-12 lg:col-span-4 min-w-0">
+        <div className="col-span-12 lg:col-span-4 min-w-0 max-lg:order-2 lg:order-none">
         <WatchPanel
           blockedIps={blockedIps}
           piReachable={piReachable}
