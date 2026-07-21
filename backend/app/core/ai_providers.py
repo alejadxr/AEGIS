@@ -15,6 +15,7 @@ existing openrouter_client.query() return shape:
   }
 """
 
+import json
 import time
 import logging
 from abc import ABC, abstractmethod
@@ -171,16 +172,36 @@ class OpenRouterProvider(AIProvider):
 class OmniRouteProvider(OpenRouterProvider):
     """Self-hosted OmniRoute gateway, OpenAI-compatible on /v1.
 
-    Reuses OpenRouterProvider's transport (which now sends ``stream: false``)
-    but adapts to OmniRoute's own model namespace: it routes through *combo*
-    ids like ``auto/cheap`` / ``auto/fast`` rather than raw OpenRouter model
-    ids (those 404 on the gateway). Any non-combo model id is coerced to the
-    fast combo so callers passing OpenRouter ids still resolve. The gateway
-    runs on localhost with REQUIRE_API_KEY=false, so a placeholder api_key is
+    MUST STREAM. This is not a preference — the gateway's non-streaming path is
+    broken, and using it is what made AEGIS believe it had no AI at all. Proven
+    by holding everything else constant and flipping one flag:
+
+        auto/cheap  stream=true  -> 200, real completion from xiaomi/mimo-v2.5
+        auto/cheap  stream=false -> 503 "Maximum combo retry limit reached"
+        auto/fast   stream=true  -> 200
+        auto/fast   stream=false -> 503
+
+    That 503 reads like an exhausted upstream pool, and it was misdiagnosed as
+    one for a long time. The pool is fine: in streaming the gateway emits
+    ": OPENROUTER PROCESSING" keepalives and then a normal completion. Only the
+    aggregate-then-return path fails.
+
+    The base class hardcodes ``stream: false`` (added precisely because an SSE
+    body broke ``resp.json()``), so this override cannot reuse it and instead
+    consumes the event stream and reassembles the message itself.
+
+    Model ids: the gateway serves 36 ``auto/*`` combos plus ~418 raw provider
+    ids (openrouter/*, tllm/*, oc/*, aug/*). A specific id is passed through
+    untouched; only a MISSING model falls back to the default.
+
+    The gateway runs with REQUIRE_API_KEY=false, so a placeholder api_key is
     enough to satisfy the base class's "key configured" guard.
     """
 
     DEFAULT_MODEL = "auto/cheap"
+    # Reasoning tokens are billed against max_tokens before any content is
+    # emitted, so anything smaller than this returns an empty completion.
+    MIN_MAX_TOKENS = 512
 
     def get_name(self) -> str:
         return "omniroute"
@@ -192,17 +213,89 @@ class OmniRouteProvider(OpenRouterProvider):
         temperature: float = 0.3,
         max_tokens: int = 4096,
     ) -> dict:
-        # The gateway exposes raw provider ids (openrouter/*, tllm/*, oc/*, aug/*)
-        # alongside the auto/* combos, so a specific model must NOT be silently
-        # downgraded. It used to coerce anything non-auto/ to auto/cheap, which
-        # meant asking for a stronger model appeared to work and changed nothing.
-        # Now only a MISSING model falls back to the default; a bad id surfaces a
-        # real gateway error and the fallback chain handles it.
         if not model:
             model = self.DEFAULT_MODEL
-        return await super().chat(
-            messages, model=model, temperature=temperature, max_tokens=max_tokens
-        )
+
+        # The combos resolve to reasoning models (xiaomi/mimo-v2.5 today), which
+        # spend the token budget on `reasoning` deltas BEFORE emitting a single
+        # `content` delta. Measured on a one-word prompt: 722 chars of reasoning
+        # to 5 chars of content. So a small max_tokens returns a 200 with an
+        # empty message — the budget is gone before the answer starts. Floor it.
+        max_tokens = max(max_tokens, self.MIN_MAX_TOKENS)
+
+        client = await self._get_client()
+        start = time.time()
+
+        content_parts: list[str] = []
+        resolved_model: str | None = None
+        usage: dict = {}
+
+        async with client.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "HTTP-Referer": "https://github.com/aegis-defense/aegis",
+                "X-Title": "AEGIS Defense Platform",
+                "Accept": "text/event-stream",
+            },
+            json={
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True,
+            },
+        ) as resp:
+            if resp.status_code != 200:
+                body = (await resp.aread()).decode("utf-8", "replace")
+                raise Exception(f"OmniRoute returned {resp.status_code}: {body[:300]}")
+
+            async for line in resp.aiter_lines():
+                if not line:
+                    continue
+                # SSE comments are keepalives (": omniroute-keepalive",
+                # ": OPENROUTER PROCESSING") — the gateway sends a lot of them
+                # while an upstream is still thinking. They are not data.
+                if line.startswith(":"):
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                resolved_model = resolved_model or chunk.get("model")
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+                for choice in chunk.get("choices", []):
+                    delta = choice.get("delta") or {}
+                    piece = delta.get("content")
+                    if piece:
+                        content_parts.append(piece)
+
+        latency_ms = int((time.time() - start) * 1000)
+        content = "".join(content_parts)
+
+        # A 200 that streamed only keepalives means every upstream declined
+        # without erroring. Raise so ai_manager can fall through the chain
+        # rather than handing callers a silently empty analysis.
+        if not content:
+            raise Exception(
+                f"OmniRoute streamed no content for model={model} "
+                f"(resolved={resolved_model or 'unknown'}, {latency_ms}ms)"
+            )
+
+        return {
+            "content": content,
+            "tokens_used": usage.get("total_tokens", 0),
+            "cost_usd": 0.0,
+            "latency_ms": latency_ms,
+            "model": resolved_model or model,
+        }
 
 
 # ---------------------------------------------------------------------------
