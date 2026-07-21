@@ -335,16 +335,41 @@ export const api = {
     }>>('/surface/scans'),
     assets: (params?: Record<string, string>) => {
       const query = params ? '?' + new URLSearchParams(params).toString() : '';
+      // service_weighted_v1 (backend/app/services/asset_risk.py) — ports is
+      // an object array (nmap/registration shape), and the response carries
+      // the full deterministic risk breakdown so the UI never has to
+      // recompute or fabricate it. See AssetRiskPanel.tsx for the exact
+      // consumer-side shape this mirrors.
       return request<Array<{
         id: string;
         hostname: string;
         ip_address: string;
         asset_type: string;
-        ports: number[];
+        ports: Array<{ port: number; protocol?: string; service?: string; version?: string; state?: string }>;
         technologies: string[];
         status: string;
         risk_score: number;
         last_scan_at: string | null;
+        risk_band: string;
+        risk_method: string;
+        risk_ai_used: boolean;
+        exposure: string;
+        exposure_multiplier: number;
+        base_score: number;
+        vuln_term: number;
+        risk_drivers: Array<{
+          port: number;
+          protocol: string;
+          service: string;
+          klass: string;
+          label: string;
+          weight: number;
+          host_wide: boolean;
+          contribution: number;
+        }>;
+        service_classes: Array<{ klass: string; label: string; weight: number; count: number }>;
+        host_wide_count: number;
+        owned_count: number;
       }>>(`/surface/assets${query}`);
     },
     vulnerabilities: (params?: Record<string, string>) => {

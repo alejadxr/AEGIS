@@ -10,6 +10,7 @@ from app.models.client import Client
 from app.models.asset import Asset
 from app.models.vulnerability import Vulnerability
 from app.services.scanner import scan_orchestrator
+from app.services import asset_risk
 from app.modules.surface.hardener import hardening_engine
 
 router = APIRouter(prefix="/surface", tags=["surface"])
@@ -51,6 +52,20 @@ class AssetOut(BaseModel):
     risk_score: float
     last_scan_at: str | None = None
     vulnerability_count: int = 0
+    # service_weighted_v1 (see app.services.asset_risk) — deterministic,
+    # recomputed fresh on every read so the displayed number can never drift
+    # from the algorithm, even between scheduled scans.
+    risk_band: str = "contained"
+    risk_method: str = "service_weighted_v1"
+    risk_ai_used: bool = False
+    exposure: str = "unknown"
+    exposure_multiplier: float = 0.6
+    base_score: float = 0.0
+    vuln_term: float = 0.0
+    risk_drivers: list = []
+    service_classes: list = []
+    host_wide_count: int = 0
+    owned_count: int = 0
 
 
 class VulnOut(BaseModel):
@@ -167,24 +182,56 @@ async def list_assets(
 
     # v1.6.3.2: single GROUP BY instead of one COUNT() per asset.
     # Eliminates 101 round-trips for a 100-asset page (now: 2).
+    # v1.7.2: GROUP BY also on severity so critical/high/total are all
+    # available per asset from this one round trip — needed for the
+    # service_weighted_v1 vuln_term below (still just 1 query, not 3).
     asset_ids = [a.id for a in assets]
-    vuln_counts: dict = {}
+    vuln_stats: dict[str, dict[str, int]] = {}
     if asset_ids:
         agg = await db.execute(
             select(
                 Vulnerability.asset_id,
+                Vulnerability.severity,
                 func.count(Vulnerability.id).label("cnt"),
             )
             .where(
                 Vulnerability.asset_id.in_(asset_ids),
                 Vulnerability.status == "open",
             )
-            .group_by(Vulnerability.asset_id)
+            .group_by(Vulnerability.asset_id, Vulnerability.severity)
         )
-        vuln_counts = {row[0]: int(row[1] or 0) for row in agg.all()}
+        for row in agg.all():
+            asset_id, severity, cnt = row[0], row[1], int(row[2] or 0)
+            stats = vuln_stats.setdefault(asset_id, {"critical": 0, "high": 0, "total": 0})
+            stats["total"] += cnt
+            if severity == "critical":
+                stats["critical"] += cnt
+            elif severity == "high":
+                stats["high"] += cnt
+
+    # v1.7.2: one extra lightweight query for the fleet-wide port index used
+    # to damp host-wide port noise (see asset_risk.build_host_index) — the
+    # scanner merges whole-host nmap results into every asset sharing an IP,
+    # so without this an internal dev box's 80 loopback assets all score as
+    # if each one individually exposed SMB+VNC+Postgres.
+    fleet_result = await db.execute(
+        select(Asset.id, Asset.ip_address, Asset.hostname, Asset.ports)
+        .where(Asset.client_id == client.id)
+    )
+    host_index = asset_risk.build_host_index(fleet_result.all())
 
     out = []
     for a in assets:
+        stats = vuln_stats.get(a.id, {"critical": 0, "high": 0, "total": 0})
+        res = asset_risk.score_asset(
+            ports=a.ports or [],
+            ip_address=a.ip_address,
+            hostname=a.hostname,
+            critical_vulns=stats["critical"],
+            high_vulns=stats["high"],
+            total_vulns=stats["total"],
+            host_index=host_index,
+        )
         out.append(AssetOut(
             id=a.id,
             hostname=a.hostname,
@@ -193,9 +240,24 @@ async def list_assets(
             ports=a.ports or [],
             technologies=a.technologies or [],
             status=a.status,
-            risk_score=a.risk_score,
+            # Freshly computed — never a.risk_score. This is what guarantees
+            # the dashboard is correct without waiting for the next scan and
+            # makes drift between stored/displayed values structurally
+            # impossible.
+            risk_score=res["risk_score"],
+            risk_band=res["risk_band"],
+            risk_method=res["risk_method"],
+            risk_ai_used=res["risk_ai_used"],
+            exposure=res["exposure"],
+            exposure_multiplier=res["exposure_multiplier"],
+            base_score=res["base_score"],
+            vuln_term=res["vuln_term"],
+            risk_drivers=res["drivers"],
+            service_classes=res["service_classes"],
+            host_wide_count=res["host_wide_count"],
+            owned_count=res["owned_count"],
             last_scan_at=a.last_scan_at.isoformat() if a.last_scan_at else None,
-            vulnerability_count=vuln_counts.get(a.id, 0),
+            vulnerability_count=stats["total"],
         ))
     return out
 
@@ -215,12 +277,39 @@ async def get_asset(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    vuln_count = await db.scalar(
-        select(func.count(Vulnerability.id)).where(
+    vuln_agg = await db.execute(
+        select(Vulnerability.severity, func.count(Vulnerability.id).label("cnt"))
+        .where(
             Vulnerability.asset_id == asset.id,
             Vulnerability.status == "open",
         )
-    ) or 0
+        .group_by(Vulnerability.severity)
+    )
+    critical_count = high_count = total_count = 0
+    for severity, cnt in vuln_agg.all():
+        cnt = int(cnt or 0)
+        total_count += cnt
+        if severity == "critical":
+            critical_count += cnt
+        elif severity == "high":
+            high_count += cnt
+
+    # Same host index treatment as list_assets — damping needs fleet context.
+    fleet_result = await db.execute(
+        select(Asset.id, Asset.ip_address, Asset.hostname, Asset.ports)
+        .where(Asset.client_id == client.id)
+    )
+    host_index = asset_risk.build_host_index(fleet_result.all())
+
+    res = asset_risk.score_asset(
+        ports=asset.ports or [],
+        ip_address=asset.ip_address,
+        hostname=asset.hostname,
+        critical_vulns=critical_count,
+        high_vulns=high_count,
+        total_vulns=total_count,
+        host_index=host_index,
+    )
 
     return AssetOut(
         id=asset.id,
@@ -230,9 +319,20 @@ async def get_asset(
         ports=asset.ports or [],
         technologies=asset.technologies or [],
         status=asset.status,
-        risk_score=asset.risk_score,
+        risk_score=res["risk_score"],
+        risk_band=res["risk_band"],
+        risk_method=res["risk_method"],
+        risk_ai_used=res["risk_ai_used"],
+        exposure=res["exposure"],
+        exposure_multiplier=res["exposure_multiplier"],
+        base_score=res["base_score"],
+        vuln_term=res["vuln_term"],
+        risk_drivers=res["drivers"],
+        service_classes=res["service_classes"],
+        host_wide_count=res["host_wide_count"],
+        owned_count=res["owned_count"],
         last_scan_at=asset.last_scan_at.isoformat() if asset.last_scan_at else None,
-        vulnerability_count=vuln_count,
+        vulnerability_count=total_count,
     )
 
 

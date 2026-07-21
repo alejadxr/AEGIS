@@ -22,8 +22,21 @@ class AIMode(str, Enum):
     DISABLED = "disabled"
 
 
+# "full" is the value documented in CLAUDE.md and set in the production
+# .env, but it was never a value this enum recognised — every call silently
+# logged "Unknown AEGIS_AI_MODE='full'" and fell back to OPTIONAL anyway.
+# This makes that fallback explicit and quiets the log noise; behaviour is
+# unchanged either way (both resolve to OPTIONAL: try AI, fall back to
+# deterministic logic on failure).
+_MODE_ALIASES: dict[str, AIMode] = {
+    "full": AIMode.OPTIONAL,
+}
+
+
 def _parse_mode() -> AIMode:
     raw = os.getenv("AEGIS_AI_MODE", "optional").strip().lower()
+    if raw in _MODE_ALIASES:
+        return _MODE_ALIASES[raw]
     try:
         return AIMode(raw)
     except ValueError:

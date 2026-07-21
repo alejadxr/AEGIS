@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.orm import selectinload
+
 from app.database import get_db
 from app.core.auth import AuthContext, require_admin, require_analyst, require_viewer
 from app.core.guardrails import guardrail_engine, DEFAULT_GUARDRAILS
@@ -32,6 +34,20 @@ class AlertIn(BaseModel):
     raw: dict = {}
 
 
+class ActionOut(BaseModel):
+    id: str
+    incident_id: str
+    action_type: str
+    target: str | None = None
+    status: str
+    requires_approval: bool
+    approved_by: str | None = None
+    ai_reasoning: str | None = None
+    result: dict | None = None
+    executed_at: str | None = None
+    created_at: str | None = None
+
+
 class IncidentOut(BaseModel):
     id: str
     title: str
@@ -46,20 +62,8 @@ class IncidentOut(BaseModel):
     detected_at: str | None = None
     contained_at: str | None = None
     resolved_at: str | None = None
-
-
-class ActionOut(BaseModel):
-    id: str
-    incident_id: str
-    action_type: str
-    target: str | None = None
-    status: str
-    requires_approval: bool
-    approved_by: str | None = None
-    ai_reasoning: str | None = None
-    result: dict | None = None
-    executed_at: str | None = None
-    created_at: str | None = None
+    raw_alert: dict | None = None
+    actions: list[ActionOut] = []
 
 
 class RejectActionRequest(BaseModel):
@@ -213,7 +217,9 @@ async def get_incident(
     """Get incident details with actions."""
     client = auth.client
     result = await db.execute(
-        select(Incident).where(
+        select(Incident)
+        .options(selectinload(Incident.actions))
+        .where(
             Incident.id == incident_id,
             Incident.client_id == client.id,
         )
@@ -221,6 +227,23 @@ async def get_incident(
     incident = result.scalar_one_or_none()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+
+    actions = [
+        ActionOut(
+            id=a.id,
+            incident_id=a.incident_id,
+            action_type=a.action_type,
+            target=a.target,
+            status=a.status,
+            requires_approval=a.requires_approval,
+            approved_by=a.approved_by,
+            ai_reasoning=a.ai_reasoning,
+            result=a.result,
+            executed_at=a.executed_at.isoformat() if a.executed_at else None,
+            created_at=a.created_at.isoformat() if a.created_at else None,
+        )
+        for a in sorted(incident.actions, key=lambda x: x.created_at)
+    ]
 
     return IncidentOut(
         id=incident.id,
@@ -236,6 +259,8 @@ async def get_incident(
         detected_at=incident.detected_at.isoformat() if incident.detected_at else None,
         contained_at=incident.contained_at.isoformat() if incident.contained_at else None,
         resolved_at=incident.resolved_at.isoformat() if incident.resolved_at else None,
+        raw_alert=incident.raw_alert,
+        actions=actions,
     )
 
 
@@ -264,6 +289,7 @@ async def analyze_incident(
 @router.get("/actions", response_model=list[ActionOut])
 async def list_actions(
     status: Optional[str] = None,
+    incident_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
     auth: AuthContext = Depends(require_viewer),
@@ -274,6 +300,8 @@ async def list_actions(
     query = select(Action).where(Action.client_id == client.id)
     if status:
         query = query.where(Action.status == status)
+    if incident_id:
+        query = query.where(Action.incident_id == incident_id)
     query = query.order_by(Action.created_at.desc()).offset(offset).limit(limit)
 
     result = await db.execute(query)

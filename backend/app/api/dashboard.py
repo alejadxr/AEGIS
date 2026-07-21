@@ -41,6 +41,13 @@ class TimelineEvent(BaseModel):
     title: str
     severity: str | None = None
     timestamp: str
+    description: str | None = None
+    module: str | None = None
+    decision: str | None = None
+    confidence: float | None = None
+    model_used: str | None = None
+    linked_incident_id: str | None = None
+    navigable: bool = False
 
 
 # ISO 3166-1 alpha-2 → country name map for common countries.
@@ -403,6 +410,10 @@ async def get_auth_attempts_monthly(
     return AuthAttemptsMonthlyOut(months=month_list, total=total, peak_month=peak_month)
 
 
+def _humanize_action(a: str) -> str:
+    return (a or "event").replace("_", " ").replace("-", " ").strip().capitalize()
+
+
 @router.get("/timeline", response_model=list[TimelineEvent])
 async def get_timeline(
     limit: int = 50,
@@ -426,6 +437,10 @@ async def get_timeline(
             title=inc.title,
             severity=inc.severity,
             timestamp=inc.detected_at.isoformat(),
+            description=inc.description,
+            module=inc.source,
+            linked_incident_id=inc.id,
+            navigable=True,
         ))
 
     result = await db.execute(
@@ -438,9 +453,16 @@ async def get_timeline(
         events.append(TimelineEvent(
             id=log.id,
             type="audit",
-            title=f"AI: {log.action}",
+            title=_humanize_action(log.action),
             severity=None,
             timestamp=log.timestamp.isoformat(),
+            description=log.input_summary,
+            module=log.action,
+            decision=log.decision,
+            confidence=log.confidence,
+            model_used=log.model_used,
+            linked_incident_id=log.incident_id,
+            navigable=bool(log.incident_id),
         ))
 
     events.sort(key=lambda e: e.timestamp, reverse=True)

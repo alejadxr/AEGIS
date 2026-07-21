@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Panel, SectionHeader, EmptyState } from '@/components/aegis';
+import { Panel, SectionHeader, EmptyState, ProvenanceBadge } from '@/components/aegis';
 
 /**
  * Ledger — the record.
@@ -25,7 +25,7 @@ import { Panel, SectionHeader, EmptyState } from '@/components/aegis';
  *
  * Grouping: `/dashboard/timeline` interleaves real incidents with an
  * `AuditLog` row for every AI action, including routine scans that fire
- * every ~7 minutes (`AI: scheduled_scan`). Left flat, a busy window is nine
+ * every ~7 minutes ('Scheduled scan'). Left flat, a busy window is nine
  * parts identical audit chatter to one part signal. Consecutive `audit`-type
  * rows that share the exact same title (and severity) are collapsed into a
  * single summary row — count + time range — expandable via a real button
@@ -34,12 +34,29 @@ import { Panel, SectionHeader, EmptyState } from '@/components/aegis';
  * grouped, even if adjacent/duplicated — they are always individually
  * significant and individually navigable.
  *
- * Type column: the backend's TimelineEvent has no `module` field — page.tsx
- * previously always sent a permanently-empty `module: ''`, rendering 113
- * blank cells. This component instead renders the real `type` field
- * ('incident' | 'audit') in the same 120px column: uppercase, muted, no
- * colour and no pill, since severity already owns the colour channel in
- * this table.
+ * Type column: the backend's TimelineEvent now carries a real `module`
+ * field — the pipeline name for incidents ('fast_triage',
+ * 'correlation_engine') and the action slug for audit rows
+ * ('scheduled_scan', 'action_block_ip'). The TYPE column renders that,
+ * humanised (underscores → spaces, uppercased), falling back to the raw
+ * `type` ('INCIDENT' / 'AUDIT') on the rare row where `module` is null.
+ *
+ * Navigation: a row is only clickable when the backend says so.
+ * `entry.navigable` plus a real `entry.linked_incident_id` together gate
+ * `role="button"`/`tabIndex`/`onClick` — incident rows have
+ * `linked_incident_id === id` (unchanged behaviour); ~1k audit rows that
+ * record an `incident_id` now navigate too; the remaining ~27k audit rows
+ * correctly render as inert data, never a dead link.
+ *
+ * Audit detail: rows (grouped-member or standalone) that carry at least one
+ * of `decision` / `confidence` / `model_used` get an expand affordance —
+ * the same chevron already used to un-clamp a long title/description — that
+ * additionally reveals a one-line detail band underneath. Rows with none of
+ * those three fields render NO chevron at all: for incident rows, the
+ * dossier is one click away (`navigate`) so there is nothing for a local
+ * expand to earn; for the rare row with only a description and no decision
+ * data, an expand affordance whose only payload is an empty drawer is worse
+ * than no affordance (owner's framing, kept literally).
  *
  * Progressive disclosure, not a nested scroll region: only `initialRows`
  * (default 40) entries render at first; a "SHOW N MORE" control at the
@@ -54,6 +71,18 @@ export interface LedgerEntry {
   description: string | null;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info' | null;
   timestamp: string;
+  /** Pipeline name (incidents) or action slug (audit rows). Null on legacy rows. */
+  module: string | null;
+  /** e.g. "risk_score=1.9" — a short, already-formatted decision string. */
+  decision: string | null;
+  /** 0–1 (or whatever scale the backend emits) — rendered verbatim, never rounded here. */
+  confidence: number | null;
+  /** Model slug, or the literal string 'disabled' when no model was called. */
+  model_used: string | null;
+  /** Incident this row resolves to when clicked. For incident rows this equals `id`. */
+  linked_incident_id: string | null;
+  /** Backend's own verdict on whether this row should be clickable at all. */
+  navigable: boolean;
 }
 
 type LedgerWindow = '24h' | '7d' | '30d';
@@ -130,11 +159,35 @@ function severityKey(severity: string | null | undefined): SeverityKey {
 
 /** 'incident' -> 'INCIDENT', 'audit' -> 'AUDIT', anything else -> the raw
  * value uppercased — never a blank cell, since `type` is a real, always-
- * populated backend field (unlike the retired `module` field). */
+ * populated backend field. Used only as the fallback when `module` is
+ * absent — see `typeColumnText`. */
 function typeLabel(type: string): string {
   if (type === 'incident') return 'INCIDENT';
   if (type === 'audit') return 'AUDIT';
   return type.toUpperCase();
+}
+
+/** 'action_block_ip' -> 'ACTION BLOCK IP', 'fast_triage' -> 'FAST TRIAGE'. */
+function moduleLabel(module: string): string {
+  return module.replace(/_/g, ' ').trim().toUpperCase();
+}
+
+/** TYPE column source of truth for both the table and the mobile meta line:
+ * the module when the backend populated one (real pipeline name / action
+ * slug), falling back to the coarse `type` field on legacy rows. */
+function typeColumnText(entry: { type: string; module: string | null }): string {
+  const mod = entry.module?.trim();
+  if (mod) return moduleLabel(mod);
+  return typeLabel(entry.type);
+}
+
+/** A row only earns an audit-detail expand affordance when it actually has
+ * something to show — never an affordance that opens an empty drawer. */
+function hasAuditFields(entry: Pick<LedgerEntry, 'decision' | 'confidence' | 'model_used'>): boolean {
+  const hasDecision = !!entry.decision && entry.decision.trim().length > 0;
+  const hasConfidence = entry.confidence != null;
+  const hasModel = !!entry.model_used && entry.model_used.trim().length > 0;
+  return hasDecision || hasConfidence || hasModel;
 }
 
 function pad2(n: number): string {
@@ -174,6 +227,108 @@ function formatShortTime(iso: string): string {
   return `${pad2(d.getDate())} ${MONTHS[d.getMonth()]} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+// ─── Expand chevron ─────────────────────────────────────────────────────────
+//
+// One icon, rotated rather than swapped — the rotation itself is gated
+// behind motion-safe so a reduced-motion user still gets an instant,
+// unanimated flip instead of a spin.
+
+function ExpandChevron({ expanded, size = 12 }: { expanded: boolean; size?: number }) {
+  return (
+    <ChevronDown
+      size={size}
+      aria-hidden
+      className={cn(
+        'motion-safe:transition-transform motion-safe:duration-150',
+        expanded && 'rotate-180',
+      )}
+    />
+  );
+}
+
+// ─── Audit detail band (shared copy, desktop + mobile render it differently) ─
+
+interface AuditDetailFields {
+  decision: string | null;
+  confidence: number | null;
+  model_used: string | null;
+}
+
+function AuditDetailPairs({ entry, stacked }: { entry: AuditDetailFields; stacked: boolean }) {
+  const labelClass = 'text-[10px] uppercase tracking-[0.1em] text-muted-foreground';
+  const valueClass = 'font-mono text-[11.5px] text-foreground';
+  const hasDecision = !!entry.decision && entry.decision.trim().length > 0;
+  const hasConfidence = entry.confidence != null;
+  const hasModel = !!entry.model_used && entry.model_used.trim().length > 0;
+  const isDisabledModel = entry.model_used === 'disabled';
+
+  if (stacked) {
+    return (
+      <dl className="grid grid-cols-[84px_1fr] gap-x-3 gap-y-1.5">
+        {hasDecision && (
+          <>
+            <dt className={labelClass}>Decision</dt>
+            <dd className={valueClass}>{entry.decision}</dd>
+          </>
+        )}
+        {hasConfidence && (
+          <>
+            <dt className={labelClass}>Confidence</dt>
+            <dd className={valueClass}>{entry.confidence}</dd>
+          </>
+        )}
+        {hasModel && (
+          <>
+            <dt className={labelClass}>Method</dt>
+            <dd className={cn(valueClass, 'flex items-center gap-1.5')}>
+              {isDisabledModel ? (
+                <span title="No model was called for this entry">disabled</span>
+              ) : (
+                <>
+                  <span>{entry.model_used}</span>
+                  <ProvenanceBadge source="agent" size="sm" />
+                </>
+              )}
+            </dd>
+          </>
+        )}
+      </dl>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+      {hasDecision && (
+        <span className="flex items-center gap-1.5">
+          <span className={labelClass}>Decision</span>
+          <span className={valueClass}>{entry.decision}</span>
+        </span>
+      )}
+      {hasConfidence && (
+        <span className="flex items-center gap-1.5">
+          <span className={labelClass}>Confidence</span>
+          <span className={valueClass}>{entry.confidence}</span>
+        </span>
+      )}
+      {hasModel && (
+        <span className="flex items-center gap-1.5">
+          <span className={labelClass}>Method</span>
+          {isDisabledModel ? (
+            <span className={valueClass} title="No model was called for this entry">
+              disabled
+            </span>
+          ) : (
+            <>
+              <span className={valueClass}>{entry.model_used}</span>
+              <ProvenanceBadge source="agent" size="sm" />
+            </>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ─── Grouping ───────────────────────────────────────────────────────────────
 //
 // Collapse consecutive runs (>= 2) of `audit`-type rows that share an exact
@@ -190,6 +345,9 @@ interface LedgerGroup {
    * from the real entry rather than hardcoded, so the TYPE column stays
    * correct if that ever changes. */
   type: string;
+  /** Module of the run's first (newest) member — used for the same TYPE
+   * column source of truth as individual rows. */
+  module: string | null;
   /** Newest-first, mirrors the source order of `entries`. */
   members: LedgerEntry[];
 }
@@ -227,6 +385,7 @@ function buildDisplayItems(entries: LedgerEntry[]): LedgerDisplayItem[] {
             title: head.title,
             severity: severityKey(head.severity),
             type: head.type,
+            module: head.module,
             members: entries.slice(i, j),
           },
         });
@@ -332,17 +491,22 @@ function LedgerRow({ entry, isLast, expanded, onToggleExpand, nested = false }: 
   const router = useRouter();
   const sevKey = severityKey(entry.severity);
   const sevColor = SEV_VAR[sevKey];
-  const isIncident = entry.type === 'incident';
+  const navigable = entry.navigable && !!entry.linked_incident_id;
   const timeLabel = formatLedgerTime(entry.timestamp);
-  const typeLabelText = typeLabel(entry.type);
+  const typeColText = typeColumnText(entry);
+  const hasDescription = !!entry.description && entry.description.trim().length > 0;
+  const hasAuditDetail = hasAuditFields(entry);
+  const growRow = hasDescription || expanded;
+  const detailRowId = `ledger-detail-${entry.id}`;
 
-  const rowAriaLabel = `${timeLabel}, ${SEV_LABEL[sevKey]} severity, ${typeLabelText}, ${entry.title}${
-    isIncident ? ', opens incident details' : ''
-  }`;
+  const rowAriaLabel = `${timeLabel}, ${SEV_LABEL[sevKey]} severity, ${typeColText}, ${entry.title}${
+    hasDescription ? `, ${entry.description}` : ''
+  }${navigable ? ', opens incident details' : ''}`;
 
   const navigate = React.useCallback(() => {
-    router.push(`/dashboard/response/${entry.id}`);
-  }, [router, entry.id]);
+    if (!entry.linked_incident_id) return;
+    router.push(`/dashboard/response/${entry.linked_incident_id}`);
+  }, [router, entry.linked_incident_id]);
 
   const handleRowKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
     // Ignore keydowns bubbled up from the nested expand button so Enter/Space
@@ -362,82 +526,112 @@ function LedgerRow({ entry, isLast, expanded, onToggleExpand, nested = false }: 
   const cellBorder = !isLast && 'border-b border-border';
 
   return (
-    <tr
-      role={isIncident ? 'button' : undefined}
-      tabIndex={isIncident ? 0 : undefined}
-      aria-label={isIncident ? rowAriaLabel : undefined}
-      title={entry.title}
-      onClick={isIncident ? navigate : undefined}
-      onKeyDown={isIncident ? handleRowKeyDown : undefined}
-      className={cn(
-        !expanded && 'h-9',
-        ROW_TRANSITION,
-        ROW_HOVER,
-        nested && 'bg-[color-mix(in_oklab,var(--foreground)_1.5%,transparent)] opacity-80',
-        isIncident
-          ? [
-              'cursor-pointer',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]',
-            ]
-          : 'cursor-default',
-      )}
-    >
-      <td
-        className={cn('align-middle', nested ? 'pl-9 pr-4' : 'px-4', cellBorder)}
-        style={{ width: COL_TIME }}
+    <>
+      <tr
+        role={navigable ? 'button' : undefined}
+        tabIndex={navigable ? 0 : undefined}
+        aria-label={navigable ? rowAriaLabel : undefined}
+        title={entry.title}
+        onClick={navigable ? navigate : undefined}
+        onKeyDown={navigable ? handleRowKeyDown : undefined}
+        className={cn(
+          growRow ? 'h-auto min-h-[38px]' : 'h-9',
+          ROW_TRANSITION,
+          ROW_HOVER,
+          nested && 'bg-[color-mix(in_oklab,var(--foreground)_1.5%,transparent)] opacity-80',
+          navigable
+            ? [
+                'cursor-pointer',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]',
+              ]
+            : 'cursor-default',
+        )}
       >
-        <span className="whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground">
-          {timeLabel}
-        </span>
-      </td>
-
-      <td className={cn('px-4 align-middle', cellBorder)} style={{ width: COL_SEVERITY }}>
-        <span className="inline-flex items-center gap-1.5">
-          <span
-            aria-hidden
-            className="h-[6px] w-[6px] shrink-0 rounded-full"
-            style={{ background: sevColor }}
-          />
-          <span
-            className="max-[559px]:hidden font-mono text-[10px] font-semibold uppercase tracking-[0.08em]"
-            style={{ color: sevColor }}
-          >
-            {SEV_LABEL[sevKey]}
+        <td
+          className={cn('align-middle', nested ? 'pl-9 pr-4' : 'px-4', cellBorder)}
+          style={{ width: COL_TIME }}
+        >
+          <span className="whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground">
+            {timeLabel}
           </span>
-        </span>
-      </td>
+        </td>
 
-      <td
-        className={cn('max-[719px]:hidden px-4 align-middle', cellBorder)}
-        style={{ width: COL_TYPE }}
-      >
-        <span className="block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
-          {typeLabelText}
-        </span>
-      </td>
+        <td className={cn('px-4 align-middle', cellBorder)} style={{ width: COL_SEVERITY }}>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="h-[6px] w-[6px] shrink-0 rounded-full"
+              style={{ background: sevColor }}
+            />
+            <span
+              className="max-[559px]:hidden font-mono text-[10px] font-semibold uppercase tracking-[0.08em]"
+              style={{ color: sevColor }}
+            >
+              {SEV_LABEL[sevKey]}
+            </span>
+          </span>
+        </td>
 
-      <td className={cn('px-4 align-middle', cellBorder)}>
-        <div className="flex min-w-0 items-center gap-1.5">
+        <td
+          className={cn('max-[719px]:hidden px-4 align-middle', cellBorder)}
+          style={{ width: COL_TYPE }}
+        >
           <span
-            className={cn(
-              'min-w-0 text-[12px] font-normal text-foreground',
-              expanded ? 'whitespace-normal' : 'line-clamp-1',
+            className="block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]"
+            title={typeColText}
+          >
+            {typeColText}
+          </span>
+        </td>
+
+        <td className={cn('px-4 align-middle', growRow && 'py-1.5', cellBorder)}>
+          <div className="flex min-w-0 items-start gap-1.5">
+            <div className="min-w-0 flex-1">
+              <span
+                className={cn(
+                  'block min-w-0 text-[12px] font-normal text-foreground',
+                  expanded ? 'whitespace-normal' : 'line-clamp-1',
+                )}
+              >
+                {entry.title}
+              </span>
+              {hasDescription && (
+                <span
+                  className={cn(
+                    'mt-0.5 block min-w-0 font-mono text-[11px] leading-[15px] text-muted-foreground',
+                    expanded ? 'whitespace-normal' : 'truncate',
+                  )}
+                >
+                  {entry.description}
+                </span>
+              )}
+            </div>
+            {hasAuditDetail && (
+              <button
+                type="button"
+                onClick={handleExpandClick}
+                aria-expanded={expanded}
+                aria-controls={detailRowId}
+                aria-label={expanded ? 'Collapse audit detail' : 'Expand audit detail'}
+                className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground/50 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                <ExpandChevron expanded={expanded} />
+              </button>
             )}
+          </div>
+        </td>
+      </tr>
+      {expanded && hasAuditDetail && (
+        <tr id={detailRowId}>
+          <td
+            colSpan={4}
+            className="px-4 py-2 bg-[color-mix(in_oklab,var(--foreground)_2%,transparent)] border-b border-border"
           >
-            {entry.title}
-          </span>
-          <button
-            type="button"
-            onClick={handleExpandClick}
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse event text' : 'Expand event text'}
-            className="shrink-0 rounded p-0.5 text-muted-foreground/50 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-          >
-            {expanded ? <ChevronUp size={12} aria-hidden /> : <ChevronDown size={12} aria-hidden />}
-          </button>
-        </div>
-      </td>
-    </tr>
+            <AuditDetailPairs entry={entry} stacked={false} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -459,6 +653,8 @@ function LedgerGroupRow({ group, isLast, expanded, onToggle }: LedgerGroupRowPro
   const oldest = group.members[group.members.length - 1];
   const timeLabel = formatLedgerTime(newest.timestamp);
   const rangeLabel = `${formatShortTime(oldest.timestamp)}–${formatShortTime(newest.timestamp)}`;
+  const summarySuffix = `${count} entries · ${formatLedgerTime(oldest.timestamp)}–${formatLedgerTime(newest.timestamp)}`;
+  const typeColText = typeColumnText(group);
   const cellBorder = !isLast && 'border-b border-border';
 
   return (
@@ -489,8 +685,11 @@ function LedgerGroupRow({ group, isLast, expanded, onToggle }: LedgerGroupRowPro
         className={cn('max-[719px]:hidden px-4 align-middle', cellBorder)}
         style={{ width: COL_TYPE }}
       >
-        <span className="block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
-          {typeLabel(group.type)}
+        <span
+          className="block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]"
+          title={typeColText}
+        >
+          {typeColText}
         </span>
       </td>
 
@@ -512,8 +711,11 @@ function LedgerGroupRow({ group, isLast, expanded, onToggle }: LedgerGroupRowPro
           <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground/70">
             {'·'} {rangeLabel}
           </span>
-          <span className="ml-auto shrink-0 text-muted-foreground/50">
-            {expanded ? <ChevronUp size={12} aria-hidden /> : <ChevronDown size={12} aria-hidden />}
+          <span className="ml-auto hidden shrink-0 whitespace-nowrap font-mono text-[11px] text-muted-foreground lg:inline-block">
+            {summarySuffix}
+          </span>
+          <span className="shrink-0 text-muted-foreground/50">
+            <ExpandChevron expanded={expanded} />
           </span>
         </button>
       </td>
@@ -527,7 +729,8 @@ function LedgerGroupRow({ group, isLast, expanded, onToggle }: LedgerGroupRowPro
 // Time (110px) + Severity (128px) alone reserve 238px of a ~350px content
 // box. This renders the exact same `flatRows` as a card/list instead of a
 // second data path: same `severityKey`, `formatLedgerTime`, `SEV_VAR`,
-// `SEV_LABEL`, `typeLabel`, same expand/group state from the root component.
+// `SEV_LABEL`, `typeColumnText`, same expand/group state from the root
+// component.
 
 interface LedgerListRowProps {
   entry: LedgerEntry;
@@ -542,17 +745,21 @@ function LedgerListRow({ entry, expanded, onToggleExpand, nested = false }: Ledg
   const router = useRouter();
   const sevKey = severityKey(entry.severity);
   const sevColor = SEV_VAR[sevKey];
-  const isIncident = entry.type === 'incident';
+  const navigable = entry.navigable && !!entry.linked_incident_id;
   const timeLabel = formatLedgerTime(entry.timestamp);
-  const typeLabelText = typeLabel(entry.type);
+  const typeColText = typeColumnText(entry);
+  const hasDescription = !!entry.description && entry.description.trim().length > 0;
+  const hasAuditDetail = hasAuditFields(entry);
+  const detailId = `ledger-detail-m-${entry.id}`;
 
-  const rowAriaLabel = `${timeLabel}, ${SEV_LABEL[sevKey]} severity, ${typeLabelText}, ${entry.title}${
-    isIncident ? ', opens incident details' : ''
-  }`;
+  const rowAriaLabel = `${timeLabel}, ${SEV_LABEL[sevKey]} severity, ${typeColText}, ${entry.title}${
+    hasDescription ? `, ${entry.description}` : ''
+  }${navigable ? ', opens incident details' : ''}`;
 
   const navigate = React.useCallback(() => {
-    router.push(`/dashboard/response/${entry.id}`);
-  }, [router, entry.id]);
+    if (!entry.linked_incident_id) return;
+    router.push(`/dashboard/response/${entry.linked_incident_id}`);
+  }, [router, entry.linked_incident_id]);
 
   const handleExpandClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -563,7 +770,7 @@ function LedgerListRow({ entry, expanded, onToggleExpand, nested = false }: Ledg
     'flex min-w-0 flex-1 items-stretch gap-3 py-3 pr-1 text-left min-h-[56px]',
     nested ? 'pl-8' : 'pl-4',
     'motion-safe:transition-colors motion-safe:duration-100',
-    isIncident
+    navigable
       ? 'active:bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]'
       : 'cursor-default',
   );
@@ -583,7 +790,7 @@ function LedgerListRow({ entry, expanded, onToggleExpand, nested = false }: Ledg
             {SEV_LABEL[sevKey]}
           </span>
           <span aria-hidden>{'·'}</span>
-          <span className="uppercase tracking-[0.08em]">{typeLabelText}</span>
+          <span className="uppercase tracking-[0.08em]">{typeColText}</span>
         </span>
         <span
           className={cn(
@@ -593,6 +800,16 @@ function LedgerListRow({ entry, expanded, onToggleExpand, nested = false }: Ledg
         >
           {entry.title}
         </span>
+        {hasDescription && (
+          <span
+            className={cn(
+              'font-mono text-[11px] leading-[15px] text-muted-foreground',
+              expanded ? 'whitespace-normal' : 'line-clamp-2',
+            )}
+          >
+            {entry.description}
+          </span>
+        )}
       </span>
     </>
   );
@@ -605,23 +822,31 @@ function LedgerListRow({ entry, expanded, onToggleExpand, nested = false }: Ledg
       )}
     >
       <div className="flex items-stretch">
-        {isIncident ? (
+        {navigable ? (
           <button type="button" onClick={navigate} aria-label={rowAriaLabel} className={mainTargetClass}>
             {mainContent}
           </button>
         ) : (
           <div className={mainTargetClass}>{mainContent}</div>
         )}
-        <button
-          type="button"
-          onClick={handleExpandClick}
-          aria-expanded={expanded}
-          aria-label={expanded ? 'Collapse event text' : 'Expand event text'}
-          className="flex w-11 shrink-0 items-center justify-center self-stretch text-muted-foreground/60 motion-safe:transition-opacity motion-safe:duration-100 active:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]"
-        >
-          {expanded ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
-        </button>
+        {hasAuditDetail && (
+          <button
+            type="button"
+            onClick={handleExpandClick}
+            aria-expanded={expanded}
+            aria-controls={detailId}
+            aria-label={expanded ? 'Collapse audit detail' : 'Expand audit detail'}
+            className="-m-2 flex w-11 shrink-0 items-center justify-center self-stretch p-2 text-muted-foreground/60 motion-safe:transition-opacity motion-safe:duration-100 active:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]"
+          >
+            <ExpandChevron expanded={expanded} size={16} />
+          </button>
+        )}
       </div>
+      {expanded && hasAuditDetail && (
+        <div id={detailId} className={cn('pb-3', nested ? 'pl-8' : 'pl-4', 'pr-4')}>
+          <AuditDetailPairs entry={entry} stacked />
+        </div>
+      )}
     </li>
   );
 }
@@ -643,6 +868,7 @@ function LedgerListGroupRow({ group, expanded, onToggle }: LedgerListGroupRowPro
   const oldest = group.members[group.members.length - 1];
   const timeLabel = formatLedgerTime(newest.timestamp);
   const rangeLabel = `${formatShortTime(oldest.timestamp)}–${formatShortTime(newest.timestamp)}`;
+  const typeColText = typeColumnText(group);
 
   return (
     <li className="relative border-b border-border last:border-b-0">
@@ -667,7 +893,7 @@ function LedgerListGroupRow({ group, expanded, onToggle }: LedgerListGroupRowPro
                 {SEV_LABEL[group.severity]}
               </span>
               <span aria-hidden>{'·'}</span>
-              <span className="uppercase tracking-[0.08em]">{typeLabel(group.type)}</span>
+              <span className="uppercase tracking-[0.08em]">{typeColText}</span>
             </span>
             <span className="flex min-w-0 items-center gap-1.5">
               <span className="min-w-0 flex-1 line-clamp-2 text-[15px] leading-[20px] text-foreground">
@@ -682,11 +908,9 @@ function LedgerListGroupRow({ group, expanded, onToggle }: LedgerListGroupRowPro
               {rangeLabel}
             </span>
           </span>
-          {expanded ? (
-            <ChevronUp size={16} aria-hidden className="ml-auto shrink-0 self-center text-muted-foreground/50" />
-          ) : (
-            <ChevronDown size={16} aria-hidden className="ml-auto shrink-0 self-center text-muted-foreground/50" />
-          )}
+          <span className="ml-auto shrink-0 self-center text-muted-foreground/50">
+            <ExpandChevron expanded={expanded} size={16} />
+          </span>
         </button>
       </div>
     </li>

@@ -20,6 +20,7 @@ from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.core.events import event_bus
 from app.services.scanner import scan_orchestrator
+from app.services import asset_risk
 
 logger = logging.getLogger("aegis.scheduled_scanner")
 
@@ -330,9 +331,17 @@ class ScheduledScanner:
                             None, self._run_nmap_quick, target
                         )
                         if nmap_results.get("ports"):
-                            # Merge new ports into existing (keep ports not seen in quick scan)
+                            # Merge new ports into existing (keep ports not seen in quick scan).
+                            # v1.7.2: only REFRESH ports already registered on this asset
+                            # (state/version/service update) — never ADD a newly-seen port
+                            # discovered on a shared IP. New-port discovery is scoped work
+                            # for the discovery/full scan; this loop was the source of the
+                            # host-wide port pollution that made every asset on 127.0.0.1
+                            # converge on one shared port set.
                             existing_ports = {p["port"]: p for p in (asset.ports or []) if isinstance(p, dict)}
                             for p in nmap_results["ports"]:
+                                if p["port"] not in existing_ports:
+                                    continue
                                 existing_ports[p["port"]] = p
                             asset.ports = list(existing_ports.values())
                             asset.last_scan_at = datetime.utcnow()
@@ -487,30 +496,59 @@ class ScheduledScanner:
         critical_count = sum(1 for v in all_vulns if v.severity == "critical")
         high_count = sum(1 for v in all_vulns if v.severity == "high")
 
-        ai_result = await self._score_risk_with_ai(
+        # service_weighted_v1 — deterministic, no AI in the number. Score
+        # against a merged view of the asset's already-known ports plus
+        # whatever this scan just found, WITHOUT persisting that merge into
+        # asset.ports (see comment above Stage 1 — an asset only owns the
+        # port(s) it's registered with; this merge is scoring input only).
+        existing_ports = {
+            p.get("port"): p for p in (asset.ports or []) if isinstance(p, dict)
+        }
+        for p in nmap_results.get("ports", []):
+            existing_ports[p.get("port")] = p
+        merged_ports = list(existing_ports.values())
+
+        res = asset_risk.score_asset(
+            ports=merged_ports,
+            ip_address=asset.ip_address,
+            hostname=asset.hostname,
+            critical_vulns=critical_count,
+            high_vulns=high_count,
+            total_vulns=len(all_vulns),
+            # No fleet context available in a single-asset scan, so no
+            # host-wide damping is applied here — this persisted value is a
+            # coarser floor kept only for history. The API (surface.py)
+            # recomputes with a fresh, client-scoped host_index on every
+            # read, which is what makes it the authoritative number.
+            host_index=None,
+        )
+        asset.risk_score = res["risk_score"]  # already 0-10 scale, no /10 division
+        asset.last_scan_at = datetime.utcnow()
+
+        # AI is commentary only from here on — it can explain the score in
+        # prose for the audit trail, but it is never consulted for the
+        # number itself, and its absence changes nothing about the score.
+        justification = await self._ai_risk_justification(
             asset=asset,
-            ports=nmap_results.get("ports", []),
+            ports=merged_ports,
             vuln_count=len(all_vulns),
             critical_vulns=critical_count,
             high_vulns=high_count,
         )
-        # AI returns 0-100 but DB stores 0-10 scale (frontend expects 0-10)
-        asset.risk_score = round(float(ai_result["risk_score"]) / 10.0, 1)
-        asset.last_scan_at = datetime.utcnow()
 
         # Stage 5: Audit log
         db.add(AuditLog(
             client_id=asset.client_id,
             action="scheduled_scan" if not quick else "quick_scan",
-            model_used=ai_result.get("model_used", "none"),
+            model_used=asset_risk.MODEL_VERSION,
             input_summary=(
                 f"{'Quick' if quick else 'Full'} scan {target}: "
                 f"{len(nmap_results.get('ports', []))} ports, "
                 f"{len(nuclei_vulns)} new vulns"
             ),
-            ai_reasoning=ai_result.get("justification", ""),
-            decision=f"risk_score={ai_result['risk_score']}",
-            confidence=ai_result.get("confidence", 0.0),
+            ai_reasoning=justification or "",
+            decision=f"risk_score={res['risk_score']}",
+            confidence=1.0,  # deterministic method — no probabilistic uncertainty
         ))
 
         await event_bus.publish("scan_completed", {
@@ -519,13 +557,13 @@ class ScheduledScanner:
             "scan_type": "quick" if quick else "full",
             "ports_found": len(nmap_results.get("ports", [])),
             "vulns_found": len(nuclei_vulns),
-            "risk_score": ai_result["risk_score"],
+            "risk_score": res["risk_score"],
         })
 
         logger.info(
             f"{'Quick' if quick else 'Full'} scan {target}: "
             f"{len(nmap_results.get('ports', []))} ports, "
-            f"{len(nuclei_vulns)} new vulns, risk={ai_result['risk_score']:.1f}"
+            f"{len(nuclei_vulns)} new vulns, risk={res['risk_score']:.1f} ({res['risk_band']})"
         )
 
         return new_vuln_count
@@ -675,29 +713,31 @@ class ScheduledScanner:
         return None
 
     # ------------------------------------------------------------------ #
-    #  AI risk scoring                                                     #
+    #  AI risk justification (commentary only — NEVER the score)           #
     # ------------------------------------------------------------------ #
 
-    async def _score_risk_with_ai(
+    async def _ai_risk_justification(
         self,
         asset: Asset,
         ports: list,
         vuln_count: int,
         critical_vulns: int,
         high_vulns: int,
-    ) -> dict:
-        """Return AI risk score 0-100; falls back to heuristic when AI is unavailable."""
+    ) -> Optional[str]:
+        """Ask the AI for a short prose explanation of the asset's risk posture.
+
+        This is commentary ONLY, stored in ``AuditLog.ai_reasoning`` — the risk
+        SCORE itself always comes from ``asset_risk.score_asset``
+        (``service_weighted_v1``, fully deterministic). This function must
+        never be consulted for the number and its return value is never
+        parsed for one. Returns ``None`` when AI is disabled or the call
+        fails; nothing else in the scan pipeline depends on this succeeding.
+        """
         from app.core.openrouter import openrouter_client
         from app.core.ai_mode import ai_available
-        import re
 
         if not ai_available():
-            return {
-                "risk_score": self._heuristic_risk(critical_vulns, high_vulns, vuln_count, ports),
-                "justification": "Heuristic scoring (AI disabled)",
-                "model_used": "heuristic",
-                "confidence": 0.6,
-            }
+            return None
 
         port_summary = ", ".join(
             f"{p['port']}/{p.get('protocol', 'tcp')} ({p.get('service', '?')})"
@@ -711,7 +751,9 @@ class ScheduledScanner:
             f"Total open vulnerabilities: {vuln_count}\n"
             f"Critical: {critical_vulns}, High: {high_vulns}\n\n"
             f"Given this information for a {asset.asset_type or 'server'}, "
-            f"rate the overall risk from 0 to 100 and explain why briefly."
+            f"briefly explain the security posture in 1-2 sentences. "
+            f"Do not invent a numeric risk score — one is already computed "
+            f"deterministically elsewhere and yours would be ignored."
         )
 
         try:
@@ -719,47 +761,13 @@ class ScheduledScanner:
                 messages=[{"role": "user", "content": prompt}],
                 task_type="risk_scoring",
                 temperature=0.2,
-                max_tokens=512,
+                max_tokens=256,
             )
-            content = result.get("content", "")
-
-            try:
-                clean = content.strip()
-                if clean.startswith("```"):
-                    clean = "\n".join(clean.split("\n")[1:-1])
-                data = json.loads(clean)
-                risk_score = float(data.get("risk_score", 0))
-                justification = data.get("justification", data.get("factors", ""))
-                if isinstance(justification, list):
-                    justification = "; ".join(justification)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                numbers = re.findall(r'\b(\d{1,3})\b', content)
-                risk_score = (
-                    float(numbers[0])
-                    if numbers
-                    else self._heuristic_risk(critical_vulns, high_vulns, vuln_count, ports)
-                )
-                justification = content[:500]
-
-            risk_score = max(0.0, min(100.0, risk_score))
-            return {
-                "risk_score": risk_score,
-                "justification": str(justification)[:1000],
-                "model_used": result.get("model_used", ""),
-                "confidence": 0.85,
-            }
+            content = (result.get("content") or "").strip()
+            return content[:1000] or None
         except Exception as e:
-            logger.error(f"AI risk scoring failed: {e}")
-            return {
-                "risk_score": self._heuristic_risk(critical_vulns, high_vulns, vuln_count, ports),
-                "justification": f"Heuristic fallback (AI error: {e})",
-                "model_used": "heuristic",
-                "confidence": 0.5,
-            }
-
-    def _heuristic_risk(self, critical: int, high: int, total: int, ports: list) -> float:
-        score = min(100.0, critical * 20.0 + high * 10.0 + total * 2.0 + len(ports) * 0.5)
-        return round(score, 1)
+            logger.debug(f"AI risk justification failed (non-fatal, score unaffected): {e}")
+            return None
 
     # ------------------------------------------------------------------ #
     #  Uptime monitoring                                                   #
