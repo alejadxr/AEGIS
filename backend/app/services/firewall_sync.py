@@ -22,6 +22,13 @@ logger = logging.getLogger("aegis.firewall_sync")
 
 SYNC_INTERVAL_SECONDS = 300  # 5 minutes
 
+# v1.6.4.x (Fix 5): shared incident-dedup cooldown. Previously firewall_sync,
+# correlation_engine and log_watcher each had their own diverging dedup
+# strategy (or, for correlation_engine's fallback path, none at all — see
+# find_recent_incident() below). 24h matches firewall_sync's pre-existing
+# precedent for _sync_auto_response_events.
+INCIDENT_DEDUP_WINDOW = timedelta(hours=24)
+
 # v1.6.2: track when each local_only IP first appeared so we can auto-evict
 # entries that have been "local-only" for > AEGIS_STALE_LOCAL_EVICT_HOURS
 # (default 24). Without this, IPs blocked manually or via legacy paths sit in
@@ -177,6 +184,74 @@ async def _sync_blocked_ips(db: AsyncSession) -> int:
     return count
 
 
+async def find_recent_incident(
+    db: AsyncSession,
+    *,
+    client_id: str,
+    source_ip: str,
+    source: str,
+    window: timedelta = INCIDENT_DEDUP_WINDOW,
+    kind: Optional[str] = None,
+    statuses: Optional[tuple] = ("open", "investigating", "auto_responded"),
+    scan_limit: int = 50,
+) -> Optional[Incident]:
+    """Shared incident-dedup lookup (v1.6.4.x, Fix 5).
+
+    Finds the most recent still-active incident for (client_id, source_ip,
+    source) detected within `window`, so callers can fold a repeat trigger
+    into the existing incident instead of creating a new row every time.
+    This is the pattern firewall_sync._sync_auto_response_events already used
+    internally (previously inline, 24h window) — extracted here so
+    correlation_engine can reuse it instead of having no dedup at all on its
+    fallback incident-creation path.
+
+    `kind` optionally narrows the match to a specific rule_id / event type
+    (e.g. a correlation rule id) so that two genuinely different attack
+    patterns from the same source_ip within the window are NOT collapsed
+    into one incident — only repeats of the *same* kind are. The kind
+    lookup is done in Python against the already-deserialized
+    raw_alert/ai_analysis JSON rather than pushed into the SQL WHERE clause,
+    because `incidents.raw_alert`/`ai_analysis` are plain Postgres `json`
+    columns (not `jsonb`), which has no equality operator to filter on.
+
+    `statuses=None` disables the status filter (matches any status) —
+    used by _sync_auto_response_events to preserve its pre-existing,
+    status-agnostic dedup behavior exactly.
+    """
+    cutoff = datetime.utcnow() - window
+    conditions = [
+        Incident.client_id == client_id,
+        Incident.source_ip == source_ip,
+        Incident.source == source,
+        Incident.detected_at >= cutoff,
+    ]
+    if statuses is not None:
+        conditions.append(Incident.status.in_(statuses))
+    result = await db.execute(
+        select(Incident)
+        .where(*conditions)
+        .order_by(Incident.detected_at.desc())
+        .limit(scan_limit)
+    )
+    candidates = result.scalars().all()
+    if not candidates:
+        return None
+    if not kind:
+        return candidates[0]
+
+    for incident in candidates:
+        raw = incident.raw_alert or {}
+        analysis = incident.ai_analysis or {}
+        existing_kind = (
+            raw.get("pattern")
+            or analysis.get("rule_id")
+            or (analysis.get("_origin") or {}).get("rule")
+        )
+        if existing_kind == kind:
+            return incident
+    return None
+
+
 async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
     events = await firewall_client.get_events()
     if not events:
@@ -213,16 +288,17 @@ async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
         if ip:
             # v1.6.3.2: dedup window is now 24h (was permanent — a firewall IP could
             # only ever raise ONE incident in the DB's entire lifetime).
-            recent_cutoff = datetime.utcnow() - timedelta(hours=24)
-            result = await db.execute(
-                select(Incident.id).where(
-                    Incident.client_id == client_id,
-                    Incident.source_ip == ip,
-                    Incident.source == "firewall",
-                    Incident.detected_at >= recent_cutoff,
-                ).limit(1)
+            # v1.6.4.x (Fix 5): now goes through the shared find_recent_incident()
+            # helper (statuses=None preserves the original status-agnostic match).
+            existing = await find_recent_incident(
+                db,
+                client_id=client_id,
+                source_ip=ip,
+                source="firewall",
+                window=INCIDENT_DEDUP_WINDOW,
+                statuses=None,
             )
-            if result.scalar_one_or_none():
+            if existing is not None:
                 continue
 
         incident = Incident(
@@ -254,10 +330,15 @@ async def _reconcile_incidents(db: AsyncSession, pi_blocked_ips: Set[str]) -> in
     Auto-resolve incidents whose source_ip has been removed from the Pi blocklist.
 
     Conditions for auto-resolution:
-      - Incident status is 'open' or 'investigating'
+      - Incident status is 'open', 'investigating', or 'auto_responded'
       - Incident has a related Action with action_type='block_ip' (i.e. was actively blocked)
       - Incident source_ip is NOT currently in the Pi blocklist
       - Incident is older than RECONCILE_GRACE_MINUTES (avoids resolving during transient gaps)
+
+    v1.6.4.x (Fix 5): 'auto_responded' was added alongside 'open'/'investigating'
+    so fast_triage-sourced incidents (the only source that ever sets that status)
+    get the same auto-close lifecycle as every other source instead of being
+    structurally orphaned.
 
     The resolution note is stored in ai_analysis['resolution_note'] because the
     Incident model has no dedicated text column for it.
@@ -267,7 +348,7 @@ async def _reconcile_incidents(db: AsyncSession, pi_blocked_ips: Set[str]) -> in
     stmt = (
         select(Incident)
         .where(
-            Incident.status.in_(("open", "investigating")),
+            Incident.status.in_(("open", "investigating", "auto_responded")),
             Incident.source_ip.is_not(None),
             Incident.detected_at < grace_cutoff,
             exists().where(

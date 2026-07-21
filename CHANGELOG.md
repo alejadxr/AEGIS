@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.4.9] - 2026-07-21 (asset identity — deduplicate, prevent, repair; incident dedup; report parity)
+
+### Security note (unbounded asset duplication — data-integrity vector)
+- `_auto_discover_localhost` mutated a shared `.ports` list in-place while iterating, inserting one duplicate asset row per port per process boot. Over weeks of restarts, the assets table grew by 10x with identical (client_id, ip_address) rows carrying fragmented port lists. This inflated dashboard asset counts, skewed risk reports, and could mask real asset changes behind noise — a data-integrity vector. The root cause is fixed, a unique DB constraint prevents reintroduction, and a repair script merges existing duplicates.
+
+### Fixed - root cause of asset duplication (main.py `_auto_discover_localhost`)
+- Old code iterated `discovered_hosts[].ports` and mutated the port list in-place, creating one INSERT per port per boot instead of one INSERT per host. Rewritten: group services by host first, one upsert per host, union-merge ports into the existing row. No duplicate rows created on boot.
+
+### Fixed - port shape and merge in all write paths (nodes.py, setup.py)
+- `nodes.py` agent heartbeat and `setup.py` setup wizard asset-creation paths now produce proper port dicts (`{port, protocol, service, state}`) and union-merge with existing ports (never destructive replace). Risk score is floored via `asset_risk.score_asset()` so dashboard and DB always agree.
+
+### Fixed - unique index on assets table (asset.py + alembic migration)
+- New partial unique index `uq_assets_client_ip` on `(client_id, ip_address) WHERE ip_address IS NOT NULL AND ip_address != ''`. Prevents any write path — current or future — from reintroducing duplicate asset rows at the database level. Migration: `b3aebb98b90f_add_unique_index_assets_client_ip.py`.
+
+### Added - data repair script (scripts/repair_duplicate_assets.py)
+- Standalone script merges duplicate `(client_id, ip_address, hostname)` groups: union-merges ports, keeps the highest risk score, deletes surplus rows. Dry-run by default (`--apply` for real writes, creates timestamped JSON backup first). **Must be run before the alembic migration** to avoid unique-constraint violations on pre-existing duplicates.
+
+### Fixed - report generator live scoring (report_generator.py)
+- New `_score_assets_live()` mirrors `surface.list_assets` exactly (same query, same `asset_risk.score_asset()` call) so generated reports never diverge from the dashboard's risk numbers. Unit test `test_report_generator_risk_parity.py` asserts parity.
+
+### Fixed - incident dedup in correlation engine (correlation_engine.py)
+- Extracted `find_recent_incident()` as a shared helper. `correlation_engine` now folds repeat triggers for the same `(rule_id, source_ip)` pair within `INCIDENT_DEDUP_WINDOW` (24 h) into the existing incident instead of creating a new one. Reduces incident table growth by ~10x under sustained attack traffic.
+
+### Fixed - auto_responded lifecycle (retention.py, firewall_sync.py)
+- `fast_triage`-sourced incidents (status `auto_responded`) were excluded from the stuck-incident auto-closer and the firewall reconcile query. Both services now include `auto_responded` in their status filters, preventing orphaned incidents and stale firewall entries.
+
+### Operational
+- **Before running `alembic upgrade head`**, execute `python scripts/repair_duplicate_assets.py --apply` to merge existing duplicates. The unique index migration will fail if duplicate `(client_id, ip_address)` rows remain.
+
+---
+
 ## [1.6.4.8] - 2026-07-18 (event-bus latency — move slow I/O off the hot path; test suite green + CI test job)
 
 ### Fixed - event-bus hot-path latency (avg_process_time_ms 126-182 → target <5 ms)

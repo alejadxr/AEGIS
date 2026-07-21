@@ -22,6 +22,7 @@ from app.database import get_db
 from app.core.auth import AuthContext, require_analyst, require_viewer
 from app.core.events import event_bus
 from app.models.endpoint_agent import EndpointAgent, AgentStatus
+from app.services import asset_risk
 
 logger = logging.getLogger("aegis.nodes")
 router = APIRouter(prefix="/nodes", tags=["nodes"])
@@ -581,7 +582,19 @@ async def report_assets(
         agent.os_info = f"{body.os_name} {body.os_version or ''}".strip()
 
     ip = body.local_ip or "127.0.0.1"
-    ports_list = [s.get("port") for s in body.open_services if s.get("port")]
+    # Proper port dicts (never bare ints) so downstream readers — asset_risk,
+    # scheduled_scanner's merge-by-port refresh, the surface API — all see
+    # the shape they expect instead of silently dropping non-dict entries.
+    ports_list = [
+        {
+            "port": s.get("port"),
+            "protocol": "tcp",
+            "service": s.get("service") or "unknown",
+            "state": "open",
+        }
+        for s in body.open_services
+        if s.get("port")
+    ]
     techs = [
         f"{s.get('service', 'unknown')}:{s.get('port')}"
         for s in body.open_services
@@ -589,18 +602,34 @@ async def report_assets(
     ]
 
     existing = await db.execute(
-        select(Asset).where(Asset.client_id == client_id, Asset.ip_address == ip)
+        select(Asset)
+        .where(Asset.client_id == client_id, Asset.ip_address == ip)
+        .order_by(Asset.created_at.asc())
     )
-    existing_asset = existing.scalar_one_or_none()
+    existing_asset = existing.scalars().first()
     assets_created = assets_updated = 0
 
     if existing_asset:
         existing_asset.hostname = body.hostname or existing_asset.hostname
-        existing_asset.ports = ports_list
+        # Merge new ports into the existing set keyed by port number — union
+        # of old+new, never a destructive replace of the whole array.
+        merged_ports = {
+            p["port"]: p
+            for p in (existing_asset.ports or [])
+            if isinstance(p, dict) and isinstance(p.get("port"), int)
+        }
+        for p in ports_list:
+            merged_ports[p["port"]] = p
+        existing_asset.ports = list(merged_ports.values())
         existing_asset.technologies = techs
         existing_asset.last_scan_at = datetime.utcnow()
         assets_updated = 1
     else:
+        floor_score = asset_risk.score_asset(
+            ports=ports_list,
+            ip_address=ip,
+            hostname=body.hostname,
+        )["risk_score"]
         db.add(Asset(
             id=str(_uuid.uuid4()),
             client_id=client_id,
@@ -610,7 +639,7 @@ async def report_assets(
             ports=ports_list,
             technologies=techs,
             status="active",
-            risk_score=0.0,
+            risk_score=floor_score,
             last_scan_at=datetime.utcnow(),
         ))
         assets_created = 1

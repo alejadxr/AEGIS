@@ -3300,6 +3300,51 @@ def _matches_filter(event: dict, filt: dict) -> bool:
     return True
 
 
+async def _escalate_incident(db: Any, incident: Any, rule: dict, alert_data: dict) -> None:
+    """Fold a duplicate correlation trigger into an existing incident instead
+    of creating a new row (v1.6.4.x, Fix 5 — see find_recent_incident() in
+    firewall_sync.py, which is what locates `incident` within the dedup
+    window for the same client/source_ip/rule).
+
+    Non-destructive JSON merge into ai_analysis, mirroring the pattern
+    firewall_sync._reconcile_incidents already uses for resolution_note:
+    bumps an occurrence counter + last_seen timestamp, and escalates the
+    incident's severity in place if this trigger is MORE severe than what's
+    currently recorded — so a repeat attack is never silently dropped, it's
+    folded in and the incident's urgency reflects the worst trigger seen.
+    `incident` is an app.models.incident.Incident row (loaded lazily to
+    match this module's existing style of deferring model imports).
+    """
+    from app.services.ai_engine import _severity_order
+
+    analysis = incident.ai_analysis or {}
+    dedup = analysis.get("dedup") or {
+        "count": 1,
+        "first_seen": (incident.detected_at or datetime.utcnow()).isoformat(),
+    }
+    dedup["count"] = dedup.get("count", 1) + 1
+    dedup["last_seen"] = datetime.utcnow().isoformat()
+    dedup["last_rule"] = rule.get("id")
+    analysis["dedup"] = dedup
+    incident.ai_analysis = analysis
+
+    new_severity = alert_data.get("severity") or rule.get("severity")
+    if new_severity and _severity_order(new_severity) > _severity_order(incident.severity):
+        logger.info(
+            f"correlation_engine dedup: escalating incident {incident.id} "
+            f"severity {incident.severity} -> {new_severity} "
+            f"(rule={rule.get('id')}, source_ip={incident.source_ip})"
+        )
+        incident.severity = new_severity
+
+    await db.commit()
+    logger.info(
+        f"correlation_engine dedup: folded repeat trigger into incident "
+        f"{incident.id} (rule={rule.get('id')}, source_ip={incident.source_ip}, "
+        f"occurrences={dedup['count']})"
+    )
+
+
 # ---------------------------------------------------------------------------
 # CorrelationEngine
 # ---------------------------------------------------------------------------
@@ -4075,6 +4120,37 @@ class CorrelationEngine:
                 client = result.scalar_one_or_none()
                 if client is None:
                     logger.error("Correlation engine: no client found, cannot create incident")
+                    return
+
+                # v1.6.4.x (Fix 5): dedup — correlation_engine previously had NO
+                # existence check at all before creating an incident (unlike
+                # firewall_sync, which has had a 24h dedup window since v1.6.3.2).
+                # A repeat trigger of the SAME rule against the SAME source_ip
+                # within the cooldown window now folds into the existing
+                # open/investigating/auto_responded incident (escalating its
+                # severity/occurrence count) instead of creating a new row.
+                # Distinct rule_ids from the same source_ip are NOT collapsed —
+                # find_recent_incident() matches on rule id too, so a genuinely
+                # different attack pattern still opens its own incident.
+                from app.services.firewall_sync import find_recent_incident, INCIDENT_DEDUP_WINDOW
+
+                # alert_data["source"] is "correlation_engine" for sigma rules
+                # (_on_rule_triggered) and "correlation_engine_chain" for chain
+                # rules (_on_chain_triggered) — this is what ai_engine._create_incident
+                # actually writes to Incident.source on the (predominant) AI path,
+                # so matching on it here (rather than hardcoding one string) is
+                # what makes find_recent_incident() actually find prior incidents
+                # for both rule kinds.
+                existing = await find_recent_incident(
+                    db,
+                    client_id=client.id,
+                    source_ip=source_ip,
+                    source=alert_data.get("source", "correlation_engine"),
+                    window=INCIDENT_DEDUP_WINDOW,
+                    kind=rule["id"],
+                )
+                if existing is not None:
+                    await _escalate_incident(db, existing, rule, alert_data)
                     return
 
                 try:

@@ -6,8 +6,12 @@ Two APScheduler jobs registered on the global `scheduled_scanner.scheduler`:
    AEGIS_RETENTION_DAYS where status IN ('resolved','auto_responded'). Same
    for attacker_profiles and honeypot_interactions older than the cutoff.
 2. hourly_stuck_incident_closer (interval 1h) — UPDATE incidents older than
-   24h whose status='investigating' AND source_ip already in threat_intel
-   (i.e. already blocked) to status='resolved' with resolved_at=now().
+   24h whose status IN ('investigating', 'auto_responded') AND source_ip
+   already in threat_intel (i.e. already blocked) to status='resolved' with
+   resolved_at=now(). 'auto_responded' was added in v1.6.4.x (Fix 5) — it's
+   the status fast_triage-sourced incidents get, and without it those
+   incidents were structurally orphaned (this job never touched them, and
+   firewall_sync._reconcile_incidents didn't either until the same fix).
 
 Both jobs honor AEGIS_RETENTION_DRY_RUN=1 (logs intended changes without
 mutating). All deletions are appended to ~/.aegis/retention-audit.jsonl so
@@ -110,7 +114,14 @@ async def nightly_retention_purge() -> dict:
 
 
 async def hourly_stuck_incident_closer() -> dict:
-    """Auto-resolve stuck-investigating incidents where source_ip is already blocked."""
+    """Auto-resolve stuck incidents (status 'investigating' or 'auto_responded')
+    where source_ip is already blocked.
+
+    v1.6.4.x (Fix 5): widened from 'investigating'-only to also include
+    'auto_responded' — fast_triage is the only source that ever sets that
+    status, and it was never in this job's WHERE clause, so those incidents
+    could never auto-close.
+    """
     cutoff = datetime.utcnow() - timedelta(hours=STUCK_CLOSER_HOURS)
     summary = {"closed": 0, "dry_run": DRY_RUN, "cutoff": cutoff.isoformat()}
     async with async_session() as db:
@@ -127,7 +138,7 @@ async def hourly_stuck_incident_closer() -> dict:
 
         candidates_q = await db.execute(
             select(Incident.id, Incident.source_ip).where(
-                Incident.status == "investigating",
+                Incident.status.in_(("investigating", "auto_responded")),
                 Incident.detected_at < cutoff,
                 Incident.source_ip.in_(blocked_ips),
             )
