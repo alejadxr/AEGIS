@@ -358,6 +358,7 @@ async def lifespan(app: FastAPI):
             from sqlalchemy import select as _sel
             from app.models.asset import Asset
             from app.services.auto_discovery import auto_discovery
+            from app.services import asset_risk
             from datetime import datetime
 
             logger.info("Running localhost auto-discovery (upsert mode)...")
@@ -370,61 +371,102 @@ async def lifespan(app: FastAPI):
             created = 0
             updated = 0
             async with async_session() as db:
-                # Load all existing assets for this client+IP for matching
-                existing_result = await db.execute(
-                    _sel(Asset).where(
-                        Asset.client_id == client_id,
-                        Asset.ip_address == "127.0.0.1",
-                    )
-                )
-                existing_assets = list(existing_result.scalars().all())
-
+                # Group all of a host's discovered services BEFORE touching the
+                # DB, then do exactly one match + one write per (client_id,
+                # ip_address) pair. Matching by "whichever cached asset object
+                # currently contains this port" (the old approach) mutated the
+                # in-memory list mid-loop, so the next service on the same host
+                # could no longer find it — spawning a duplicate row per port
+                # on every multi-port host, every boot.
                 for host in result.hosts:
+                    if not host.services:
+                        continue
+
+                    # Real, stable identity — mirrors nodes.py's report_assets
+                    # matching. Ordered + .first() (not scalar_one_or_none)
+                    # because pre-existing duplicate rows from the old bug may
+                    # still be present until the one-off repair runs; take the
+                    # oldest deterministically rather than crash.
+                    existing_result = await db.execute(
+                        _sel(Asset)
+                        .where(
+                            Asset.client_id == client_id,
+                            Asset.ip_address == host.ip,
+                        )
+                        .order_by(Asset.created_at.asc())
+                    )
+                    matched_asset = existing_result.scalars().first()
+
+                    # One port dict per discovered service on this host.
+                    new_ports = {
+                        svc.port: {
+                            "port": svc.port,
+                            "protocol": svc.protocol,
+                            "service": svc.service,
+                            "state": "open",
+                        }
+                        for svc in host.services
+                    }
+
+                    # Descriptive hostname derived from the first service
+                    # (never "localhost" or a raw IP).
+                    primary_svc = host.services[0]
+                    good_hostname = primary_svc.hostname
+                    if not good_hostname or good_hostname in ("localhost", "127.0.0.1", "::1", ""):
+                        good_hostname = f"{primary_svc.service.lower().replace(' ', '-')}-{primary_svc.port}"
+
+                    # Union of technologies across every service on this host.
+                    technologies: list[str] = []
                     for svc in host.services:
-                        # Match: find existing asset with same IP that has this port
-                        matched_asset = None
-                        for asset in existing_assets:
-                            asset_ports = asset.ports or []
-                            for p in asset_ports:
-                                if isinstance(p, dict) and p.get("port") == svc.port:
-                                    matched_asset = asset
-                                    break
-                            if matched_asset:
-                                break
+                        for tech in svc.technologies:
+                            if tech not in technologies:
+                                technologies.append(tech)
 
-                        port_data = [{"port": svc.port, "protocol": svc.protocol, "service": svc.service}]
-                        risk = round(float(svc.risk_estimate) / 10.0, 1)
+                    if matched_asset:
+                        # Merge new ports into the existing set keyed by port
+                        # number — union of old+new (discovery is additive),
+                        # never a destructive replace of the whole list.
+                        merged_ports = {
+                            p["port"]: p for p in (matched_asset.ports or []) if isinstance(p, dict)
+                        }
+                        merged_ports.update(new_ports)
+                        matched_asset.ports = list(merged_ports.values())
 
-                        # Generate a descriptive hostname (never "localhost" or raw IP)
-                        good_hostname = svc.hostname
-                        if not good_hostname or good_hostname in ("localhost", "127.0.0.1", "::1", ""):
-                            good_hostname = f"{svc.service.lower().replace(' ', '-')}-{svc.port}"
-
-                        if matched_asset:
-                            # Update existing asset — keep user-set hostname if it's better
-                            if matched_asset.hostname in ("localhost", "127.0.0.1", "") or not matched_asset.hostname:
-                                matched_asset.hostname = good_hostname
-                            matched_asset.asset_type = svc.asset_type
-                            matched_asset.ports = port_data
-                            matched_asset.technologies = svc.technologies
-                            matched_asset.risk_score = risk
-                            matched_asset.last_scan_at = datetime.utcnow()
-                            updated += 1
-                        else:
-                            # Create new asset
-                            asset = Asset(
-                                client_id=client_id,
-                                hostname=good_hostname,
-                                ip_address=host.ip,
-                                asset_type=svc.asset_type,
-                                ports=port_data,
-                                technologies=svc.technologies,
-                                status="active",
-                                risk_score=risk,
-                                last_scan_at=datetime.utcnow(),
-                            )
-                            db.add(asset)
-                            created += 1
+                        if matched_asset.hostname in ("localhost", "127.0.0.1", "") or not matched_asset.hostname:
+                            matched_asset.hostname = good_hostname
+                        merged_technologies = list(matched_asset.technologies or [])
+                        for tech in technologies:
+                            if tech not in merged_technologies:
+                                merged_technologies.append(tech)
+                        matched_asset.technologies = merged_technologies
+                        # risk_score intentionally left untouched here: it is
+                        # recomputed live by surface.py (asset_risk.score_asset)
+                        # for display and periodically by scheduled_scanner —
+                        # do not stomp it with auto_discovery's legacy 0-100
+                        # heuristic (which can also be AI-derived and thus
+                        # nondeterministic).
+                        matched_asset.last_scan_at = datetime.utcnow()
+                        updated += 1
+                    else:
+                        port_data = list(new_ports.values())
+                        floor_score = asset_risk.score_asset(
+                            ports=port_data,
+                            ip_address=host.ip,
+                            hostname=good_hostname,
+                        )["risk_score"]
+                        asset = Asset(
+                            client_id=client_id,
+                            hostname=good_hostname,
+                            ip_address=host.ip,
+                            asset_type=primary_svc.asset_type,
+                            ports=port_data,
+                            technologies=technologies,
+                            status="active",
+                            risk_score=floor_score,
+                            last_scan_at=datetime.utcnow(),
+                        )
+                        db.add(asset)
+                        created += 1
 
                 await db.commit()
             logger.info(f"Auto-discovery complete: {created} created, {updated} updated")
@@ -800,7 +842,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.4.8",
+    version="1.6.4.9",
     lifespan=lifespan,
 )
 
@@ -919,7 +961,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.8",
+        "version": "1.6.4.9",
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -931,7 +973,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.8",
+        "version": "1.6.4.9",
         "ai_mode": _ai_mode.value,
     }
 
