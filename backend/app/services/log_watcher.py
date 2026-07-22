@@ -425,16 +425,38 @@ class LogWatcher:
                 await asyncio.sleep(10)
 
     async def _tail_pm2_logs(self):
-        extra_paths = ["/usr/local/bin"]
+        # Broaden PATH so we find pm2 even when installed in user-local dirs
+        # (e.g. ~/local/bin, ~/.local/bin, ~/.nvm/..., volta, etc.)
+        home = os.path.expanduser("~")
+        extra_paths = [
+            "/usr/local/bin",
+            os.path.join(home, "local", "bin"),
+            os.path.join(home, ".local", "bin"),
+            os.path.join(home, ".npm-global", "bin"),
+        ]
         env = os.environ.copy()
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
 
         pm2_path = shutil.which("pm2", path=env["PATH"])
         journalctl_path = shutil.which("journalctl")
 
+        # Fallback: if pm2 binary isn't found but ~/.pm2/logs/ exists, we can
+        # still tail the log files directly (pm2 jlist will gracefully fail
+        # inside _tail_pm2_files and we fall back to default path construction).
+        pm2_logs_dir = os.path.expanduser(
+            os.environ.get("AEGIS_PM2_LOGS_DIR", "~/.pm2/logs")
+        )
+        has_pm2_logs = os.path.isdir(pm2_logs_dir)
+
         from app.config import settings
 
-        if pm2_path:
+        if pm2_path or has_pm2_logs:
+            if not pm2_path:
+                logger.warning(
+                    "log_watcher: pm2 binary not found but %s exists — "
+                    "tailing log files directly (pm2 jlist will be skipped)",
+                    pm2_logs_dir,
+                )
             await self._tail_pm2_files(settings)
         elif journalctl_path:
             cmd = [
@@ -488,8 +510,20 @@ class LogWatcher:
         import subprocess
         result = {}
         try:
+            # Find pm2 with broadened PATH (same dirs as _tail_pm2_logs)
+            home = os.path.expanduser("~")
+            search_path = ":".join([
+                "/usr/local/bin",
+                os.path.join(home, "local", "bin"),
+                os.path.join(home, ".local", "bin"),
+                os.environ.get("PATH", ""),
+            ])
+            pm2_bin = shutil.which("pm2", path=search_path)
+            if not pm2_bin:
+                logger.warning("log_watcher: pm2 binary not in PATH, skipping jlist")
+                return result
             proc = subprocess.run(
-                ["pm2", "jlist"],
+                [pm2_bin, "jlist"],
                 capture_output=True, text=True, timeout=10,
             )
             pm2_info = json.loads(proc.stdout)
