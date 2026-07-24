@@ -69,6 +69,15 @@ RESPONSE_ACTIONS = {
     "honeypot_recon": ["block_ip", "collect_evidence"],
 }
 
+# threat_type values that mean "triage could not classify this". An alert
+# carrying one of these has NOT been matched to any named attack pattern —
+# its severity/confidence are the heuristic's own guess about an event it
+# does not understand. These must never auto-block: see
+# _alert_block_confirmed step 4.
+UNCLASSIFIED_THREAT_TYPES = frozenset({
+    "", "unknown", "other", "generic", "suspicious", "anomaly", "unclassified",
+})
+
 # Map sigma rule IDs to threat types for fast path
 SIGMA_TO_THREAT_TYPE = {
     "brute_force_ssh": "brute_force",
@@ -587,7 +596,27 @@ class AIDecisionEngine:
             )
 
         # 4. Any other CRITICAL/HIGH-severity, high-confidence signal is
-        #    treated as confirmed. Medium/low unknown signals are withheld.
+        #    treated as confirmed — but ONLY when triage actually classified
+        #    the threat.
+        #
+        #    An unclassified alert ("Security alert received", threat_type
+        #    "unknown") has matched no named attack pattern; its severity and
+        #    confidence are the heuristic's guess about an event it does not
+        #    understand. Auto-blocking on that is how AEGIS locked out real
+        #    users — including the operator's own admin IP — from a generic
+        #    incident. Unlike playbook_engine's equivalent step, which is
+        #    anchored to a concrete Sigma rule id, nothing grounds this path,
+        #    so an unclassified threat goes to the approval queue instead.
+        #    Withholding only downgrades to require_approval: a real attack is
+        #    still one click from being blocked, and steps 1-3 above (known-bad
+        #    IOC, named exploit class, counted brute force) continue to
+        #    auto-block without operator involvement.
+        if (threat_type or "").lower() in UNCLASSIFIED_THREAT_TYPES:
+            return False, (
+                f"unclassified_threat(type={threat_type or 'empty'!s},"
+                f"sev={severity},conf={confidence:.2f})"
+            )
+
         if sev_rank >= _severity_order("high") and confidence >= 0.75:
             return True, f"confirmed_high_severity(sev={severity},conf={confidence:.2f})"
 
