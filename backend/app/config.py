@@ -81,6 +81,18 @@ class Settings(BaseSettings):
     # Example: AEGIS_ATTACKER_IPS="203.0.113.10,203.0.113.11"
     AEGIS_ATTACKER_IPS: str = ""
 
+    # Safe-IP allow-lists — comma-separated literal IPs and/or CIDR ranges that
+    # are NEVER blocked and NEVER turned into an incident, on every detection
+    # path. Both names are additive and feed the same gate
+    # (attack_detector._is_safe_ip); use whichever reads better for the entry.
+    #
+    # These MUST be declared here even though attack_detector reads them,
+    # because model_config sets extra="ignore" — an undeclared key present in
+    # .env is silently dropped by pydantic and never reaches settings, which
+    # would leave the operator's entire safelist inert.
+    AEGIS_SAFE_IPS: str = ""
+    AEGIS_INTERNAL_IPS: str = ""
+
     # External firewall API URL (e.g. AEGIS Firewall Agent on Raspberry Pi).
     # When set, AEGIS uses this for real iptables blocking + threat intel.
     AEGIS_FIREWALL_URL: str = ""

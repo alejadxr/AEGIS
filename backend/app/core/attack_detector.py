@@ -59,9 +59,23 @@ def _parse_ip_safelist_env(var_name: str, default: str = "") -> tuple[set[str], 
     literal IP/hostname string. Invalid CIDR entries are logged and skipped —
     this never raises, so a typo in an env var can never crash boot.
 
+    Reads pydantic `settings` FIRST, then os.environ. This order matters:
+    .env values are loaded by pydantic BaseSettings into `settings` and do
+    NOT land in os.environ, so an os.getenv-only read silently fell back to
+    `default` and the operator's entire safelist went inert (every configured
+    IP/CIDR was treated as hostile). os.environ remains the fallback for
+    values exported by the process manager rather than written to .env.
+
     Returns (literal_ips, networks).
     """
-    raw = os.getenv(var_name, default)
+    raw = ""
+    try:
+        from app.config import settings as _settings
+        raw = str(getattr(_settings, var_name, "") or "")
+    except Exception:  # pragma: no cover - defensive, keeps boot alive
+        raw = ""
+    if not raw:
+        raw = os.getenv(var_name, default)
     literals: set[str] = set()
     networks: list = []
     for entry in (e.strip() for e in raw.split(",") if e.strip()):
