@@ -166,6 +166,95 @@ async def hourly_stuck_incident_closer() -> dict:
     return summary
 
 
+async def expire_provisional_blocks() -> dict:
+    """Lift auto-blocks that AEGIS made on an UNCONFIRMED threat, once expired.
+
+    This is the counterweight to running unattended. When the confirmation gate
+    cannot confirm an attack, ai_engine still blocks — parking the decision for
+    a human would mean not acting at all — but it stamps
+    ``parameters.expires_at`` on the Action. This job is what honours that
+    stamp, and without it "provisional" would be a lie: the block would be as
+    permanent as a confirmed one and false positives would accumulate silently,
+    exactly as 66 of them did before this existed.
+
+    Confirmed blocks carry no expires_at and are never touched here.
+    """
+    from app.models.action import Action
+    from app.core.firewall_client import firewall_client
+    from app.core.ip_blocker import ip_blocker_service
+
+    summary = {"scanned": 0, "expired": 0, "failed": 0, "dry_run": DRY_RUN}
+    now = datetime.utcnow()
+
+    async with async_session() as db:
+        stmt = select(Action).where(
+            Action.action_type == "block_ip",
+            Action.status.in_(("approved", "executed")),
+        )
+        rows = (await db.execute(stmt)).scalars().all()
+
+        for action in rows:
+            params = action.parameters or {}
+            if not params.get("provisional") or params.get("expired_at"):
+                continue
+            raw_exp = params.get("expires_at")
+            if not raw_exp:
+                continue
+            summary["scanned"] += 1
+            try:
+                if datetime.fromisoformat(str(raw_exp).replace("Z", "")) > now:
+                    continue  # still within its window
+            except (ValueError, TypeError):
+                logger.warning(
+                    f"provisional block {action.id} has unparseable "
+                    f"expires_at={raw_exp!r}; leaving it in force"
+                )
+                continue
+
+            ip = action.target
+            if not ip:
+                continue
+            if DRY_RUN:
+                logger.info(f"[DRY_RUN] would expire provisional block on {ip}")
+                summary["expired"] += 1
+                continue
+
+            try:
+                # Lift on the Pi executor first (the enforced layer), then the
+                # local 403 blocklist. Order matters: if the remote call fails
+                # we keep the local block rather than half-lifting it.
+                await firewall_client.unblock_ip(ip)
+                try:
+                    ip_blocker_service.unblock_ip(ip)
+                except Exception as exc:
+                    logger.warning(f"local unblock of {ip} failed: {exc}")
+
+                params["expired_at"] = now.isoformat()
+                action.parameters = dict(params)   # reassign so SQLAlchemy sees it
+                action.status = "expired"
+                summary["expired"] += 1
+                _audit({
+                    "event": "provisional_block_expired",
+                    "ip": ip,
+                    "action_id": str(action.id),
+                    "ts": now.isoformat(),
+                })
+                logger.info(f"Expired provisional block on {ip}")
+            except Exception as exc:
+                summary["failed"] += 1
+                logger.error(f"failed to expire provisional block on {ip}: {exc}")
+
+        if not DRY_RUN:
+            await db.commit()
+
+    if summary["scanned"]:
+        logger.info(
+            f"provisional block expiry: scanned={summary['scanned']} "
+            f"expired={summary['expired']} failed={summary['failed']}"
+        )
+    return summary
+
+
 async def start() -> None:
     """Register retention jobs onto the global scheduled_scanner.scheduler."""
     try:
@@ -182,6 +271,16 @@ async def start() -> None:
             hourly_stuck_incident_closer,
             IntervalTrigger(hours=1),
             id="hourly_stuck_incident_closer",
+            replace_existing=True,
+            max_instances=1,
+        )
+        # Every 10 min, not hourly: this bounds how long a false-positive block
+        # outlives its TTL, and it is the only thing that un-does an autonomous
+        # mistake when nobody is watching.
+        sched.add_job(
+            expire_provisional_blocks,
+            IntervalTrigger(minutes=10),
+            id="expire_provisional_blocks",
             replace_existing=True,
             max_instances=1,
         )
