@@ -8,33 +8,93 @@ from app.config import settings
 
 logger = logging.getLogger("aegis.openrouter")
 
-# Free models available on OpenRouter (as of 2026-04)
-# Organized by capability tier and context window for optimal task routing
+# ---------------------------------------------------------------------------
+# Model routing
+# ---------------------------------------------------------------------------
+# There are TWO routing tables because there are two transport paths:
 #
-# | Model                                    | Params   | Context  | Best For                    |
-# |------------------------------------------|----------|----------|-----------------------------|
-# | google/gemma-4-26b-a4b-it:free           | 26B A4B  | 262K     | Fast triage, quick decisions|
-# | meta-llama/llama-3.3-70b-instruct:free   | 70B      | 65K      | Classification, analysis    |
-# | qwen/qwen3-coder:free                    | 480B A35B| 262K     | Code analysis, investigation|
-# | openai/gpt-oss-120b:free                 | 120B     | 131K     | Reports, long-form content  |
-# | nousresearch/hermes-3-llama-3.1-405b:free| 405B     | 131K     | Deep reasoning, risk scoring|
-# | cognitivecomputations/dolphin-mistral-24b-venice-edition:free | 24B | 32K | Uncensored red team |
-# | google/gemma-4-31b-it:free               | 31B      | 262K     | General fallback            |
+#   OMNIROUTE_MODEL_ROUTING -> used when the OmniRoute gateway is the active
+#       provider (AEGIS_OMNIROUTE_URL set — the production default). This is
+#       the path virtually every real call takes.
+#   MODEL_ROUTING           -> used only by the OpenRouter-native path, i.e.
+#       when OmniRoute is absent or the AI manager is unbound.
+#
+# LESSON (2026-07): the previous OpenRouter table pinned exact model ids and
+# went stale silently — 5 of its 7 models had been delisted upstream, so every
+# routed call fell down FALLBACK_CHAIN (itself 3/5 dead) before landing on the
+# one survivor. Nothing surfaced the rot because the fallback masked it. So
+# EVERY id in both tables below was confirmed with a live streaming call on
+# 2026-07-25, not read off a docs page. Re-run that probe after gateway
+# credential changes; a model that disappears fails over to the next provider
+# rather than erroring, which is exactly how the last rot stayed invisible.
+#
+# OmniRoute's `auto/*` capability aliases would be the churn-proof choice, but
+# all of them currently resolve to nothing ("streamed no content,
+# resolved=unknown") because the pools behind them have no active credentials.
+# Pinned ids on providers that DO hold credentials are what actually works, so
+# that is what this table uses. Of the gateway's ~559 advertised models only a
+# minority are callable: `antigravity`, `kiro`/`kr` and part of `oc` answer;
+# `gh`/`github` return 429 (quota exhausted), `aug` streams empty, and
+# `ddgw`/`mcode`/`openrouter` have no credentials at all.
+OMNIROUTE_MODEL_ROUTING = {
+    # Hot path — triage runs on every event, so latency dominates quality.
+    "triage": "antigravity/gemini-2.5-flash-lite",
+    "quick_decision": "antigravity/gemini-2.5-flash-lite",
+    "classification": "antigravity/gemini-3.5-flash-medium",
+    # Cold path — runs rarely, so spend the latency on the best reasoner.
+    "investigation": "antigravity/claude-opus-4-6-thinking",
+    "risk_scoring": "antigravity/gemini-3.1-pro-high",
+    "code_analysis": "kiro/qwen3-coder-next",
+    "report": "antigravity/claude-sonnet-5",          # long-form, client-facing
+    "healing": "antigravity/claude-sonnet-4-6",
+    "decoy_content": "antigravity/gemini-3.1-flash-lite",  # honeypot filler, cosmetic
+    # Red-team tasks analyse live malicious payloads. These were historically
+    # pinned to an "uncensored" model on the theory that a safety-tuned one
+    # would refuse. Measured on 2026-07-25 against four terse hostile prompts
+    # (bare XSS tag, `;cat /etc/passwd`, `../../../../etc/shadow`, a sqlmap
+    # UA), that theory is backwards: the frontier safety-tuned models answered
+    # 4/4 directly, while the least-aligned candidate scored 2/4 — it refused
+    # the traversal string outright ("I can't access system files like
+    # /etc/shadow"), mistaking a string to CLASSIFY for a file to open.
+    # Alignment training is what teaches a model that naming an attack is
+    # defensive work, so it helps here rather than hurting. Flash-medium is
+    # chosen over the equally-accurate Claude/Pro options because payload
+    # analysis runs at attack volume and it is the fastest of the 4/4 set.
+    "red_team": "antigravity/gemini-3.5-flash-medium",
+    "counter_attack": "antigravity/gemini-3.5-flash-medium",
+    "payload_analysis": "antigravity/gemini-3.5-flash-medium",
+    "fallback": "antigravity/gemini-3.5-flash-medium",
+}
 
+# OpenRouter free tier — verified live 2026-07-25. Used only when OmniRoute is
+# unavailable, so every entry is a free model to keep the degraded path free.
+#
+# | Model                                   | Params    | Best For                     |
+# |-----------------------------------------|-----------|------------------------------|
+# | google/gemma-4-26b-a4b-it:free          | 26B A4B   | Fast triage, quick decisions |
+# | google/gemma-4-31b-it:free              | 31B       | General fallback             |
+# | nvidia/nemotron-3-super-120b-a12b:free  | 120B A12B | Classification, reports      |
+# | nvidia/nemotron-3-ultra-550b-a55b:free  | 550B A55B | Deep reasoning, risk scoring |
+# | cohere/north-mini-code:free             | code       | Code analysis               |
+# | openai/gpt-oss-20b:free                 | 20B       | Creative / decoy content     |
 MODEL_ROUTING = {
-    "triage": "google/gemma-4-26b-a4b-it:free",                # MoE A4B — fast inference, 262K context
-    "classification": "meta-llama/llama-3.3-70b-instruct:free", # 70B dense — strong analytical reasoning
-    "investigation": "qwen/qwen3-coder:free",                   # 480B A35B — deepest reasoning, 262K context
-    "code_analysis": "qwen/qwen3-coder:free",                   # Code-specialized, massive MoE
-    "report": "openai/gpt-oss-120b:free",                       # 120B — excellent long-form generation
-    "decoy_content": "openai/gpt-oss-120b:free",                # Creative content for honeypots
-    "quick_decision": "google/gemma-4-26b-a4b-it:free",         # MoE A4B — sub-second decisions, 262K
-    "risk_scoring": "nousresearch/hermes-3-llama-3.1-405b:free", # 405B — thorough analytical scoring
-    "healing": "meta-llama/llama-3.3-70b-instruct:free",        # 70B dense — clear remediation advice
-    "red_team": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",  # Uncensored — exploit analysis, attack simulation
-    "counter_attack": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",  # Uncensored — mitigation, counter-measures
-    "payload_analysis": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",  # Uncensored — analyze malicious payloads without refusal
-    "fallback": "google/gemma-4-31b-it:free",                   # 31B dense, 262K context — reliable fallback
+    "triage": "google/gemma-4-26b-a4b-it:free",                  # MoE A4B — fast, 262K context
+    "quick_decision": "google/gemma-4-26b-a4b-it:free",          # sub-second decisions
+    "classification": "nvidia/nemotron-3-super-120b-a12b:free",  # 120B MoE — analytical
+    "investigation": "nvidia/nemotron-3-ultra-550b-a55b:free",   # 550B MoE — deepest available free
+    "risk_scoring": "nvidia/nemotron-3-ultra-550b-a55b:free",    # 550B — thorough scoring
+    "code_analysis": "cohere/north-mini-code:free",              # code-specialised
+    "report": "nvidia/nemotron-3-super-120b-a12b:free",          # 120B — long-form generation
+    "decoy_content": "openai/gpt-oss-20b:free",                  # creative honeypot content
+    "healing": "google/gemma-4-31b-it:free",                     # clear remediation advice
+    # No uncensored model exists in the free tier, so red-team tasks are
+    # DEGRADED on this path — a safety-tuned model may refuse to analyse a
+    # payload. That is acceptable only because this path is the OmniRoute
+    # outage fallback; OmniRoute routes these to a real uncensored model above.
+    "red_team": "nvidia/nemotron-3-super-120b-a12b:free",
+    "counter_attack": "nvidia/nemotron-3-super-120b-a12b:free",
+    "payload_analysis": "nvidia/nemotron-3-super-120b-a12b:free",
+    "fallback": "google/gemma-4-31b-it:free",                    # 31B dense, 262K — reliable
 }
 
 MODEL_DESCRIPTIONS = {
@@ -69,12 +129,14 @@ MODEL_ORDER = [
     "fallback",
 ]
 
+# Verified live 2026-07-25. Ordered cheap/fast -> heavy: a fallback only runs
+# after the routed model already failed, so it must answer, not be clever.
 FALLBACK_CHAIN = [
-    "google/gemma-4-31b-it:free",                   # Primary fallback — 31B dense, 262K, reliable
+    "google/gemma-4-31b-it:free",                    # Primary fallback — 31B dense, 262K, reliable
     "google/gemma-4-26b-a4b-it:free",                # Fast MoE fallback
-    "meta-llama/llama-3.3-70b-instruct:free",        # 70B dense fallback
-    "openai/gpt-oss-120b:free",                      # 120B fallback
-    "nousresearch/hermes-3-llama-3.1-405b:free",     # 405B heavy fallback
+    "nvidia/nemotron-3-super-120b-a12b:free",        # 120B MoE fallback
+    "nvidia/nemotron-3-ultra-550b-a55b:free",        # 550B MoE heavy fallback
+    "openai/gpt-oss-20b:free",                       # small, broadly available last resort
 ]
 
 SYSTEM_PROMPTS = {
@@ -222,10 +284,24 @@ class OpenRouterClient:
                 use_provider = self._ai_manager.active_provider
 
             if use_provider and use_provider != "openrouter":
-                # Non-OpenRouter provider -- let AI Manager handle it fully
+                # Non-OpenRouter provider -- let AI Manager handle it fully.
+                #
+                # OmniRoute exposes hundreds of models, so name the one this
+                # task needs. Passing None here (the previous behaviour) made
+                # the gateway serve ONE default model for every task_type,
+                # collapsing the whole routing table: triage paid for a heavy
+                # reasoner's latency while payload_analysis got whatever the
+                # default was — including safety-tuned models that refuse to
+                # analyse malicious input. Other providers keep model=None,
+                # since the ids above are OmniRoute-specific.
+                provider_model = None
+                if use_provider == "omniroute":
+                    provider_model = OMNIROUTE_MODEL_ROUTING.get(
+                        task_type, OMNIROUTE_MODEL_ROUTING["fallback"]
+                    )
                 result = await self._ai_manager.chat(
                     messages=full_messages,
-                    model=None,  # provider will use its own default
+                    model=provider_model,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     task_type=task_type,
