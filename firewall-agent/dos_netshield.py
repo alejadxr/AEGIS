@@ -108,6 +108,23 @@ DEFAULT_SYN_BURST = 100     # burst allowance
 DEFAULT_CONNLIMIT = 100     # max concurrent conns per source IP
 DEFAULT_PORT = 8000         # AEGIS API port to protect
 
+# --- Baseline chain protections ------------------------------------------
+# These mirror the rules aegis-init.sh installs into AEGIS_DOS at boot:
+# conntrack hygiene, an ICMP flood cap, and an all-ports SYN cap.
+#
+# They are re-applied by _ensure_chain() because that function FLUSHES the
+# chain to stay idempotent, which silently destroyed everything aegis-init.sh
+# had put there. The observable effect was a protection DOWNGRADE: enabling
+# netshield swapped an all-ports SYN limit plus ICMP flood cap for rules
+# covering a single port, so ports 22/80/443 lost their network-tier limit at
+# the exact moment an operator believed they had just strengthened defence.
+#
+# Overridable so the baseline can be tuned without editing code.
+BASELINE_ICMP_RATE = int(os.getenv("AEGIS_DOS_BASELINE_ICMP_RATE", "10"))    # echo-req/sec/src
+BASELINE_ICMP_BURST = int(os.getenv("AEGIS_DOS_BASELINE_ICMP_BURST", "30"))
+BASELINE_SYN_RATE = int(os.getenv("AEGIS_DOS_BASELINE_SYN_RATE", "60"))     # SYN/sec/src, ALL ports
+BASELINE_SYN_BURST = int(os.getenv("AEGIS_DOS_BASELINE_SYN_BURST", "120"))
+
 
 # ---------------------------------------------------------------------------
 # Validation helpers
@@ -225,6 +242,52 @@ def _chain_exists() -> bool:
     return result.returncode == 0
 
 
+def _apply_baseline_rules() -> None:
+    """Re-install the boot-time AEGIS_DOS protections after a chain flush.
+
+    Called by _ensure_chain() immediately after the host-safety ACCEPT rules
+    and BEFORE any caller appends its own rules, giving this final order:
+
+        1. ACCEPT  loopback / Tailscale        (host-safety, never limited)
+        2. RETURN  ESTABLISHED,RELATED         (only new conns are rate-limited)
+        3. DROP    INVALID
+        4. DROP    ICMP echo above BASELINE_ICMP_RATE
+        5. DROP    SYN  above BASELINE_SYN_RATE   <- ALL ports
+        6. ...     port-specific netshield rules appended by apply_ratelimit()
+
+    Deliberately omits the trailing `-j RETURN` that aegis-init.sh ends with.
+    That RETURN is correct as a chain terminator, but here it would sit ABOVE
+    every rule apply_ratelimit() appends afterwards and short-circuit the chain
+    before reaching them — netshield would install cleanly, report success, and
+    filter nothing. A chain returns implicitly at its end, so dropping it costs
+    nothing and removes the trap.
+    """
+    # New connections only — established traffic must never be rate-limited, or
+    # a long-lived session dies mid-flight once its source gets busy.
+    _run_iptables("-A", DOS_CHAIN, "-m", "conntrack",
+                  "--ctstate", "ESTABLISHED,RELATED", "-j", "RETURN", check=False)
+    _run_iptables("-A", DOS_CHAIN, "-m", "conntrack",
+                  "--ctstate", "INVALID", "-j", "DROP", check=False)
+    _run_iptables("-A", DOS_CHAIN, "-p", "icmp", "--icmp-type", "echo-request",
+                  "-m", "hashlimit",
+                  "--hashlimit-name", "aegis_icmp",
+                  "--hashlimit-mode", "srcip",
+                  "--hashlimit-above", f"{BASELINE_ICMP_RATE}/sec",
+                  "--hashlimit-burst", str(BASELINE_ICMP_BURST),
+                  "-j", "DROP", check=False)
+    _run_iptables("-A", DOS_CHAIN, "-p", "tcp", "--syn",
+                  "-m", "hashlimit",
+                  "--hashlimit-name", "aegis_syn",
+                  "--hashlimit-mode", "srcip",
+                  "--hashlimit-above", f"{BASELINE_SYN_RATE}/sec",
+                  "--hashlimit-burst", str(BASELINE_SYN_BURST),
+                  "-j", "DROP", check=False)
+    logger.info(
+        "AEGIS_DOS baseline rules re-applied (icmp %s/sec, syn %s/sec all-ports)",
+        BASELINE_ICMP_RATE, BASELINE_SYN_RATE,
+    )
+
+
 def _ensure_chain() -> None:
     """Create the dedicated AEGIS_DOS chain and INPUT/FORWARD jumps idempotently.
 
@@ -249,6 +312,8 @@ def _ensure_chain() -> None:
     for src in safe_sources:
         _run_iptables("-A", DOS_CHAIN, "-s", src, "-j", "ACCEPT", check=False)
     logger.info("AEGIS_DOS host-safety ACCEPT rules applied: %s", safe_sources)
+
+    _apply_baseline_rules()
 
     # Ensure INPUT/FORWARD jump into the chain exactly once.
     for parent in ("INPUT", "FORWARD"):
