@@ -14,10 +14,11 @@ runs async in background to supplement the already-created incident.
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,11 +71,20 @@ RESPONSE_ACTIONS = {
     "honeypot_recon": ["block_ip", "collect_evidence"],
 }
 
-# threat_type values that mean "triage could not classify this". An alert
-# carrying one of these has NOT been matched to any named attack pattern —
-# its severity/confidence are the heuristic's own guess about an event it
-# does not understand. These must never auto-block: see
-# _alert_block_confirmed step 4.
+# How long an unconfirmed ("provisional") auto-block stays in force before it
+# lifts itself. AEGIS decides without a human, so a guess must be reversible on
+# its own: long enough to stop an actual attack run, short enough that a
+# misfire against a real customer clears the same day. A source that is truly
+# hostile simply re-offends and gets blocked again, usually with the evidence
+# to confirm it permanently the second time.
+PROVISIONAL_BLOCK_TTL_HOURS = int(os.environ.get("AEGIS_PROVISIONAL_BLOCK_TTL_HOURS", "6"))
+
+# threat_type values meaning "triage could not classify this" — the alert
+# matched no named attack pattern, so its severity/confidence are the model's
+# guess about an event it does not understand. These still act (AEGIS is
+# unattended; parking them in a queue would mean not acting at all), but they
+# act PROVISIONALLY — see _alert_block_confirmed step 4 and
+# _create_pending_block.
 UNCLASSIFIED_THREAT_TYPES = frozenset({
     "", "unknown", "other", "generic", "suspicious", "anomaly", "unclassified",
 })
@@ -126,9 +136,9 @@ _THREAT_PUNCT = re.compile(r"[^a-z0-9]+")
 def normalize_threat_type(raw: object) -> str:
     """Map a model's free-text threat label onto the canonical vocabulary.
 
-    Returns "unknown" when nothing matches — which is the safe outcome, since
-    an unknown type is withheld from auto-block by _alert_block_confirmed
-    rather than acted on blindly.
+    Returns "unknown" when nothing matches — the safe outcome, since an unknown
+    type still blocks but only PROVISIONALLY (auto-expiring), rather than being
+    acted on as a permanent, confident judgement.
     """
     if not isinstance(raw, str) or not raw.strip():
         return "unknown"
@@ -679,10 +689,10 @@ class AIDecisionEngine:
         #    incident. Unlike playbook_engine's equivalent step, which is
         #    anchored to a concrete Sigma rule id, nothing grounds this path,
         #    so an unclassified threat goes to the approval queue instead.
-        #    Withholding only downgrades to require_approval: a real attack is
-        #    still one click from being blocked, and steps 1-3 above (known-bad
-        #    IOC, named exploit class, counted brute force) continue to
-        #    auto-block without operator involvement.
+        #    Returning False here does NOT mean "do nothing" — AEGIS is
+        #    unattended, so it still blocks, just provisionally and with an
+        #    expiry (see _create_pending_block). Steps 1-3 above (known-bad IOC,
+        #    named exploit class, counted brute force) block permanently.
         if (threat_type or "").lower() in UNCLASSIFIED_THREAT_TYPES:
             return False, (
                 f"unclassified_threat(type={threat_type or 'empty'!s},"
@@ -702,13 +712,28 @@ class AIDecisionEngine:
         db: AsyncSession,
         incident_id: Optional[str] = None,
     ):
-        """Create a block_ip Action in PENDING (requires_approval) state.
+        """Create a PROVISIONAL block_ip Action — auto-approved, but expiring.
 
-        Used when the confirmation gate withholds an auto-block. The safe-IP
-        guardrail is still honored by delegating to guardrail_engine when the
-        target is a safe IP, so we never emit a pending block for a safe IP.
-        The Action is created directly (bypassing the auto_approve default
-        policy) so an operator can approve it from the dashboard.
+        Used when the confirmation gate could not confirm the attack. AEGIS runs
+        unattended, so this must not park the decision in a human queue: an
+        unreviewed queue is not caution, it is an attacker walking free while
+        two rows sit in a dashboard nobody is reading.
+
+        So the block executes immediately, exactly like a confirmed one. The
+        difference is that it carries an expiry: PROVISIONAL_BLOCK_TTL_HOURS
+        after execution, `expire_provisional_blocks` lifts it automatically.
+
+        That expiry is what makes full autonomy safe. A confirmed attack is a
+        judgement the system can stand behind indefinitely; an unconfirmed one
+        is a guess, and a guess made with nobody watching has to be able to
+        undo itself. If the source really is hostile it re-offends and gets
+        re-blocked — this time usually with the evidence to confirm it. If it
+        was a false positive, it clears on its own instead of quietly locking a
+        real customer out forever, which is precisely the failure this system
+        produced when it blocked its own operator's IP.
+
+        Safe IPs still short-circuit through guardrail_engine and are never
+        blocked at all, provisionally or otherwise.
         """
         from app.core.attack_detector import _is_safe_ip
         try:
@@ -728,26 +753,41 @@ class AIDecisionEngine:
 
         from app.models.action import Action
 
+        expires_at = datetime.utcnow() + timedelta(hours=PROVISIONAL_BLOCK_TTL_HOURS)
         action = Action(
             incident_id=incident_id or "",
             client_id=client.id,
             action_type="block_ip",
             target=target,
-            parameters={},
-            status="pending",
-            requires_approval=True,
-            ai_reasoning=ai_reasoning,
+            # expires_at is what expire_provisional_blocks scans for. Stored in
+            # the existing JSON column so this needs no migration.
+            parameters={
+                "provisional": True,
+                "expires_at": expires_at.isoformat(),
+                "ttl_hours": PROVISIONAL_BLOCK_TTL_HOURS,
+            },
+            status="approved",       # executes now — no human in the loop
+            requires_approval=False,
+            ai_reasoning=(
+                f"{ai_reasoning} [PROVISIONAL: auto-expires "
+                f"{expires_at.isoformat()}Z ({PROVISIONAL_BLOCK_TTL_HOURS}h)]"
+            ),
         )
         db.add(action)
         await db.commit()
         await db.refresh(action)
 
-        await event_bus.publish("action_requires_approval", {
-            "action_id": action.id,
-            "client_id": action.client_id,
-            "incident_id": action.incident_id,
-            "action_type": action.action_type,
-            "target": action.target,
+        logger.info(
+            f"Provisional auto-block on {target} "
+            f"(expires in {PROVISIONAL_BLOCK_TTL_HOURS}h): {ai_reasoning[:120]}"
+        )
+        await event_bus.publish("action_auto_approved", {
+            "action_id": str(action.id),
+            "action_type": "block_ip",
+            "target": target,
+            "incident_id": str(incident_id) if incident_id else "",
+            "provisional": True,
+            "expires_at": expires_at.isoformat(),
         })
         return action
 
