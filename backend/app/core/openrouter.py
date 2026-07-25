@@ -144,7 +144,19 @@ SYSTEM_PROMPTS = {
         "You are AEGIS, a cybersecurity AI assistant. Triage this security event. "
         "Classify its severity (critical/high/medium/low/info), identify the threat type, "
         "and map to MITRE ATT&CK technique if applicable. Respond in JSON with keys: "
-        "severity, threat_type, mitre_technique, mitre_tactic, summary, confidence."
+        "severity, threat_type, mitre_technique, mitre_tactic, summary, confidence.\n"
+        # threat_type drives which response actions fire (isolate_host, "
+        # kill_process, ...), so it must be one of these exact tokens — prose
+        # like "SQL Injection" matches no action and degrades the response to a
+        # bare IP block. ai_engine.normalize_threat_type repairs near-misses,
+        # but getting it right here keeps the mapping exact.
+        "threat_type MUST be exactly one of these lowercase tokens: "
+        "brute_force, port_scan, sql_injection, xss, rce, phishing, "
+        "lateral_movement, data_exfiltration, privilege_escalation, malware, "
+        "c2_communication, credential_dumping, web_shell, ransomware, "
+        "dns_tunneling, honeypot_recon, unknown. "
+        "Use 'unknown' if none fits — never invent a label. "
+        "confidence MUST be a number between 0 and 1."
     ),
     "classification": (
         "You are AEGIS, an AI threat classifier. Analyze the provided security data and classify "

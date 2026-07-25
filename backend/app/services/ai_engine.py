@@ -14,6 +14,7 @@ runs async in background to supplement the already-created incident.
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -77,6 +78,67 @@ RESPONSE_ACTIONS = {
 UNCLASSIFIED_THREAT_TYPES = frozenset({
     "", "unknown", "other", "generic", "suspicious", "anomaly", "unclassified",
 })
+
+# --- threat_type normalisation -------------------------------------------
+# fast_triage produces canonical snake_case keys via SIGMA_TO_THREAT_TYPE, but
+# the AI path gets whatever prose the model wrote: "SQL Injection", "Brute
+# Force Attack", "Path Traversal / LFI". Those match no RESPONSE_ACTIONS key,
+# so every AI-classified threat silently collapsed to the ["block_ip"] default
+# — an RCE never reached isolate_host/kill_process, ransomware never reached
+# shutdown_service. The response table was effectively dead on the AI path.
+# It only became reachable when AI was switched on, so this never showed up
+# while the deterministic fallbacks were carrying the system.
+#
+# Substrings are matched against the lowercased, punctuation-stripped model
+# output, longest-first, so "sql injection" wins over a bare "injection".
+_THREAT_TYPE_ALIASES: list[tuple[str, str]] = [
+    ("sql injection", "sql_injection"), ("sqli", "sql_injection"),
+    ("cross site scripting", "xss"), ("xss", "xss"),
+    ("remote code execution", "rce"), ("command injection", "rce"),
+    ("code execution", "rce"), ("rce", "rce"),
+    ("brute force", "brute_force"), ("credential stuffing", "brute_force"),
+    ("password spray", "brute_force"), ("auth failure", "brute_force"),
+    ("port scan", "port_scan"), ("vulnerability scan", "port_scan"),
+    ("reconnaissance", "port_scan"), ("scanner", "port_scan"),
+    ("enumeration", "port_scan"), ("scanning", "port_scan"),
+    # Traversal/LFI reads as file disclosure -> treat as exfiltration class.
+    ("path traversal", "data_exfiltration"),
+    ("directory traversal", "data_exfiltration"),
+    ("local file inclusion", "data_exfiltration"),
+    ("data exfiltration", "data_exfiltration"), ("exfiltration", "data_exfiltration"),
+    ("lateral movement", "lateral_movement"),
+    ("privilege escalation", "privilege_escalation"), ("privesc", "privilege_escalation"),
+    ("credential dumping", "credential_dumping"), ("credential theft", "credential_dumping"),
+    ("command and control", "c2_communication"), ("c2", "c2_communication"),
+    ("beacon", "c2_communication"),
+    ("web shell", "web_shell"), ("webshell", "web_shell"),
+    ("ransomware", "ransomware"),
+    ("malware", "malware"), ("trojan", "malware"), ("backdoor", "malware"),
+    ("dns tunnel", "dns_tunneling"),
+    ("phishing", "phishing"),
+    ("honeypot", "honeypot_recon"),
+]
+_THREAT_TYPE_ALIASES.sort(key=lambda kv: -len(kv[0]))
+
+_THREAT_PUNCT = re.compile(r"[^a-z0-9]+")
+
+
+def normalize_threat_type(raw: object) -> str:
+    """Map a model's free-text threat label onto the canonical vocabulary.
+
+    Returns "unknown" when nothing matches — which is the safe outcome, since
+    an unknown type is withheld from auto-block by _alert_block_confirmed
+    rather than acted on blindly.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return "unknown"
+    flat = _THREAT_PUNCT.sub(" ", raw.strip().lower()).strip()
+    if flat.replace(" ", "_") in RESPONSE_ACTIONS:
+        return flat.replace(" ", "_")
+    for needle, canonical in _THREAT_TYPE_ALIASES:
+        if needle in flat:
+            return canonical
+    return "unknown"
 
 # Map sigma rule IDs to threat types for fast path
 SIGMA_TO_THREAT_TYPE = {
@@ -449,7 +511,17 @@ class AIDecisionEngine:
         result["stage"] = "incident_created"
 
         # Stage 4: Decide actions
-        threat_type = triage.get("threat_type", "unknown")
+        # Normalise first — the model answers in prose ("SQL Injection"), and an
+        # un-normalised label matches no RESPONSE_ACTIONS key, silently reducing
+        # every response to a bare block_ip. See normalize_threat_type.
+        raw_threat_type = triage.get("threat_type", "unknown")
+        threat_type = normalize_threat_type(raw_threat_type)
+        if threat_type == "unknown" and raw_threat_type not in (None, "", "unknown"):
+            logger.info(
+                f"threat_type {raw_threat_type!r} matched no canonical class — "
+                f"treating as unclassified (withheld from auto-block)"
+            )
+        result["threat_type"] = threat_type
         recommended = RESPONSE_ACTIONS.get(threat_type, ["block_ip"])
 
         # Auto-block confirmation gate (mirrors playbook_engine.is_confirmed_attack).
