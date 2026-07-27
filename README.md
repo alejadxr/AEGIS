@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
 [![Docker](https://img.shields.io/badge/docker-compose-blue)]()
-[![Version](https://img.shields.io/badge/version-1.6.4.9-cyan)]()
+[![Version](https://img.shields.io/badge/version-1.6.5.0-cyan)]()
 
 [What is AEGIS?](#what-is-aegis) · [Install](#5-minute-install) · [Ransomware Defense](#ransomware-defense-v16) · [Detection](#detection-1111-verified) · [vs Wazuh / OSSEC / Elastic](#aegis-vs-wazuh--ossec--elastic-security) · [Architecture](#architecture) · [Docs](docs/)
 
@@ -24,11 +24,11 @@
 
 It owns your firewall, watches your logs, runs deception honeypots, and evaluates 168 Sigma rules + 6 chain detections in **<1 ms per event**. When it sees an attack — brute-force, shadow-copy delete, mass file encryption, ransom note drop, SMB lateral movement — it auto-blocks the attacker IP and writes a structured incident postmortem. Process termination and snapshot recovery are in development (gated by `AEGIS_REAL_RECOVERY=1`).
 
-Set `AEGIS_AI_MODE=offline` and the entire stack runs on deterministic rules and Jinja2 templates. AI enrichment is available but never required.
+Set `AEGIS_AI_MODE=disabled` and the entire stack runs on deterministic rules and Jinja2 templates. AI enrichment is available but never required.
 
 **Three modules:**
 - **Surface** — attack-surface management (nmap + nuclei, scheduled scans, CVSS history)
-- **Response** — autonomous incident response with guardrailed playbooks (auto_approve / require_approval / never_auto)
+- **Response** — fully autonomous incident response: confirmed threats block permanently, unconfirmed ones block *provisionally* and expire themselves (see [Autonomous Response](#autonomous-response))
 - **Phantom** — deception layer (SSH honeypot on :2222, HTTP decoy on :8888, breadcrumb credential traps)
 
 ```bash
@@ -59,7 +59,7 @@ The **RaaS threat intel feed** (refreshed every 6 hours from RansomLook + CISA) 
 
 ### Is AEGIS really offline-capable?
 
-Yes. Set `AEGIS_AI_MODE=offline` and every AI call site falls back to a deterministic path:
+Yes. Set `AEGIS_AI_MODE=disabled` and every AI call site falls back to a deterministic path:
 
 | AI operation | Offline fallback |
 |---|---|
@@ -174,13 +174,13 @@ Generates 100 entropy-padded dummy files in a tempdir, drops a ransom note, race
 | **Action latency** | <50 ms (local pfctl/iptables) | Active response ~5 s | Active response ~5 s | Manual SOAR / hours |
 | **Ransomware Sigma rules** | 12 rules + 1 kill-chain | Community rules, no kill-chain | None built-in | SIEM rules, no offline kill-chain |
 | **MITRE ATT&CK mapping** | T1490/T1486/T1105/T1218/T1021 | Yes (agent) | Partial | Yes (SIEM) |
-| **Offline / air-gapped** | Full (`AEGIS_AI_MODE=offline`) | Partial | Yes | No (requires cloud) |
+| **Offline / air-gapped** | Full (`AEGIS_AI_MODE=disabled`) | Partial | Yes | No (requires cloud) |
 | **Honeypot deception** | SSH :2222 + HTTP :8888 + breadcrumbs | No | No | No |
 | **Recovery orchestration** | tmutil / btrfs / zfs / VSS | No | No | No |
 | **RaaS threat intel** | RansomLook + CISA, every 6 h | No | No | Threat intel subscriptions (paid) |
 | **Self-hosted** | Yes, Docker Compose | Yes, complex stack | Yes, C agent | Self-managed or Elastic Cloud |
 | **Deployment complexity** | `docker compose up -d` (~3 min) | Multi-node agent rollout | Manual C agent install | Weeks, requires Elasticsearch |
-| **AI / LLM dependency** | Optional (AEGIS_AI_MODE=offline) | None | None | Hard requirement for ML features |
+| **AI / LLM dependency** | Optional (`AEGIS_AI_MODE=disabled`) | None | None | Hard requirement for ML features |
 | **Cost** | Free, AGPL-3.0 | Free, GPL-2.0 | Free, GPL-2.0 | Free tier limited; Elastic Cloud $$$$ |
 | **Rust endpoint agent** | Yes (EDR + entropy + canary) | C agent | C agent | Elastic agent (Go) |
 | **Deception / breadcrumb traps** | Yes | No | No | No |
@@ -207,7 +207,7 @@ Every detection capability tested against real attack patterns:
 | 6 | Port Scan (10+ ports/60 s) | L2: Log watcher + L3: Correlation | Auto-block IP | PASS |
 | 7 | Scanner Detection (nmap, sqlmap, nikto) | L1: User-Agent + probe paths | Auto-block IP | PASS |
 | 8 | Breadcrumb Trap (stolen honeypot creds) | Phantom → L1: Middleware chain | Critical incident + block | PASS |
-| 9 | Lateral Movement (10+ internal hops) | L3: Sigma chain rule + campaign tracker | Isolate host (approval required) | PASS |
+| 9 | Lateral Movement (10+ internal hops) | L3: Sigma chain rule + campaign tracker | Isolate host (autonomous) | PASS |
 | 10 | C2 Beacon (periodic callbacks) | Entropy analysis (Renyi) | Auto-respond | PASS |
 | 11 | Credential Stuffing (distributed) | L3: Correlation sliding window | Auto-block + feed report | PASS |
 
@@ -259,11 +259,71 @@ cd frontend && npm install && npm run build && npm start
 | Variable | Default | Purpose |
 |---|---|---|
 | `AEGIS_REAL_FW` | unset | Set to `1` to enable real pfctl/iptables enforcement |
-| `AEGIS_AI_MODE` | `full` | `full` / `local` / `offline` — gates every AI call site |
+| `AEGIS_AI_MODE` | `optional` | `required` / `optional` / `disabled` — gates every AI call site. `optional` tries AI and falls back to deterministic logic on failure; `disabled` never calls out. (`full` and `offline` are accepted as legacy aliases for `optional` and `disabled`.) |
 | `AEGIS_REAL_RECOVERY` | unset | Set to `1` to enable real snapshot restore |
 | `AEGIS_LIVEFIRE` | unset | Set to `1` to run the ransomware emulation harness |
 | `AEGIS_FIREWALL_URL` | unset | Optional remote firewall agent URL |
 | `AEGIS_MONITORED_APPS` | all PM2 apps | Comma-separated PM2 app names to tail |
+| `AEGIS_EXTRA_LOG_PATHS` | unset | Colon-separated extra log files to tail (globs supported), e.g. a unified web-app feed |
+| `AEGIS_SAFE_IPS` | `127.0.0.1,::1,localhost` | IPs/CIDRs never blocked and never turned into an incident, on **every** detection path. RFC1918, CGNAT/Tailscale (`100.64.0.0/10`) and published crawler CIDRs are folded in unconditionally |
+| `AEGIS_INTERNAL_IPS` | unset | Additive twin of `AEGIS_SAFE_IPS` — same gate, clearer intent for "this one is mine" |
+| `AEGIS_PROVISIONAL_BLOCK_TTL_HOURS` | `6` | How long an *unconfirmed* auto-block stays in force before it lifts itself |
+| `AEGIS_FULL_SCAN_HOURS` | `8` | Full nmap + nuclei scan interval |
+| `AEGIS_DOS_MODE` | `monitor` | `monitor` (detect only) or `active` (enforce) |
+| `AEGIS_DOS_PER_IP_RPS` | `10` | Per-source request-rate ceiling. Calibrate against your own traffic — see *Tuning the DoS Shield* |
+| `AEGIS_DOS_NETSHIELD` | `0` | Set to `1` on **both** the Mac Pro and the Pi unit to enable the network tier (iptables `hashlimit` + `connlimit`) |
+
+---
+
+## Autonomous Response
+
+AEGIS is built to run unattended, so it does not hold decisions for an operator.
+An approval queue on an unwatched system is not caution — it is an attacker
+walking free while rows accumulate in a dashboard nobody is reading.
+
+What replaces human review is **reversibility, not confidence**:
+
+| Verdict | Trigger | Block |
+|---|---|---|
+| **Confirmed** | known-bad IOC, named exploit class, counted brute force, classified high-severity | permanent |
+| **Provisional** | anything triage could not classify | executes immediately, **auto-expires** after `AEGIS_PROVISIONAL_BLOCK_TTL_HOURS` (default 6) |
+
+A confirmed attack is a judgement the system can stand behind indefinitely. An
+unconfirmed one is a guess, and a guess made with nobody watching has to be able
+to undo itself. A genuinely hostile source re-offends and is re-blocked — usually
+with the evidence to confirm it permanently the second time. A false positive
+clears on its own instead of quietly locking a real user out forever.
+
+The `expire_provisional_blocks` job runs every 10 minutes and is the only thing
+that undoes an autonomous mistake. **Safe IPs are never blocked at all**, by
+either path — they short-circuit in the guardrail before any verdict is reached.
+
+### Tuning the DoS Shield
+
+The shipped thresholds are conservative defaults, not calibrated values.
+Calibrate against your own traffic before enabling `AEGIS_DOS_MODE=active`, and
+**separate browsers from tooling by user-agent when you do** — mixing them makes
+the numbers meaningless.
+
+On the reference deployment (50,395 events, 1,238 IPs), that separation produced
+a clean gap:
+
+```
+real browsers   ──►  5.7 rps max   (p99 4.8, across 3,245 windows)
+                        │
+                 35 rps │ ← per_ip threshold: 6.1x the browser ceiling
+                        │
+scanners/bots   ──► 42-77 rps
+```
+
+Two traps worth knowing before you trust your own numbers:
+
+- **Shared NAT collapses the signal.** The largest burst in that dataset (77 rps)
+  looked like heavy dashboard use but was a pentest box egressing through the
+  same NAT as the admin workstation. Per-IP rate alone cannot separate them.
+- **A polling dashboard raises your own floor.** If your legitimate traffic
+  approaches the threshold, the fix is not a bigger number — it is limiting
+  public paths separately from authenticated ones (`AEGIS_DOS_EXPENSIVE_PATHS`).
 
 ---
 
@@ -292,7 +352,8 @@ Incoming Event
      |
 [Layer 5] Auto-Response ──────────────────────── execution
           10 deterministic playbooks (<50 ms each)
-          Guardrails: auto_approve | require_approval | never_auto
+          Verdict: confirmed → permanent block | unconfirmed → provisional (self-expiring)
+          Guardrails gate each action type; safe IPs short-circuit before any verdict
           Three-layer blocking: external agent → FastAPI 403 → local pfctl/iptables
 ```
 
@@ -357,7 +418,7 @@ Deterministic-first alert triage with automated action execution.
 
 - **<1 ms Fast Path** — Sigma check → IOC cache → playbook → done, no AI round-trip
 - **10 Deterministic Playbooks** — `auto_block_brute_force`, `auto_block_sql_injection`, `auto_respond_c2_beacon`, `ransomware_kill_chain_response`, and 6 more
-- **Guardrail System** — Per-action approval: `auto_approve` / `require_approval` / `never_auto`
+- **Guardrail System** — Per-action-type policy (`auto_approve` / `require_approval` / `never_auto`) plus a safe-IP short-circuit that no verdict can override
 - **Full Audit Trail** — Every decision logged: reasoning, confidence, timestamp, action taken
 
 ### Phantom — Honeypot Deception
@@ -499,7 +560,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
       "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 168 Sigma rules + 6 chain detections. Offline-capable. No cloud AI required.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux, macOS, Windows",
-      "softwareVersion": "1.6.4.9",
+      "softwareVersion": "1.6.5.0",
       "datePublished": "2026-05-01",
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "url": "https://github.com/alejadxr/AEGIS",
@@ -525,7 +586,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
         "RaaS threat intelligence feed (RansomLook + CISA)",
         "Recovery orchestration (tmutil/btrfs/zfs/VSS)",
         "SSH and HTTP honeypots with breadcrumb traps",
-        "Offline-capable (AEGIS_AI_MODE=offline)",
+        "Offline-capable (AEGIS_AI_MODE=disabled)",
         "Real firewall enforcement (pfctl/iptables)",
         "Rust endpoint agent with entropy classifier",
         "Self-hosted with Docker Compose"
@@ -560,7 +621,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
           "name": "Can AEGIS run without an internet connection or AI API key?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes. Set AEGIS_AI_MODE=offline and the entire stack runs on deterministic Sigma rules, Jinja2 templates, and static playbooks. No LLM call is made. The RaaS intel feed falls back to its on-disk cache. All detection, blocking, and recovery functions continue to operate."
+            "text": "Yes. Set AEGIS_AI_MODE=disabled and the entire stack runs on deterministic Sigma rules, Jinja2 templates, and static playbooks. No LLM call is made. The RaaS intel feed falls back to its on-disk cache. All detection, blocking, and recovery functions continue to operate."
           }
         },
         {

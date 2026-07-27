@@ -92,3 +92,6 @@ scripts/setup-wizard.py
 ._*
 .DS_Store
 CHANGES.md
+
+# Local agent instructions — not for the public repo
+CLAUDE.md
