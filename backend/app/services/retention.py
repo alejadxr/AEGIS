@@ -37,6 +37,9 @@ logger = logging.getLogger("aegis.retention")
 
 RETENTION_DAYS = int(os.environ.get("AEGIS_RETENTION_DAYS", "90"))
 STUCK_CLOSER_HOURS = int(os.environ.get("AEGIS_STUCK_CLOSER_HOURS", "24"))
+# Scans get a tighter window than incidents: the full-scan nmap timeout is 600s,
+# so anything still "running" after hours is dead, not slow.
+SCAN_STUCK_HOURS = int(os.environ.get("AEGIS_SCAN_STUCK_HOURS", "3"))
 DRY_RUN = os.environ.get("AEGIS_RETENTION_DRY_RUN", "0").strip().lower() in {"1", "true", "yes"}
 AUDIT_LOG_PATH = Path(os.environ.get(
     "AEGIS_RETENTION_AUDIT_LOG",
@@ -166,6 +169,66 @@ async def hourly_stuck_incident_closer() -> dict:
     return summary
 
 
+async def hourly_stuck_scan_closer() -> dict:
+    """Mark scans as failed once they have been 'running' impossibly long.
+
+    A scan row is set to `running` before nmap/nuclei start and only flipped to
+    `completed` by the code path that finishes them. If the process dies in
+    between — a crash, or simply a `pm2 restart` mid-scan — nothing ever
+    revisits the row, so it stays `running` forever. Four had been stuck for
+    134-156 hours when this was written.
+
+    That is not just untidy. The Surface console derives "scan in progress" from
+    `status == 'running'`, so a zombie row renders as a permanently active scan
+    at 50% progress, and an operator watching for their own scan cannot tell it
+    apart from a real one. This is the same structural gap the stuck-INCIDENT
+    closer above fixes for incidents.
+
+    Uses SCAN_STUCK_HOURS rather than STUCK_CLOSER_HOURS: a scan that has run
+    longer than the longest legitimate scan is already dead, and the full-scan
+    nmap timeout is 600s, so hours of grace is generous by orders of magnitude.
+    """
+    from app.models.scan import Scan
+
+    summary = {"scanned": 0, "closed": 0, "dry_run": DRY_RUN}
+    cutoff = datetime.utcnow() - timedelta(hours=SCAN_STUCK_HOURS)
+
+    async with async_session() as db:
+        rows = (await db.execute(
+            select(Scan).where(Scan.status == "running", Scan.started_at < cutoff)
+        )).scalars().all()
+        summary["scanned"] = len(rows)
+
+        for scan in rows:
+            age_h = (datetime.utcnow() - scan.started_at).total_seconds() / 3600
+            if DRY_RUN:
+                logger.info(f"[DRY_RUN] would close stuck scan {scan.id} ({age_h:.1f}h)")
+                summary["closed"] += 1
+                continue
+            scan.status = "failed"
+            scan.completed_at = datetime.utcnow()
+            scan.error = (
+                f"Auto-closed: still 'running' after {age_h:.1f}h "
+                f"(threshold {SCAN_STUCK_HOURS}h). The worker did not survive to "
+                f"report a result — most likely an API restart mid-scan."
+            )
+            summary["closed"] += 1
+            _audit({
+                "event": "stuck_scan_closed",
+                "scan_id": str(scan.id),
+                "scan_type": scan.scan_type,
+                "age_hours": round(age_h, 1),
+                "ts": datetime.utcnow().isoformat(),
+            })
+
+        if not DRY_RUN and summary["closed"]:
+            await db.commit()
+
+    if summary["closed"]:
+        logger.info(f"stuck scan closer: closed {summary['closed']} scan(s)")
+    return summary
+
+
 async def expire_provisional_blocks() -> dict:
     """Lift auto-blocks that AEGIS made on an UNCONFIRMED threat, once expired.
 
@@ -277,6 +340,13 @@ async def start() -> None:
         # Every 10 min, not hourly: this bounds how long a false-positive block
         # outlives its TTL, and it is the only thing that un-does an autonomous
         # mistake when nobody is watching.
+        sched.add_job(
+            hourly_stuck_scan_closer,
+            IntervalTrigger(hours=1),
+            id="hourly_stuck_scan_closer",
+            replace_existing=True,
+            max_instances=1,
+        )
         sched.add_job(
             expire_provisional_blocks,
             IntervalTrigger(minutes=10),
