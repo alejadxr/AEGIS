@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.5.1] - 2026-07-27 (firewall_sync — stop minting incidents from AEGIS's own config calls)
+
+### Fixed - AEGIS raised 2,156 high-severity incidents against itself
+- Two compounding bugs turned **5 real Pi events into 2,156 incidents** titled `Firewall: Dos Ratelimit from unknown`, all with `source_ip: NULL`. Every one was a false positive, and none described an attacker — they described AEGIS.
+- **Cause 1 — self-detection.** The `dos_*` event types (`/dos/harden`, `/dos/ratelimit`, `/dos/revert`) are AEGIS's own netshield configuration calls. They were missing from `_SKIP_EVENT_TYPES`, so every config action came back through the detection path as a security incident. This is the same class `log_watcher` already guards against with its internal source markers: the defender's own actions arriving as input.
+- **Cause 2 — the amplifier.** Incident dedup was gated on `if ip:`. An event with no source IP skipped dedup entirely and minted a fresh incident on *every* sync cycle, indefinitely. That is why 5 events produced 2,156 rows instead of 5.
+- Fixing only the first would have left the trap armed for the next IP-less event type, so dedup now runs for every event: keyed on `source_ip` when present, on event type when not. An IP-less incident is not actionable anyway — there is nothing to block — so folding repeats loses nothing an operator could have acted on.
+- The 2,156 existing rows were purged. Verified: three consecutive `_sync_auto_response_events` cycles create 0 new incidents.
+
+---
+
 ## [1.6.5.0] - 2026-07-27 (autonomous response — AI on, self-expiring blocks, DoS enforcement)
 
 AEGIS now decides and acts without an operator in the loop. Getting there meant
