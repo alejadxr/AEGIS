@@ -103,3 +103,6 @@ CLAUDE.md
 # The canonical, credential-free procedure lives in the README.
 deploy.py
 deploy.sh
+
+# Same hardcoded SSH user + host IP as deploy.py/deploy.sh
+frontend/scripts/deploy-sync.mjs

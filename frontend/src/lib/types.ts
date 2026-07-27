@@ -66,10 +66,12 @@ export type ScanStatus = 'queued' | 'running' | 'completed' | 'failed';
 export interface Scan {
   id: string;
   target: string;
-  scan_type: string;
+  type: string;
+  scan_type?: string;
   status: ScanStatus;
   progress: number;
-  results_count: number;
+  assets_found: number;
+  results_count?: number;
   started_at: string;
   completed_at: string | null;
 }

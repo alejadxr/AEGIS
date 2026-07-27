@@ -319,27 +319,61 @@ export const api = {
 
   // Surface
   surface: {
-    scan: (target: string, scanType: string) =>
-      request('/surface/scan', {
+    scan: (target: string, scanType: string = 'full') =>
+      request<{ scan_id: string; target: string; status: string; message: string }>('/surface/scan', {
         method: 'POST',
         body: JSON.stringify({ target, scan_type: scanType }),
       }),
-    scans: () => request<Array<{
-      id: string;
-      target: string;
-      scan_type: string;
-      status: string;
-      progress: number;
-      results_count: number;
-      started_at: string;
-    }>>('/surface/scans'),
+    getScan: (scanId: string) =>
+      request<{
+        id: string;
+        target: string;
+        type: string;
+        status: string;
+        started_at: string | null;
+        completed_at: string | null;
+        results: Record<string, unknown>;
+        assets_found: number;
+        progress: number;
+      }>(`/surface/scans/${scanId}`),
+    scans: () =>
+      request<Array<{
+        id: string;
+        target: string;
+        type: string;
+        scan_type?: string;
+        status: string;
+        progress: number;
+        assets_found: number;
+        results_count?: number;
+        started_at: string | null;
+        completed_at: string | null;
+        results?: Record<string, unknown>;
+      }>>('/surface/scans'),
+    harden: (target?: string, assetType?: string) => {
+      const params = new URLSearchParams();
+      if (target) params.set('target', target);
+      if (assetType) params.set('asset_type', assetType);
+      const query = params.toString();
+      return request<{
+        target: string;
+        asset_type: string;
+        ai_recommendations: Record<string, unknown>;
+        checklist: Array<{ item: string; priority: string; category: string }>;
+      }>(`/surface/harden${query ? `?${query}` : ''}`);
+    },
+    runHarden: (target: string, assetType: string = 'web') =>
+      request<{
+        target: string;
+        asset_type: string;
+        ai_recommendations: Record<string, unknown>;
+        checklist: Array<{ item: string; priority: string; category: string }>;
+      }>('/surface/harden', {
+        method: 'POST',
+        body: JSON.stringify({ target, asset_type: assetType }),
+      }),
     assets: (params?: Record<string, string>) => {
       const query = params ? '?' + new URLSearchParams(params).toString() : '';
-      // service_weighted_v1 (backend/app/services/asset_risk.py) — ports is
-      // an object array (nmap/registration shape), and the response carries
-      // the full deterministic risk breakdown so the UI never has to
-      // recompute or fabricate it. See AssetRiskPanel.tsx for the exact
-      // consumer-side shape this mirrors.
       return request<Array<{
         id: string;
         hostname: string;
@@ -370,6 +404,7 @@ export const api = {
         service_classes: Array<{ klass: string; label: string; weight: number; count: number }>;
         host_wide_count: number;
         owned_count: number;
+        vulnerability_count?: number;
       }>>(`/surface/assets${query}`);
     },
     vulnerabilities: (params?: Record<string, string>) => {
@@ -378,15 +413,30 @@ export const api = {
         id: string;
         asset_id: string;
         title: string;
+        description: string | null;
         severity: string;
         cvss_score: number | null;
         cve_id: string | null;
         status: string;
-        found_at: string;
+        ai_risk_score: number | null;
+        remediation: string | null;
+        found_at: string | null;
       }>>(`/surface/vulnerabilities${query}`);
     },
-    updateVulnerability: (id: string, data: Record<string, string>) =>
-      request(`/surface/vulnerabilities/${id}`, {
+    updateVulnerability: (id: string, data: { status: string }) =>
+      request<{
+        id: string;
+        asset_id: string;
+        title: string;
+        description: string | null;
+        severity: string;
+        cvss_score: number | null;
+        cve_id: string | null;
+        status: string;
+        ai_risk_score: number | null;
+        remediation: string | null;
+        found_at: string | null;
+      }>(`/surface/vulnerabilities/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),

@@ -1,6 +1,6 @@
 'use client';
 
-import { formatRelativeTime } from '@/lib/utils';
+import { cn, formatRelativeTime } from '@/lib/utils';
 
 /**
  * VerdictLine — the 3am answer.
@@ -112,13 +112,47 @@ export function VerdictLine({
     }
   }
 
+  const isThreatFree = pendingActions === 0 && activeIncidents === 0;
+
   return (
-    <section aria-label="Current verdict" className="col-span-12 pt-8">
+    <section aria-label="Current verdict" className="col-span-12 pt-6 pb-2">
+      <div className="flex items-center gap-2.5 mb-2">
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold uppercase tracking-wider border shadow-sm',
+            isThreatFree
+              ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+              : pendingActions > 0
+              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+          )}
+        >
+          <span
+            className={cn(
+              'h-1.5 w-1.5 rounded-full animate-pulse',
+              isThreatFree
+                ? 'bg-cyan-400'
+                : pendingActions > 0
+                ? 'bg-amber-400'
+                : 'bg-rose-400'
+            )}
+          />
+          {isThreatFree ? 'ALL SYSTEMS NORMAL' : pendingActions > 0 ? 'APPROVAL REQUIRED' : 'ACTION REQUIRED'}
+        </span>
+      </div>
+
       <h1
-        className="max-w-[22ch] font-sans font-semibold text-[30px] leading-[34px] tracking-[-1.4px] text-[var(--foreground)] sm:text-[40px] sm:leading-[44px] sm:tracking-[-2px]"
+        className="max-w-[28ch] font-sans font-semibold text-[30px] leading-[34px] tracking-[-1.4px] text-[var(--foreground)] sm:text-[40px] sm:leading-[44px] sm:tracking-[-2px]"
       >
         {numeral !== null && (
-          <span className="text-[var(--brand-text)] tabular-nums">{numeral}</span>
+          <span
+            className={cn(
+              'tabular-nums mr-2',
+              pendingActions > 0 ? 'text-amber-400' : 'text-rose-400'
+            )}
+          >
+            {numeral}
+          </span>
         )}
         {rest}
       </h1>

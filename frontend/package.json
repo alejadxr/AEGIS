@@ -36,10 +36,12 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "d3-geo": "^2.0.2",
     "eslint": "^9",
     "eslint-config-next": "^15.3.3",
     "postcss": "^8",
     "tailwindcss": "^4.2.1",
+    "topojson-client": "^3.1.0",
     "typescript": "^5",
     "world-atlas": "^2.0.2"
   }
