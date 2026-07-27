@@ -1,11 +1,13 @@
 {
   "name": "aegis-next",
-  "version": "1.6.4.9",
+  "version": "1.6.5.0",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build:map": "node scripts/build-vector-map.mjs",
+    "build": "node scripts/build-vector-map.mjs && next build",
+    "deploy-sync": "node scripts/deploy-sync.mjs",
     "start": "next start",
     "lint": "next lint"
   },

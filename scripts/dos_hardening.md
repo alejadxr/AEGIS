@@ -18,6 +18,46 @@ by automation. Enabling is an explicit human decision.
 - **SYN-flood sysctl hardening** (syncookies + backlog tuning), snapshotted for exact revert.
 - A full `revert()` that flushes+deletes `AEGIS_DOS`, removes the INPUT/FORWARD jumps, and restores
   every sysctl value from the snapshot. `AEGIS_BLOCK` and persisted per-IP blocks are never touched.
+- **Re-applies the boot-time baseline rules** that `aegis-init.sh` installs (conntrack hygiene, ICMP
+  flood cap, all-ports SYN cap) on every `_ensure_chain()` call — see below.
+
+### Chain composition (baseline + netshield, not baseline *or* netshield)
+
+`_ensure_chain()` flushes `AEGIS_DOS` to stay idempotent. Until v1.6.5.0 it rebuilt only the
+host-safety ACCEPTs, which silently destroyed everything `aegis-init.sh` had installed at boot. The
+effect was a protection **downgrade disguised as an upgrade**: enabling netshield traded an
+all-ports SYN limit plus an ICMP cap for two rules covering port 8000 alone, so 22/80/443 lost their
+network-tier limit at the moment an operator believed they had just hardened the gateway.
+
+`_apply_baseline_rules()` now restores them inside `_ensure_chain`, producing:
+
+```
+1  ACCEPT  127.0.0.0/8                     host-safety
+2  ACCEPT  100.64.0.0/10                   host-safety (all Tailscale)
+3  RETURN  ESTABLISHED,RELATED             baseline — established conns are never rate-limited
+4  DROP    INVALID                         baseline
+5  DROP    ICMP echo > 10/s                baseline  (AEGIS_DOS_BASELINE_ICMP_RATE)
+6  DROP    SYN > 60/s   ALL ports          baseline  (AEGIS_DOS_BASELINE_SYN_RATE)
+7  DROP    SYN > 50/s   :8000              netshield
+8  DROP    connlimit > 150  :8000          netshield
+```
+
+Rule 3 matters: without it a long-lived session (your SSH, an in-flight scan) dies mid-flight as
+soon as its source gets busy.
+
+One deliberate omission — `aegis-init.sh` ends its chain with `-j RETURN`, and this function does
+**not** re-add it. That RETURN is a correct terminator at boot, but here it would sit above every
+rule `apply_ratelimit()` appends afterwards and short-circuit the chain before reaching them:
+netshield would install, report success, and filter nothing. A chain returns implicitly at its end.
+
+Verify idempotency after any change — three consecutive applies plus a `/dos/harden` must leave
+exactly 9 rules with **one** copy of each baseline rule:
+
+```bash
+sudo iptables -S AEGIS_DOS | wc -l          # 9
+sudo iptables -S AEGIS_DOS | grep -c aegis_syn   # 1
+sudo iptables -S AEGIS_DOS | grep -c aegis_icmp  # 1
+```
 
 ## Host-safety interlock (why you won't lock yourself out)
 

@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.5.0] - 2026-07-27 (autonomous response — AI on, self-expiring blocks, DoS enforcement)
+
+AEGIS now decides and acts without an operator in the loop. Getting there meant
+turning the AI on for the first time in production, which immediately exposed
+three separate subsystems that had been silently inert behind it.
+
+### Security note (operator safelist was never applied — self-lockout vector)
+- `AEGIS_SAFE_IPS` and `AEGIS_INTERNAL_IPS` never reached the gate that enforces them. `attack_detector._parse_ip_safelist_env` read `os.getenv`, but `.env` is loaded by pydantic `BaseSettings` into `settings` and never lands in `os.environ`, so the read always fell through to the `127.0.0.1,::1,localhost` default. Compounding it, neither key was declared as a Settings field, and `model_config` sets `extra="ignore"` — so pydantic dropped them too, and fixing only the first cause would not have worked.
+- Effect: every configured safe IP/CIDR was treated as hostile. AEGIS blocked its own operator's admin IP, and because Sable's middleware returns 403 against that same blocklist, the operator was locked out of the product from every device on that NAT. Only the hardcoded RFC1918/CGNAT ranges and crawler CIDRs were live, which is why Tailscale hosts still looked safe and masked the bug.
+- Fixed in `config.py` (declare both keys) and `attack_detector.py` (read `settings` first, `os.environ` as fallback). Verified on production: `_SAFE_NETWORKS` went from ~10 to 153 ranges.
+
+### Added - fully autonomous blocking with self-expiring provisional blocks
+- The confirmation gate no longer parks unconfirmed threats in an approval queue. For an unattended system, a queue nobody reads is not caution — it is an attacker walking free while rows accumulate in a dashboard.
+- What replaces human review is reversibility, not confidence. A confirmed threat (known-bad IOC, named exploit class, counted brute force, classified high-severity) blocks permanently. An unconfirmed one still blocks immediately, but the Action carries `parameters.expires_at`, and the new `expire_provisional_blocks` job (every 10 min) lifts it after `AEGIS_PROVISIONAL_BLOCK_TTL_HOURS` (default 6).
+- A genuinely hostile source re-offends and is re-blocked, usually with the evidence to confirm it permanently. A false positive clears the same day instead of locking a real customer out forever. Stored in the existing `Action.parameters` JSON column — no migration.
+- Safe IPs are untouched by any of this: they short-circuit in `guardrail_engine` and are never blocked, provisionally or otherwise.
+
+### Changed - AI enabled in production (`AEGIS_AI_MODE` offline → optional)
+- AEGIS had been running with AI fully disabled: `ecosystem.config.js` injected `AEGIS_AI_MODE=offline` into the process, which wins over `.env`, and `ai_manager.chat()` short-circuited to `provider: "disabled"`. Every decision was carried by the deterministic fallbacks.
+- Note the `.env` value was `AEGIS_AI_MODE=full`, which is not a value the enum recognises — valid values are `required` / `optional` / `disabled`. It aliased to `optional` and had no effect either way.
+
+### Fixed - AI threat_type never matched the response table
+- Turning AI on exposed this. `fast_triage` emits canonical snake_case types via `SIGMA_TO_THREAT_TYPE`, but the AI path used the model's prose verbatim: "SQL Injection", "Brute Force Attack", "Path Traversal / LFI". None match a `RESPONSE_ACTIONS` key, so every AI-classified threat collapsed to the `["block_ip"]` default — RCE never reached `isolate_host`/`kill_process`, ransomware never reached `shutdown_service`, web_shell never reached `quarantine_file`.
+- Added `normalize_threat_type()` (longest-substring-first, defaults to `unknown`) and pinned the exact token vocabulary in the triage system prompt. Verified live: SQLi → `block_ip`+`firewall_rule`, RCE → `block_ip`+`isolate_host`+`kill_process`.
+
+### Fixed - per-task model routing on OmniRoute; every model id was stale
+- Two independent faults. `MODEL_ROUTING` pinned OpenRouter ids that had been delisted upstream: 5 of 7 models and 3 of 5 `FALLBACK_CHAIN` entries no longer existed, so the table had collapsed to its one surviving model. And on the OmniRoute path — the production default — `query()` passed `model=None`, letting the gateway serve ONE default model for every task type, so the routing table was never consulted at all.
+- Added `OMNIROUTE_MODEL_ROUTING` (13 task types) and rebuilt `MODEL_ROUTING`/`FALLBACK_CHAIN` from models confirmed live with real streaming calls. Of the gateway's ~559 advertised models only a minority are callable (`gh`/`github` 429, `aug` empty, `ddgw`/`mcode`/`openrouter` no credentials), and the `auto/*` capability aliases — the obvious churn-proof choice — all resolve to nothing.
+- This also overturned the red-team premise. Those tasks were pinned to an "uncensored" model on the theory a safety-tuned one would refuse to analyse payloads. Measured against four terse hostile prompts, the opposite held: frontier aligned models scored 4/4 while the least-aligned scored 2/4, refusing `../../../../etc/shadow` as a file it could not open rather than a string to classify.
+
+### Fixed - log_watcher was silently disabled on macOS (detection blind)
+- `pm2` lives at `~/local/bin/pm2` on the Mac Pro, but the watcher only searched `/usr/local/bin`; with no `journalctl` on macOS it hit the "Neither PM2 nor journalctl found" branch and disabled itself. No PM2 log line reached the correlation engine.
+- Broadened PATH discovery (`~/local/bin`, `~/.local/bin`, `~/.npm-global/bin`) and added a fallback that tails `~/.pm2/logs/` directly when the binary is missing. Now tailing 31 files across 13 apps.
+
+### Added - DoS Shield enforcement, calibrated against real traffic
+- `AEGIS_DOS_MODE` monitor → `active`. Thresholds were factory defaults that had never been calibrated.
+- Calibrated from 50,395 real events / 1,238 IPs, separating browsers from tooling by user-agent: real browsers never exceeded **5.7 rps** across 3,245 windows (p99 4.8), while scanners live at 42–77 rps. `per_ip` 10 → 35 (6.1× the real browser ceiling, still clear of the 42 rps scanner floor), `subnet` 40 → 90, `global` 50 → 200, `concurrency` 20 → 60, `expensive` 6 → 30 rpm.
+- A caveat worth recording: the 77 rps burst originally attributed to dashboard polling was the Kali pentest box egressing through the same NAT as the admin IP. Per-IP rate alone cannot separate those two.
+
+### Added - DoS netshield (network tier) enabled on the Pi
+- `firewall-agent/dos_netshield.py` was in the repo but had never been deployed, so `/dos/ratelimit` 404'd and the flag would have enabled netshield in name only. Deployed and gated on via a systemd drop-in.
+- Applies per-source SYN `hashlimit` + `connlimit` in a dedicated `AEGIS_DOS` chain, plus sysctl SYN-flood hardening (`tcp_syncookies`, backlog tuning) with a revert snapshot. Host-safety ACCEPT rules for loopback and `100.64.0.0/10` are always prepended, so Tailscale can never be limited.
+
+### Fixed - netshield chain flush wiped the boot-time baseline rules
+- `_ensure_chain()` flushes `AEGIS_DOS` to stay idempotent, then rebuilt only the host-safety ACCEPTs — destroying everything `aegis-init.sh` installs at boot (conntrack hygiene, ICMP flood cap, all-ports SYN cap).
+- The effect was a protection **downgrade disguised as an upgrade**: enabling netshield traded an all-ports SYN limit for two rules covering port 8000 alone, so 22/80/443 lost their network-tier limit at the moment an operator believed they had hardened the gateway. Observed live: the chain went from 7 rules to 4.
+- `_apply_baseline_rules()` now re-installs them inside `_ensure_chain`, composing as a superset. It deliberately omits the trailing `-j RETURN` that `aegis-init.sh` ends with — re-adding it would sit above every rule appended afterwards and short-circuit the chain, so netshield would install, report success, and filter nothing.
+
+### Changed - deeper vulnerability scanning, every 8h
+- Full scan interval 2h → 8h (`AEGIS_FULL_SCAN_HOURS`). nmap top-1000 → top-3000 with `--script vuln,auth,default` and OS detection; timeout 300s → 600s. nuclei now scans **all** web ports per asset (previously only the first), adds `low` severity and the `cve,misconfig,exposure,default-login,takeover,xss,sqli,lfi,rfi,ssrf,rce` tag set.
+
+### Fixed - frontend called `localhost:8000` from every browser
+- `NEXT_PUBLIC_API_URL` was never set anywhere — not in `.env`, not in PM2 config — so Next.js inlined the `http://localhost:8000/api/v1` fallback into every client bundle at build time. Any browser not running on the Mac Pro itself got `ERR_CONNECTION_REFUSED`. Fixed with `frontend/.env.production` and a rebuild.
+
+---
+
 ## [1.6.4.9] - 2026-07-21 (asset identity — deduplicate, prevent, repair; incident dedup; report parity)
 
 ### Security note (unbounded asset duplication — data-integrity vector)
