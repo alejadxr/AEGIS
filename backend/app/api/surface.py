@@ -39,6 +39,7 @@ class ScanDetail(BaseModel):
     completed_at: str | None = None
     results: dict = {}
     assets_found: int = 0
+    progress: float = 100.0
 
 
 class AssetOut(BaseModel):
@@ -91,6 +92,19 @@ class HardenRequest(BaseModel):
     asset_type: str = "web"
 
 
+class HardenChecklistItem(BaseModel):
+    item: str
+    priority: str
+    category: str
+
+
+class HardenResponse(BaseModel):
+    target: str
+    asset_type: str
+    ai_recommendations: dict = {}
+    checklist: list[HardenChecklistItem] = []
+
+
 # --- Routes ---
 
 @router.post("/scan", response_model=ScanResponse)
@@ -132,6 +146,7 @@ async def list_scans(
             completed_at=s.get("completed_at"),
             results=s.get("results", {}),
             assets_found=s.get("assets_found", 0),
+            progress=float(s.get("progress", 100.0 if s.get("status") == "completed" else 50.0 if s.get("status") == "running" else 0.0)),
         )
         for s in scans
     ]
@@ -156,6 +171,7 @@ async def get_scan(
         completed_at=scan.get("completed_at"),
         results=scan.get("results", {}),
         assets_found=scan.get("assets_found", 0),
+        progress=float(scan.get("progress", 100.0 if scan.get("status") == "completed" else 50.0 if scan.get("status") == "running" else 0.0)),
     )
 
 
@@ -383,6 +399,10 @@ async def update_vulnerability(
     db: AsyncSession = Depends(get_db),
 ):
     """Update vulnerability status. Analyst or admin only."""
+    valid_statuses = {"open", "remediated", "accepted", "false_positive"}
+    if body.status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status '{body.status}'. Must be one of {valid_statuses}")
+
     client = auth.client
     result = await db.execute(
         select(Vulnerability).where(
@@ -417,20 +437,47 @@ async def update_vulnerability(
     )
 
 
-@router.post("/harden")
+@router.get("/harden", response_model=HardenResponse)
+async def get_hardening(
+    target: Optional[str] = "all",
+    asset_type: str = "web",
+    auth: AuthContext = Depends(require_viewer),
+):
+    """Get auto-hardening checklist & recommendations. Viewer or higher."""
+    try:
+        t_name = target or "all"
+        recommendations = await hardening_engine.get_recommendations({
+            "hostname": t_name,
+            "asset_type": asset_type,
+        })
+        checklist = hardening_engine.generate_hardening_checklist(asset_type)
+        return HardenResponse(
+            target=t_name,
+            asset_type=asset_type,
+            ai_recommendations=recommendations,
+            checklist=checklist,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch hardening details: {exc}")
+
+
+@router.post("/harden", response_model=HardenResponse)
 async def run_hardening(
     body: HardenRequest,
     auth: AuthContext = Depends(require_analyst),
 ):
     """Get auto-hardening recommendations for a target. Analyst or admin only."""
-    recommendations = await hardening_engine.get_recommendations({
-        "hostname": body.target,
-        "asset_type": body.asset_type,
-    })
-    checklist = hardening_engine.generate_hardening_checklist(body.asset_type)
-    return {
-        "target": body.target,
-        "asset_type": body.asset_type,
-        "ai_recommendations": recommendations,
-        "checklist": checklist,
-    }
+    try:
+        recommendations = await hardening_engine.get_recommendations({
+            "hostname": body.target,
+            "asset_type": body.asset_type,
+        })
+        checklist = hardening_engine.generate_hardening_checklist(body.asset_type)
+        return HardenResponse(
+            target=body.target,
+            asset_type=body.asset_type,
+            ai_recommendations=recommendations,
+            checklist=checklist,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate hardening configuration: {exc}")
