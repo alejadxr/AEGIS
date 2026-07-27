@@ -257,8 +257,20 @@ async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
     if not events:
         return 0
 
-    # Operational events that should NOT create incidents
-    _SKIP_EVENT_TYPES = {"startup", "shutdown", "ip_blocked", "ip_unblocked", "config_reload", "health_check"}
+    # Operational events that should NOT create incidents.
+    #
+    # The dos_* entries are AEGIS's OWN netshield configuration calls
+    # (/dos/harden, /dos/ratelimit, /dos/revert). Treating them as attacks is
+    # the same self-detection class log_watcher guards against with its internal
+    # source markers: the defender's own actions arriving back through a
+    # detection path. They generated 1,340 high-severity "Firewall: Dos
+    # Ratelimit from unknown" incidents from 5 real Pi events — see the no-IP
+    # dedup fix below for why the count exploded.
+    _SKIP_EVENT_TYPES = {
+        "startup", "shutdown", "ip_blocked", "ip_unblocked", "config_reload",
+        "health_check",
+        "dos_harden", "dos_ratelimit", "dos_revert", "dos_status",
+    }
 
     count = 0
     for event in events:
@@ -285,6 +297,13 @@ async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
         description = event.get("description") or event.get("reason") or f"Firewall detected: {event_type}"
         severity = _threat_level_to_severity(event.get("threat_level") or event.get("severity") or "medium")
 
+        # v1.6.5.1: dedup runs for EVERY event, with or without a source IP.
+        #
+        # This block used to be gated on `if ip:`, so an IP-less event skipped
+        # dedup entirely and minted a fresh incident on every sync cycle,
+        # forever. The Pi reported 5 events; that produced 1,340 incidents.
+        # Misclassifying the dos_* types (fixed above) was the trigger, but THIS
+        # was the amplifier — any future IP-less event type would do it again.
         if ip:
             # v1.6.3.2: dedup window is now 24h (was permanent — a firewall IP could
             # only ever raise ONE incident in the DB's entire lifetime).
@@ -299,6 +318,25 @@ async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:
                 statuses=None,
             )
             if existing is not None:
+                continue
+        else:
+            # No source IP to key on, so dedup on the event type instead. An
+            # incident with no source IP is also not actionable on its own —
+            # there is nothing to block — so folding repeats into the first one
+            # loses nothing an operator could have acted on.
+            cutoff = datetime.utcnow() - INCIDENT_DEDUP_WINDOW
+            dup = await db.execute(
+                select(Incident)
+                .where(
+                    Incident.client_id == client_id,
+                    Incident.source == "firewall",
+                    Incident.source_ip.is_(None),
+                    Incident.title == f"Firewall: {event_type.replace('_', ' ').title()} from unknown",
+                    Incident.detected_at >= cutoff,
+                )
+                .limit(1)
+            )
+            if dup.scalar_one_or_none() is not None:
                 continue
 
         incident = Incident(
