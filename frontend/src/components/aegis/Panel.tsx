@@ -36,7 +36,7 @@ export interface PanelProps extends React.HTMLAttributes<HTMLElement> {
 
 const VARIANT_CLASS: Record<PanelVariant, string> = {
   default: 'bg-card',
-  prominent: 'bg-card ring-1 ring-white/[0.04] shadow-[0_8px_24px_-16px_rgba(0,0,0,0.45)]',
+  prominent: 'bg-card ring-1 ring-white/[0.04]',
   warning: 'bg-card',
   danger: 'bg-card',
   glass: 'bg-card/85 backdrop-blur-md',
