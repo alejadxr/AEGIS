@@ -51,9 +51,11 @@ lives in the callers.
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from urllib.parse import unquote
 
 
 # ---------------------------------------------------------------------------
@@ -875,6 +877,35 @@ def _refine_auth_failure(
 # ---------------------------------------------------------------------------
 
 
+def _parse_aegis_envelope(line: str) -> Optional[dict[str, Any]]:
+    """Parse a front-line ``[AEGIS] {json}`` access-log envelope.
+
+    Apps that sit behind Cloudflare (e.g. ``sable``) log one JSON object per
+    request, prefixed with an ``[AEGIS]`` marker, carrying the real client IP
+    resolved from ``CF-Connecting-IP`` plus ``method`` / ``path`` / ``status``
+    as JSON fields. The historic ``_ACCESS_LOG_RE`` only understands the
+    PM2/uvicorn common-log shape (``"GET /x HTTP/1.1" 200``), so without this
+    branch every JSON-logged request fails ``access_match`` and is dropped at
+    the ``access_match is None`` guard -- leaving the app completely invisible
+    to detection regardless of attack volume.
+
+    Returns the decoded dict, or ``None`` when the line is not an AEGIS
+    envelope / not valid JSON. Pure and side-effect free, per this module's
+    contract.
+    """
+    marker = line.find("[AEGIS]")
+    if marker == -1:
+        return None
+    brace = line.find("{", marker)
+    if brace == -1:
+        return None
+    try:
+        obj = json.loads(line[brace:])
+    except (ValueError, TypeError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
 def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
     """Normalize a single log line into a typed event dict.
 
@@ -948,6 +979,12 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
     if _is_structural(line):
         return None
 
+    # Structured `[AEGIS] {json}` envelope (Cloudflare-fronted front-line apps
+    # like sable). Parsed up front so its fields override the common-log scrape
+    # below and its presence lets the line survive the `access_match is None`
+    # drop guard -- otherwise these JSON lines are silently discarded.
+    aegis_env = _parse_aegis_envelope(line)
+
     # Initial protocol guess from source + line shape. Will be refined below
     # once we have structured fields (target_port, request_path).
     protocol = _identify_protocol(source, line)
@@ -992,6 +1029,26 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
             except ValueError:
                 status = None
 
+    # Structured envelope fields win over the regex scrape: they carry the
+    # Cloudflare-resolved client IP (incl. IPv6-mapped forms the IPv4-only
+    # _IP_RE cannot see) and the exact method/path/status.
+    if aegis_env is not None:
+        env_ip = aegis_env.get("src_ip")
+        if env_ip:
+            source_ip = str(env_ip)
+        env_method = aegis_env.get("method")
+        if env_method:
+            method = str(env_method).upper()
+        env_path = aegis_env.get("path")
+        if env_path:
+            path = str(env_path)
+        env_status = aegis_env.get("status")
+        if env_status is not None:
+            try:
+                status = int(env_status)
+            except (TypeError, ValueError):
+                pass
+
     # target_port heuristics: prefer the protocol convention, fall back to a
     # bare :port if the line carries one that is NOT the source_port.
     if protocol == "ssh_honeypot":
@@ -1024,14 +1081,28 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
     if refined_protocol != "unknown":
         protocol = refined_protocol
 
-    # User-agent: last quoted segment.
+    # User-agent: last quoted segment (common-log), else the envelope's `ua`.
     ua_match = _USER_AGENT_RE.search(line)
     user_agent = ua_match.group(1) if ua_match else None
+    if not user_agent and aegis_env is not None:
+        env_ua = aegis_env.get("ua")
+        if env_ua:
+            user_agent = str(env_ua)
 
     # ----- Pattern matching -- first hit wins (table ordered by specificity).
+    # For structured envelopes we also match against the URL-decoded path so
+    # percent-encoded payloads (%2Fetc%2Fpasswd, union%20select, onfocus%3D...)
+    # cannot slip past the signature table. The raw line is preserved so all
+    # existing raw-shape patterns keep matching.
+    scan_surface = line
+    if aegis_env is not None and path:
+        try:
+            scan_surface = f"{line}\n{unquote(path)}"
+        except Exception:
+            scan_surface = line
     matched: Optional[LogPattern] = None
     for pattern in PATTERNS:
-        if pattern.regex.search(line):
+        if pattern.regex.search(scan_surface):
             matched = pattern
             break
 
@@ -1039,8 +1110,10 @@ def normalize(log_line: str, source: str = "") -> Optional[dict[str, Any]]:
     if matched is None:
         # No security pattern matched, but the line is still a parseable
         # HTTP request -- emit a generic http_request event so that rate /
-        # enumeration rules can count it. If not even that, drop the line.
-        if access_match is None:
+        # enumeration rules can count it. A structured `[AEGIS]` envelope is
+        # just as parseable as a common-log access line, so it survives here
+        # too. If neither is present, drop the line.
+        if access_match is None and aegis_env is None:
             return None
         event_type = "http_request"
         severity_base = "low"
