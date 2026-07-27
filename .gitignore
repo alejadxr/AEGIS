@@ -95,3 +95,11 @@ CHANGES.md
 
 # Local agent instructions — not for the public repo
 CLAUDE.md
+
+# Agent session scratch — working logs, not source (contains request history)
+.agents/
+
+# Local deploy helpers — hardcode SSH user + host IP.
+# The canonical, credential-free procedure lives in the README.
+deploy.py
+deploy.sh
