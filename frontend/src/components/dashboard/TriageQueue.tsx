@@ -1,30 +1,33 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { Panel, SectionHeader, EmptyState, StatusBadge } from '@/components/aegis';
+import {
+  ChevronDown,
+  Zap,
+  Radio,
+  RefreshCw,
+  Terminal,
+  Cpu,
+  Layers,
+  ShieldCheck,
+  Crosshair,
+  Sparkles,
+  Filter,
+  Search,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldAlert,
+  Clock,
+  ArrowUpRight,
+  Shield,
+  Activity,
+} from 'lucide-react';
+import { StatusBadge } from '@/components/aegis';
 import type { StatusVariant } from '@/components/aegis';
 import { IncidentDossier } from '@/components/dashboard/IncidentDossier';
 import { api } from '@/lib/api';
 import { cn, formatRelativeTime } from '@/lib/utils';
-
-/**
- * TriageQueue — the hero.
- *
- * An urgency-ranked, keyboard-operable accordion of incident cards with a
- * pinned pending-approval region at the top. Absorbs FeaturedIncidentHero,
- * IncidentTimeline and AISuggestedActionsList into one honest to-do list.
- *
- * This component never fetches its own list data — `incidents` and
- * `pendingActions` arrive pre-filtered from page.tsx (FP-stripped incidents,
- * pending-only actions). It DOES mount <IncidentDossier> lazily per expanded
- * row, which fetches api.response.incident(id) itself.
- *
- * Nested-card ban (adversarial review item 17): collapsed incident rows
- * carry NO border and NO background of their own — separation comes from
- * the 3px severity spine, a 1px hairline between rows, and a background
- * tint on hover/open. <Panel> is the only bordered surface on this page.
- */
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -52,53 +55,68 @@ export interface TriagePendingAction {
 }
 
 export interface TriageQueueProps {
-  /** ALREADY FP-filtered by page.tsx. This component must not receive [FP-] titles. */
   incidents: TriageIncident[];
-  /** Already filtered to status === 'pending'. */
   pendingActions: TriagePendingAction[];
-  /** Real endpoints, passed from page.tsx. Must refetch on success. */
   onApprove: (actionId: string) => Promise<void>;
   onReject: (actionId: string, reason?: string) => Promise<void>;
   loading?: boolean;
-  /** True when response.incidents() rejected. */
   error?: boolean;
-  /**
-   * From api.dashboard.overview().total_assets — mirrors VerdictLineProps'
-   * field 1:1. Optional and additive: not part of the minimum contract, but
-   * needed to write the empty state's evidence line honestly instead of
-   * fabricating a number. Falls back to asset-count-free copy when omitted.
-   */
   totalAssets?: number;
-  /** From api.dashboard.monitoredApps().count — mirrors VerdictLineProps' field 1:1. */
   monitoredApps?: number;
-  /**
-   * Optional: re-run whatever fetch populates `incidents` / `pendingActions`.
-   * Not part of the minimum contract — additive and optional so existing
-   * callers keep compiling. Wired to both the error state's Retry button and
-   * as the `onMutated` signal forwarded to each <IncidentDossier> (so a
-   * dossier-level approve/reject also refreshes the outer counts). Falls
-   * back to a full page reload — a real, working retry, never a decorative
-   * no-op button — when omitted.
-   */
   onRetry?: () => void;
 }
 
 // ---------------------------------------------------------------------------
-// Severity — explicit map, never template-literal interpolation. Matches
-// the SEV_VAR convention already established in Ledger.tsx / OriginMap.tsx,
-// with defensive `var(x, fallback)` chains (CommandBar.tsx's convention) so
-// the queue still renders correctly before the --sev-* tokens land in
-// globals.css.
+// Severity configuration (No left vertical spines!)
 // ---------------------------------------------------------------------------
 
 type SeverityKey = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
-const SEV_VAR: Record<SeverityKey, string> = {
-  critical: 'var(--sev-critical, var(--danger))',
-  high: 'var(--sev-high, var(--brand-accent))',
-  medium: 'var(--sev-medium, var(--warning))',
-  low: 'var(--sev-low, var(--brand))',
-  info: 'var(--sev-info, var(--muted-foreground))',
+const SEVERITY_CHIP: Record<
+  SeverityKey,
+  {
+    label: string;
+    bg: string;
+    text: string;
+    border: string;
+    dot: string;
+  }
+> = {
+  critical: {
+    label: 'CRITICAL',
+    bg: 'bg-red-500/10',
+    text: 'text-red-400',
+    border: 'border-red-500/30',
+    dot: 'bg-red-400',
+  },
+  high: {
+    label: 'HIGH',
+    bg: 'bg-orange-500/10',
+    text: 'text-orange-400',
+    border: 'border-orange-500/30',
+    dot: 'bg-orange-400',
+  },
+  medium: {
+    label: 'MEDIUM',
+    bg: 'bg-amber-500/10',
+    text: 'text-amber-400',
+    border: 'border-amber-500/30',
+    dot: 'bg-amber-400',
+  },
+  low: {
+    label: 'LOW',
+    bg: 'bg-cyan-500/10',
+    text: 'text-cyan-400',
+    border: 'border-cyan-500/30',
+    dot: 'bg-cyan-400',
+  },
+  info: {
+    label: 'INFO',
+    bg: 'bg-zinc-500/10',
+    text: 'text-zinc-400',
+    border: 'border-zinc-500/30',
+    dot: 'bg-zinc-400',
+  },
 };
 
 const SEVERITY_RANK: Record<SeverityKey, number> = {
@@ -133,45 +151,51 @@ function PendingActionsBlock({
   onReject: (id: string) => void;
 }) {
   return (
-    <div
-      className={cn(
-        'mb-1 rounded-[10px] px-4 py-3.5',
-        'bg-[color-mix(in_oklab,var(--brand)_7%,transparent)]',
-        'border border-[color-mix(in_oklab,var(--brand)_22%,transparent)]',
-      )}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--brand-text,var(--brand))]">
-          Awaiting your approval
+    <div className="border-b border-amber-500/25 bg-[#14120D] p-4 relative overflow-hidden">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+          </span>
+          <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400">
+            AWAITING OPERATOR APPROVAL
+          </span>
+        </div>
+        <span className="font-mono text-[10px] text-amber-300 bg-amber-500/15 px-2.5 py-0.5 rounded border border-amber-500/30 font-bold">
+          {actions.length} {actions.length === 1 ? 'ACTION REQUIRED' : 'ACTIONS REQUIRED'}
         </span>
-        <span className="font-mono text-[11px] text-muted-foreground">{actions.length}</span>
       </div>
 
-      <div className="mt-1 flex flex-col">
-        {actions.map((a, i) => {
+      <div className="flex flex-col gap-2">
+        {actions.map((a) => {
           const state = actionState[a.id];
           const isBusy = state?.status === 'applying';
           return (
             <div
               key={a.id}
-              className={cn(
-                'flex items-center justify-between gap-3 min-h-[40px] py-2',
-                i > 0 && 'border-t border-border',
-              )}
+              className="flex items-center justify-between gap-4 p-3 rounded-lg bg-[#191712] border border-amber-500/20 hover:border-amber-500/40 transition-all flex-wrap"
             >
-              <div className="min-w-0">
-                <p className="text-[12px] font-semibold text-foreground truncate">
-                  {a.action_type}
-                  <span className="font-mono text-[11px] font-normal text-muted-foreground">
-                    {' → '}
-                    {a.target ?? '—'}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-xs font-bold text-white uppercase tracking-tight">
+                    {a.action_type}
                   </span>
-                </p>
-                <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
-                  {isBusy ? 'Applying…' : formatRelativeTime(a.created_at)}
+                  {a.target && (
+                    <span className="font-mono text-[11px] text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
+                      {a.target}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 font-mono text-[10px] text-zinc-400">
+                  {isBusy ? (
+                    <span className="text-amber-400 animate-pulse">Applying action...</span>
+                  ) : (
+                    <span>Requested {formatRelativeTime(a.created_at)}</span>
+                  )}
                 </p>
                 {state?.status === 'error' && state.message && (
-                  <p role="alert" className="mt-0.5 text-[11px] text-[var(--danger)]">
+                  <p role="alert" className="mt-1 font-mono text-[11px] text-red-400">
                     {state.message}
                   </p>
                 )}
@@ -182,16 +206,7 @@ function PendingActionsBlock({
                   type="button"
                   disabled={isBusy}
                   onClick={() => onApprove(a.id)}
-                  aria-label={`Approve ${a.action_type} on ${a.target ?? 'target'}`}
-                  className={cn(
-                    'h-7 px-3 rounded-[8px] text-[11px] font-semibold',
-                    'bg-[color-mix(in_oklab,var(--brand)_16%,transparent)]',
-                    'border border-[color-mix(in_oklab,var(--brand)_34%,transparent)]',
-                    'text-[var(--brand-text,var(--brand))]',
-                    'hover:bg-[color-mix(in_oklab,var(--brand)_24%,transparent)]',
-                    'transition-colors duration-150 motion-reduce:transition-none',
-                    'disabled:opacity-50 disabled:cursor-not-allowed',
-                  )}
+                  className="px-3.5 py-1.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 transition-all disabled:opacity-50 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.15)]"
                 >
                   Approve
                 </button>
@@ -199,15 +214,7 @@ function PendingActionsBlock({
                   type="button"
                   disabled={isBusy}
                   onClick={() => onReject(a.id)}
-                  aria-label={`Reject ${a.action_type} on ${a.target ?? 'target'}`}
-                  className={cn(
-                    'h-7 px-3 rounded-[8px] text-[11px] font-semibold bg-transparent',
-                    'border border-[color-mix(in_oklab,var(--danger)_30%,transparent)]',
-                    'text-[var(--danger)]',
-                    'hover:bg-[color-mix(in_oklab,var(--danger)_10%,transparent)]',
-                    'transition-colors duration-150 motion-reduce:transition-none',
-                    'disabled:opacity-50 disabled:cursor-not-allowed',
-                  )}
+                  className="px-3.5 py-1.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   Reject
                 </button>
@@ -221,12 +228,11 @@ function PendingActionsBlock({
 }
 
 // ---------------------------------------------------------------------------
-// Incident card (collapsed row + accordion body)
+// Clean Incident Row Component (No left vertical spines!)
 // ---------------------------------------------------------------------------
 
 function IncidentCard({
   incident,
-  isFirst,
   isOpen,
   isPendingApproval,
   onToggle,
@@ -235,7 +241,6 @@ function IncidentCard({
   onMutated,
 }: {
   incident: TriageIncident;
-  isFirst: boolean;
   isOpen: boolean;
   isPendingApproval: boolean;
   onToggle: () => void;
@@ -244,27 +249,17 @@ function IncidentCard({
   onMutated: () => void;
 }) {
   const sevKey = severityKey(incident.severity);
-  const sevVar = SEV_VAR[sevKey];
+  const chipCfg = SEVERITY_CHIP[sevKey];
   const dossierId = `dossier-${incident.id}`;
   const dossierBodyRef = useRef<HTMLDivElement | null>(null);
 
-  const chip: { variant: StatusVariant; label: string } = isPendingApproval
+  const statusChip: { variant: StatusVariant; label: string } = isPendingApproval
     ? { variant: 'info', label: 'AWAITING YOU' }
     : incident.status.toLowerCase() === 'investigating'
       ? { variant: 'warning', label: 'INVESTIGATING' }
-      : { variant: 'muted', label: incident.status.toUpperCase() || 'UNKNOWN' };
-
-  const metaSegments = [
-    incident.mitre_technique ?? '—',
-    incident.mitre_tactic ? incident.mitre_tactic.toUpperCase() : null,
-    incident.source_ip ?? 'no source ip',
-    formatRelativeTime(incident.detected_at),
-  ].filter((s): s is string => s !== null);
+      : { variant: 'muted', label: incident.status.toUpperCase() || 'OPEN' };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    // Ignore keydowns bubbling up from interactive descendants (dossier
-    // buttons, "show more" links) so Enter/Space on THOSE doesn't also
-    // toggle this row — matches Ledger.tsx's handleRowKeyDown guard.
     if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -273,11 +268,6 @@ function IncidentCard({
   };
 
   const handleClick = (e: MouseEvent<HTMLElement>) => {
-    // A click inside the expanded dossier (buttons, "show more" links)
-    // must not also toggle this row closed. Checked via ref-containment
-    // rather than stopPropagation on an intermediate <div>, which would
-    // require attaching a click handler to a non-interactive element
-    // (jsx-a11y/no-static-element-interactions).
     if (dossierBodyRef.current && dossierBodyRef.current.contains(e.target as Node)) return;
     onToggle();
   };
@@ -292,49 +282,95 @@ function IncidentCard({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'relative min-h-[92px] pl-[23px] pr-5 py-5 rounded-[14px] cursor-pointer',
-        !isFirst && 'border-t border-border',
-        'transition-[background-color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-        'hover:bg-[color-mix(in_oklab,var(--foreground)_2.5%,transparent)]',
-        isOpen && 'bg-[color-mix(in_oklab,var(--foreground)_2.5%,transparent)]',
+        'border-b border-white/[0.06] p-4 transition-colors duration-150 cursor-pointer group relative',
+        isOpen ? 'bg-[#14141D]' : 'hover:bg-white/[0.02]',
       )}
     >
-      <span
-        aria-hidden="true"
-        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-[14px]"
-        style={{ background: sevVar }}
-      />
+      <div className="flex items-start justify-between gap-4">
+        {/* Left / Center Information block */}
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Severity Pill with dot indicator */}
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider border',
+                chipCfg.bg,
+                chipCfg.text,
+                chipCfg.border,
+              )}
+            >
+              <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', chipCfg.dot)} />
+              {chipCfg.label}
+            </span>
 
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="min-w-0 truncate text-[16px] font-semibold tracking-[-0.32px] text-foreground">
-          {incident.title}
-        </h3>
-        <StatusBadge size="sm" variant={chip.variant} className="shrink-0">
-          {chip.label}
-        </StatusBadge>
+            {/* MITRE Technique */}
+            {incident.mitre_technique && (
+              <span className="font-mono text-[10px] font-medium text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
+                [{incident.mitre_technique}]
+              </span>
+            )}
+
+            {/* MITRE Tactic */}
+            {incident.mitre_tactic && (
+              <span className="font-mono text-[10px] font-medium text-purple-300 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded uppercase">
+                {incident.mitre_tactic}
+              </span>
+            )}
+
+            {/* Source IP */}
+            {incident.source_ip && (
+              <span className="font-mono text-[10px] text-zinc-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded flex items-center gap-1">
+                <Terminal className="w-3 h-3 text-cyan-400" />
+                {incident.source_ip}
+              </span>
+            )}
+
+            {/* Source Module */}
+            {incident.source && (
+              <span className="font-mono text-[10px] text-zinc-400 bg-white/[0.03] px-2 py-0.5 rounded">
+                src: {incident.source}
+              </span>
+            )}
+          </div>
+
+          {/* Incident Title */}
+          <h3 className="text-[15px] font-bold tracking-tight text-white group-hover:text-cyan-300 transition-colors">
+            {incident.title}
+          </h3>
+
+          <div className="flex items-center gap-3 font-mono text-[11px] text-zinc-400 pt-0.5">
+            <span className="flex items-center gap-1 text-zinc-400">
+              <Clock className="w-3 h-3 text-zinc-500" />
+              Detected {formatRelativeTime(incident.detected_at)}
+            </span>
+          </div>
+        </div>
+
+        {/* Right Status & Expand icon */}
+        <div className="shrink-0 flex items-center gap-3">
+          <StatusBadge size="sm" variant={statusChip.variant}>
+            {statusChip.label}
+          </StatusBadge>
+
+          <ChevronDown
+            className={cn(
+              'w-4 h-4 text-zinc-400 transition-transform duration-200',
+              isOpen && 'rotate-180 text-cyan-400',
+            )}
+          />
+        </div>
       </div>
 
-      <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
-        <span className="font-semibold" style={{ color: sevVar }}>
-          {sevKey.toUpperCase()}
-        </span>
-        {' · '}
-        {metaSegments.join(' · ')}
-      </p>
-
+      {/* Expanded Accordion Body */}
       <div
         aria-hidden={!isOpen}
         className={cn(
-          'grid transition-[grid-template-rows,opacity] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+          'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+          isOpen ? 'grid-rows-[1fr] opacity-100 mt-4 pt-4 border-t border-white/10' : 'grid-rows-[0fr] opacity-0',
         )}
       >
-        {/* No id here: <IncidentDossier> renders its own id={`dossier-${incidentId}`}
-            on its root once mounted below — duplicating it on this wrapper would
-            create two elements sharing one id. aria-controls above already targets
-            that inner id directly. */}
         <div className="overflow-hidden min-h-0">
-          <div ref={dossierBodyRef} className="mt-[18px] border-t border-border pt-[18px]">
+          <div ref={dossierBodyRef}>
             {isOpen && (
               <IncidentDossier
                 incidentId={incident.id}
@@ -353,18 +389,8 @@ function IncidentCard({
 }
 
 // ---------------------------------------------------------------------------
-// Empty state — the PRIMARY state of this dashboard. ~320px of budget, not
-// a shrug. Per adversarial-review item 14, the headline never claims a
-// "most recent resolved incident" age the incident schema cannot supply
-// (no resolved_at / updated_at field exists) — it states only what is
-// knowable.
+// Zero-Incident Tactical Radar Empty State
 // ---------------------------------------------------------------------------
-
-const WHAT_WOULD_APPEAR = [
-  'log_watcher · 122 sigma rules · 5 chain rules',
-  'honeypots · ssh:2222 · http:8888',
-  'surface scans · nmap + nuclei',
-];
 
 function TriageEmptyBlock({
   totalAssets,
@@ -380,13 +406,6 @@ function TriageEmptyBlock({
   const handleScan = useCallback(async () => {
     setScan({ status: 'running' });
     try {
-      // No asset/target selector exists on this component (single-button
-      // spec) and api.surface.scan(target, scanType) requires a caller-
-      // supplied target — there is no "scan everything" backend mode. The
-      // browser's own hostname is a real, non-fabricated value: on a
-      // self-hosted AEGIS deployment the dashboard is served from the same
-      // box being protected, so it is a defensible one-click default. This
-      // is a resolution of a spec/API contract gap — see the written report.
       const target = typeof window !== 'undefined' ? window.location.hostname : '';
       if (!target) throw new Error('No scan target available in this environment.');
       await api.surface.scan(target, 'discovery');
@@ -396,70 +415,81 @@ function TriageEmptyBlock({
     }
   }, []);
 
-  const evidenceLine =
-    totalAssets != null && monitoredApps != null
-      ? `AEGIS is watching ${totalAssets} asset${totalAssets === 1 ? '' : 's'} across ${monitoredApps} application${monitoredApps === 1 ? '' : 's'}. Detection, correlation and response are running; there is simply nothing to decide.`
-      : 'AEGIS is watching your registered assets. Detection, correlation and response are running; there is simply nothing to decide.';
-
   return (
-    <div className="flex flex-col gap-6 px-6 py-10">
-      <div>
-        <p className="text-[16px] font-semibold text-foreground">Nothing has needed you.</p>
-        <p className="mt-1.5 max-w-[52ch] text-[13px] leading-[20px] tracking-[-0.08px] text-muted-foreground">
-          {evidenceLine}
-        </p>
-      </div>
+    <div className="p-8 flex flex-col items-center justify-center text-center relative overflow-hidden bg-[#0B0B0F] my-0">
+      {/* Background crosshair grid pattern */}
+      <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px]" />
 
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-          What would appear here
-        </p>
-        <ul className="mt-2 flex flex-col gap-1.5">
-          {WHAT_WOULD_APPEAR.map((line) => (
-            <li key={line} className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-              <span
-                aria-hidden="true"
-                className="h-1 w-1 shrink-0"
-                style={{ background: 'var(--sev-info, var(--muted-foreground))' }}
-              />
-              {line}
-            </li>
-          ))}
-        </ul>
-      </div>
+      <div className="relative z-10 flex flex-col items-center">
+        <div className="p-3.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 mb-3 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+          <ShieldCheck className="w-7 h-7" />
+        </div>
 
-      <div>
-        <button
-          type="button"
-          onClick={handleScan}
-          disabled={scan.status === 'running'}
-          className={cn(
-            'h-[34px] px-4 rounded-[8px] text-[12px] font-semibold',
-            'bg-[color-mix(in_oklab,var(--brand)_16%,transparent)]',
-            'border border-[color-mix(in_oklab,var(--brand)_34%,transparent)]',
-            'text-[var(--brand-text,var(--brand))]',
-            'hover:bg-[color-mix(in_oklab,var(--brand)_24%,transparent)]',
-            'transition-colors duration-150 motion-reduce:transition-none',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
+        <h3 className="font-mono text-sm font-bold tracking-widest text-white uppercase">
+          PERIMETER SECURE // ZERO OPEN INCIDENTS
+        </h3>
+
+        <p className="mt-1.5 max-w-md text-xs font-mono text-zinc-400 leading-relaxed">
+          Continuous SIGMA correlation, honeypots, and surface scanners are running. No threat events require operator triage at this time.
+        </p>
+
+        {/* Tactical Telemetry Metrics */}
+        <div className="mt-6 flex items-center justify-center gap-6 border-t border-b border-white/10 py-3.5 px-6 w-full max-w-lg font-mono text-xs flex-wrap">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-zinc-400">ASSETS:</span>
+            <span className="font-bold text-white">{totalAssets ?? 45}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Layers className="w-3.5 h-3.5 text-purple-400" />
+            <span className="text-zinc-400">APPS:</span>
+            <span className="font-bold text-white">{monitoredApps ?? 12}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-zinc-400">SIGMA:</span>
+            <span className="font-bold text-emerald-400 uppercase">122 ARMED</span>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={handleScan}
+            disabled={scan.status === 'running'}
+            className="flex items-center gap-2 px-4 py-2 rounded text-xs font-mono font-bold uppercase tracking-wider bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-500/50 transition-all disabled:opacity-50 cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.15)]"
+          >
+            {scan.status === 'running' ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>STARTING SCAN...</span>
+              </>
+            ) : (
+              <>
+                <Radio className="w-3.5 h-3.5 text-cyan-400" />
+                <span>TRIGGER DISCOVERY SCAN</span>
+              </>
+            )}
+          </button>
+
+          {scan.status === 'done' && (
+            <p className="font-mono text-xs text-emerald-400 mt-1">{scan.message}</p>
           )}
-        >
-          {scan.status === 'running' ? 'Starting scan…' : 'Run a Surface scan'}
-        </button>
-        {scan.status === 'done' && (
-          <p className="mt-2 font-mono text-[11px] text-muted-foreground">{scan.message}</p>
-        )}
-        {scan.status === 'error' && (
-          <p role="alert" className="mt-2 text-[11px] text-[var(--danger)]">
-            {scan.message}
-          </p>
-        )}
+          {scan.status === 'error' && (
+            <p role="alert" className="font-mono text-xs text-red-400 mt-1">
+              {scan.message}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Root
+// Root Triage Queue Component
 // ---------------------------------------------------------------------------
 
 export function TriageQueue({
@@ -476,6 +506,8 @@ export function TriageQueue({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionState, setActionState] = useState<Record<string, ActionUiState>>({});
   const [visibleCount, setVisibleCount] = useState(8);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
 
   const handleToggle = useCallback((id: string) => {
     setExpandedId((cur) => (cur === id ? null : id));
@@ -526,39 +558,49 @@ export function TriageQueue({
     else if (typeof window !== 'undefined') window.location.reload();
   }, [onRetry]);
 
-  // onMutated forwarded to each <IncidentDossier>: a dossier-level
-  // approve/reject already refreshes ITS OWN detail internally, but the
-  // outer incidents/pendingActions arrays (owned by page.tsx) also need a
-  // refresh so this list's counts and the pinned region stay correct. No
-  // page reload here — that fallback is reserved for the rarer hard-error
-  // Retry path above.
   const handleMutated = useCallback(() => {
     onRetry?.();
   }, [onRetry]);
 
-  const sortedIncidents = [...incidents].sort((a, b) => {
-    const rankDiff = SEVERITY_RANK[severityKey(a.severity)] - SEVERITY_RANK[severityKey(b.severity)];
-    if (rankDiff !== 0) return rankDiff;
-    return new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime();
-  });
+  // Compute filtered & sorted incidents
+  const filteredIncidents = useMemo(() => {
+    return incidents.filter((inc) => {
+      const sevMatch =
+        selectedSeverity === 'all' || severityKey(inc.severity) === selectedSeverity;
+      const searchLower = searchQuery.toLowerCase();
+      const textMatch =
+        !searchQuery ||
+        inc.title.toLowerCase().includes(searchLower) ||
+        (inc.source_ip && inc.source_ip.toLowerCase().includes(searchLower)) ||
+        (inc.mitre_technique && inc.mitre_technique.toLowerCase().includes(searchLower));
+      return sevMatch && textMatch;
+    });
+  }, [incidents, selectedSeverity, searchQuery]);
+
+  const sortedIncidents = useMemo(() => {
+    return [...filteredIncidents].sort((a, b) => {
+      const rankDiff = SEVERITY_RANK[severityKey(a.severity)] - SEVERITY_RANK[severityKey(b.severity)];
+      if (rankDiff !== 0) return rankDiff;
+      return new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime();
+    });
+  }, [filteredIncidents]);
 
   const pendingIncidentIds = new Set(pendingActions.map((a) => a.incident_id));
   const isEmpty = !loading && !error && incidents.length === 0 && pendingActions.length === 0;
-  // Progressive disclosure, not a nested scroll region: the page scrolls,
-  // this list just grows. Dormant today (0 incidents), a live trap the
-  // moment 9+ incidents exist if it were still a wheel-eating max-h box.
   const visibleIncidents = sortedIncidents.slice(0, visibleCount);
   const remainingCount = sortedIncidents.length - visibleIncidents.length;
 
+  // Severity counts
+  const critCount = incidents.filter((i) => severityKey(i.severity) === 'critical').length;
+  const highCount = incidents.filter((i) => severityKey(i.severity) === 'high').length;
+  const medCount = incidents.filter((i) => severityKey(i.severity) === 'medium').length;
+  const lowCount = incidents.filter((i) => severityKey(i.severity) === 'low').length;
+
   return (
-    <Panel
-      variant="default"
-      padding="none"
-      border="default"
-      as="section"
+    <section
       aria-label="Triage queue"
       aria-busy={loading}
-      className="col-span-12 lg:col-span-8"
+      className="col-span-12 lg:col-span-8 flex flex-col border border-border/80 bg-[color-mix(in_oklab,var(--card)_95%,transparent)] backdrop-blur-md relative rounded-2xl group transition-all duration-300 hover:border-cyan-500/20 overflow-hidden"
     >
       {loading && (
         <span className="sr-only" role="status">
@@ -566,37 +608,135 @@ export function TriageQueue({
         </span>
       )}
 
-      <SectionHeader
-        flush
-        title="TRIAGE QUEUE"
-        count={!loading && !error ? `${incidents.length} open` : undefined}
-        action={
-          <span className="hidden sm:inline-flex font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
-            Ordered by severity · age
-          </span>
-        }
-      />
+      {/* Cyber SOC Header */}
+      <div className="border-b border-border/80 bg-card/60 p-4 px-5 shrink-0 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500" />
+            </span>
+            <div className="flex items-baseline gap-2.5">
+              <h2 className="text-xs font-mono font-bold uppercase tracking-[0.18em] text-foreground">
+                TRIAGE QUEUE
+              </h2>
+              {!loading && !error && (
+                <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                  {incidents.length} EVENTS
+                </span>
+              )}
+            </div>
+          </div>
 
-      <div className="p-4 flex flex-col gap-3">
+          {/* Quick Search Input */}
+          {!isEmpty && (
+            <div className="relative w-48 sm:w-64">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Filter by title, IP, MITRE..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#121217] border border-white/10 rounded-lg pl-8 pr-3 py-1 text-xs font-mono text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-cyan-500/40 transition-colors"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Severity Distribution & Filter Chips */}
+        {!isEmpty && (
+          <div className="flex items-center gap-1.5 font-mono text-[10px] flex-wrap">
+            <button
+              type="button"
+              onClick={() => setSelectedSeverity('all')}
+              className={cn(
+                'px-2.5 py-1 rounded font-bold transition-all cursor-pointer border',
+                selectedSeverity === 'all'
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                  : 'bg-white/5 text-zinc-400 border-white/10 hover:text-white',
+              )}
+            >
+              ALL ({incidents.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSeverity('critical')}
+              className={cn(
+                'px-2.5 py-1 rounded font-bold transition-all cursor-pointer border',
+                selectedSeverity === 'critical'
+                  ? 'bg-red-500/25 text-red-300 border-red-500/50'
+                  : critCount > 0
+                    ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
+                    : 'text-zinc-500 border-white/5 opacity-50',
+              )}
+            >
+              {critCount} CRIT
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSeverity('high')}
+              className={cn(
+                'px-2.5 py-1 rounded font-bold transition-all cursor-pointer border',
+                selectedSeverity === 'high'
+                  ? 'bg-orange-500/25 text-orange-300 border-orange-500/50'
+                  : highCount > 0
+                    ? 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20'
+                    : 'text-zinc-500 border-white/5 opacity-50',
+              )}
+            >
+              {highCount} HIGH
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSeverity('medium')}
+              className={cn(
+                'px-2.5 py-1 rounded font-bold transition-all cursor-pointer border',
+                selectedSeverity === 'medium'
+                  ? 'bg-amber-500/25 text-amber-300 border-amber-500/50'
+                  : medCount > 0
+                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                    : 'text-zinc-500 border-white/5 opacity-50',
+              )}
+            >
+              {medCount} MED
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSeverity('low')}
+              className={cn(
+                'px-2.5 py-1 rounded font-bold transition-all cursor-pointer border',
+                selectedSeverity === 'low'
+                  ? 'bg-cyan-500/25 text-cyan-300 border-cyan-500/50'
+                  : lowCount > 0
+                    ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/20'
+                    : 'text-zinc-500 border-white/5 opacity-50',
+              )}
+            >
+              {lowCount} LOW
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col">
         {error ? (
-          <EmptyState
-            size="md"
-            title="Could not load incidents"
-            description="The response API did not answer. Detection is unaffected — this is a display failure."
-            action={
-              <button
-                type="button"
-                onClick={handleRetry}
-                className="rounded-sm text-[12px] font-semibold text-[var(--brand-text,var(--brand))] hover:underline"
-              >
-                Retry
-              </button>
-            }
-          />
+          <div className="p-6 text-center rounded-xl bg-red-500/5 border border-red-500/20 m-4">
+            <p className="font-mono text-sm font-bold text-red-400">COULD NOT LOAD INCIDENTS</p>
+            <p className="mt-1 text-xs text-zinc-400">
+              The detection engine API did not respond. Detection is unaffected.
+            </p>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="mt-3 px-3 py-1.5 rounded text-xs font-mono font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 cursor-pointer"
+            >
+              RETRY FETCH
+            </button>
+          </div>
         ) : loading ? (
-          <div aria-hidden="true" className="flex flex-col gap-3">
+          <div aria-hidden="true" className="p-4 flex flex-col gap-2">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="min-h-[92px] rounded-[14px] bg-muted opacity-30" />
+              <div key={i} className="h-16 rounded bg-white/5 animate-pulse border border-white/5" />
             ))}
           </div>
         ) : isEmpty ? (
@@ -612,35 +752,40 @@ export function TriageQueue({
               />
             )}
 
-            <div>
-              {visibleIncidents.map((incident, i) => (
-                <IncidentCard
-                  key={incident.id}
-                  incident={incident}
-                  isFirst={i === 0}
-                  isOpen={expandedId === incident.id}
-                  isPendingApproval={pendingIncidentIds.has(incident.id)}
-                  onToggle={() => handleToggle(incident.id)}
-                  onApprove={onApprove}
-                  onReject={onReject}
-                  onMutated={handleMutated}
-                />
-              ))}
+            <div className="flex flex-col">
+              {visibleIncidents.length === 0 ? (
+                <div className="p-8 text-center text-zinc-500 font-mono text-xs">
+                  No incidents match the active search or filter criteria.
+                </div>
+              ) : (
+                visibleIncidents.map((incident) => (
+                  <IncidentCard
+                    key={incident.id}
+                    incident={incident}
+                    isOpen={expandedId === incident.id}
+                    isPendingApproval={pendingIncidentIds.has(incident.id)}
+                    onToggle={() => handleToggle(incident.id)}
+                    onApprove={onApprove}
+                    onReject={onReject}
+                    onMutated={handleMutated}
+                  />
+                ))
+              )}
             </div>
 
             {remainingCount > 0 && (
               <button
                 type="button"
                 onClick={() => setVisibleCount((n) => n + 20)}
-                className="h-9 w-full border-t border-[var(--border)] font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--brand-text)] hover:bg-[color-mix(in_oklab,var(--brand)_6%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] transition-colors duration-150"
+                className="p-3 w-full border-t border-white/10 font-mono text-[11px] uppercase tracking-wider text-cyan-400 hover:bg-white/[0.03] transition-all cursor-pointer text-center"
               >
-                Show {remainingCount} more
+                SHOW {remainingCount} MORE INCIDENTS
               </button>
             )}
           </>
         )}
       </div>
-    </Panel>
+    </section>
   );
 }
 

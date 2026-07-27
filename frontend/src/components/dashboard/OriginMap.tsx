@@ -3,11 +3,12 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { InformationCircleIcon } from 'hugeicons-react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Search, Radio, Globe } from 'lucide-react';
 import { Panel, EmptyState } from '@/components/aegis';
 import { cn } from '@/lib/utils';
 import { CC_TO_LATLON } from '@/lib/geo-centroids';
-import { LAND_PATH, MAP_W, VIEW_Y, VIEW_H, projectLonLat } from '@/lib/geo/land-dots.generated';
+import { LAND_VECTOR_PATH, COUNTRY_VECTOR_PATHS } from '@/lib/geo/vector-map.generated';
+import { MAP_W, VIEW_Y, VIEW_H, projectLonLat } from '@/lib/geo/land-dots.generated';
 import { resolveCountryName } from '@/lib/geo/country-names';
 
 /**
@@ -185,7 +186,7 @@ function useModifierKeyLabel(): string {
 // ---------------------------------------------------------------------------
 
 const ZOOM_MIN = 1;
-const ZOOM_MAX = 8;
+const ZOOM_MAX = 32;
 const ZOOM_STEP = 1.6;
 const MOBILE_INITIAL_K = 1.6;
 const WHEEL_SENSITIVITY = 0.002;
@@ -301,6 +302,8 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
   const [transform, setTransform] = React.useState<ViewTransform>(IDENTITY_TRANSFORM);
   const [pointerCount, setPointerCount] = React.useState(0);
   const [hintVisible, setHintVisible] = React.useState(false);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [mobileTab, setMobileTab] = React.useState<'map' | 'list'>('map');
 
   const svgRef = React.useRef<SVGSVGElement>(null);
   const mapDivRef = React.useRef<HTMLDivElement>(null);
@@ -313,6 +316,17 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
   const chipRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
 
   const sorted = React.useMemo(() => [...data].sort((a, b) => b.count - a.count), [data]);
+  const filteredSorted = React.useMemo(() => {
+    if (!searchTerm.trim()) return sorted;
+    const q = searchTerm.toLowerCase().trim();
+    return sorted.filter((entry) => {
+      const code = entry.country_code?.toLowerCase() ?? '';
+      const name = resolveCountryName(entry.country_code).name.toLowerCase();
+      const asn = (entry.top_asn ?? '').toLowerCase();
+      const owner = (entry.top_asn_owner ?? '').toLowerCase();
+      return code.includes(q) || name.includes(q) || asn.includes(q) || owner.includes(q);
+    });
+  }, [sorted, searchTerm]);
   const maxCount = React.useMemo(
     () => sorted.reduce((max, d) => Math.max(max, d.count), 1),
     [sorted],
@@ -349,6 +363,8 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
   }, [sorted, maxCount, topCode]);
 
   const unmappedCount = sorted.length - markers.length;
+  const activeCode = (hoveredCode || selectedCode)?.toUpperCase();
+  const activeCountryPath = activeCode ? COUNTRY_VECTOR_PATHS[activeCode] : null;
 
   const top3 = sorted.slice(0, 3);
   const ariaLabel = error
@@ -562,7 +578,7 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
 
   React.useEffect(() => {
     if (!selectedCode) return;
-    const map = isNarrow ? chipRefs.current : desktopRowRefs.current;
+  const map = isNarrow ? chipRefs.current : desktopRowRefs.current;
     const el = map.get(selectedCode);
     if (el) el.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
   }, [selectedCode, isNarrow, prefersReducedMotion]);
@@ -573,7 +589,7 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
       ? 'cursor-grabbing'
       : 'cursor-grab';
 
-  const touchAction = !mapInteractive ? 'pan-y' : transform.k > 1 || pointerCount >= 2 ? 'none' : 'pan-y';
+  const touchAction = 'none';
 
   return (
     <Panel
@@ -581,12 +597,45 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
       variant="default"
       padding="none"
       aria-label="Threat origin map"
-      className="col-span-12 flex flex-col min-[820px]:flex-row min-[820px]:h-[440px] overflow-hidden"
+      className="col-span-12 flex flex-col border border-border/80 bg-[color-mix(in_oklab,var(--card)_95%,transparent)] backdrop-blur-md relative rounded-2xl group transition-all duration-300 hover:border-cyan-500/20 min-[820px]:flex-row min-[820px]:h-[480px] overflow-hidden"
     >
+      {/* ═══ MOBILE SEGMENTED CONTROL TAB BAR ═══ */}
+      <div className="flex items-center justify-between border-b border-border bg-card/70 p-2 min-[820px]:hidden shrink-0">
+        <button
+          type="button"
+          onClick={() => setMobileTab('map')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-mono text-[11px] font-semibold tracking-wider transition-all',
+            mobileTab === 'map'
+              ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Globe size={13} />
+          RADAR MAP
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab('list')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-mono text-[11px] font-semibold tracking-wider transition-all',
+            mobileTab === 'list'
+              ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Radio size={13} />
+          ORIGIN RANK ({sorted.length})
+        </button>
+      </div>
+
       {/* ═══ LEFT — THE MAP ═══ */}
       <div
         ref={mapDivRef}
-        className="relative flex-1 min-w-0 aspect-[1000/393] min-[820px]:aspect-auto min-[820px]:h-full p-5"
+        className={cn(
+          "relative flex-1 min-w-0 aspect-[1000/393] min-[820px]:aspect-auto min-[820px]:h-full p-2 sm:p-4 min-[820px]:p-5",
+          mobileTab === 'list' && "max-[819px]:hidden"
+        )}
         style={{ touchAction }}
         tabIndex={mapInteractive ? 0 : undefined}
         role={mapInteractive ? 'application' : undefined}
@@ -619,8 +668,22 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
             <pattern id={oceanPatternId} width="5" height="5" patternUnits="userSpaceOnUse">
               <circle cx="2.5" cy="2.5" r="1" fill="var(--map-ocean)" />
             </pattern>
+            <pattern id={`landPattern-${reactId}`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform={`scale(${1 / transform.k})`}>
+              <circle cx="2.5" cy="2.5" r="1.35" fill="var(--map-land)" />
+            </pattern>
+            <pattern id={`grid-${reactId}`} width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--map-ocean)" strokeWidth="0.5" opacity="0.4" />
+            </pattern>
           </defs>
           <rect x={0} y={VIEW_Y} width={MAP_W} height={VIEW_H} fill={`url(#${oceanPatternId})`} />
+          <rect x={0} y={VIEW_Y} width={MAP_W} height={VIEW_H} fill={`url(#grid-${reactId})`} />
+
+          {/* Tactical Corner Crosshairs */}
+          <text x="25" y={VIEW_Y + 30} fontSize="11" fontFamily="var(--font-mono)" fill="var(--primary)" opacity="0.35">+</text>
+          <text x={MAP_W - 35} y={VIEW_Y + 30} fontSize="11" fontFamily="var(--font-mono)" fill="var(--primary)" opacity="0.35">+</text>
+          <text x="25" y={VIEW_Y + VIEW_H - 20} fontSize="11" fontFamily="var(--font-mono)" fill="var(--primary)" opacity="0.35">+</text>
+          <text x={MAP_W - 35} y={VIEW_Y + VIEW_H - 20} fontSize="11" fontFamily="var(--font-mono)" fill="var(--primary)" opacity="0.35">+</text>
+
           <g
             transform={`translate(${transform.tx} ${transform.ty}) scale(${transform.k})`}
             style={
@@ -629,20 +692,33 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
                 : undefined
             }
           >
-            <path d={LAND_PATH} fill="var(--map-land)" fillRule="nonzero" opacity={error ? 0.5 : 1} />
+            <path
+              d={LAND_VECTOR_PATH}
+              fill={`url(#landPattern-${reactId})`}
+              fillRule="nonzero"
+              opacity={error ? 0.5 : 1}
+            />
+            {activeCountryPath && (
+              <path
+                d={activeCountryPath}
+                fill="var(--primary)"
+                fillOpacity={0.25}
+                stroke="var(--primary)"
+                strokeWidth={1.2 / transform.k}
+              />
+            )}
             {showMarkers &&
               markers.map((m) => {
                 const k = transform.k;
                 const isActive = hoveredCode === m.code || selectedCode === m.code;
                 const showRing = m.isTop || isActive;
-                const ringOpacity = isActive ? 0.55 : 0.28;
-                const ringWidth = isActive ? 1.5 : 1;
+                const ringOpacity = isActive ? 0.65 : 0.32;
+                const ringWidth = isActive ? 1.75 : 1.25;
                 const showLabel = top5Codes.has(m.code) || k >= 2.5;
                 const titleText = `${m.country} · ${m.count} events${m.asnLine ? ' · ' + m.asnLine : ''}`;
                 return (
                   <g key={m.code}>
-                    {/* Hit target FIRST in paint order — larger than the
-                        visible marker so it stays tappable at every zoom. */}
+                    {/* Hit target FIRST in paint order */}
                     <circle
                       cx={m.cx}
                       cy={m.cy}
@@ -659,7 +735,7 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
                       <circle
                         cx={m.cx}
                         cy={m.cy}
-                        r={(m.r + 3.5) / k}
+                        r={(m.r + 4) / k}
                         fill="none"
                         stroke={SEV_VAR[m.tier]}
                         strokeOpacity={ringOpacity}
@@ -667,21 +743,33 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
                         style={prefersReducedMotion ? undefined : { transition: TRANSITION }}
                       />
                     )}
+                    {(m.isTop || isActive) && !prefersReducedMotion && (
+                      <circle
+                        cx={m.cx}
+                        cy={m.cy}
+                        r={(m.r + 7) / k}
+                        fill="none"
+                        stroke={SEV_VAR[m.tier]}
+                        strokeOpacity={0.4}
+                        strokeWidth={1 / k}
+                      />
+                    )}
                     <circle
                       cx={m.cx}
                       cy={m.cy}
                       r={m.r / k}
                       fill={SEV_VAR[m.tier]}
-                      fillOpacity={0.55}
+                      fillOpacity={0.65}
                       stroke={SEV_VAR[m.tier]}
-                      strokeWidth={1.25 / k}
+                      strokeWidth={1.5 / k}
                     />
                     {showLabel && (
                       <text
                         x={m.cx}
                         y={m.cy - (m.r + 4) / k}
                         textAnchor="middle"
-                        fontSize={9 / k}
+                        fontSize={9.5 / k}
+                        fontWeight="600"
                         fontFamily="var(--font-mono)"
                         fill="var(--foreground)"
                         paintOrder="stroke"
@@ -691,18 +779,12 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
                         {m.code}
                       </text>
                     )}
-                    {/* Supplementary ASN annotation — purely additive, stacked
-                        above the code label so it never overlaps the marker
-                        itself. The rail row (below) already carries this same
-                        string without hovering, so this satisfies the
-                        no-hover-only-information rule even though it renders
-                        unconditionally alongside the top-5 code label. */}
                     {showLabel && m.asnLabel && (
                       <text
                         x={m.cx}
-                        y={m.cy - (m.r + 13) / k}
+                        y={m.cy - (m.r + 14) / k}
                         textAnchor="middle"
-                        fontSize={7 / k}
+                        fontSize={7.5 / k}
                         fontFamily="var(--font-mono)"
                         fill="var(--muted-foreground)"
                         paintOrder="stroke"
@@ -718,13 +800,12 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
           </g>
         </svg>
 
-        {/* One-shot hint: plain wheel over the map lets the page scroll and
-            explains how to zoom instead. At most twice per mount. */}
+        {/* One-shot hint */}
         {mapInteractive && (
           <div aria-hidden className="pointer-events-none absolute inset-0 z-[4] flex items-center justify-center">
             <span
               className={cn(
-                'rounded-full bg-[color-mix(in_oklab,var(--background)_88%,transparent)] border border-[var(--border)] px-3 py-1.5 text-[12px] text-foreground',
+                'rounded-full bg-[color-mix(in_oklab,var(--background)_88%,transparent)] border border-[var(--border)] px-3 py-1.5 text-[12px] text-foreground backdrop-blur-md',
                 'pointer-events-none motion-safe:transition-opacity motion-safe:duration-[120ms]',
                 hintVisible ? 'opacity-100' : 'opacity-0',
               )}
@@ -734,43 +815,46 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
           </div>
         )}
 
-        {/* Overlay — top-left: identity + the ONE count on the page. */}
-        <div className="pointer-events-none absolute top-5 left-5 z-[2] max-w-[70%]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Threat Origin
-          </p>
+        {/* Overlay — top-left: Glassmorphic Telemetry HUD (Compact on Mobile) */}
+        <div className="pointer-events-none absolute top-2 left-2 sm:top-4 sm:left-4 z-[2] max-w-[85%] sm:max-w-[75%] rounded-lg sm:rounded-xl border border-white/10 bg-[color-mix(in_oklab,var(--card)_85%,transparent)] p-1.5 px-2 sm:p-3 backdrop-blur-md">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="relative flex h-1.5 w-1.5 sm:h-2 sm:w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 sm:h-2 sm:w-2 bg-cyan-500" />
+            </span>
+            <p className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-[0.12em] sm:tracking-[0.16em] text-cyan-400">
+              RADAR TELEMETRY
+            </p>
+          </div>
           {loading ? (
-            <div
-              aria-hidden
-              className="mt-1.5 h-3 w-[120px] rounded-sm bg-[color-mix(in_oklab,var(--foreground)_8%,transparent)]"
-            />
+            <div aria-hidden className="mt-1 sm:mt-2 h-3 sm:h-4 w-24 sm:w-32 rounded-sm bg-white/10 opacity-40 animate-pulse" />
           ) : error ? (
-            <p className="mt-1.5 font-mono tabular-nums text-[12px] font-semibold text-danger">
-              ORIGIN DATA UNAVAILABLE
-            </p>
+            <p className="mt-1 font-mono text-[10px] sm:text-[11px] font-semibold text-danger">ORIGIN DATA UNAVAILABLE</p>
           ) : sorted.length === 0 ? (
-            <p className="mt-1.5 font-mono tabular-nums text-[12px] text-muted-foreground">
-              NO EXTERNAL ORIGINS ATTRIBUTED
-            </p>
+            <p className="mt-1 font-mono text-[10px] sm:text-[11px] text-muted-foreground">NO EXTERNAL ORIGINS ATTRIBUTED</p>
           ) : (
-            <p className="mt-1.5 font-mono tabular-nums text-[12px] text-foreground">
-              {sorted.length} COUNTRIES &middot; {totalAttacks} ATTACKS
-              {unmappedCount > 0 ? ` · ${unmappedCount} UNMAPPED` : ''}
-            </p>
+            <div className="mt-0.5 sm:mt-1.5 flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+              <span className="font-mono text-xs sm:text-sm font-bold text-foreground tabular-nums">{sorted.length}</span>
+              <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-wider text-muted-foreground">COUNTRIES</span>
+              <span className="text-muted-foreground/40 font-mono text-xs">·</span>
+              <span className="font-mono text-xs sm:text-sm font-bold text-cyan-400 tabular-nums">{totalAttacks.toLocaleString()}</span>
+              <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-wider text-muted-foreground">ATTACKS</span>
+              {unmappedCount > 0 && <span className="hidden sm:inline text-[10px] font-mono text-muted-foreground/70">({unmappedCount} UNMAPPED)</span>}
+            </div>
           )}
         </div>
 
-        {/* Overlay — bottom-left: magnitude/severity legend (hidden when nothing to key). */}
+        {/* Overlay — bottom-left: Severity legend HUD */}
         {showLegend && (
-          <div className="pointer-events-none absolute bottom-5 left-5 z-[2] flex items-center gap-3.5">
+          <div className="pointer-events-none absolute bottom-4 left-4 z-[2] hidden sm:flex items-center gap-3 rounded-lg border border-white/10 bg-[color-mix(in_oklab,var(--card)_80%,transparent)] px-3 py-1.5 backdrop-blur-md">
             {(['critical', 'high', 'medium', 'low'] as const).map((tier) => (
               <span key={tier} className="inline-flex items-center gap-1.5">
                 <span
                   aria-hidden
-                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                  className="h-2 w-2 shrink-0 rounded-full shadow-sm"
                   style={{ background: SEV_VAR[tier] }}
                 />
-                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                   {tier}
                 </span>
               </span>
@@ -778,8 +862,7 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
           </div>
         )}
 
-        {/* Overlay — bottom-right (bottom-left on mobile, out of the zoom
-            controls' way): honesty disclosure about server-side FP filtering. */}
+        {/* Overlay — bottom-right: FP disclosure */}
         <div className="absolute z-[2] bottom-3 left-3 min-[820px]:bottom-5 min-[820px]:left-auto min-[820px]:right-5 flex items-center gap-1.5">
           <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/80">
             Excludes known false positives
@@ -795,7 +878,7 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
           </span>
         </div>
 
-        {/* Zoom controls — always visible, never hover-revealed. */}
+        {/* Zoom controls */}
         {mapInteractive && (
           <div className="absolute z-[3] bottom-3 right-3 min-[820px]:bottom-5 min-[820px]:right-5 flex flex-col gap-1.5">
             <button
@@ -832,25 +915,52 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
         )}
       </div>
 
-      {/* ═══ RIGHT — SOURCE RANK ═══ */}
-      <div className="w-full min-[820px]:w-[320px] min-[820px]:h-full shrink-0 border-t min-[820px]:border-t-0 min-[820px]:border-l border-border flex flex-col pt-5 pr-5 pb-5 pl-5 min-[820px]:pl-[18px]">
-        <h3 className="mb-3.5 shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          By Volume
-        </h3>
+      {/* ═══ RIGHT — ORIGIN INTELLIGENCE CONSOLE ═══ */}
+      <div
+        className={cn(
+          "w-full min-[820px]:w-[340px] min-[820px]:h-full shrink-0 border-t min-[820px]:border-t-0 min-[820px]:border-l border-border/80 flex flex-col p-4 min-[820px]:p-5 bg-card/40 backdrop-blur-sm",
+          mobileTab === 'map' && "max-[819px]:hidden"
+        )}
+      >
+        <div className="mb-3 shrink-0 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Radio size={14} className="text-cyan-400 animate-pulse" />
+            <h3 className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-foreground">
+              ORIGIN INTELLIGENCE
+            </h3>
+          </div>
+          <span className="rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 font-mono text-[10px] font-semibold text-cyan-400">
+            {filteredSorted.length} SOURCED
+          </span>
+        </div>
+
+        {/* Search Filter */}
+        {!loading && !error && sorted.length > 4 && (
+          <div className="relative mb-3 shrink-0">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Filter country or ASN..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full rounded-md border border-border/80 bg-background/50 pl-7 pr-2.5 py-1 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:border-cyan-500/50 focus:outline-none transition-colors"
+            />
+          </div>
+        )}
 
         {loading && (
-          <ul className="flex flex-1 flex-col gap-0.5" aria-hidden>
+          <ul className="flex flex-1 flex-col gap-1.5" aria-hidden>
             {Array.from({ length: 6 }).map((_, i) => (
               <li
                 key={i}
-                className="h-7 rounded-md bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)] opacity-30"
+                className="h-9 rounded-lg bg-white/5 animate-pulse"
               />
             ))}
           </ul>
         )}
 
         {!loading && error && (
-          <div className="flex flex-col items-start gap-2.5 py-1">
+          <div className="flex flex-col items-start gap-2.5 py-2">
             <p className="font-mono tabular-nums text-[12px] text-muted-foreground">
               Could not reach the threat-map endpoint.
             </p>
@@ -887,159 +997,98 @@ export function OriginMap({ data, homeAsn, loading = false, error = false, onRet
           />
         )}
 
-        {!loading && !error && sorted.length > 0 && (
-          <>
-            {/* Desktop / wide: ranked rows, keyboard-operable, linked to map markers. */}
-            <ol className="hidden min-[820px]:flex min-[820px]:flex-col flex-1 gap-0.5 overflow-y-auto -mx-1.5 pr-0.5">
-              {sorted.map((entry, i) => {
-                const code = entry.country_code?.toUpperCase() ?? '??';
-                const tier = tierFor(entry.count, maxCount);
-                const barPct = maxCount > 0 ? (entry.count / maxCount) * 100 : 0;
-                const resolved = resolveCountryName(code);
-                const asnLine = formatAsnLine(entry);
-                const isUplink = isHomeUplink(entry, homeAsn);
-                const isSelected = selectedCode === code;
-                return (
-                  <li key={code + i}>
-                    <button
-                      type="button"
-                      ref={(el) => {
-                        if (el) desktopRowRefs.current.set(code, el);
-                        else desktopRowRefs.current.delete(code);
-                      }}
-                      aria-current={isSelected ? 'true' : undefined}
-                      onMouseEnter={() => setHoveredCode(code)}
-                      onMouseLeave={() => setHoveredCode((c) => (c === code ? null : c))}
-                      onFocus={() => setHoveredCode(code)}
-                      onBlur={() => setHoveredCode((c) => (c === code ? null : c))}
-                      onClick={() => toggleSelected(code)}
-                      style={isSelected ? { borderLeftColor: SEV_VAR[tier] } : undefined}
-                      className={cn(
-                        'flex w-full flex-col justify-center gap-0.5 rounded-md border-l-2 border-transparent px-1.5 text-left transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
-                        asnLine ? 'min-h-[44px] py-1.5' : 'h-7',
-                        isSelected
-                          ? 'bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)]'
-                          : 'hover:bg-[color-mix(in_oklab,var(--foreground)_3%,transparent)]',
-                        'focus-visible:bg-[color-mix(in_oklab,var(--foreground)_3%,transparent)]',
-                        rowFocusRing,
-                      )}
-                    >
-                      <span className="flex items-center gap-2.5">
-                        <span className="w-[22px] shrink-0 font-mono tabular-nums text-[11px] font-semibold uppercase text-foreground">
-                          {code}
-                        </span>
-                        <span
-                          className={cn(
-                            'min-w-0 flex-1 truncate text-[12px] font-normal text-muted-foreground',
-                            !resolved.known && 'italic text-muted-foreground/60',
-                          )}
-                        >
-                          {resolved.name}
-                        </span>
-                        {isUplink && (
-                          <span
-                            className="shrink-0 rounded-[4px] border px-1.5 py-[1px] font-mono text-[9px] font-semibold uppercase tracking-[0.1em]"
-                            style={{
-                              color: 'var(--brand-accent-text)',
-                              background: 'color-mix(in oklab, var(--brand-accent) 14%, transparent)',
-                              borderColor: 'color-mix(in oklab, var(--brand-accent) 30%, transparent)',
-                            }}
-                          >
-                            Your Uplink
-                          </span>
-                        )}
-                        <span className="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-border">
-                          <span
-                            className="block h-1 rounded-full"
-                            style={{ width: `${barPct}%`, background: SEV_VAR[tier] }}
-                          />
-                        </span>
-                        <span className="w-[34px] shrink-0 text-right font-mono tabular-nums text-[11px] font-semibold text-foreground">
-                          {entry.count}
-                        </span>
-                      </span>
-                      {asnLine && (
-                        <span className="block pl-[32px]">
-                          <span
-                            title={asnLine}
-                            className="block truncate font-mono text-[10.5px] leading-[14px] text-muted-foreground"
-                          >
-                            {asnLine}
-                          </span>
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-
-            {/* Narrow (<820px): 2-col chip grid — full rows don't fit a stacked half-width panel. */}
-            <div
-              role="list"
-              aria-label="Attack sources by volume"
-              className="grid grid-cols-2 gap-2 max-h-[46vh] overflow-y-auto overscroll-contain min-[820px]:hidden"
+        {!loading && !error && filteredSorted.length === 0 && sorted.length > 0 && (
+          <div className="flex flex-1 flex-col items-center justify-center p-4 text-center">
+            <p className="font-mono text-xs text-muted-foreground">No matches for &quot;{searchTerm}&quot;</p>
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              className="mt-2 font-mono text-[11px] text-cyan-400 hover:underline"
             >
-              {sorted.map((entry, i) => {
-                const code = entry.country_code?.toUpperCase() ?? '??';
-                const tier = tierFor(entry.count, maxCount);
-                const resolved = resolveCountryName(code);
-                const asnLine = formatAsnLine(entry);
-                const isSelected = selectedCode === code;
-                return (
-                  <div key={code + i} role="listitem">
-                    <button
-                      type="button"
-                      ref={(el) => {
-                        if (el) chipRefs.current.set(code, el);
-                        else chipRefs.current.delete(code);
-                      }}
-                      aria-current={isSelected ? 'true' : undefined}
-                      onPointerEnter={() => setHoveredCode(code)}
-                      onPointerLeave={() => setHoveredCode((c) => (c === code ? null : c))}
-                      onClick={() => toggleSelected(code)}
-                      style={isSelected ? { borderLeftColor: SEV_VAR[tier] } : undefined}
-                      className={cn(
-                        'flex w-full min-h-[44px] flex-col justify-center gap-0.5 rounded-lg border border-border border-l-2 px-2.5 py-1.5 text-left',
-                        isSelected && 'bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)]',
-                        rowFocusRing,
-                      )}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span
-                          aria-hidden
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ background: SEV_VAR[tier] }}
-                        />
-                        <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold uppercase text-foreground">
-                          {code}
-                        </span>
-                        <span
-                          className={cn(
-                            'min-w-0 flex-1 truncate text-[11px] text-muted-foreground',
-                            !resolved.known && 'italic text-muted-foreground/60',
-                          )}
-                        >
-                          {resolved.name}
-                        </span>
-                        <span className="shrink-0 font-mono tabular-nums text-[11px] font-semibold text-foreground">
-                          {entry.count}
-                        </span>
+              Clear filter
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && filteredSorted.length > 0 && (
+          <ol className="flex flex-col flex-1 gap-1.5 overflow-y-auto -mx-1 pr-1">
+            {filteredSorted.map((entry, i) => {
+              const code = entry.country_code?.toUpperCase() ?? '??';
+              const barPct = maxCount > 0 ? (entry.count / maxCount) * 100 : 0;
+              const resolved = resolveCountryName(code);
+              const asnLine = formatAsnLine(entry);
+              const isUplink = isHomeUplink(entry, homeAsn);
+              const isSelected = selectedCode === code;
+              const isHovered = hoveredCode === code;
+              return (
+                <li key={code + i}>
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      if (el) desktopRowRefs.current.set(code, el);
+                      else desktopRowRefs.current.delete(code);
+                    }}
+                    aria-current={isSelected ? 'true' : undefined}
+                    onMouseEnter={() => setHoveredCode(code)}
+                    onMouseLeave={() => setHoveredCode((c) => (c === code ? null : c))}
+                    onFocus={() => setHoveredCode(code)}
+                    onBlur={() => setHoveredCode((c) => (c === code ? null : c))}
+                    onClick={() => toggleSelected(code)}
+                    className={cn(
+                      'group/row flex w-full flex-col justify-center gap-1 rounded-lg border border-transparent px-2.5 py-1.5 text-left transition-all duration-200',
+                      isSelected || isHovered
+                        ? 'bg-cyan-500/10 border-cyan-500/30 shadow-md'
+                        : 'hover:bg-white/[0.04] hover:border-white/10',
+                      rowFocusRing,
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 font-mono text-[10px] font-bold text-muted-foreground/70 group-hover/row:text-cyan-400 transition-colors">
+                        #{String(i + 1).padStart(2, '0')}
                       </span>
-                      {asnLine && (
+                      <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-[11px] font-bold text-foreground">
+                        {code}
+                      </span>
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate text-[12px] font-medium text-foreground/90',
+                          !resolved.known && 'italic text-muted-foreground/60',
+                        )}
+                      >
+                        {resolved.name}
+                      </span>
+                      {isUplink && (
                         <span
-                          title={asnLine}
-                          className="block truncate pl-[18px] text-[10px] text-muted-foreground"
+                          className="shrink-0 rounded px-1.5 py-[1px] font-mono text-[9px] font-bold uppercase tracking-wider text-orange-400 bg-orange-500/15 border border-orange-500/30"
                         >
-                          {asnLine}
+                          UPLINK
                         </span>
                       )}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </>
+                      <span className="font-mono tabular-nums text-[11px] font-bold text-cyan-400">
+                        {entry.count.toLocaleString()}
+                      </span>
+                    </div>
+
+                    {/* Progress meter bar */}
+                    <div className="flex items-center gap-2 pl-7">
+                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-1 rounded-full bg-gradient-to-r from-cyan-500 via-amber-500 to-rose-500 transition-all duration-500"
+                          style={{ width: `${Math.max(barPct, 4)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {asnLine && (
+                      <span className="block pl-7 text-[10.5px] font-mono text-muted-foreground/80 truncate">
+                        {asnLine}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
         )}
       </div>
     </Panel>
