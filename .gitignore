@@ -106,3 +106,18 @@ deploy.sh
 
 # Same hardcoded SSH user + host IP as deploy.py/deploy.sh
 frontend/scripts/deploy-sync.mjs
+
+# ---------------------------------------------------------------------------
+# Other projects' source. These are separate private products (SID, WilabIA,
+# landing-wilab, Sable) that only ever landed here because AEGIS instruments
+# them. Their business logic does not belong in a public security repo.
+# Allow-list style: ignore pi-deploy wholesale, then re-admit AEGIS's own parts.
+# ---------------------------------------------------------------------------
+pi-deploy/*
+!pi-deploy/aegis-feed/
+!pi-deploy/aegis-firewall/
+!pi-deploy/aegis_honeypot.py
+!pi-deploy/aegis-honeypot.service
+!pi-deploy/newsyslog/
+!pi-deploy/utils/
+!pi-deploy/web-server-logger.py

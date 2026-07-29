@@ -199,7 +199,9 @@ class ProxyLoggingHandler(http.server.SimpleHTTPRequestHandler):
             from datetime import datetime as _aegis_dt, timezone as _aegis_tz
             _aegis_feed = _aegis_os.environ.get(
                 "AEGIS_FEED_PATH",
-                "/Users/alejandxr/web-logs/aegis-feed.jsonl",
+                _aegis_os.path.join(
+                    _aegis_os.path.expanduser("~"), "web-logs", "aegis-feed.jsonl"
+                ),
             )
             _aegis_app = _aegis_os.environ.get("AEGIS_APP_NAME") or (
                 _aegis_os.path.basename(LOG_FILE)

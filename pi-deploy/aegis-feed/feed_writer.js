@@ -8,7 +8,13 @@
  */
 const fs = require('fs');
 
-const DEFAULT_PATH = '/Users/alejandxr/web-logs/aegis-feed.jsonl';
+// Resolved from the environment so the module carries no deployment-specific
+// path. Set AEGIS_FEED_PATH on the host; the fallback is a neutral default.
+const os = require('os');
+const path = require('path');
+const DEFAULT_PATH =
+  process.env.AEGIS_FEED_PATH ||
+  path.join(os.homedir(), 'web-logs', 'aegis-feed.jsonl');
 
 function emit(fields) {
   const { app, src_ip, method, path, status, ...optional } = fields || {};
