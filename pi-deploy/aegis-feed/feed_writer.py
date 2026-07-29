@@ -9,7 +9,13 @@ import json
 import os
 from datetime import datetime, timezone
 
-DEFAULT_PATH = "/Users/operator/web-logs/aegis-feed.jsonl"
+# Resolved from the environment so the module carries no deployment-specific
+# path. Set AEGIS_FEED_PATH on the host; the fallback is a neutral default that
+# works anywhere rather than one operator's home directory.
+DEFAULT_PATH = os.environ.get(
+    "AEGIS_FEED_PATH",
+    os.path.join(os.path.expanduser("~"), "web-logs", "aegis-feed.jsonl"),
+)
 
 
 def emit(*, app, src_ip, method, path, status, **optional):
