@@ -372,3 +372,74 @@ async def get_attacker(
         last_seen=profile.last_seen.isoformat() if profile.last_seen else None,
         ai_assessment=profile.ai_assessment,
     )
+
+
+# ---------------------------------------------------------------------------
+# External honeypot ingestion (Pi-side aegis-honeypot.service)
+# ---------------------------------------------------------------------------
+class ExternalHoneypotEvent(BaseModel):
+    """One capture forwarded by a honeypot running outside the API host.
+
+    Field names mirror what the Pi's aegis_honeypot.py already sends, so the
+    deployed agent needs no change: it posts `ip`/`ua`, not `source_ip`/headers.
+    """
+    source: str = "external"
+    ip: str
+    method: Optional[str] = None
+    path: Optional[str] = ""
+    ua: Optional[str] = ""
+    referer: Optional[str] = ""
+    host: Optional[str] = ""
+    body: Optional[str] = ""
+    action: Optional[str] = "log"
+    internal: Optional[bool] = False
+    protocol: Optional[str] = None
+    commands: Optional[list] = None
+    credentials_tried: Optional[list] = None
+    session_duration: Optional[int] = 0
+
+
+@router.post("/external-event", status_code=202)
+async def ingest_external_event(
+    event: ExternalHoneypotEvent,
+    auth: AuthContext = Depends(require_analyst),
+):
+    """Accept a capture from a honeypot that does not share this process.
+
+    The Pi honeypot has been POSTing here for months against a route that did
+    not exist — urllib with timeout=2, response never inspected — so every
+    capture it forwarded returned 404 and was discarded in silence. Only the
+    sibling /canary route existed. This is that missing consumer.
+
+    Events are handed to the same interaction_processor queue the in-process
+    honeypots feed, so an external capture lands in honeypot_interactions by
+    exactly the path a local one does — one pipeline, one set of gates, no
+    second implementation to drift.
+
+    Returns 202: the capture is queued, not yet persisted. The Pi ignores the
+    body anyway, and blocking its request on a DB write would make an
+    unreachable API stall the honeypot itself.
+    """
+    from app.modules.phantom.processor import interaction_processor
+
+    queue = getattr(interaction_processor, "_queue", None)
+    if queue is None:
+        raise HTTPException(
+            status_code=503,
+            detail="interaction processor not running; capture not accepted",
+        )
+
+    await queue.put({
+        "protocol": event.protocol or "http",
+        "source_ip": event.ip,
+        "path": event.path or "",
+        "headers": {"User-Agent": event.ua or "", "Referer": event.referer or "",
+                    "Host": event.host or ""},
+        "commands": event.commands or [],
+        "credentials_tried": event.credentials_tried or [],
+        "session_duration": event.session_duration or 0,
+        "body": event.body or "",
+        "external_source": event.source,
+        "external_action": event.action,
+    })
+    return {"accepted": True, "source_ip": event.ip}
