@@ -45,6 +45,9 @@ class _MemoryStream:
         self._subscribers: list[Callable[..., Coroutine]] = []
         self._task: Optional[asyncio.Task] = None
         self._running = False
+        # Counts events evicted because the queue was full. Surfaced in the
+        # overflow warning below so silent loss becomes visible.
+        self._dropped_events = 0
 
     def subscribe(self, callback: Callable[..., Coroutine]):
         self._subscribers.append(callback)
@@ -62,9 +65,20 @@ class _MemoryStream:
         try:
             self._queue.put_nowait(enriched)
         except asyncio.QueueFull:
-            # Drop oldest to make room
+            # Evicting the oldest is the right call for a LIVE feed — a stalled
+            # consumer must not block detection — but it was happening in total
+            # silence, so a queue overflowing under an attack (exactly when the
+            # events matter most) looked identical to an idle system.
             try:
-                self._queue.get_nowait()
+                dropped = self._queue.get_nowait()
+                self._dropped_events += 1
+                if self._dropped_events == 1 or self._dropped_events % 100 == 0:
+                    logger.warning(
+                        f"event_stream '{self.name}': queue full "
+                        f"(maxsize={self._queue.maxsize}), evicted oldest event "
+                        f"type={dropped.get('_event_type', '?')} — "
+                        f"{self._dropped_events} dropped so far"
+                    )
             except asyncio.QueueEmpty:
                 pass
             self._queue.put_nowait(enriched)

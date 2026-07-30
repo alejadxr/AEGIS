@@ -656,7 +656,7 @@ async def _notify_firewall(ip: str, reason: str):
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
-            await session.post(
+            async with session.post(
                 f"{FIREWALL_URL}/block",
                 json={
                     "ip": ip,
@@ -664,10 +664,22 @@ async def _notify_firewall(ip: str, reason: str):
                     "duration": 3600,
                 },
                 timeout=aiohttp.ClientTimeout(total=3),
-            )
-            logger.info(f"[AttackDetector] Firewall notified to block {ip}")
+            ) as resp:
+                # Fire-and-forget on the LATENCY, not on the outcome. The call
+                # stays non-blocking and non-fatal, but an unchecked response
+                # meant a 4xx/5xx from the Pi logged "Firewall notified" while
+                # nothing was enforced remotely — the local 403 middleware kept
+                # working, so the divergence stayed invisible.
+                if resp.status >= 400:
+                    body = (await resp.text())[:200]
+                    logger.warning(
+                        f"[AttackDetector] Firewall REJECTED block for {ip}: "
+                        f"HTTP {resp.status} {body} — enforced locally only"
+                    )
+                else:
+                    logger.info(f"[AttackDetector] Firewall notified to block {ip}")
     except Exception as e:
-        logger.debug(f"[AttackDetector] Firewall block failed (non-fatal): {e}")
+        logger.warning(f"[AttackDetector] Firewall block failed (non-fatal): {e}")
 
 
 async def _share_to_mongo(ip: str, reason: str):

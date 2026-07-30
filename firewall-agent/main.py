@@ -106,6 +106,67 @@ _attackers: dict[str, dict] = {}
 _events: list[dict] = []
 
 # ---------------------------------------------------------------------------
+# Durable events log (disk persistence)
+# ---------------------------------------------------------------------------
+#
+# _events above is in-memory only and capped at EVENTS_MAX: every restart of
+# aegis-firewall.service wipes it, and past 500 entries the oldest silently
+# fall off. That is exactly the labelled "why was this IP blocked" data an ML
+# training corpus needs, discarded for free. We additionally append every
+# event to an uncapped JSONL file on disk so nothing is ever lost, while
+# leaving _events/EVENTS_MAX untouched — /events still reads memory by
+# default so it stays fast.
+
+
+def _resolve_events_log_path() -> Path:
+    """Pick a writable location for the events JSONL log.
+
+    Defaults to /var/lib/aegis/events.jsonl (or AEGIS_EVENTS_LOG if set);
+    falls back to ~/.aegis/events.jsonl when that directory can't be
+    created/written (e.g. running the agent outside systemd/root during
+    local dev, where /var/lib/aegis is typically not writable).
+    """
+    configured = os.getenv("AEGIS_EVENTS_LOG", "").strip()
+    candidates = [Path(configured) if configured else Path("/var/lib/aegis/events.jsonl")]
+    candidates.append(Path.home() / ".aegis" / "events.jsonl")
+    for candidate in candidates:
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            if os.access(candidate.parent, os.W_OK):
+                return candidate
+        except OSError:
+            continue
+    # Nothing writable — return the last candidate anyway; every write will
+    # just hit the except branch in _append_event_jsonl and log a warning.
+    return candidates[-1]
+
+
+EVENTS_LOG_PATH = _resolve_events_log_path()
+
+
+def _append_event_jsonl(event: dict) -> None:
+    """Best-effort durable append of one event to EVENTS_LOG_PATH.
+
+    MUST NEVER raise: blocking IPs is this service's actual job, and a full
+    disk / permissions / rotation race must never break that. We open in
+    append mode per call rather than holding a long-lived handle, so
+    logrotate can rename/truncate the file underneath us safely.
+    """
+    try:
+        # default=str so a datetime (or any other non-JSON type that finds its
+        # way into an event) serialises instead of raising. Catching only
+        # OSError would let a TypeError from json.dumps escape and take the
+        # block path down with it — the exact outcome this function exists to
+        # prevent.
+        line = json.dumps(event, separators=(",", ":"), default=str)
+        EVENTS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(EVENTS_LOG_PATH, "a") as f:
+            f.write(line + "\n")
+            f.flush()
+    except Exception as e:  # noqa: BLE001 - must never propagate, see docstring
+        logger.warning(f"Failed to persist event to {EVENTS_LOG_PATH}: {e}")
+
+# ---------------------------------------------------------------------------
 # IP validation
 # ---------------------------------------------------------------------------
 
@@ -343,17 +404,25 @@ def _track_attacker(ip: str, event_type: str = "block", threat_level: str = "HIG
 
 
 def _add_event(event_type: str, ip: str = "", details: str = "", severity: str = "medium"):
-    """Log a firewall event."""
-    _events.append({
+    """Log a firewall event.
+
+    Appends to both the in-memory list (fast, capped at EVENTS_MAX — powers
+    the default /events response) and the durable JSONL log on disk
+    (uncapped — survives restarts). This is additive: the in-memory path
+    and its cap are unchanged.
+    """
+    event = {
         "type": event_type,
         "ip": ip,
         "description": details,
         "severity": severity,
         "timestamp": _now_iso(),
-    })
+    }
+    _events.append(event)
     # Trim old events
     while len(_events) > EVENTS_MAX:
         _events.pop(0)
+    _append_event_jsonl(event)
 
 
 # ---------------------------------------------------------------------------
@@ -786,9 +855,56 @@ async def iptables_rules():
 
 
 @app.get("/events")
-async def get_events():
-    # Return most recent events first
-    return {"events": list(reversed(_events))[:100]}
+async def get_events(since: Optional[str] = None, limit: Optional[int] = None):
+    """Return recent events, most recent first.
+
+    Default (no query params): served straight from the in-memory list, so
+    it stays as fast as before — unchanged behavior.
+
+    `since` (ISO8601 timestamp) and/or `limit` (> 100) go beyond what
+    EVENTS_MAX keeps in memory, so they instead stream EVENTS_LOG_PATH
+    line-by-line (never loading the whole file into memory at once) to
+    recover events that already fell off the in-memory cap or predate the
+    last restart.
+    """
+    if since is None and (limit is None or limit <= EVENTS_MAX):
+        cap = limit or 100
+        return {"events": list(reversed(_events))[:cap]}
+
+    since_dt = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid since timestamp: {since}")
+
+    matched: list[dict] = []
+    try:
+        with open(EVENTS_LOG_PATH, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if since_dt is not None:
+                    try:
+                        evt_dt = datetime.fromisoformat(str(evt.get("timestamp", "")))
+                    except ValueError:
+                        continue
+                    if evt_dt < since_dt:
+                        continue
+                matched.append(evt)
+    except OSError as e:
+        logger.warning(f"Failed to read events log {EVENTS_LOG_PATH}: {e}")
+        return {"events": list(reversed(_events))[:(limit or 100)]}
+
+    matched.reverse()
+    if limit:
+        matched = matched[:limit]
+    return {"events": matched}
 
 
 @app.get("/auto-response/blocked")
