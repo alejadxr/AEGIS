@@ -13,7 +13,7 @@ from app.models.honeypot import HoneypotInteraction, Honeypot
 from app.models.attacker_profile import AttackerProfile
 from app.models.threat_intel import ThreatIntel
 from app.core.events import event_bus
-from app.modules.phantom.safety import should_skip_profile
+from app.modules.phantom.safety import should_skip_profile, is_synthetic_ip
 
 logger = logging.getLogger("cayde6.phantom.processor")
 
@@ -155,9 +155,32 @@ class InteractionProcessor:
                 protocol = data.get("protocol", "unknown")
                 source_ip = data.get("source_ip", "unknown")
 
-                # Skip safe/doc IPs — prevents synthetic profiles from accumulating
-                if should_skip_profile(source_ip):
+                # Two DIFFERENT decisions, previously fused into one `return`
+                # that discarded the interaction entirely:
+                #
+                #   1. Is this address capable of being a real attacker?
+                #      Documentation ranges and loopback are not — drop those.
+                #   2. Should this address be treated as hostile (IOC, and
+                #      therefore blocking)? Crawlers and CDNs should not.
+                #
+                # Conflating them cost every honeypot capture. should_skip_profile
+                # consults _is_safe_ip, which folds in Googlebot, Bingbot, Meta,
+                # Apple and a 4M-address GCP block, so any hit from those ranges
+                # returned here before the HoneypotInteraction was ever built —
+                # the table sat at 0 rows while both honeypots listened on
+                # *:2222 and *:8888.
+                #
+                # That gate is backwards for a honeypot specifically. A honeypot
+                # is a service nobody has a legitimate reason to touch, so a
+                # connection from a "safe" range is MORE suspicious, not less:
+                # a compromised crawler host, a spoofed source, or an attacker
+                # in a cloud range. The capture is exactly the evidence needed
+                # to tell which.
+                if is_synthetic_ip(source_ip):
                     return
+                # Safe IPs are still recorded; they simply never become an IOC
+                # (see the threat_intel block below), so nothing gets blocked.
+                treat_as_hostile = not should_skip_profile(source_ip)
 
                 user_agent = data.get("headers", {}).get("User-Agent", "") if data.get("headers") else ""
                 commands = data.get("commands", [])
@@ -253,27 +276,38 @@ class InteractionProcessor:
                 # Update honeypot interaction count
                 honeypot.interactions_count = (honeypot.interactions_count or 0) + 1
 
-                # Add IOC to threat_intel
-                existing_ioc = await db.execute(
-                    select(ThreatIntel).where(
-                        ThreatIntel.ioc_value == source_ip,
-                        ThreatIntel.ioc_type == "ip",
+                # Add IOC to threat_intel — ONLY for addresses we are willing
+                # to treat as hostile. This is the gate that used to be applied
+                # (via an early return) to the whole function: an IOC here feeds
+                # blocking, so exempting crawlers/CDNs belongs precisely at this
+                # point and nowhere earlier. The interaction above is recorded
+                # either way, which is the entire fix.
+                if treat_as_hostile:
+                    existing_ioc = await db.execute(
+                        select(ThreatIntel).where(
+                            ThreatIntel.ioc_value == source_ip,
+                            ThreatIntel.ioc_type == "ip",
+                        )
                     )
-                )
-                ioc = existing_ioc.scalar_one_or_none()
-                if not ioc:
-                    ioc = ThreatIntel(
-                        ioc_type="ip",
-                        ioc_value=source_ip,
-                        threat_type="honeypot_interaction",
-                        confidence=0.9 if sophistication == "advanced" else 0.7,
-                        source=f"{protocol}_honeypot",
-                        tags=tools + [sophistication],
-                    )
-                    db.add(ioc)
+                    ioc = existing_ioc.scalar_one_or_none()
+                    if not ioc:
+                        ioc = ThreatIntel(
+                            ioc_type="ip",
+                            ioc_value=source_ip,
+                            threat_type="honeypot_interaction",
+                            confidence=0.9 if sophistication == "advanced" else 0.7,
+                            source=f"{protocol}_honeypot",
+                            tags=tools + [sophistication],
+                        )
+                        db.add(ioc)
+                    else:
+                        ioc.last_seen = now
+                        ioc.confidence = min(1.0, (ioc.confidence or 0.7) + 0.05)
                 else:
-                    ioc.last_seen = now
-                    ioc.confidence = min(1.0, (ioc.confidence or 0.7) + 0.05)
+                    logger.info(
+                        f"[Processor] Recorded honeypot interaction from safelisted "
+                        f"{source_ip} without creating an IOC (no block will follow)"
+                    )
 
                 await db.commit()
 

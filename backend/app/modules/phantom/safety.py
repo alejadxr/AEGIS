@@ -27,6 +27,25 @@ _EXTRA_NETWORKS = [
 _ALL_SKIP_NETWORKS = _DOC_NETWORKS + _EXTRA_NETWORKS
 
 
+def is_synthetic_ip(ip: str) -> bool:
+    """True only for addresses that CANNOT be a real attacker.
+
+    Documentation ranges (RFC 5737), loopback and link-local. These carry no
+    forensic value, so a honeypot hit from one is safe to discard outright.
+
+    Deliberately does NOT consult _is_safe_ip. A honeypot is a service nobody
+    has a legitimate reason to touch: Googlebot does not SSH into port 2222.
+    A connection from a "safe" crawler/CDN range is therefore MORE interesting,
+    not less — it means a compromised crawler host, a spoofed source, or an
+    attacker sitting in a cloud range. See should_skip_profile.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return False
+    return any(addr in net for net in _ALL_SKIP_NETWORKS)
+
+
 def should_skip_profile(ip: str) -> bool:
     """Return True if creating an attacker profile for *ip* should be skipped.
 
