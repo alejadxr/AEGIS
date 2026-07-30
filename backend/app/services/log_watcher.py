@@ -286,7 +286,22 @@ def _prune_dt_deque_map(mapping, window_s, now=None, ts_getter=lambda item: item
 
 # Fallback port extractor used only when the normalized event does not
 # carry a target_port (e.g. raw scanner probe lines).
-PORT_PATTERN = re.compile(r':(\d{2,5})\b')
+#
+# MUST be anchored to a host. The previous pattern was a bare r':(\d{2,5})\b',
+# which matches the colon-separated fields of any timestamp: a line beginning
+# "2026-07-29 20:00:39: [AEGIS] ..." yields "00" and "39" as "ports". Over a
+# 60-second window of ordinary traffic the minute and second components alone
+# produce 20+ distinct values, so the port-scan tracker (threshold: 10 unique
+# ports) fired on any IP that simply kept talking. It blocked an operator's own
+# dashboard — 10,442 requests rejected — for "probing >10 unique ports" that
+# were clock fields, and because port_scan counts as a confirmed exploit class
+# the block was permanent rather than provisional.
+#
+# Requiring an IPv4 or bracketed-IPv6 host in front means only a genuine
+# host:port reference counts. A timestamp has no host, so it no longer matches.
+PORT_PATTERN = re.compile(
+    r"(?:(?:\d{1,3}\.){3}\d{1,3}|\[[0-9a-fA-F:]+\]):(\d{2,5})\b"
+)
 
 
 def _normalized_event_to_dict(event) -> dict:
