@@ -93,16 +93,23 @@ class InteractionProcessor:
     def __init__(self):
         self._running = False
         self._task: asyncio.Task | None = None
+        # Held so out-of-process captures can be enqueued on the SAME pipeline
+        # the in-process honeypots use — see api/phantom.py::ingest_external_event.
+        # Without this the queue was reachable only from the closure inside
+        # _process_loop, so an external honeypot had nowhere to hand its data.
+        self._queue: asyncio.Queue | None = None
 
     async def start(self, interaction_queue: asyncio.Queue):
         """Start processing interactions from the queue."""
         self._running = True
+        self._queue = interaction_queue
         self._task = asyncio.create_task(self._process_loop(interaction_queue))
         logger.info("[Processor] Interaction processor started")
 
     async def stop(self):
         """Stop the processor."""
         self._running = False
+        self._queue = None
         if self._task:
             self._task.cancel()
         logger.info("[Processor] Interaction processor stopped")
