@@ -19,11 +19,13 @@ Deployment note (BUG-3 fix, 2026-05-31):
     Not deployed automatically — apply manually on Pi when ready.
 """
 
+import asyncio
 import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -92,6 +94,315 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("aegis-firewall")
+
+# ---------------------------------------------------------------------------
+# Verified-crawler whitelist  (added 2026-08-03 — see incident note)
+# ---------------------------------------------------------------------------
+#
+# INCIDENT 2026-08-03 — why this exists, do NOT revert on intuition:
+#   AEGIS had 40.77.167.63 and 52.167.144.233 in the AEGIS_BLOCK chain. Reverse
+#   DNS identified both as msnbot-*.search.msn.com — Bing's crawler. Because
+#   Sable's middleware.ts turns this blocklist into an app-layer 403 on the real
+#   client IP (CF-Connecting-IP), Bing could not crawl sable at all. Bing feeds
+#   ChatGPT's index and part of Perplexity's, and Perplexity told Diego straight
+#   out that it COULD NOT SEE the site. Meanwhile Sable's robots.txt explicitly
+#   Allows GPTBot, ClaudeBot, Google-Extended, PerplexityBot and Bytespider.
+#   The two systems contradicted each other and the middleware won, silently.
+#
+#   Root cause is structural, not a one-off: AEGIS blocks on BEHAVIOUR (many
+#   paths, high request rate) and a legitimate crawler is behaviourally
+#   indistinguishable from reconnaissance. Unblocking by hand does not fix it —
+#   the AEGIS brain just re-pushes the same IP. So the refusal has to live here,
+#   at the only choke point every block passes through: POST /block on the Pi.
+#
+# DESIGN
+#   1. Two independent verification methods, because neither alone is enough:
+#        - Published CIDR ranges, refreshed from the vendors' own JSON feeds
+#          (Google, Bing, OpenAI, Perplexity all publish machine-readable
+#          prefix lists). Required for OpenAI and Perplexity: measured
+#          2026-08-03, Perplexity's own published IP 3.224.62.45 reverse-
+#          resolves to ec2-3-224-62-45.compute-1.amazonaws.com, so FCrDNS can
+#          never identify it.
+#        - FCrDNS (PTR + forward-confirm) against a small suffix allowlist.
+#          Required for Bing/Google IPs that are not yet in a refreshed feed —
+#          exactly the failure mode that caused this incident.
+#   2. The exemption is CONDITIONAL on the reported threat class. A verified
+#      crawler is exempted from behavioural blocks only. If the caller reports
+#      an exploit signature (sql_injection, path_traversal, command_injection,
+#      xss, ssrf, brute_force_401, ...) the block proceeds regardless of how
+#      well the IP verifies. This is why the whitelist lives here and NOT in
+#      AEGIS_SAFE_IPS: AEGIS_SAFE_IPS is unconditional and would also exempt
+#      real exploitation from crawler-hosting infrastructure.
+#   3. Fail-closed on VERIFICATION, fail-open on AVAILABILITY: if DNS times out
+#      or a vendor feed is unreachable we do NOT invent an exemption (the block
+#      proceeds, i.e. today's behaviour), and we never discard a previously
+#      loaded range set.
+#
+# SECURITY CONCESSION WE ARE KNOWINGLY ACCEPTING (documented, not hidden):
+#   An attacker who controls a host inside a published crawler range, or who
+#   controls PTR for an IP under one of the suffixes below AND has that PTR
+#   forward-resolve back to the same IP, can avoid the AEGIS app-layer 403 for
+#   *behavioural* detections only. They still face: Cloudflare upstream, the
+#   Pi's DoS netshield, app authentication, and any exploit-signature block
+#   (point 2). Scope of the hole is "high-volume crawling from Microsoft/
+#   Google/OpenAI/Perplexity address space is not rate-blocked" — which is
+#   precisely the behaviour we intend to allow.
+#
+# NOT COVERED, on purpose:
+#   - Bytespider (ByteDance): publishes no reliable prefix feed and no
+#     verifiable PTR. robots.txt allows it; AEGIS may still block it.
+#   - ClaudeBot (Anthropic): probed 2026-08-03, no machine-readable prefix
+#     feed found at anthropic.com / docs.claude.com. Covered only if it ever
+#     presents a forward-confirmed PTR under a suffix below.
+#   Add either via AEGIS_CRAWLER_NETS the day a feed exists.
+
+# Vendor-published prefix feeds. All verified reachable and JSON-parsing on
+# 2026-08-03 from the Pi. Shape: {"prefixes":[{"ipv4Prefix"|"ipv6Prefix": ...}]}
+CRAWLER_RANGE_SOURCES: dict[str, str] = {
+    "googlebot": "https://developers.google.com/static/crawling/ipranges/common-crawlers.json",
+    "google-special": "https://developers.google.com/static/crawling/ipranges/special-crawlers.json",
+    "bingbot": "https://www.bing.com/toolbox/bingbot.json",
+    "gptbot": "https://openai.com/gptbot.json",
+    "oai-searchbot": "https://openai.com/searchbot.json",
+    "chatgpt-user": "https://openai.com/chatgpt-user.json",
+    "perplexitybot": "https://www.perplexity.ai/perplexitybot.json",
+    "perplexity-user": "https://www.perplexity.ai/perplexity-user.json",
+}
+
+# How often the feeds are re-fetched. Off the request path entirely — this runs
+# in a background task, never inside POST /block.
+CRAWLER_REFRESH_SECONDS = int(os.getenv("AEGIS_CRAWLER_REFRESH_SECONDS", "21600"))  # 6h
+
+# PTR suffixes accepted for FCrDNS. Deliberately narrow: only hostnames a
+# vendor uses exclusively for crawlers. NOTE the absence of amazonaws.com,
+# googleusercontent.com, azure*.net and similar shared-tenant domains — any
+# customer can obtain a PTR there, so they prove nothing.
+_CRAWLER_PTR_SUFFIXES: dict[str, str] = {
+    ".search.msn.com": "bingbot",     # msnbot-40-77-167-63.search.msn.com  <- the incident
+    ".googlebot.com": "googlebot",    # crawl-66-249-66-1.googlebot.com
+    ".google.com": "google-special",  # google-proxy-* / rate-limited-proxy-*
+}
+
+CRAWLER_DNS_TIMEOUT_S = float(os.getenv("AEGIS_CRAWLER_DNS_TIMEOUT", "2.5"))
+
+# Threat classes that must NEVER be exempted, however well the IP verifies.
+# Matched as substrings against reason/pattern_name/threat_type, because the
+# AEGIS brain sends free-form strings like "aegis_auto_block: sql_injection (3x)".
+_EXPLOIT_TOKENS = frozenset({
+    "sql_injection", "sqli", "xss", "command_injection", "rce",
+    "path_traversal", "lfi", "rfi", "ssrf", "xxe", "deserialization",
+    "brute_force", "credential_stuffing", "log4j", "shellshock",
+    "webshell", "malware", "exploit", "cve-",
+})
+
+# Threat classes that ARE eligible for the exemption — purely behavioural /
+# volumetric signals, i.e. "this looks like a crawler because it IS crawling".
+_BEHAVIOURAL_TOKENS = frozenset({
+    "high_request_rate", "rate_limit", "port_scan", "scanner",
+    "recon", "enumeration", "crawl", "bot", "user_agent", "404",
+})
+
+# Enable auto-reconcile of ALREADY-persisted blocks at startup/refresh.
+# OFF by default: unblocking en masse without an operator asking is surprising.
+# Turn on with AEGIS_CRAWLER_AUTO_UNBLOCK=1 once the whitelist has been observed.
+CRAWLER_AUTO_UNBLOCK = os.getenv("AEGIS_CRAWLER_AUTO_UNBLOCK", "").strip().lower() in ("1", "true", "yes", "on")
+
+# Live state: list of (network, vendor). Seeded from AEGIS_CRAWLER_NETS so an
+# operator can pin a range without waiting for a feed (e.g. a future ClaudeBot).
+_crawler_nets: list[tuple] = []       # [(ip_network, vendor), ...]
+_crawler_seed_nets: list[tuple] = []  # operator pins from AEGIS_CRAWLER_NETS
+_crawler_last_refresh: float = 0.0
+_crawler_last_error: str = ""
+
+for _entry in (e.strip() for e in os.getenv("AEGIS_CRAWLER_NETS", "").split(",") if e.strip()):
+    try:
+        _crawler_seed_nets.append((ipaddress.ip_network(_entry, strict=False), "env"))
+    except (ValueError, TypeError):
+        print(f"[aegis-firewall] AEGIS_CRAWLER_NETS: ignoring invalid entry {_entry!r}")
+_crawler_nets = list(_crawler_seed_nets)
+
+
+def _crawler_cidr_match(ip: str) -> Optional[str]:
+    """Return the vendor name if `ip` falls in a published crawler prefix."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    for net, vendor in _crawler_nets:
+        if addr.version == net.version and addr in net:
+            return vendor
+    return None
+
+
+def _fcrdns_vendor_blocking(ip: str) -> Optional[str]:
+    """Forward-confirmed reverse DNS. Blocking; always call via to_thread.
+
+    PTR must end in an allowlisted suffix AND the forward lookup of that
+    hostname must resolve back to the same IP. Any failure returns None
+    (fail-closed: no exemption), never an exemption.
+    """
+    try:
+        host = socket.gethostbyaddr(ip)[0].rstrip(".").lower()
+    except Exception:
+        return None
+    vendor = None
+    for suffix, name in _CRAWLER_PTR_SUFFIXES.items():
+        if host.endswith(suffix):
+            vendor = name
+            break
+    if vendor is None:
+        return None
+    try:
+        forward = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except Exception:
+        return None
+    return vendor if ip in forward else None
+
+
+async def _fcrdns_vendor(ip: str) -> Optional[str]:
+    """Async wrapper with a hard timeout so /block can never hang on DNS."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fcrdns_vendor_blocking, ip),
+            timeout=CRAWLER_DNS_TIMEOUT_S,
+        )
+    except Exception:
+        return None  # timeout / resolver failure => no exemption
+
+
+def _threat_text(*parts: Optional[str]) -> str:
+    return " ".join(p for p in parts if p).lower()
+
+
+def _is_exploit_signal(text: str) -> bool:
+    """True if the caller reported a real exploitation attempt.
+
+    Conservative by construction: any exploit token anywhere in the reported
+    reason/pattern/threat_type disables the crawler exemption.
+    """
+    return any(tok in text for tok in _EXPLOIT_TOKENS)
+
+
+async def _verify_crawler(ip: str, threat_text: str) -> Optional[str]:
+    """Return vendor name if `ip` is a verified crawler eligible for exemption.
+
+    Order matters: the CIDR check is free (integer comparisons, no network) and
+    covers OpenAI/Perplexity which FCrDNS provably cannot. FCrDNS only runs when
+    the CIDR check misses, and only at block time — never per site request.
+    """
+    if _is_exploit_signal(threat_text):
+        return None
+    vendor = _crawler_cidr_match(ip)
+    if vendor:
+        return vendor
+    return await _fcrdns_vendor(ip)
+
+
+async def _fetch_crawler_ranges() -> tuple[list[tuple], list[str]]:
+    """Fetch every vendor feed. Returns (nets, errors). Never raises."""
+    nets: list[tuple] = []
+    errors: list[str] = []
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+        for vendor, url in CRAWLER_RANGE_SOURCES.items():
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+                count = 0
+                for prefix in data.get("prefixes", []):
+                    cidr = prefix.get("ipv4Prefix") or prefix.get("ipv6Prefix")
+                    if not cidr:
+                        continue
+                    try:
+                        nets.append((ipaddress.ip_network(cidr, strict=False), vendor))
+                        count += 1
+                    except (ValueError, TypeError):
+                        continue
+                if count == 0:
+                    errors.append(f"{vendor}: feed parsed but contained 0 prefixes")
+            except Exception as e:
+                errors.append(f"{vendor}: {e}")
+    return nets, errors
+
+
+async def _refresh_crawler_ranges() -> dict:
+    """Refresh _crawler_nets from the vendor feeds.
+
+    Fail-open on availability: a failed/empty fetch KEEPS the previous set. We
+    never shrink the whitelist because a vendor's CDN had a bad minute — that
+    would silently re-create the 2026-08-03 incident.
+    """
+    global _crawler_nets, _crawler_last_refresh, _crawler_last_error
+    nets, errors = await _fetch_crawler_ranges()
+    _crawler_last_error = "; ".join(errors)
+    if nets:
+        _crawler_nets = _crawler_seed_nets + nets
+        _crawler_last_refresh = time.time()
+        logger.info(
+            "Crawler whitelist refreshed: %d networks from %d feeds%s",
+            len(_crawler_nets), len(CRAWLER_RANGE_SOURCES),
+            f" ({len(errors)} feed errors)" if errors else "",
+        )
+    else:
+        logger.warning(
+            "Crawler whitelist refresh produced no networks, KEEPING previous set "
+            "(%d networks). Errors: %s", len(_crawler_nets), _crawler_last_error,
+        )
+    return {
+        "networks": len(_crawler_nets),
+        "errors": errors,
+        "last_refresh": _crawler_last_refresh,
+    }
+
+
+async def _reconcile_blocked_crawlers(dry_run: bool = True) -> dict:
+    """Find verified crawlers already sitting in the AEGIS_BLOCK chain.
+
+    Needed because POST /block only guards NEW blocks; the 2026-08-03 Bing IPs
+    were already persisted in /etc/aegis/blocked_ips.json and got re-applied on
+    every restart. dry_run=True only reports.
+    """
+    found = []
+    for ip in list_blocked_ips():
+        vendor = _crawler_cidr_match(ip) or await _fcrdns_vendor(ip)
+        if vendor:
+            found.append({"ip": ip, "vendor": vendor})
+    unblocked = []
+    if not dry_run:
+        for item in found:
+            try:
+                unblock_ip(item["ip"])
+                if item["ip"] in _attackers:
+                    _attackers[item["ip"]]["blocked"] = False
+                unblocked.append(item["ip"])
+                _add_event(
+                    "crawler_unblocked", ip=item["ip"],
+                    details=f"Unblocked verified crawler {item['ip']} ({item['vendor']}) "
+                            f"— crawler whitelist reconcile (incident 2026-08-03)",
+                    severity="info",
+                )
+            except Exception as e:
+                logger.error("Crawler reconcile failed to unblock %s: %s", item["ip"], e)
+        if unblocked:
+            _save_blocked_ips(list_blocked_ips())
+    return {"verified_crawlers_in_blocklist": found, "unblocked": unblocked, "dry_run": dry_run}
+
+
+async def _crawler_refresh_loop():
+    """Background refresher. Never touches the request path."""
+    while True:
+        try:
+            await _refresh_crawler_ranges()
+            if CRAWLER_AUTO_UNBLOCK:
+                result = await _reconcile_blocked_crawlers(dry_run=False)
+                if result["unblocked"]:
+                    logger.warning("Crawler auto-unblock released: %s", result["unblocked"])
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error("Crawler refresh loop error (non-fatal): %s", e)
+        await asyncio.sleep(CRAWLER_REFRESH_SECONDS)
+
 
 # ---------------------------------------------------------------------------
 # In-memory state
@@ -359,6 +670,26 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _severity_to_threat_level(severity: Optional[str]) -> str:
+    """Map a caller-reported severity onto the tracker's threat levels.
+
+    Added 2026-08-03. Previously every block was recorded as HIGH regardless of
+    what actually happened, so /attackers could not distinguish an SQLi attempt
+    from a fast crawler. Unknown/absent severity keeps the old HIGH default, so
+    nothing regresses for callers that report nothing.
+    """
+    mapping = {
+        "info": "INFO", "informational": "INFO", "debug": "INFO",
+        "low": "LOW",
+        "medium": "MEDIUM", "moderate": "MEDIUM", "warning": "MEDIUM",
+        "high": "HIGH",
+        "critical": "CRITICAL", "severe": "CRITICAL",
+    }
+    if not severity:
+        return "HIGH"
+    return mapping.get(str(severity).strip().lower(), "HIGH")
+
+
 def _track_attacker(ip: str, event_type: str = "block", threat_level: str = "HIGH",
                     attack_types: Optional[list[str]] = None):
     """Add or update an attacker in the in-memory tracker."""
@@ -474,11 +805,23 @@ async def lifespan(app: FastAPI):
         if ip not in _attackers:
             _track_attacker(ip, event_type="block", threat_level="HIGH")
 
+    # Verified-crawler whitelist (2026-08-03 incident): populate the published
+    # vendor prefix feeds and keep them fresh. Started as a background task so
+    # a slow/unreachable feed can never delay the agent coming up — until the
+    # first refresh completes the whitelist is just the AEGIS_CRAWLER_NETS seed,
+    # i.e. exactly today's behaviour. FCrDNS works from the first request.
+    crawler_task = asyncio.create_task(_crawler_refresh_loop())
+
     _add_event("startup", details="AEGIS Firewall Agent started", severity="info")
     logger.info("AEGIS Firewall Agent ready on port 8765")
 
     yield
 
+    crawler_task.cancel()
+    try:
+        await crawler_task
+    except (asyncio.CancelledError, Exception):
+        pass
     logger.info("AEGIS Firewall Agent shutting down")
 
 
@@ -542,6 +885,20 @@ async def _enforce_shared_secret(request: Request, call_next):
 
 class IPRequest(BaseModel):
     ip: str
+    # --- classification, added 2026-08-03 ---------------------------------
+    # Before today this model was `ip: str` only. FastAPI/pydantic drops
+    # unknown fields silently, so attack_detector.py's `reason` — which it HAS
+    # been sending all along — was thrown away on arrival. Consequence: all 65
+    # entries in /attackers read `threat_level: HIGH, attack_types: []`, and it
+    # was impossible to tell why ANY IP was blocked, including the Bing crawler.
+    # These fields are all Optional so every existing caller keeps working
+    # unchanged; they are used to decide whether a verified crawler qualifies
+    # for the behavioural exemption (see _verify_crawler).
+    reason: Optional[str] = None
+    pattern_name: Optional[str] = None
+    threat_type: Optional[str] = None
+    severity: Optional[str] = None
+    duration: Optional[int] = None
 
 
 class ChatRequest(BaseModel):
@@ -597,6 +954,74 @@ async def get_blocked():
     return {"blocked": blocked, "count": len(blocked)}
 
 
+# --- Verified-crawler whitelist endpoints (2026-08-03) ----------------------
+
+
+@app.get("/crawlers")
+async def get_crawlers():
+    """Whitelist status. Read-only introspection for operators."""
+    by_vendor: dict[str, int] = {}
+    for _net, vendor in _crawler_nets:
+        by_vendor[vendor] = by_vendor.get(vendor, 0) + 1
+    return {
+        "enabled": True,
+        "networks": len(_crawler_nets),
+        "by_vendor": by_vendor,
+        "ptr_suffixes": _CRAWLER_PTR_SUFFIXES,
+        "sources": CRAWLER_RANGE_SOURCES,
+        "last_refresh": _crawler_last_refresh,
+        "last_refresh_iso": (
+            datetime.fromtimestamp(_crawler_last_refresh, timezone.utc).isoformat()
+            if _crawler_last_refresh else None
+        ),
+        "last_error": _crawler_last_error,
+        "auto_unblock": CRAWLER_AUTO_UNBLOCK,
+        "refresh_seconds": CRAWLER_REFRESH_SECONDS,
+        "note": "Whitelist exempts BEHAVIOURAL blocks only; exploit signatures still block. Incident 2026-08-03 (Bing/msnbot).",
+    }
+
+
+@app.get("/crawlers/allowlist")
+async def get_crawler_allowlist():
+    """Flat CIDR list, consumed by Sable's Edge middleware.
+
+    The middleware cannot do DNS (Edge runtime), so it gets the CIDR half of
+    the whitelist here and uses it as a last-resort override on the 403 path.
+    """
+    return {
+        "cidrs": [str(net) for net, _vendor in _crawler_nets],
+        "count": len(_crawler_nets),
+        "last_refresh": _crawler_last_refresh,
+    }
+
+
+@app.post("/crawlers/verify")
+async def post_crawler_verify(req: IPRequest):
+    """Ask whether a given IP would be treated as a verified crawler."""
+    ip = _validate_ip(req.ip)
+    threat_text = _threat_text(req.reason, req.pattern_name, req.threat_type)
+    return {
+        "ip": ip,
+        "cidr_vendor": _crawler_cidr_match(ip),
+        "fcrdns_vendor": await _fcrdns_vendor(ip),
+        "reported_threat": threat_text or None,
+        "exploit_signal": _is_exploit_signal(threat_text),
+        "would_be_exempted": await _verify_crawler(ip, threat_text) is not None,
+    }
+
+
+@app.post("/crawlers/refresh")
+async def post_crawler_refresh():
+    """Force a re-fetch of the vendor prefix feeds."""
+    return await _refresh_crawler_ranges()
+
+
+@app.post("/crawlers/reconcile")
+async def post_crawler_reconcile(dry_run: bool = True):
+    """Report (dry_run=true, default) or release verified crawlers already blocked."""
+    return await _reconcile_blocked_crawlers(dry_run=dry_run)
+
+
 @app.post("/block")
 async def post_block(req: IPRequest):
     ip = _validate_ip(req.ip)
@@ -608,21 +1033,57 @@ async def post_block(req: IPRequest):
             detail=f"Refusing to block safe/internal IP: {ip}",
         )
 
+    # --- Verified-crawler whitelist (2026-08-03 incident) -------------------
+    # AEGIS blocked Bing's msnbot on behaviour, which made Sable invisible to
+    # Bing/ChatGPT/Perplexity while robots.txt said they were welcome. Every
+    # block funnels through here, so this is the one place where refusing is
+    # durable against the AEGIS brain simply re-pushing the same IP.
+    # An exploit signature always wins over the whitelist — see _is_exploit_signal.
+    threat_text = _threat_text(req.reason, req.pattern_name, req.threat_type)
+    crawler_vendor = await _verify_crawler(ip, threat_text)
+    if crawler_vendor:
+        behavioural = [t for t in _BEHAVIOURAL_TOKENS if t in threat_text]
+        detail = (
+            f"Refusing to block verified crawler {ip} ({crawler_vendor}). "
+            f"Reported threat: {threat_text or 'unclassified'}"
+            + (f" [behavioural: {', '.join(sorted(behavioural))}]" if behavioural else "")
+            + ". Crawler whitelist active since 2026-08-03 (Bing/msnbot incident); "
+              "exploit-signature blocks are NOT exempted."
+        )
+        logger.warning(detail)
+        _add_event("crawler_block_refused", ip=ip, details=detail, severity="info")
+        raise HTTPException(status_code=403, detail=detail)
+
     success = block_ip(ip)
     if not success:
         raise HTTPException(status_code=500, detail=f"Failed to block {ip}")
 
-    # Track the attacker
-    _track_attacker(ip, event_type="block", threat_level="HIGH")
+    # Track the attacker — now WITH the classification the caller sent, instead
+    # of the hardcoded HIGH/[] that made /attackers useless (see IPRequest).
+    threat_level = _severity_to_threat_level(req.severity)
+    attack_types = [t for t in (req.pattern_name, req.threat_type) if t]
+    _track_attacker(ip, event_type="block", threat_level=threat_level,
+                    attack_types=attack_types or None)
 
     # Update persistence
     blocked = list_blocked_ips()
     _save_blocked_ips(blocked)
 
     # Log event
-    _add_event("ip_blocked", ip=ip, details=f"Blocked IP {ip} via iptables", severity="high")
+    reason_suffix = f" — {threat_text}" if threat_text else " — reason not reported by caller"
+    _add_event(
+        "ip_blocked", ip=ip,
+        details=f"Blocked IP {ip} via iptables{reason_suffix}",
+        severity=threat_level.lower() if threat_level != "INFO" else "info",
+    )
 
-    return {"success": True, "ip": ip, "blocked_count": len(blocked)}
+    return {
+        "success": True,
+        "ip": ip,
+        "blocked_count": len(blocked),
+        "threat_level": threat_level,
+        "attack_types": attack_types,
+    }
 
 
 @app.delete("/block/{ip}")
