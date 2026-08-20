@@ -3247,15 +3247,67 @@ def _now_ts() -> float:
     return datetime.utcnow().timestamp()
 
 
-def _matches_filter(event: dict, filt: dict) -> bool:
-    """Return True when all filter key/value pairs match the event."""
-    for key, expected in filt.items():
-        actual = event.get(key)
+# Event-type spellings that mean the same thing to a rule author. The log
+# normalizer emits "http_request" for generic web traffic and "web_request"
+# only from a couple of attack-specific patterns, so a rule filed under either
+# must see both. Keep this bidirectional: rules exist under both names.
+_EVENT_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
+    "http_request": ("web_request",),
+    "web_request": ("http_request",),
+    # The normalizer promotes a request to a MORE SPECIFIC type when a pattern
+    # recognises the payload: an XSS probe arrives as "xss", not "http_request".
+    # A rule filed under the generic name must still see it — otherwise
+    # sigma_web_xss_stored, written precisely for that traffic, never fires
+    # because the traffic was classified too well.
+    "xss": ("web_request", "http_request"),
+    "sql_injection": ("web_request", "http_request"),
+    "supply_chain": ("web_request", "http_request"),
+    "path_traversal": ("web_request", "http_request"),
+}
 
-        # Numeric greater-than check: bytes_gt → bytes > value
+
+# Field spellings a rule may use vs what the normalized event actually carries.
+# The normalizer produces request_method / request_path / response_status /
+# user_agent, but rules (and the unit tests) were written against the shorter
+# names. path_contains already coped because it explicitly tries three
+# spellings; a plain `method: POST` did not — it compared None to "POST", so
+# the rule never matched. Four rules were dead for exactly this reason,
+# web_shell_activity and file-upload detection among them.
+_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "method": ("request_method",),
+    "request_method": ("method",),
+    "path": ("request_path", "url"),
+    "request_path": ("path", "url"),
+    "status": ("response_status",),
+    "response_status": ("status",),
+    "ua": ("user_agent",),
+    "user_agent": ("ua",),
+}
+
+
+def _event_get(event: dict, key: str):
+    """Read `key` from the event, falling back to known alternate spellings."""
+    if key in event:
+        return event[key]
+    for _alt in _FIELD_ALIASES.get(key, ()):
+        if _alt in event:
+            return event[_alt]
+    return None
+
+
+def _matches_filter(event: dict, filt: dict) -> bool:
+    """Return True when all filter key/value pairs match the event.
+
+    Field reads go through _event_get, so a rule written as `method: POST`
+    still matches an event that carries `request_method` — see _FIELD_ALIASES.
+    """
+    for key, expected in filt.items():
+        actual = _event_get(event, key)
+
+        # Numeric greater-than check: bytes_gt -> bytes > value
         if key.endswith("_gt"):
             field = key[:-3]  # strip "_gt"
-            actual_val = event.get(field)
+            actual_val = _event_get(event, field)
             if actual_val is None or actual_val <= expected:
                 return False
             continue
@@ -3263,7 +3315,7 @@ def _matches_filter(event: dict, filt: dict) -> bool:
         # Regex match: command_line_regex → re.search(pattern, event["command_line"])
         if key.endswith("_regex"):
             field = key[:-6]  # strip "_regex"
-            actual_val = event.get(field)
+            actual_val = _event_get(event, field)
             if actual_val is None or not re.search(str(expected), str(actual_val)):
                 return False
             continue
@@ -3634,6 +3686,24 @@ class CorrelationEngine:
         _t0 = time.perf_counter_ns()
         event_type = event.get("event_type", "")
         candidates = self._rules_by_type.get(event_type, [])
+        # An event only reaches the rules filed under its EXACT event_type
+        # string, and the producers do not agree on that string: the log
+        # pipeline emits "http_request" for ordinary web traffic while 48 rules
+        # are filed under "web_request" (and the unit tests feed "web_request"
+        # too). Measured on the real normalizer, 43 of those 48 rules could
+        # never receive an event — Cobalt Strike C2, vuln-scanner recon,
+        # directory brute force, Ivanti command injection, XXE and Next.js RSC
+        # RCE among them. They loaded, counted toward the rule total, and were
+        # unreachable.
+        #
+        # Widening the candidate set is safe: event_type only selects WHICH
+        # rules are considered, and each rule still applies its own filter to
+        # decide. This mirrors path_contains, which already tolerates
+        # path/request_path/url rather than demanding one spelling.
+        for _alias in _EVENT_TYPE_ALIASES.get(event_type, ()):
+            extra = self._rules_by_type.get(_alias)
+            if extra:
+                candidates = candidates + extra
         for rule in candidates:
             if not rule.get("enabled", True):
                 continue

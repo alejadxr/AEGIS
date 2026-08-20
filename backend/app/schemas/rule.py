@@ -38,7 +38,17 @@ class RuleCondition(BaseModel):
 
 
 class EntityMapping(BaseModel):
-    type: Literal["Account", "Host", "IP", "DNS", "FileHash"]
+    # "File" was missing, and its absence silently killed two rules: the
+    # ransomware extension detectors (prinz_eugen, shinysp1d3r) declared
+    # `type: File` for a `file_path` field, failed validation, and were skipped
+    # by the loader from the day they were written (2026-06-23) — leaving the
+    # entire sigma/ransomware/ directory loading zero rules.
+    #
+    # "FileHash" was NOT the right fix: those rules map a path, not a digest.
+    # Nothing reads entityMappings today (it is declarative metadata with no
+    # consumer), so the only thing its validation achieved here was to reject
+    # otherwise-correct detections.
+    type: Literal["Account", "Host", "IP", "DNS", "File", "FileHash"]
     field: str
 
 

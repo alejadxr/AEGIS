@@ -1,0 +1,27 @@
+id: sigma_web_baforms_upload_rce
+name: Balbooa Forms Joomla Unrestricted Upload RCE (CVE-2026-56291)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+- Persistence
+techniques:
+- T1190
+- T1505.003
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains_all:
+    - option=com_baforms
+    - task=form.uploadattachmentfile
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects a request to the Balbooa Forms Joomla extension's uploadAttachmentFile task, which lacks file-type validation and lets an attacker upload a web shell for pre-auth RCE (CVE-2026-56291, CVSS 9.8, in CISA KEV since 2026-07-10). Both query fragments together are a near-unique fingerprint of the exploit.
+references: []
