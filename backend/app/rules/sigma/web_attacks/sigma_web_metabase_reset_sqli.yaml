@@ -1,0 +1,32 @@
+id: sigma_web_metabase_reset_sqli
+name: Metabase Password Reset SQLi Automated Exploitation (CVE-2026-72898)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /api/session/reset_password
+    - /api/session/forgot_password
+    - /reset_password
+  count_threshold: 10
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: >-
+  Deteccion por ritmo, no por firma: la carga SQLi de CVE-2026-72898 viaja en el
+  cuerpo de la peticion, invisible para AEGIS, asi que la regla no puede reconocer
+  el payload y en su lugar mide el patron de comportamiento. 10 o mas peticiones al
+  flujo de reset de password / API de usuario desde la misma IP en 300 segundos es
+  consistente con un atacante iterando payloads SQLi de forma automatizada, no con
+  un reseteo de password legitimo de un usuario real (que genera 1-2 peticiones).
+references: []

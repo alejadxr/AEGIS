@@ -1,0 +1,27 @@
+id: sigma_web_icagenda_upload_rce
+name: iCagenda Joomla Unrestricted File Upload RCE (CVE-2026-48939)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+- Persistence
+techniques:
+- T1190
+- T1505.003
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains_all:
+    - option=com_icagenda
+    - submit_event
+  count_threshold: 5
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects repeated hits to iCagenda's front-end submit_event action (option=com_icagenda + submit_event), the unauthenticated attachment-upload path with no file-type validation that lets an attacker drop a web shell for pre-auth RCE (CVE-2026-48939, CVSS 10.0, in CISA KEV since 2026-07-10). A single hit is not used as the trigger because public event submission is a legitimate feature on many iCagenda sites; repetition from one source in a short window is the exploit/probing signal.
+references: []

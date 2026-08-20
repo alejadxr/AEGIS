@@ -1,0 +1,28 @@
+id: sigma_ai_langflow_build_public_rce
+name: LangFlow Unauthenticated build_public_tmp RCE (CVE-2026-33017)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+- Execution
+techniques:
+- T1190
+- T1059
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /api/v1/build_public_tmp
+    - /api/v1/auto_login
+    - /api/v1/validate/code
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: Flags requests to LangFlow's build_public_tmp flow-execution endpoint, whose optional "data" parameter passes attacker-supplied Python straight to exec() with no auth or sandboxing (CVE-2026-33017, CVSS 9.3, mass-exploited within 20h of disclosure); also covers auto_login (hands out a superuser token while AUTO_LOGIN defaults to true) and validate/code (the older CVE-2025-3248 RCE endpoint), both commonly probed in the same exploitation chain.
+references: []

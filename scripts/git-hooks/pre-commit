@@ -23,7 +23,13 @@ findings=""
 
 CRED_RE='(echo[[:space:]]+[0-9]{4,}[[:space:]]*\||sshpass|BEGIN [A-Z ]*PRIVATE KEY|(password|passwd|secret|api[_-]?key|token)[[:space:]]*[:=][[:space:]]*['"'"'"][^'"'"'"]{8,}['"'"'"])'
 INFRA_RE='/Users/(alejandxr|wilsd)|/home/diego|somoswilab\.com|100\.(8[0-9]|9[0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}'
-ALLOW_RE='example|placeholder|your_|<USER>|<user>|xxx|dummy|getenv|environ|process\.env|\$\{|CHANGELOG'
+# Well-known PUBLIC addresses that legitimately appear in detection rules and
+# IOC lists. 169.254.169.254 is the cloud metadata endpoint; 100.100.100.200 is
+# Alibaba's, which falls numerically inside Tailscale's 100.64.0.0/10 CGNAT
+# block and therefore trips the infra regex. Blocking those would mean this
+# repo could never carry an SSRF rule — the guard has to know the difference
+# between "our network" and "an indicator of compromise".
+ALLOW_RE='example|placeholder|your_|<USER>|<user>|xxx|dummy|getenv|environ|process\.env|\$\{|CHANGELOG|169\.254\.169\.254|100\.100\.100\.200|metadata\.google\.internal'
 
 for f in $staged; do
   [ -f "$f" ] || continue
