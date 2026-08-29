@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 from typing import Optional
 
@@ -12,6 +13,26 @@ logger = logging.getLogger("aegis.guardrails")
 
 # Action types whose target is an IP — guard against blocking safe IPs.
 _IP_TARGET_ACTIONS = frozenset({"block_ip", "firewall_rule", "isolate_host", "network_segment"})
+
+# Action types for which an IP address can never be a valid target: an address
+# is not a process, a file, an account or a service name. Callers that fall
+# back to the alert's source_ip produced targets like kill_process on
+# "185.177.72.8", which can only fail. ai_engine now resolves targets per
+# action type (see resolve_action_target); this is the chokepoint guard that
+# covers every other caller. isolate_host and network_segment are deliberately
+# excluded — an IP is a plausible identifier for an internal host.
+_NON_IP_TARGET_ACTIONS = frozenset({
+    "kill_process", "quarantine_file", "revoke_creds",
+    "disable_account", "shutdown_service",
+})
+
+
+def _looks_like_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(str(value).strip())
+        return True
+    except ValueError:
+        return False
 
 # Default guardrail policies.
 # Low-impact / reversible actions (blocking an IP, adding a firewall rule,
@@ -92,6 +113,40 @@ class GuardrailEngine:
                 "action_type": action_type,
                 "target": target,
                 "incident_id": str(incident_id) if incident_id else "",
+            })
+            return action
+
+        # An IP is never a process / file / account / service. A caller that
+        # fell back to the source IP would dispatch an action that can only
+        # fail and surface as a red error the operator cannot act on.
+        if action_type in _NON_IP_TARGET_ACTIONS and target and _looks_like_ip(target):
+            reason = (
+                f"target {target} is an IP address; {action_type} needs a local "
+                f"process/file/account/service entity"
+            )
+            logger.warning(f"GUARDRAIL: Refusing {action_type} — {reason}")
+            action = Action(
+                incident_id=incident_id or "",
+                client_id=client.id,
+                action_type=action_type,
+                target=target,
+                parameters={"not_applicable": True, "reason": reason},
+                status="skipped_not_applicable",
+                requires_approval=False,
+                ai_reasoning=(
+                    f"Not applicable: {reason}. No system change was attempted. "
+                    f"AI reasoning: {ai_reasoning}"
+                ),
+            )
+            db.add(action)
+            await db.commit()
+            await db.refresh(action)
+            await event_bus.publish("action_not_applicable", {
+                "action_id": str(action.id),
+                "action_type": action_type,
+                "target": target,
+                "incident_id": str(incident_id) if incident_id else "",
+                "reason": reason,
             })
             return action
 

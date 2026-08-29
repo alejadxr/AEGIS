@@ -76,6 +76,21 @@ function actionDotColor(status: string): string {
   }
 }
 
+// Raw status strings read badly in a badge ("SKIPPED_NOT_APPLICABLE"). The
+// skipped_* states are deliberate non-actions, not errors, so they get a plain
+// label and the muted variant rather than the red of a real failure.
+function actionStatusLabel(status: string): string {
+  if (!status) return 'UNKNOWN';
+  switch (status.toLowerCase()) {
+    case 'skipped_not_applicable':
+      return 'NOT APPLICABLE';
+    case 'skipped_safe_ip':
+      return 'SKIPPED · SAFE IP';
+    default:
+      return status.replace(/_/g, ' ').toUpperCase();
+  }
+}
+
 function actionBadgeVariant(status: string): StatusVariant {
   switch (status.toLowerCase()) {
     case 'executed':
@@ -338,7 +353,7 @@ function ActionRow({
       trailing={
         <div role="cell" className="flex items-center gap-2">
           <StatusBadge size="sm" dot variant={actionBadgeVariant(status)}>
-            {status ? status.toUpperCase() : 'UNKNOWN'}
+            {actionStatusLabel(status)}
           </StatusBadge>
           {showApproveReject && (
             <ApproveRejectButtons action={action} busy={busy} onApprove={onApprove} onReject={onReject} />

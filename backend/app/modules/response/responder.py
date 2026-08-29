@@ -159,8 +159,22 @@ class ActiveResponder:
             fw_logger.error(f"System firewall block raised for {target}: {e} (non-fatal, continuing)")
             fw_ok = False
 
+        # Report success only when a layer actually took the block. This used to
+        # return success:True unconditionally, so a block that failed on every
+        # layer still recorded as "executed" — the dashboard showed an IP
+        # contained that was never contained anywhere.
+        def _ok(result) -> bool:
+            return bool(isinstance(result, dict) and result.get("success"))
+
+        blocked_anywhere = _ok(firewall_result) or _ok(local_result) or bool(fw_ok)
+        if not blocked_anywhere:
+            logger.error(
+                f"RESPONSE: block_ip {target} FAILED on every layer — "
+                f"firewall={firewall_result}, local={local_result}, system_fw={fw_ok}"
+            )
+
         return {
-            "success": True,
+            "success": blocked_anywhere,
             "action": "block_ip",
             "target": target,
             "firewall": firewall_result,
