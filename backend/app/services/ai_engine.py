@@ -71,6 +71,55 @@ RESPONSE_ACTIONS = {
     "honeypot_recon": ["block_ip", "collect_evidence"],
 }
 
+# Which alert field supplies the target for each action type.
+#
+# Every action used to be handed alert_data["source_ip"], so kill_process was
+# dispatched against an IP address, isolate_host against a machine AEGIS does
+# not own, and quarantine_file against something that is not a path. The
+# actions in the second group act on a LOCAL endpoint entity — a host, a
+# process, a file, an account, a service — and AEGIS is a network/log detection
+# brain with no endpoint agent. When the alert carries no such entity, which is
+# the normal case for a remote web attack read out of a log line, the action is
+# not applicable: it gets recorded as skipped, with the reason, instead of
+# being dispatched to a stub that can only fail. Those failures were not
+# infrastructure faults — they were capability AEGIS never had.
+ACTION_TARGET_FIELDS: dict[str, tuple[str, ...]] = {
+    # Network identity — the remote source AEGIS can actually act on.
+    "block_ip": ("source_ip", "target"),
+    "firewall_rule": ("source_ip", "target"),
+    # Local endpoint entities — need a real host / process / file / account.
+    "isolate_host": ("host", "hostname", "asset", "target_host"),
+    "network_segment": ("host", "hostname", "asset", "target_host"),
+    "kill_process": ("process", "process_name", "pid"),
+    "quarantine_file": ("file", "file_path", "filename"),
+    "revoke_creds": ("account", "user", "username"),
+    "disable_account": ("account", "user", "username"),
+    "shutdown_service": ("service", "service_name"),
+}
+
+
+def resolve_action_target(action_type: str, alert_data: dict) -> tuple[Optional[str], str]:
+    """Pick the entity an action actually operates on.
+
+    Returns (target, skip_reason). A None target means the alert carries
+    nothing this action can act on, and skip_reason names the entity that was
+    missing. Action types absent from ACTION_TARGET_FIELDS (collect_evidence
+    and other informational steps) keep the previous behaviour of receiving
+    the source IP as context.
+    """
+    fields = ACTION_TARGET_FIELDS.get(action_type)
+    if fields is None:
+        fallback = alert_data.get("source_ip") or alert_data.get("target") or "unknown"
+        return str(fallback), ""
+    for field in fields:
+        value = alert_data.get(field)
+        if value:
+            return str(value), ""
+    return None, (
+        f"alert carries no {'/'.join(fields)} — {action_type} acts on a local "
+        f"endpoint entity that cannot be resolved from this event"
+    )
+
 # How long an unconfirmed ("provisional") auto-block stays in force before it
 # lifts itself. AEGIS decides without a human, so a guess must be reversible on
 # its own: long enough to stop an actual attack run, short enough that a
@@ -547,7 +596,27 @@ class AIDecisionEngine:
 
         actions = []
         for action_type in recommended:
-            target = alert_data.get("source_ip", alert_data.get("target", "unknown"))
+            # Resolve the entity this specific action operates on. Handing every
+            # action the source IP dispatched kill_process against an address
+            # and isolate_host against a machine AEGIS does not own.
+            target, skip_reason = resolve_action_target(action_type, alert_data)
+            if target is None:
+                action = await self._create_unsupported_action(
+                    client=client,
+                    action_type=action_type,
+                    reason=skip_reason,
+                    threat_type=threat_type,
+                    db=db,
+                    incident_id=incident.id,
+                )
+                actions.append({
+                    "id": action.id,
+                    "type": action.action_type,
+                    "status": action.status,
+                    "requires_approval": action.requires_approval,
+                })
+                continue
+
             reasoning = f"AI recommended {action_type} for {threat_type} threat. {triage.get('summary', '')}"
 
             # Gate IP-blocking actions on the confirmation verdict. Non-blocking
@@ -703,6 +772,61 @@ class AIDecisionEngine:
             return True, f"confirmed_high_severity(sev={severity},conf={confidence:.2f})"
 
         return False, f"unconfirmed_low_signal(sev={severity},conf={confidence:.2f})"
+
+    async def _create_unsupported_action(
+        self,
+        client: Client,
+        action_type: str,
+        reason: str,
+        threat_type: str,
+        db: AsyncSession,
+        incident_id: Optional[str] = None,
+    ):
+        """Record a recommended action AEGIS cannot carry out on this alert.
+
+        RESPONSE_ACTIONS recommends endpoint actions (isolate_host,
+        kill_process, quarantine_file, ...) for classes like rce, malware and
+        web_shell. AEGIS detects those from remote web traffic and has no
+        endpoint agent, so there is no host to isolate, process to kill or file
+        to quarantine. Dispatching anyway produced Action rows in status
+        "failed": every RCE incident carried red errors that looked like broken
+        infrastructure but were only capability AEGIS never had.
+
+        Recording it as skipped_not_applicable keeps the recommendation visible
+        — the operator still sees what a full-capability response would have
+        done — without reporting a failure that never happened. Nothing
+        executes: responder.execute_action only runs actions in "approved".
+        """
+        from app.models.action import Action
+
+        action = Action(
+            incident_id=incident_id or "",
+            client_id=client.id,
+            action_type=action_type,
+            target="",
+            parameters={"not_applicable": True, "reason": reason},
+            status="skipped_not_applicable",
+            requires_approval=False,
+            ai_reasoning=(
+                f"Recommended for {threat_type} but not applicable to this "
+                f"alert: {reason}. No system change was attempted."
+            ),
+        )
+        db.add(action)
+        await db.commit()
+        await db.refresh(action)
+
+        logger.info(
+            f"Action {action_type} not applicable for {threat_type} "
+            f"incident {incident_id}: {reason}"
+        )
+        await event_bus.publish("action_not_applicable", {
+            "action_id": str(action.id),
+            "action_type": action_type,
+            "incident_id": str(incident_id) if incident_id else "",
+            "reason": reason,
+        })
+        return action
 
     async def _create_pending_block(
         self,

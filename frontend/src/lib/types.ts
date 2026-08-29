@@ -100,7 +100,16 @@ export interface Incident {
 }
 
 // ─── Response Actions ─────────────────────────────────────────────
-export type ActionStatus = 'pending' | 'approved' | 'executed' | 'failed' | 'rolled_back';
+export type ActionStatus =
+  | 'pending'
+  | 'approved'
+  | 'executed'
+  | 'failed'
+  | 'rolled_back'
+  // Deliberate non-actions, not failures: the target was a safelisted IP, or
+  // the action needs a local endpoint entity this alert does not carry.
+  | 'skipped_safe_ip'
+  | 'skipped_not_applicable';
 export type ActionType = 'block_ip' | 'isolate_host' | 'revoke_creds' | 'kill_process' | 'quarantine_file' | 'update_firewall' | 'notify_team' | 'custom';
 
 export interface ResponseAction {

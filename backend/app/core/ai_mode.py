@@ -28,8 +28,20 @@ class AIMode(str, Enum):
 # This makes that fallback explicit and quiets the log noise; behaviour is
 # unchanged either way (both resolve to OPTIONAL: try AI, fall back to
 # deterministic logic on failure).
+#
+# "offline" and "local" are documented alongside it and had the same gap, but
+# with a worse consequence: "offline" is the documented way to run AEGIS with
+# no AI API key, and falling back to OPTIONAL left AI calls *enabled*. An
+# operator who set it got the opposite of what they asked for.
+#
+# "local" has no local-model path anywhere in the codebase, so it cannot mean
+# "use a local model" today — under any reading it means "do not call the
+# cloud API", which is DISABLED. It previously resolved to OPTIONAL and called
+# OpenRouter, the one thing the name rules out.
 _MODE_ALIASES: dict[str, AIMode] = {
     "full": AIMode.OPTIONAL,
+    "offline": AIMode.DISABLED,
+    "local": AIMode.DISABLED,
 }
 
 
