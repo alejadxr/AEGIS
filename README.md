@@ -4,13 +4,13 @@
 
 ### Self-hosted. Deterministic-first. Offline-capable.
 
-*Detect, block, and recover from ransomware and intrusions in milliseconds — 168 Sigma rules + 6 chain detections, <1 ms in-memory evaluation, no LLM in the hot path.*
+*Detect, block, and recover from ransomware and intrusions in milliseconds — 229 Sigma rules + 4 chain detections covering 82 CVEs, <1 ms in-memory evaluation, no LLM in the hot path.*
 
 [![CI](https://github.com/alejadxr/AEGIS/actions/workflows/ci.yml/badge.svg)](https://github.com/alejadxr/AEGIS/actions)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
 [![Docker](https://img.shields.io/badge/docker-compose-blue)]()
-[![Version](https://img.shields.io/badge/version-1.6.5.1-cyan)]()
+[![Version](https://img.shields.io/badge/version-1.7.0-cyan)]()
 
 [What is AEGIS?](#what-is-aegis) · [Install](#5-minute-install) · [Ransomware Defense](#ransomware-defense-v16) · [Detection](#detection-1111-verified) · [vs Wazuh / OSSEC / Elastic](#aegis-vs-wazuh--ossec--elastic-security) · [Architecture](#architecture) · [Docs](docs/)
 
@@ -22,7 +22,7 @@
 
 **AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time — without depending on a cloud AI service.**
 
-It owns your firewall, watches your logs, runs deception honeypots, and evaluates 168 Sigma rules + 6 chain detections in **<1 ms per event**. When it sees an attack — brute-force, shadow-copy delete, mass file encryption, ransom note drop, SMB lateral movement — it auto-blocks the attacker IP and writes a structured incident postmortem. Process termination and snapshot recovery are in development (gated by `AEGIS_REAL_RECOVERY=1`).
+It owns your firewall, watches your logs, runs deception honeypots, and evaluates 229 Sigma rules + 4 chain detections in **<1 ms per event**. When it sees an attack — brute-force, shadow-copy delete, mass file encryption, ransom note drop, SMB lateral movement — it auto-blocks the attacker IP and writes a structured incident postmortem. Process termination and snapshot recovery are in development (gated by `AEGIS_REAL_RECOVERY=1`).
 
 Set `AEGIS_AI_MODE=disabled` and the entire stack runs on deterministic rules and Jinja2 templates. AI enrichment is available but never required.
 
@@ -557,10 +557,10 @@ Paste this block into any HTML landing page <head> to enable rich results.
       "@type": "SoftwareApplication",
       "name": "AEGIS",
       "alternateName": "AEGIS Autonomous Defense Platform",
-      "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 168 Sigma rules + 6 chain detections. Offline-capable. No cloud AI required.",
+      "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 229 Sigma rules + 4 chain detections. Offline-capable. No cloud AI required.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux, macOS, Windows",
-      "softwareVersion": "1.6.5.1",
+      "softwareVersion": "1.7.0",
       "datePublished": "2026-05-01",
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "url": "https://github.com/alejadxr/AEGIS",
@@ -605,7 +605,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
           "name": "What is AEGIS cybersecurity?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time. It evaluates 168 Sigma rules + 6 chain detections in <1 ms, runs deception honeypots, and enforces firewall blocks via pfctl/iptables — all without requiring a cloud AI service."
+            "text": "AEGIS is an open-source, self-hosted autonomous defense platform that detects ransomware, lateral movement, and intrusions in real time. It evaluates 229 Sigma rules + 4 chain detections in <1 ms, runs deception honeypots, and enforces firewall blocks via pfctl/iptables — all without requiring a cloud AI service."
           }
         },
         {

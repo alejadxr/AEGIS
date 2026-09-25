@@ -23,11 +23,16 @@ from typing import Optional
 
 import httpx
 
+from app.version import __version__
+
 logger = logging.getLogger("aegis.auto_updater")
 
 GITHUB_REPO = "alejandxr/AEGIS"
 GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-CURRENT_VERSION = "1.4.0"
+# Imported, never hardcoded: a stale copy here makes AEGIS report an
+# update as available forever, because _is_newer() compares the newest
+# GitHub release against this string.
+CURRENT_VERSION = __version__
 
 # Path to the AEGIS install directory (where docker-compose.yml lives)
 INSTALL_DIR = os.environ.get("AEGIS_INSTALL_DIR", "/app")
