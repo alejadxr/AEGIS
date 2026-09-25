@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.config import settings
+from app.version import __version__
 from app.database import engine, async_session
 from app.models import Base
 from app.core.auth import seed_demo_client, seed_default_admin
@@ -337,7 +338,16 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         from sqlalchemy import select as _startup_sel
         demo = await seed_demo_client(db)
-        logger.info(f"Demo client ready: slug='{demo.slug}' api_key='{demo.api_key}'")
+        # The key itself is never logged. It used to be written in full at
+        # startup, which put a live credential into cayde6-api-out.log -- a
+        # file PM2 rotates to disk, log_watcher tails, and anyone with read
+        # access to the host can grep. Log enough to confirm the seed ran and
+        # to recognise the key, not enough to use it.
+        _key = demo.api_key or ""
+        logger.info(
+            f"Demo client ready: slug='{demo.slug}' "
+            f"api_key={_key[:6]}...{_key[-4:]} (len={len(_key)})"
+        )
         await seed_default_admin(db, demo)
         logger.info("Default admin user seeded (admin@cayde6.local)")
 
@@ -757,6 +767,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f'Failed to start host monitor: {e}')
 
+    # Start the IOC connection monitor — OFF unless AEGIS_CONNECTION_MONITOR=1.
+    # It is the only path that can see an outbound C2 callback that writes no
+    # log line (an npm postinstall phoning home during a frontend build on this
+    # host, say). It publishes ONLY when the peer is a known indicator, so an
+    # enabled collector on a clean host emits nothing at all.
+    if settings.AEGIS_CONNECTION_MONITOR:
+        try:
+            from app.modules.network.connection_monitor import connection_monitor
+            connection_monitor.register_event_bus(event_bus)
+            await connection_monitor.start(
+                interval_seconds=settings.AEGIS_CONNECTION_MONITOR_INTERVAL
+            )
+        except Exception as e:
+            logger.error(f'Failed to start connection monitor: {e}')
+    else:
+        logger.info(
+            'IOC connection monitor disabled (set AEGIS_CONNECTION_MONITOR=1 '
+            'to enable outbound C2-callback detection)'
+        )
+
     # Start auto-updater (background GitHub release checker)
     try:
         from app.services.auto_updater import auto_updater
@@ -778,6 +808,12 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     await host_monitor.stop()
+    if settings.AEGIS_CONNECTION_MONITOR:
+        try:
+            from app.modules.network.connection_monitor import connection_monitor
+            await connection_monitor.stop()
+        except Exception:
+            pass
     try:
         from app.services import retention as retention_service
         await retention_service.stop()
@@ -842,7 +878,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Cayde-6 Defense Platform",
     description="AI-powered autonomous cybersecurity defense platform",
-    version="1.6.4.9",
+    version=__version__,
     lifespan=lifespan,
 )
 
