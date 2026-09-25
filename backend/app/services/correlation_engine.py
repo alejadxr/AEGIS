@@ -4326,13 +4326,24 @@ class CorrelationEngine:
         if not rule_ids:
             # Plain-dict step (in-code CHAIN_RULES) — no `rule_ids` property.
             rule_ids = [step["sigma_rule"]] if step.get("sigma_rule") else list(step.get("any_of") or ())
-        times: list[float] = []
         if rule_ids:
+            # This runs on every event for the first step of every chain, and the
+            # overwhelming majority of events have no attack in progress, so the
+            # empty and single-source cases must not allocate or sort. A single
+            # key's deque is appended in time order, so it is already ascending.
+            fire_log = self._sigma_fire_log
+            if len(rule_ids) == 1:
+                found = fire_log.get((rule_ids[0], group_val))
+                return list(found) if found else []
+            times: list[float] = []
             for rid in rule_ids:
-                if not rid:
-                    continue
-                times.extend(self._sigma_fire_log.get((rid, group_val), ()))
-            return sorted(times)
+                found = fire_log.get((rid, group_val))
+                if found:
+                    times.extend(found)
+            if len(times) > 1:
+                times.sort()
+            return times
+        times = []
         step_event_type = step.get("event_type")
         if step_event_type:
             # Through _event_type_satisfies, never a raw ==. A strict equality
@@ -4380,11 +4391,25 @@ class CorrelationEngine:
         triggered: list[dict] = []
 
         for chain_rule in self._chain_rules:
-            chain_id = chain_rule["id"]
-            if not chain_rule.get("enabled", True):
+            # This loop body runs on EVERY event, so it is ordered by how cheaply
+            # each check can reject. The first stage having never fired for this
+            # group is far and away the common case — no attack is in progress —
+            # and testing it costs one dict lookup per leg, so it goes first.
+            # Reading the chain's scalar config (cooldown, span, enabled) means a
+            # getattr apiece on a pydantic model, which is the expensive part;
+            # none of it is touched until stage 1 has actually matched.
+            chain = chain_rule.get("chain")
+            if not chain:
                 continue
             chain_group = chain_rule.get("group_by", "source_ip")
             group_val = _resolve_chain_group(event, chain_group)
+            first_firings = self._step_firings(chain[0], group_val, chain_group)
+            if not first_firings:
+                continue
+
+            if not chain_rule.get("enabled", True):
+                continue
+            chain_id = chain_rule["id"]
 
             # Cooldown check (per-chain override, else 5x the base cooldown).
             cooldown = chain_rule.get("cooldown_seconds")
@@ -4395,9 +4420,6 @@ class CorrelationEngine:
             if cooldown > 0 and now - last_fired < cooldown:
                 continue
 
-            chain = chain_rule.get("chain", [])
-            if not chain:
-                continue
             max_span = chain_rule.get("max_window_seconds", 7200)
 
             # Walk the stages in declared order. `cursor` is the timestamp of
@@ -4410,7 +4432,10 @@ class CorrelationEngine:
             last_idx = len(chain) - 1
             for idx, step in enumerate(chain):
                 within = step.get("within", 3600)
-                firings = self._step_firings(step, group_val, chain_group)
+                firings = (
+                    first_firings if idx == 0
+                    else self._step_firings(step, group_val, chain_group)
+                )
                 if not firings:
                     ordered = False
                     break
