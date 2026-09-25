@@ -14,12 +14,16 @@ condition:
   filter:
     path_contains:
     - /api/repos
+  count_threshold: 10
+  time_window_seconds: 300
+  group_by: source_ip
 entityMappings:
 - type: IP
   field: source_ip
-description: Detects attempted exploitation of CVE-2025-8110 in Gogs (CVSS 8.7). Signature
-  rule. These path fragments are distinctive to exploitation of this CVE and do not occur
-  in ordinary traffic, so a single hit is evidence in itself and the rule fires without a
-  threshold.
+description: 'Detects attempted exploitation of CVE-2025-8110 in Gogs (CVSS 8.7). Rate-based
+  rather than single-shot: /api/repos has no hits in this estate''s traffic today, but it
+  is a plausible route for any git-adjacent application, and a single-shot rule on a plausible
+  path is the shape that produced 313 false criticals from /api/jobs in a replay of real traffic.
+  Ten requests in five minutes from one source is automated probing; one is somebody''s application.'
 references:
 - https://www.sentinelone.com/vulnerability-database/cve-2025-8110/
