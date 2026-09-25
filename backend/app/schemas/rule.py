@@ -140,7 +140,7 @@ class ChainStep(BaseModel):
     # against this estate means one of ~90 CVE rules, and "recovery inhibition"
     # means vssadmin OR wbadmin OR bcdedit OR tmutil. Without a disjunction a
     # useful chain would have to be written once per signature, so every chain
-    # shipped before v1.6.4.10 named a single rule and described a stage far
+    # shipped before v1.7.0 named a single rule and described a stage far
     # narrower than the one its title claimed.
     any_of: list[str] = []
     within: int = 3600

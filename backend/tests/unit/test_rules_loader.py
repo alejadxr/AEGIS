@@ -43,18 +43,25 @@ def test_every_chain_step_references_a_live_rule(pack):
     reference in-code rules (brute_force_ssh, credential_stuffing) that have no
     YAML file. Checking the pack alone reports those as missing when they are
     perfectly live.
+
+    A leg naming a DISABLED rule is exactly as dead as one naming a missing
+    rule: evaluate() skips `enabled: false` rules before _check_rule, so that
+    leg never reaches the fire-log and its stage can never be satisfied. Both
+    halves are asserted here.
     """
     from app.services.correlation_engine import CorrelationEngine
 
     engine = CorrelationEngine()
     live = {
-        rule["id"]
+        rule["id"]: rule.get("enabled", True)
         for rules in engine._rules_by_type.values()
         for rule in rules
     }
     assert pack.chains, "no chain rules loaded"
     for chain in pack.chains:
-        for step in chain.get("chain", []):
+        steps = chain.get("chain", [])
+        assert steps, f"chain {chain['id']} has no steps"
+        for step in steps:
             named = []
             if step.get("sigma_rule"):
                 named.append(step["sigma_rule"])
@@ -63,6 +70,11 @@ def test_every_chain_step_references_a_live_rule(pack):
                 assert rule_id in live, (
                     f"chain {chain['id']} waits on {rule_id}, which no loaded "
                     f"rule provides -- the chain can never complete"
+                )
+                assert live[rule_id], (
+                    f"chain {chain['id']} waits on {rule_id}, which is loaded but "
+                    f"DISABLED -- evaluate() skips it, so the stage can never be "
+                    f"satisfied and the chain can never complete"
                 )
 
 
@@ -102,21 +114,34 @@ def test_chain_rules_have_chain_steps(pack):
 
 
 def test_chain_steps_dict_access(pack):
-    chain = pack.chains[0]
-    steps = chain.get("chain", [])
-    step = steps[0]
-    # ChainStep must support .get() for engine compatibility
-    assert step.get("within", 3600) > 0
-    # A step must name what it waits for, in one of the three supported forms.
-    # `any_of` was added in v1.7.0: a real attack stage is rarely one signature
-    # ("exploitation attempt" here means any of ~90 CVE rules), so a step that
-    # could only name a single rule described a far narrower stage than its
-    # chain claimed.
-    assert (
-        step.get("sigma_rule")
-        or step.get("event_type")
-        or step.get("any_of")
-    ), f"chain step names nothing to wait for: {step}"
+    """Every step of every chain must be well formed.
+
+    This test exists to catch a malformed step, so it checks all of them rather
+    than the first step of the first chain: a step the engine cannot evaluate
+    used to satisfy itself silently (the old `if/elif` in _evaluate_chains fell
+    through with `all_steps_met` still True), which turned a 3-stage chain into
+    a 2-stage one with no trace.
+    """
+    for chain in pack.chains:
+        for idx, step in enumerate(chain.get("chain", [])):
+            where = f"{chain['id']} step {idx}"
+            # ChainStep must support .get() for engine compatibility
+            assert step.get("within", 3600) > 0, f"{where}: non-positive within"
+            # A step must name what it waits for, in one of the three supported
+            # forms. `any_of` was added in v1.7.0: a real attack stage is rarely
+            # one signature ("exploitation attempt" here means any of ~90 CVE
+            # rules), so a step that could only name a single rule described a
+            # far narrower stage than its chain claimed.
+            assert (
+                step.get("sigma_rule")
+                or step.get("event_type")
+                or step.get("any_of")
+            ), f"{where} names nothing to wait for: {step}"
+            # sigma_rule and any_of are alternatives, never both — the engine
+            # reads one or the other and would silently ignore the second.
+            assert not (step.get("sigma_rule") and step.get("any_of")), (
+                f"{where} sets both sigma_rule and any_of"
+            )
 
 
 def test_ransomware_chain_exists(pack):

@@ -43,13 +43,19 @@ group_by: hostname
 cooldown_seconds: 900
 chain:
 - label: payload staging / scripted execution
+  # ransomware_winrm_exec is excluded: it filters on process_path_regex and
+  # parent_process_path_regex, and no producer emits either field, so it can
+  # never fire. sigma_c2_reverse_shell / sigma_c2_encoded_powershell are listed
+  # but do not fire today — their `path_contains` fragments are command-line
+  # shapes matched against the executable path (see
+  # host_post_exploitation_chain.yaml for the detail). The three LOLBin legs do
+  # fire on real host_monitor payloads.
   any_of:
   - ransomware_lolbin_certutil
   - ransomware_lolbin_rundll32
-  - ransomware_winrm_exec
+  - sigma_c2_lolbin
   - sigma_c2_encoded_powershell
   - sigma_c2_reverse_shell
-  - sigma_c2_lolbin
   within: 3600
 - label: recovery inhibition
   any_of:
