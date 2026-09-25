@@ -7,6 +7,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] - 2026-09-25 (detection actually fires — three silent breaks repaired, 2026 CVE coverage 4x)
+
+This release is mostly about detections that existed, loaded, validated, counted
+toward the rule total, and could never fire. Three separate mechanisms were
+silently broken, each in a different layer, and every one of them passed
+inspection because the code reads correctly — the failure only shows when you
+execute it against the shape of data the system really produces.
+
+### Fixed — the event_type alias fix shipped in 1.6.4 never worked
+- `evaluate()` widened the candidate rule set through `_EVENT_TYPE_ALIASES`, but
+  `_check_rule` then compared the incoming event's type against the rule's own
+  declared type for strict equality. A rule reached *by aliasing* has, by
+  definition, a different literal type — so it was rejected on the next line.
+  The widening allocated and changed nothing.
+- Measurable effect: production emits `http_request`; **48 rules were filed under
+  `web_request` and none of them could fire**. Both comparison sites (the
+  immediate-fire branch and the sliding-window count filter) now route through
+  `_event_type_satisfies()` so they cannot drift apart again.
+- Candidate rules evaluated per HTTP request went from 52 to 100.
+
+### Fixed — every process event reached the rules with empty fields
+- `host_monitor` runs in-process and is live in production. It publishes
+  `process_name` / `process_path` / `command_line`; `_on_edr_event` read
+  `name` / `path` / `exe` / `cmdline`. **No field name matched.**
+- So the entire ransomware LOLBin set — vssadmin, wbadmin, bcdedit, certutil,
+  rundll32 — was reachable by event type, passed its hand-written tests, and
+  could never match real telemetry. Synthetic tests built to the handler's
+  expectations confirmed the bug instead of catching it.
+- Also repaired: `command_line` ↔ `cmdline` and `file_name` → `path` field
+  aliases. Ransom-note detection (`sigma_ransomware_note_dropped`) had never
+  been able to read the field it filters on.
+
+### Fixed — log_watcher read three fields that never existed
+- It read `path`, `status_code` and `method`; `NormalizedEvent` carries
+  `request_path`, `response_status` and `request_method`, and `_event_attr` is a
+  plain `dict.get` with no alias resolution. All three were `None` on every
+  event since the v1.6.4 refactor, degrading dashboard-path safelisting and the
+  401 brute-force gate.
+
+### Fixed — 52 detection tests that never executed
+- `test_correlation_engine_v163.py` called `correlation_engine.evaluate()`
+  without awaiting it. `evaluate` is `async def`, so every test died on
+  `TypeError: 'coroutine' object is not iterable`, and then read results with
+  `getattr(m, "rule_id")` when `evaluate()` returns dicts — two stacked bugs, so
+  the 26-rule pack they cover went unverified for its whole life.
+- Renamed to `test_sigma_threat_intel_rules.py` (the version stamp was three
+  releases stale). All 52 now run and pass. Running them immediately exposed two
+  bad test fixtures: one asserted a rate-based rule fires on a single request,
+  and four used a `file_path` key the pipeline does not emit.
+
+### Fixed — version drift across four declarations
+- `main.py` reported 1.6.4.9, `auto_updater.py` believed 1.4.0, a smoke script
+  asserted 1.6.3.9, README and frontend said 1.6.5.1. Two of these misbehaved
+  rather than merely confusing: `auto_updater` compares its constant against the
+  newest GitHub release, so AEGIS reported "update available" permanently; and
+  the smoke test failed on a `/health` version the API had not returned in three
+  releases, which reads as a broken deployment.
+- Added `backend/app/version.py` as the single source of truth, plus
+  `scripts/check_version_sync.py` to fail on drift in the copies other tools own
+  (npm's package.json, the README badge).
+
+### Fixed — duplicate rule opened two incidents per request
+- `sigma_ai_marimo_terminal_rce` and `sigma_web_marimo_terminal_rce` had
+  byte-identical conditions under two ids. The web_attacks copy is disabled
+  rather than deleted so the id still resolves for incidents already recorded.
+
+### Added — 2026 CVE coverage, measured against CISA KEV
+- 52 new CVE detection rules. Coverage of CVEs added to the CISA Known Exploited
+  Vulnerabilities catalogue during 2026 went from **15 to 66**, and from 4 to 16
+  of the 27 KEV entries flagged as used in ransomware campaigns.
+- Rules are one of two shapes, chosen by whether the exploit is visible in a URL:
+  a **signature** rule where the path is distinctive enough that one hit is
+  evidence, or a **behavioural** rule (10 requests / 300s / source IP) where the
+  payload rides in the request body and only a generic endpoint is observable.
+  A generic endpoint never becomes a single-shot rule — that is how you lock a
+  real customer out of a real product.
+- Verified against a real incident: the `GET /api/v1/auto_login` Langflow
+  auth-bypass scan this deployment received in August, which passed unnoticed at
+  the time, now raises a critical incident.
+
+### Added — IOC events reach a rule for the first time
+- `event_normalizer` held nine indicator patterns typed `c2`, `ransomware` and
+  `recon`, most rated critical. No rule declared those types and no alias routed
+  them, so they matched zero rules — and since `evaluate()` only runs
+  `fast_triage` when a rule fires, they produced no incident at all. The
+  highest-confidence signal in the system was being discarded.
+- Added `sigma_c2_ioc_callback`, `sigma_ransomware_ioc_marker` and
+  `sigma_recon_ioc_infrastructure` to carry them into incidents.
+- Added TeamPCP supply-chain indicators (two typosquat C2 domains, seven C2 IPs;
+  SANS ISC, 2026-05-17). Deliberately **not** added: the Shai-Hulud worm's
+  reported use of `api.github.com` for long-poll C2 — it is GitHub's real API,
+  and a rule that fires on every legitimate call is one an operator learns to
+  ignore.
+
+### Added — generalised filter vocabulary, and unsupported keys are now loud
+- `_contains` / `_contains_all` / `_excludes` work on any populated field, alias
+  aware, so `ua_contains` can read `user_agent`. `path_*` keeps its exact legacy
+  resolution.
+- Previously an unsupported key such as `ua_contains` or `domain_age_days_lt`
+  fell through to an equality test against a field of that literal name, matched
+  nothing, and said nothing. The rule loader now warns at load naming the rule,
+  key and file. On its first run it found a genuine dead clause in
+  `sigma_c2_https_new_domain`.
+- Parity-tested against the previous interpreter across the whole corpus
+  (~70,000 comparisons, zero mismatches) and measured slightly faster.
+- Added `sigma_recon_offensive_scanner_ua`, which this made possible: it matches
+  scanner tooling by User-Agent, and deliberately excludes curl, wget and
+  python-requests because monitoring and webhooks use them.
+
+---
+
 ## [1.6.5.1] - 2026-07-27 (firewall_sync — stop minting incidents from AEGIS's own config calls)
 
 ### Fixed - AEGIS raised 2,156 high-severity incidents against itself

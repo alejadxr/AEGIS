@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-v1.6.3.9 integration smoke test.
+AEGIS integration smoke test.
 
 Verifies the AEGIS deployment end-to-end against a live API:
 
-    1. GET  /health                                version == "1.6.3.9"
+    1. GET  /health                                version == app version
     2. POST /api/v1/correlation/test               synthetic ssh_failed_auth event
                                                    (falls back to a benign 401-flood
                                                    against /api/v1/dashboard/health
@@ -37,7 +37,10 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-EXPECTED_VERSION = "1.6.3.9"
+# Read from the single source of truth instead of a literal: this
+# assertion used to fail whenever the app version moved on, which
+# looked like a broken deployment rather than a stale test.
+from app.version import __version__ as EXPECTED_VERSION
 BANNED_INCIDENT_TITLES = {"SSH Brute Force Detected"}
 REQUIRED_RULE_IDS = {"http_auth_brute_force"}
 
