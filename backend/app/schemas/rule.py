@@ -66,6 +66,13 @@ class Rule(BaseModel):
     references: list[str] = []
     enabled: bool = True
     kind: Literal["sigma"] = "sigma"
+    # A chain-only rule still evaluates and still records into the chain
+    # fire-log, but never opens an incident of its own. It exists so a chain can
+    # be built from a stage that is individually benign — a successful login, a
+    # POST to an upload endpoint — without turning that benign stage into alert
+    # noise. Every rule used to create an incident when it fired, which is why
+    # no chain could use a low-signal stage.
+    chain_only: bool = False
 
     # Legacy compat fields (from raw dicts still in the engine)
     title: str | None = None
@@ -128,7 +135,18 @@ class Rule(BaseModel):
 class ChainStep(BaseModel):
     sigma_rule: str | None = None
     event_type: str | None = None
+    # `any_of` is satisfied when ANY of the named sigma rules fired. A stage of
+    # a real attack is almost never one signature: "exploitation attempt"
+    # against this estate means one of ~90 CVE rules, and "recovery inhibition"
+    # means vssadmin OR wbadmin OR bcdedit OR tmutil. Without a disjunction a
+    # useful chain would have to be written once per signature, so every chain
+    # shipped before v1.6.4.10 named a single rule and described a stage far
+    # narrower than the one its title claimed.
+    any_of: list[str] = []
     within: int = 3600
+    # Human label for the stage, used in the incident's evidence trail. Falls
+    # back to the rule/type name when omitted.
+    label: str | None = None
 
     def get(self, key: str, default: Any = None) -> Any:
         try:
@@ -140,6 +158,23 @@ class ChainStep(BaseModel):
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
+    @property
+    def rule_ids(self) -> list[str]:
+        """Every sigma rule id that can satisfy this step."""
+        if self.sigma_rule:
+            return [self.sigma_rule]
+        return list(self.any_of)
+
+    @property
+    def describe(self) -> str:
+        if self.label:
+            return self.label
+        if self.sigma_rule:
+            return self.sigma_rule
+        if self.any_of:
+            return " | ".join(self.any_of)
+        return self.event_type or "?"
+
 
 class ChainRule(Rule):
     kind: Literal["chain"] = "chain"  # type: ignore[assignment]
@@ -147,15 +182,32 @@ class ChainRule(Rule):
     max_window_seconds: int = 7200
     chain: list[ChainStep] = []
     group_by: str = "source_ip"
+    # Per-chain cooldown. `None` keeps the engine default (5x COOLDOWN_SECONDS).
+    cooldown_seconds: int | None = None
 
     @model_validator(mode="after")
     def sync_sequence_from_chain(self) -> ChainRule:
         if not self.sequence and self.chain:
-            self.sequence = [
-                s.sigma_rule or s.event_type or ""
-                for s in self.chain
-                if s.sigma_rule or s.event_type
-            ]
+            self.sequence = [s.describe for s in self.chain if s.rule_ids or s.event_type]
+        return self
+
+    @model_validator(mode="after")
+    def validate_steps(self) -> ChainRule:
+        """Every step must name something the engine can evaluate.
+
+        A step with neither `sigma_rule`, `any_of` nor `event_type` silently
+        satisfied itself in the old evaluator (the `if/elif` fell through with
+        `all_steps_met` still True), turning a 3-stage chain into a 2-stage one.
+        """
+        for idx, step in enumerate(self.chain):
+            if not step.rule_ids and not step.event_type:
+                raise ValueError(
+                    f"chain '{self.id}' step {idx} names no sigma_rule, any_of or event_type"
+                )
+            if step.sigma_rule and step.any_of:
+                raise ValueError(
+                    f"chain '{self.id}' step {idx} sets both sigma_rule and any_of"
+                )
         return self
 
     # ChainRule also needs dict-like "condition" access but chain rules

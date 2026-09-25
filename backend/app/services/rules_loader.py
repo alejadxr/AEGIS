@@ -71,6 +71,41 @@ def _parse_rule(data: dict, path: Path) -> Rule | ChainRule | None:
         return None
 
 
+def _check_filter_vocabulary(rule: Rule, path: Path) -> int:
+    """Warn about filter clauses the correlation engine cannot honour.
+
+    Schema validation only proves the filter is a mapping; it says nothing
+    about whether the engine implements each `<field><operator>` key. A key it
+    does not implement (`ua_contains` before v1.6.4.x, `domain_age_days_lt`)
+    degrades into an equality on a field nobody emits and the rule is dead
+    without a trace. This is the one place that runs once per rule at load,
+    so it is where that failure is made loud. The rule is still loaded — an
+    operator fixing a typo should not lose the rest of the pack.
+
+    The vocabulary lives next to the interpreter in correlation_engine (one
+    table drives both). It is imported lazily: the engine imports this module
+    inside CorrelationEngine.__init__, and a module-level import here would
+    pull the whole engine in just to load YAML. Any failure to validate is
+    swallowed — validation is a diagnostic, never a reason to drop rules.
+    """
+    filt = rule.condition.filter
+    if not filt:
+        return 0
+    try:
+        from app.services.correlation_engine import validate_filter
+        problems = validate_filter(filt)
+    except Exception as exc:  # pragma: no cover — diagnostic must never break loading
+        logger.debug(f"Filter vocabulary check unavailable for {path}: {exc}")
+        return 0
+    for key, reason in problems:
+        logger.warning(
+            f"Rule '{rule.id}' ({path}): filter key '{key}' cannot be honoured "
+            f"by the correlation engine — {reason}. The rule is loaded but this "
+            f"clause will not match as intended."
+        )
+    return len(problems)
+
+
 def load_rules(path: Path = _DEFAULT_RULES_PATH) -> RulePack:
     """Recursively load all *.yaml files under *path* and return a validated RulePack."""
     pack = RulePack()
@@ -82,6 +117,7 @@ def load_rules(path: Path = _DEFAULT_RULES_PATH) -> RulePack:
     yaml_files = sorted(path.rglob("*.yaml"))
     logger.info(f"Loading rules from {path} — found {len(yaml_files)} YAML files")
 
+    filter_problems = 0
     for yaml_path in yaml_files:
         data = _load_yaml_file(yaml_path)
         if data is None:
@@ -98,10 +134,13 @@ def load_rules(path: Path = _DEFAULT_RULES_PATH) -> RulePack:
             event_type = rule.condition.event_type
             pack.rules.setdefault(event_type, []).append(rule)
             pack.by_id[rule.id] = rule
+            filter_problems += _check_filter_vocabulary(rule, yaml_path)
 
     logger.info(
         f"Rules loaded: {pack.sigma_count} sigma rules "
         f"({len(pack.rules)} event types), {len(pack.chains)} chains"
+        + (f", {filter_problems} filter clause(s) the engine cannot honour (see warnings)"
+           if filter_problems else "")
     )
     return pack
 

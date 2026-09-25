@@ -11,12 +11,14 @@ import asyncio
 import ipaddress
 import logging
 import re
+import socket
 import time
 import uuid
 from collections import deque, defaultdict
 from copy import deepcopy
 from datetime import datetime, timezone
-from functools import partial
+from difflib import get_close_matches
+from functools import lru_cache, partial
 from typing import Any, Optional
 
 from app.core.mem_bounds import (
@@ -32,6 +34,11 @@ logger = logging.getLogger("aegis.correlation")
 # rules only need enough recent firings to satisfy their step counts; 200 is
 # well above any chain requirement while capping per-key growth.
 _SIGMA_FIRE_MAXLEN = 200
+# Fallback host identity for EDR telemetry that arrives without one. Matches
+# host_monitor.AGENT_ID's shape so the same host keys the same way whichever
+# producer the event came from.
+_LOCAL_HOSTNAME = f"aegis-{socket.gethostname().lower().replace('.local', '').replace(' ', '-')}"
+
 # Retention window for a _sigma_fire_log key with no new firings (seconds).
 # Matches the existing 7200s per-entry trim so stale (rule, ip) pairs are
 # dropped wholesale rather than lingering as empty/cold lists forever.
@@ -190,6 +197,12 @@ COOLDOWN_DOS_CRITICAL = 0   # distributed / under-attack — never silenced
 # correlation engine binds these to the safelist-gated _on_dos_event handler.
 # dos.ip_blocked has no matching rule (it is an audit signal) but is bound so
 # the whole DoS event surface flows through one gated path.
+# Topic carrying IOC-peer connections from
+# app.modules.network.connection_monitor. Kept separate from the bare
+# "network_connection" rule type so the payload lands on a safelist-gated
+# handler instead of the auto-subscribed ungated _on_event.
+_CONNECTION_TOPIC = "network.connection"
+
 _DOS_EVENT_TYPES: frozenset[str] = frozenset({
     "dos.http_flood",
     "dos.distributed",
@@ -3165,78 +3178,28 @@ BUILT_IN_RULES: list[dict] = [
 # Multi-event temporal chain rules
 # ---------------------------------------------------------------------------
 
-CHAIN_RULES: list[dict] = [
-    # 1 - Classic intrusion sequence: recon -> brute force -> honeypot
-    {
-        "id": "advanced_intrusion_chain",
-        "title": "Multi-stage intrusion detected",
-        "severity": "critical",
-        "description": "Same IP: port scan -> brute force -> honeypot interaction",
-        "mitre": ["T1046", "T1110", "T1595"],
-        "chain": [
-            {"sigma_rule": "port_scan", "within": 3600},
-            {"sigma_rule": "generic_credential_attack", "within": 1800},
-            {"event_type": "honeypot_interaction", "within": 900},
-        ],
-        "group_by": "source_ip",
-    },
-    # 2 - Credential theft chain: brute force -> credential stuffing -> lateral movement
-    {
-        "id": "credential_theft_chain",
-        "title": "Credential theft chain detected",
-        "severity": "critical",
-        "description": "Same IP: brute force -> credential stuffing -> lateral movement",
-        "mitre": ["T1110", "T1110.004", "T1021"],
-        "chain": [
-            {"sigma_rule": "generic_credential_attack", "within": 1800},
-            {"sigma_rule": "credential_stuffing", "within": 1200},
-            {"sigma_rule": "lateral_movement", "within": 600},
-        ],
-        "group_by": "source_ip",
-    },
-    # 3 - Web attack escalation: SQL injection -> web shell -> data exfiltration
-    {
-        "id": "web_attack_escalation",
-        "title": "Web attack escalation chain",
-        "severity": "critical",
-        "description": "Same IP: SQL injection -> web shell upload -> data exfiltration",
-        "mitre": ["T1190", "T1505.003", "T1041"],
-        "chain": [
-            {"sigma_rule": "sql_injection_chain", "within": 3600},
-            {"sigma_rule": "web_shell_activity", "within": 1800},
-            {"sigma_rule": "data_exfiltration", "within": 900},
-        ],
-        "group_by": "source_ip",
-    },
-    # 4 - C2 establishment: port scan -> brute force -> C2 beacon
-    {
-        "id": "c2_establishment_chain",
-        "title": "C2 establishment chain detected",
-        "severity": "critical",
-        "description": "Same IP: port scan -> brute force -> C2 beacon pattern",
-        "mitre": ["T1046", "T1110", "T1071"],
-        "chain": [
-            {"sigma_rule": "port_scan", "within": 7200},
-            {"sigma_rule": "brute_force_ssh", "within": 3600},
-            {"sigma_rule": "c2_beacon", "within": 1800},
-        ],
-        "group_by": "source_ip",
-    },
-    # 5 - Privilege escalation chain: brute force -> priv esc -> data exfil
-    {
-        "id": "priv_esc_exfil_chain",
-        "title": "Privilege escalation to exfiltration chain",
-        "severity": "critical",
-        "description": "Same IP: brute force -> privilege escalation -> data exfiltration",
-        "mitre": ["T1110", "T1068", "T1041"],
-        "chain": [
-            {"sigma_rule": "brute_force_ssh", "within": 3600},
-            {"sigma_rule": "privilege_escalation", "within": 1800},
-            {"sigma_rule": "data_exfiltration", "within": 900},
-        ],
-        "group_by": "source_ip",
-    },
-]
+# v1.6.4.10 — the five chains that used to live here (advanced_intrusion_chain,
+# credential_theft_chain, web_attack_escalation, c2_establishment_chain,
+# priv_esc_exfil_chain) were deleted, not moved. Every one of them named at
+# least one leg whose event_type no producer in this codebase emits:
+#
+#   port_scan, c2_beacon, lateral_movement -> "connection"    (0 producers)
+#   data_exfiltration                      -> "network"       (0 producers)
+#   ransomware_extension_mass_change       -> "file_extension_change" (0 producers)
+#
+# Verified by driving the real engine through the complete attack story using
+# only event types the real producers emit (152 events, 14 sigma rules fired,
+# zero chains). `connection`/`network` appear in this file only as rule
+# conditions; the sole mapping that could produce `connection` is
+# _EDR_EVENT_MAP["network_anomaly"], and host_monitor publishes that kind on
+# `edr.suspicious_process`, a topic start() does not subscribe to. Keeping the
+# chains as in-code fallbacks would have resurrected them the moment the YAML
+# files were removed, since __init__ merges CHAIN_RULES on id miss.
+#
+# The replacements live in app/rules/chains/*.yaml, where an operator can read
+# and edit them. Each leg there was confirmed reachable from a real producer
+# before the chain was written.
+CHAIN_RULES: list[dict] = []
 
 
 # ---------------------------------------------------------------------------
@@ -3266,6 +3229,32 @@ _EVENT_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _event_type_satisfies(event_type: str, rule_event_type: str) -> bool:
+    """True when an event of `event_type` should be evaluated against a rule
+    filed under `rule_event_type`.
+
+    This is the other half of the aliasing added in 3bfb64a, and without it that
+    commit was dead code for its entire life. `evaluate()` widens the candidate
+    list via _EVENT_TYPE_ALIASES, but `_check_rule` then re-read the rule's own
+    declared type and compared it for strict equality against the incoming
+    event. A candidate present ONLY because of widening has, by definition, a
+    different literal type -- so every alias-reached rule was rejected on the
+    very next line. The widening ran, allocated, and changed nothing.
+
+    The measurable consequence: production emits `http_request`, 48 rules are
+    filed under `web_request`, and none of them could fire. Verified by feeding
+    sigma_ai_marimo_terminal_rce a matching `http_request` event (no fire) and
+    the same event typed `web_request` (fires).
+
+    Both comparison sites in _check_rule -- the immediate-fire branch and the
+    sliding-window count filter -- now route through here, so they cannot drift
+    apart again.
+    """
+    if event_type == rule_event_type:
+        return True
+    return rule_event_type in _EVENT_TYPE_ALIASES.get(event_type, ())
+
+
 # Field spellings a rule may use vs what the normalized event actually carries.
 # The normalizer produces request_method / request_path / response_status /
 # user_agent, but rules (and the unit tests) were written against the shorter
@@ -3282,7 +3271,36 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "response_status": ("status",),
     "ua": ("user_agent",),
     "user_agent": ("ua",),
+    # The EDR pipeline publishes the process command line as `cmdline`
+    # (see _on_edr_event), but six ransomware rules filter on
+    # `command_line_regex`. Without this pair _event_get returned None and the
+    # regex never ran, so every LOLBin detection built on it -- certutil,
+    # rundll32, vssadmin, wbadmin, bcdedit, shadow-copy deletion -- was inert
+    # on a reachable event type. The rules were correct; the field name was not.
+    "command_line": ("cmdline",),
+    "cmdline": ("command_line",),
+    # The FIM half of host_monitor publishes only `path`; no producer emits a
+    # separate basename. sigma_ransomware_note_dropped filters on
+    # `file_name_regex`, so it read None and never fired -- ransom-note
+    # detection, one of the few ransomware signals this estate can actually
+    # observe, was inert. Matching the regex against the full path is correct
+    # here because these patterns are `re.search`, not anchored.
+    "file_name": ("path", "file_path"),
 }
+
+
+def _resolve_chain_group(event: dict, field: str):
+    """Value of a chain's `group_by` field on `event`, or "__all__".
+
+    `dict.get(field, default)` was not enough: a producer that emits the key
+    with an explicit ``None`` (log lines with no extractable IP, EDR events with
+    no hostname) returned None rather than the default, so every such event
+    shared one group and polluted each other's chain state.
+    """
+    value = event.get(field)
+    if value is None or value == "":
+        return "__all__"
+    return value
 
 
 def _event_get(event: dict, key: str):
@@ -3295,61 +3313,300 @@ def _event_get(event: dict, key: str):
     return None
 
 
-def _matches_filter(event: dict, filt: dict) -> bool:
-    """Return True when all filter key/value pairs match the event.
+# ---------------------------------------------------------------------------
+# Filter vocabulary
+#
+# A rule's `condition.filter` is a mapping of `<field><operator>: value`. The
+# operator is a key suffix; a key with no recognised suffix is a plain equality
+# (or list-membership) test on that field. One table drives BOTH the per-event
+# interpreter (_matches_filter) and the load-time validator (validate_filter),
+# so the two cannot drift: anything the interpreter understands, the validator
+# accepts, and vice versa.
+#
+# Until v1.6.4.x the substring operators existed for `path` only, and a key the
+# interpreter did not recognise — `ua_contains`, `domain_age_days_lt` — fell
+# through to the equality branch, compared the value against a field literally
+# named `ua_contains`, and never matched. The rule loaded, validated, counted
+# toward the rule total and was dead. Rules shipped with that bug. The suffix
+# family below is now generic (any field, alias-aware) and validate_filter
+# reports what it cannot honour at load, so a dead clause is loud, not silent.
+# ---------------------------------------------------------------------------
 
-    Field reads go through _event_get, so a rule written as `method: POST`
-    still matches an event that carries `request_method` — see _FIELD_ALIASES.
+_OP_EQ = "eq"
+_OP_GT = "gt"
+_OP_REGEX = "regex"
+_OP_CONTAINS = "contains"
+_OP_CONTAINS_ALL = "contains_all"
+_OP_EXCLUDES = "excludes"
+
+# Longest suffix first, so `path_contains_all` is never read as
+# `<path_contains>_all`.
+_FILTER_OPERATORS: tuple[tuple[str, str], ...] = (
+    ("_contains_all", _OP_CONTAINS_ALL),
+    ("_contains", _OP_CONTAINS),
+    ("_excludes", _OP_EXCLUDES),
+    ("_regex", _OP_REGEX),
+    ("_gt", _OP_GT),
+)
+
+# Operator-looking suffixes rule authors reach for that the interpreter does
+# NOT implement. A key ending in one of these is evaluated as a plain equality
+# on a field literally named e.g. `domain_age_days_lt`, which no producer
+# emits — the clause can never match. validate_filter reports them.
+_UNSUPPORTED_FILTER_SUFFIXES: tuple[str, ...] = (
+    "_lt", "_lte", "_le", "_gte", "_ge", "_ne", "_neq", "_eq", "_not",
+    "_in", "_not_in", "_nin", "_startswith", "_starts_with", "_endswith",
+    "_ends_with", "_matches", "_match", "_like", "_between", "_contains_any",
+    "_contains_none", "_not_contains", "_icontains", "_iregex", "_not_regex",
+    "_exists", "_is_null", "_isnull", "_contain", "_include", "_includes",
+    "_exclude", "_excludes_all",
+)
+_OPERATOR_WORDS: tuple[str, ...] = ("contains", "excludes", "regex")
+
+# key -> (operator, field), filled on first sight. Filter keys come from rule
+# authors, not from events, so the vocabulary is small (~40 distinct keys in the
+# shipped corpus); the cap only guards against a runaway custom-rule API.
+_PARSED_FILTER_KEYS: dict[str, tuple[str, str]] = {}
+_PARSED_FILTER_KEYS_MAX = 4096
+
+
+def _parse_filter_key(key: str) -> tuple[str, str]:
+    """Split a filter key into (operator, field); cached per distinct key."""
+    parsed = _PARSED_FILTER_KEYS.get(key)
+    if parsed is None:
+        parsed = (_OP_EQ, key)
+        for suffix, op in _FILTER_OPERATORS:
+            if key.endswith(suffix):
+                parsed = (op, key[: -len(suffix)])
+                break
+        if len(_PARSED_FILTER_KEYS) < _PARSED_FILTER_KEYS_MAX:
+            _PARSED_FILTER_KEYS[key] = parsed
+    return parsed
+
+
+@lru_cache(maxsize=512)
+def _compile_filter_regex(pattern: str) -> "re.Pattern[str]":
+    """Compile once per distinct pattern; the hot path is then a dict hit."""
+    return re.compile(pattern)
+
+
+def _filter_haystack(event: dict, field: str):
+    """Resolve the text a `<field>_contains/_contains_all/_excludes` clause
+    searches. Returns a lower-cased str, a tuple of lower-cased strs for a
+    list-valued field (`tags`), or None when the field is absent or not text.
+
+    `path` keeps its historical resolution verbatim: an empty/None `path`
+    falls through to `request_path`, then `url`, then "" — the alias table in
+    _event_get would stop at the first key PRESENT, even if it holds None, so
+    it is deliberately not used here. Every other field is alias-aware via
+    _event_get, which is what lets `ua_contains` read `user_agent`.
     """
-    for key, expected in filt.items():
-        actual = _event_get(event, key)
+    if field == "path":
+        value = event.get("path", "") or event.get("request_path", "") or event.get("url", "") or ""
+    else:
+        value = _event_get(event, field)
+    if isinstance(value, str):
+        return value.lower()
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return tuple(v.lower() for v in value if isinstance(v, str))
+    return None
 
-        # Numeric greater-than check: bytes_gt -> bytes > value
-        if key.endswith("_gt"):
-            field = key[:-3]  # strip "_gt"
-            actual_val = _event_get(event, field)
-            if actual_val is None or actual_val <= expected:
+
+def _any_fragment_in(hay, fragments) -> bool:
+    if isinstance(hay, str):
+        for fragment in fragments:
+            if str(fragment).lower() in hay:
+                return True
+        return False
+    for fragment in fragments:
+        needle = str(fragment).lower()
+        for part in hay:
+            if needle in part:
+                return True
+    return False
+
+
+def _all_fragments_in(hay, fragments) -> bool:
+    if isinstance(hay, str):
+        for fragment in fragments:
+            if str(fragment).lower() not in hay:
                 return False
-            continue
-
-        # Regex match: command_line_regex → re.search(pattern, event["command_line"])
-        if key.endswith("_regex"):
-            field = key[:-6]  # strip "_regex"
-            actual_val = _event_get(event, field)
-            if actual_val is None or not re.search(str(expected), str(actual_val)):
-                return False
-            continue
-
-        # List membership check
-        if isinstance(expected, list):
-            # path_contains: any element must be a substring of actual
-            if key == "path_contains":
-                path = event.get("path", "") or event.get("request_path", "") or event.get("url", "") or ""
-                _p = path.lower()
-                if not any(str(fragment).lower() in _p for fragment in expected):
-                    return False
-                continue
-            # path_contains_all: every element must be a substring
-            if key == "path_contains_all":
-                path = event.get("path", "") or event.get("request_path", "") or event.get("url", "") or ""
-                _p = path.lower()
-                if not all(str(fragment).lower() in _p for fragment in expected):
-                    return False
-                continue
-            # v1.6.3.5: path_excludes — fail the rule if path contains ANY listed fragment
-            if key == "path_excludes":
-                path = event.get("path", "") or event.get("request_path", "") or event.get("url", "") or ""
-                _p = path.lower()
-                if any(str(fragment).lower() in _p for fragment in expected):
-                    return False
-                continue
-            if actual not in expected:
-                return False
-            continue
-
-        if actual != expected:
+        return True
+    for fragment in fragments:
+        needle = str(fragment).lower()
+        for part in hay:
+            if needle in part:
+                break
+        else:
             return False
     return True
+
+
+def _matches_filter(event: dict, filt: dict) -> bool:
+    """Return True when every clause of `filt` holds for `event`.
+
+    Clause vocabulary (operator = key suffix; `<f>` is any event field, read
+    through _event_get so alias spellings work — `ua` reads `user_agent`,
+    `method` reads `request_method`):
+
+      <f>: value            equality; a list value means membership
+      <f>_gt: number        numeric greater-than
+      <f>_regex: pattern    re.search over str(field)
+      <f>_contains: [..]    case-insensitive substring, ANY fragment (a bare
+                            string is a single fragment)
+      <f>_contains_all: [..] every fragment
+      <f>_excludes: [..]    fails when ANY fragment is present
+
+    Substring clauses never raise: an absent or non-text field fails a
+    `_contains`/`_contains_all` and passes an `_excludes`; a list-valued field
+    (`tags`) matches when any element contains the fragment. `path_*` keeps its
+    exact legacy resolution (path → request_path → url → ""), see
+    _filter_haystack. A `_gt` against a non-comparable value and a `_regex`
+    with an invalid pattern also fail closed instead of aborting evaluation of
+    every remaining candidate rule for the event.
+
+    Runs on every event against every candidate rule: key parsing is cached
+    per distinct key, regexes are compiled once, and nothing is allocated on
+    the common path beyond the lowered haystack.
+    """
+    for key, expected in filt.items():
+        op, field = _parse_filter_key(key)
+
+        if op == _OP_EQ:
+            actual = _event_get(event, key)
+            if isinstance(expected, list):
+                if actual not in expected:
+                    return False
+            elif actual != expected:
+                return False
+            continue
+
+        if op == _OP_GT:
+            actual = _event_get(event, field)
+            try:
+                if actual is None or actual <= expected:
+                    return False
+            except TypeError:
+                return False
+            continue
+
+        if op == _OP_REGEX:
+            actual = _event_get(event, field)
+            if actual is None:
+                return False
+            try:
+                pattern = _compile_filter_regex(str(expected))
+            except re.error:
+                return False
+            if not pattern.search(str(actual)):
+                return False
+            continue
+
+        # Substring family.
+        if isinstance(expected, (list, tuple)):
+            fragments = expected
+        elif isinstance(expected, str):
+            fragments = (expected,)
+        else:
+            return False  # malformed clause — reported by validate_filter
+        hay = _filter_haystack(event, field)
+        if op == _OP_EXCLUDES:
+            if hay is not None and _any_fragment_in(hay, fragments):
+                return False
+        elif hay is None:
+            return False
+        elif op == _OP_CONTAINS:
+            if not _any_fragment_in(hay, fragments):
+                return False
+        elif not _all_fragments_in(hay, fragments):
+            return False
+    return True
+
+
+def validate_filter(filt: Any) -> list[tuple[str, str]]:
+    """Report the clauses of a rule filter that _matches_filter cannot honour.
+
+    Returns a list of (key, reason) pairs — empty when every clause is one the
+    interpreter implements with a value of the right shape. Meant to run once
+    per rule at load time (rules_loader, BUILT_IN_RULES merge, add_rule), never
+    per event. It only judges syntax and value shape; it cannot know which
+    fields a given event producer populates.
+    """
+    problems: list[tuple[str, str]] = []
+    if not isinstance(filt, dict):
+        return [("<filter>", f"filter must be a mapping, got {type(filt).__name__}")]
+    for key, expected in filt.items():
+        if not isinstance(key, str):
+            problems.append((str(key), "filter keys must be strings"))
+            continue
+        op, field = _parse_filter_key(key)
+        if op != _OP_EQ and not field:
+            problems.append((key, "operator has no field name in front of it"))
+            continue
+        if op == _OP_EQ:
+            for suffix in _UNSUPPORTED_FILTER_SUFFIXES:
+                if key.endswith(suffix):
+                    problems.append((
+                        key,
+                        f"operator '{suffix}' is not implemented (supported: "
+                        + ", ".join(s for s, _ in _FILTER_OPERATORS)
+                        + "); it is being evaluated as an equality on a field "
+                        f"literally named '{key}'",
+                    ))
+                    break
+            else:
+                # Catch misspelled operators (`ua_contins`) that would
+                # otherwise degrade into an equality on a nonsense field.
+                tail = key.rpartition("_")[2] if "_" in key else ""
+                close = get_close_matches(tail, _OPERATOR_WORDS, n=1, cutoff=0.8) if tail else []
+                if close and tail not in _OPERATOR_WORDS:
+                    problems.append((key, f"unknown operator '_{tail}' — did you mean '_{close[0]}'?"))
+                elif isinstance(expected, dict):
+                    problems.append((key, "mapping values are not comparable to event fields"))
+            continue
+        if op == _OP_GT:
+            if isinstance(expected, bool) or not isinstance(expected, (int, float)):
+                problems.append((key, f"_gt needs a numeric threshold, got {type(expected).__name__}"))
+            continue
+        if op == _OP_REGEX:
+            if not isinstance(expected, str):
+                problems.append((key, f"_regex needs a pattern string, got {type(expected).__name__}"))
+                continue
+            try:
+                _compile_filter_regex(expected)
+            except re.error as exc:
+                problems.append((key, f"invalid regex: {exc}"))
+            continue
+        # Substring family.
+        if isinstance(expected, str):
+            continue
+        if not isinstance(expected, (list, tuple)):
+            problems.append((key, f"substring operators need a list of fragments (or one string), got {type(expected).__name__}"))
+            continue
+        if op == _OP_CONTAINS and not expected:
+            problems.append((key, "empty fragment list can never match"))
+            continue
+        for fragment in expected:
+            if isinstance(fragment, (dict, list, tuple, set)) or fragment is None:
+                problems.append((key, f"fragment {fragment!r} is not text"))
+                break
+    return problems
+
+
+def _log_filter_problems(rule: Any, origin: str) -> int:
+    """Warn once per unsupported clause of an in-process rule; return count."""
+    cond = rule.get("condition") if hasattr(rule, "get") else None
+    filt = cond.get("filter") if cond is not None and hasattr(cond, "get") else None
+    if not filt:
+        return 0
+    problems = validate_filter(filt)
+    for key, reason in problems:
+        logger.warning(
+            f"Rule '{rule.get('id')}' ({origin}): filter key '{key}' cannot be "
+            f"honoured — {reason}. The rule is loaded but this clause will not "
+            f"match as intended."
+        )
+    return len(problems)
 
 
 async def _escalate_incident(db: Any, incident: Any, rule: dict, alert_data: dict) -> None:
@@ -3460,6 +3717,9 @@ class CorrelationEngine:
                 self._rules.append(deepcopy(builtin))
                 yaml_rule_ids.add(rid)
                 builtin_added_ids.append(rid)
+                # YAML rules were checked by rules_loader; an in-code rule
+                # that reaches the engine gets the same load-time check.
+                _log_filter_problems(builtin, "BUILT_IN_RULES")
             builtin_added = len(builtin_added_ids)
 
             chain_added_ids: list[str] = []
@@ -3501,6 +3761,8 @@ class CorrelationEngine:
             self._chain_rules = deepcopy(CHAIN_RULES)
             self._rule_pack = None
             self._watcher = None
+            for builtin in self._rules:
+                _log_filter_problems(builtin, "BUILT_IN_RULES")
             logger.info(
                 f"rules loaded: {len(self._rules)} sigma + {len(self._chain_rules)} chain "
                 f"(yaml=0, builtin={len(self._rules)}, dedup=0) [fallback path]"
@@ -3510,6 +3772,12 @@ class CorrelationEngine:
         # so newly-merged in-code rules (http_auth_brute_force, ssh_honeypot_attempt,
         # generic_credential_attack) are routable from the first event onward.
         self._rules_by_type: dict[str, list] = self._build_type_index(self._rules)
+
+        # A chain leg naming a rule id that does not exist can never be
+        # satisfied, and the chain containing it is dead with no trace. That is
+        # how all six chains shipped before v1.6.4.10 came to be unfireable, so
+        # the condition is now reported at load rather than discovered by audit.
+        self._report_unknown_chain_legs()
 
         self._fired: dict[tuple[str, str], float] = {}  # (rule_id, group_key) → last_fired_ts
         self._chain_fired: dict[tuple[str, str], float] = {}  # chain cooldowns
@@ -3521,6 +3789,19 @@ class CorrelationEngine:
         self._sigma_fire_log: dict[tuple[str, str], deque] = defaultdict(
             partial(deque, maxlen=_SIGMA_FIRE_MAXLEN)
         )
+        # Evidence trail for the most recent fire of each (chain_id, group) —
+        # the ordered stage timestamps _evaluate_chains matched. Read once by
+        # _on_chain_triggered and bounded by the same sweep as _chain_fired
+        # (one entry per _chain_fired entry, never more).
+        self._chain_evidence: dict[tuple[str, str], dict] = {}
+        # Group fields any chain rule keys on (`source_ip` plus e.g. `hostname`).
+        # evaluate() records each sigma firing under every one of these that the
+        # event carries, so a chain grouped by hostname can find a leg whose own
+        # `group_by` is source_ip. Previously the fire-log was keyed ONLY by
+        # source_ip, which made every chain grouped by anything else structurally
+        # unfireable — ransomware_chain declared `group_by: source_ip` while its
+        # legs grouped by hostname, and nothing ever lined up.
+        self._chain_group_fields: tuple[str, ...] = self._collect_chain_group_fields()
         # Background memory-bounding sweep task (started in start()).
         self._prune_task: Optional["asyncio.Task"] = None
         self._stats = {
@@ -3539,6 +3820,40 @@ class CorrelationEngine:
 
     def register_event_bus(self, bus: Any) -> None:
         self._event_bus = bus
+
+    def _report_unknown_chain_legs(self) -> list[tuple[str, str]]:
+        """Warn about chain legs naming a sigma rule that is not loaded.
+
+        Returns the (chain_id, rule_id) pairs found, so a test can assert the
+        shipped pack has none. A chain whose leg names a missing rule is not a
+        degraded chain — it is a dead one, because that stage can never be
+        satisfied.
+        """
+        known = {r["id"] for r in self._rules}
+        missing: list[tuple[str, str]] = []
+        for chain in self._chain_rules:
+            for step in chain.get("chain", []):
+                ids = step.get("rule_ids")
+                if not ids:
+                    ids = [step["sigma_rule"]] if step.get("sigma_rule") else list(step.get("any_of") or ())
+                for rid in ids:
+                    if rid and rid not in known:
+                        missing.append((chain["id"], rid))
+        for chain_id, rid in missing:
+            logger.warning(
+                f"Chain '{chain_id}' references sigma rule '{rid}', which is not "
+                f"loaded — that stage can never be satisfied and the chain is dead."
+            )
+        return missing
+
+    def _collect_chain_group_fields(self) -> tuple[str, ...]:
+        """Distinct `group_by` fields across all chain rules (source_ip first)."""
+        fields = {"source_ip"}
+        for chain in getattr(self, "_chain_rules", ()):  # pragma: no branch
+            gb = chain.get("group_by", "source_ip")
+            if isinstance(gb, str) and gb:
+                fields.add(gb)
+        return ("source_ip",) + tuple(sorted(fields - {"source_ip"}))
 
     async def start(self) -> None:
         """Subscribe to all relevant event types on the event bus."""
@@ -3578,6 +3893,12 @@ class CorrelationEngine:
         self._event_bus.subscribe("edr.event", self._on_edr_event)
         self._event_bus.subscribe("edr.process_start", self._on_edr_event)
         self._event_bus.subscribe("honeypot_interaction", self._on_honeypot_event)
+        # connection_monitor's IOC-peer topic. Bound to its own gated handler
+        # rather than left to the auto-subscribed bare "network_connection"
+        # rule type, which routes to the UNGATED _on_event — same reasoning as
+        # the dos.* binding above. Only publishes when the collector is enabled
+        # (AEGIS_CONNECTION_MONITOR, default off), so subscribing costs nothing.
+        self._event_bus.subscribe(_CONNECTION_TOPIC, self._on_connection_event)
         # Start the background memory-bounding sweep (evicts stale per-key state
         # from _sigma_fire_log / _fired / _chain_fired and the campaign tracker).
         if self._prune_task is None or self._prune_task.done():
@@ -3590,7 +3911,8 @@ class CorrelationEngine:
         logger.info(
             f"Correlation engine subscribed to {len(event_types)} rule types "
             f"({len(_DOS_EVENT_TYPES)} dos.* via gated handler) "
-            f"+ log_line, log_event, edr.event, edr.process_start, honeypot_interaction"
+            f"+ log_line, log_event, edr.event, edr.process_start, "
+            f"honeypot_interaction, {_CONNECTION_TOPIC}"
         )
 
     async def stop(self) -> None:
@@ -3646,6 +3968,11 @@ class CorrelationEngine:
         evicted += prune_stale_ts_map(
             self._chain_fired, self.COOLDOWN_SECONDS * 10, now
         )
+        # _chain_evidence mirrors _chain_fired one-for-one; drop any entry whose
+        # cooldown key has been evicted so it cannot outlive it.
+        for _k in [k for k in self._chain_evidence if k not in self._chain_fired]:
+            self._chain_evidence.pop(_k, None)
+            evicted += 1
         # Campaign tracker per-IP maps.
         evicted += _campaign_tracker.prune(now)
         return evicted
@@ -3708,17 +4035,34 @@ class CorrelationEngine:
             if not rule.get("enabled", True):
                 continue
             if self._check_rule(rule, event, ts):
-                triggered.append(rule)
-                self._stats["rules_triggered"] += 1
+                # A chain-only rule feeds chains but never alerts on its own, so
+                # a stage that is benign in isolation (a successful login, an
+                # upload POST) can be a chain leg without becoming an incident —
+                # and without reaching fast_triage or the campaign tracker —
+                # every time it happens. It is deliberately NOT added to
+                # `triggered` for that reason; only the fire-log sees it.
+                if not rule.get("chain_only", False):
+                    triggered.append(rule)
+                    self._stats["rules_triggered"] += 1
 
-                # Record sigma fire for chain rule evaluation
-                group_key = event.get("source_ip", "__all__")
-                fire_dq = self._sigma_fire_log[(rule["id"], group_key)]
-                fire_dq.append(ts)
-                # Trim old entries in place (keep last 2h). Bounded deque already
-                # caps length at _SIGMA_FIRE_MAXLEN; this drops age-stale heads.
-                while fire_dq and ts - fire_dq[0] >= _SIGMA_FIRE_TTL:
-                    fire_dq.popleft()
+                # Record sigma fire for chain rule evaluation, once per group
+                # field any chain keys on (source_ip, plus e.g. hostname). A
+                # chain grouped by hostname needs its legs findable under the
+                # hostname key even when the leg rule itself groups by IP.
+                for _field in self._chain_group_fields:
+                    group_key = _resolve_chain_group(event, _field)
+                    if _field != "source_ip" and group_key == "__all__":
+                        continue  # nothing to key on for this field
+                    fire_dq = self._sigma_fire_log[(rule["id"], group_key)]
+                    fire_dq.append(ts)
+                    # Trim old entries in place (keep last 2h). Bounded deque
+                    # already caps length at _SIGMA_FIRE_MAXLEN; this drops
+                    # age-stale heads.
+                    while fire_dq and ts - fire_dq[0] >= _SIGMA_FIRE_TTL:
+                        fire_dq.popleft()
+
+                if rule.get("chain_only", False):
+                    continue
 
                 await self._on_rule_triggered(rule, event)
 
@@ -3801,6 +4145,9 @@ class CorrelationEngine:
         new_rule.setdefault("source", "custom")
         new_rule.setdefault("mitre", [])
         new_rule.setdefault("description", "")
+        # Warn (never reject): a custom rule with a clause the interpreter
+        # cannot honour must not be silently dead.
+        _log_filter_problems(new_rule, "add_rule")
         self._rules.append(new_rule)
         # Keep the O(1) dispatch index in sync.
         et = new_rule["condition"]["event_type"]
@@ -3880,8 +4227,11 @@ class CorrelationEngine:
         cond = rule["condition"]
         event_type = cond.get("event_type")
 
-        # Must match the event type declared in the rule
-        if event.get("event_type") != event_type:
+        # Must match the event type declared in the rule, OR be reachable from
+        # it through _EVENT_TYPE_ALIASES. A strict equality here silently
+        # undid the candidate widening evaluate() performs -- see
+        # _event_type_satisfies.
+        if not _event_type_satisfies(event.get("event_type", ""), event_type):
             return False
 
         # Apply top-level field filter (if present)
@@ -3932,7 +4282,7 @@ class CorrelationEngine:
         matching_events = [
             ev for ts, ev in self._window
             if ts >= cutoff
-            and ev.get("event_type") == event_type
+            and _event_type_satisfies(ev.get("event_type", ""), event_type)
             and self._group_matches(ev, group_by, group_key)
             and (not top_filter or _matches_filter(ev, top_filter))
         ]
@@ -3950,84 +4300,176 @@ class CorrelationEngine:
 
         return False
 
+    def _step_firings(self, step, group_val, chain_group: str) -> list[float]:
+        """Sorted timestamps at which `step` was satisfied for `group_val`.
+
+        A `sigma_rule` / `any_of` step reads the chain fire-log; an `event_type`
+        step scans the raw window. Both are resolved against the CHAIN's group
+        field, not the leg rule's own `group_by` — see the dual-keying in
+        evaluate().
+        """
+        rule_ids = step.get("rule_ids")
+        if not rule_ids:
+            # Plain-dict step (in-code CHAIN_RULES) — no `rule_ids` property.
+            rule_ids = [step["sigma_rule"]] if step.get("sigma_rule") else list(step.get("any_of") or ())
+        times: list[float] = []
+        if rule_ids:
+            for rid in rule_ids:
+                if not rid:
+                    continue
+                times.extend(self._sigma_fire_log.get((rid, group_val), ()))
+            return sorted(times)
+        step_event_type = step.get("event_type")
+        if step_event_type:
+            for ts, ev in self._window:
+                if ev.get("event_type") == step_event_type and _resolve_chain_group(ev, chain_group) == group_val:
+                    times.append(ts)
+        return sorted(times)
+
     def _evaluate_chains(self, event: dict, now: float) -> list[dict]:
+        """Evaluate multi-event temporal chain rules — ORDERED, latched.
+
+        v1.6.4.10. The previous implementation asked, for every step
+        independently, "did this fire at any point in the last `within`
+        seconds?". That is an unordered AND, not a chain:
+
+        * order was never checked — the exact reverse of a chain fired it
+          (verified: honeypot -> brute force -> port scan fired
+          `advanced_intrusion_chain`);
+        * `within` was measured from the triggering event rather than from the
+          previous stage, so the declared per-stage windows described nothing
+          about the sequence;
+        * `max_window_seconds` was declared on every chain and read by nobody,
+          so a chain's total span was unbounded (capped only by the fire-log's
+          2h retention);
+        * once the evidence was in the log ANY later event from that group
+          re-fired the chain, so a single attack produced one critical incident
+          per cooldown period for two hours (verified: 25 incidents), and the
+          `triggering_event` attached as evidence was whatever arrived last —
+          typically a benign `GET /favicon.ico`.
+
+        The rewrite walks the steps in order, requiring each stage to have
+        occurred strictly after the previous one and within its own `within`
+        seconds OF THAT STAGE, bounds the whole sequence by
+        `max_window_seconds`, and latches on the final stage: the chain only
+        fires when the final stage's evidence is newer than the last fire for
+        that group. That makes a re-fire mean "the attack progressed again",
+        not "another packet arrived".
         """
-        Evaluate multi-event temporal chain rules.
-        Check if all events in a chain occurred from the same group (IP)
-        within their respective time windows.
-        """
-        triggered = []
-        group_key = event.get("source_ip", "__all__")
+        triggered: list[dict] = []
 
         for chain_rule in self._chain_rules:
             chain_id = chain_rule["id"]
+            if not chain_rule.get("enabled", True):
+                continue
             chain_group = chain_rule.get("group_by", "source_ip")
-            group_val = event.get(chain_group, "__all__")
+            group_val = _resolve_chain_group(event, chain_group)
 
-            # Cooldown check
+            # Cooldown check (per-chain override, else 5x the base cooldown).
+            cooldown = chain_rule.get("cooldown_seconds")
+            if cooldown is None:
+                cooldown = self.COOLDOWN_SECONDS * 5
             cooldown_key = (chain_id, str(group_val))
             last_fired = self._chain_fired.get(cooldown_key, 0)
-            if now - last_fired < self.COOLDOWN_SECONDS * 5:  # 5x cooldown for chains
+            if cooldown > 0 and now - last_fired < cooldown:
                 continue
 
-            # Check each step in the chain
             chain = chain_rule.get("chain", [])
-            all_steps_met = True
-            for step in chain:
-                step_rule = step.get("sigma_rule")
-                step_event_type = step.get("event_type")
+            if not chain:
+                continue
+            max_span = chain_rule.get("max_window_seconds", 7200)
+
+            # Walk the stages in declared order. `cursor` is the timestamp of
+            # the stage matched so far; the next stage must have a firing
+            # strictly after it and no more than `within` seconds later.
+            cursor: Optional[float] = None
+            first_ts: Optional[float] = None
+            evidence: list[dict] = []
+            ordered = True
+            last_idx = len(chain) - 1
+            for idx, step in enumerate(chain):
                 within = step.get("within", 3600)
+                firings = self._step_firings(step, group_val, chain_group)
+                if not firings:
+                    ordered = False
+                    break
+                if cursor is None:
+                    # First stage: anchor on the oldest firing still inside its
+                    # own window, so the longest possible sequence is available
+                    # to the stages that follow.
+                    candidates = [t for t in firings if now - t <= within]
+                else:
+                    candidates = [t for t in firings if cursor < t <= cursor + within]
+                if first_ts is not None:
+                    candidates = [t for t in candidates if t - first_ts <= max_span]
+                if not candidates:
+                    ordered = False
+                    break
+                # Intermediate stages take the EARLIEST valid firing (greedy
+                # left-to-right match, which leaves the most room for the stages
+                # still to come). The FINAL stage takes the LATEST, because that
+                # is what the progress latch below measures: with the earliest
+                # pick, a chain that had already fired kept re-reading its own
+                # original final-stage firing and could never report that the
+                # attack had advanced.
+                matched = candidates[-1] if idx == last_idx else candidates[0]
+                if first_ts is None:
+                    first_ts = matched
+                evidence.append({
+                    "stage": step.get("describe") or step.get("sigma_rule") or step.get("event_type"),
+                    "at": matched,
+                    "age_seconds": round(now - matched, 1),
+                })
+                cursor = matched
 
-                if step_rule:
-                    # Check if this sigma rule fired for this group within the window
-                    fire_times = self._sigma_fire_log.get((step_rule, group_val), [])
-                    recent = [t for t in fire_times if now - t <= within]
-                    if not recent:
-                        all_steps_met = False
-                        break
-                elif step_event_type:
-                    # Check raw events in the window
-                    found = False
-                    for ts, ev in self._window:
-                        if (now - ts <= within
-                                and ev.get("event_type") == step_event_type
-                                and ev.get(chain_group) == group_val):
-                            found = True
-                            break
-                    if not found:
-                        all_steps_met = False
-                        break
+            if not ordered or cursor is None:
+                continue
 
-            if all_steps_met:
-                self._chain_fired[cooldown_key] = now
-                triggered.append(chain_rule)
+            # Latch: the final stage must be NEW since the last fire for this
+            # group. Without this a chain re-fires off stale evidence on every
+            # unrelated event once its cooldown lapses.
+            if cursor <= last_fired:
+                continue
+
+            self._chain_fired[cooldown_key] = now
+            self._chain_evidence[cooldown_key] = {
+                "group_by": chain_group,
+                "group_value": None if group_val == "__all__" else group_val,
+                "stages": evidence,
+                "span_seconds": round(cursor - (first_ts or cursor), 1),
+            }
+            triggered.append(chain_rule)
 
         return triggered
 
     async def _on_chain_triggered(self, chain_rule: dict, triggering_event: dict) -> None:
         """Handle a triggered chain rule — always critical."""
-        # Drop events with no attributable source (null IP) AND events from
-        # internal/private/Tailscale IPs. A correlation rule with no attacker
-        # identity cannot produce an actionable incident, and null-IP events
-        # from self-referential log processing historically grouped together
-        # under `source_ip=None` and caused feedback-loop SQLi chain fires.
+        chain_group = chain_rule.get("group_by", "source_ip")
+        group_val = _resolve_chain_group(triggering_event, chain_group)
+        evidence = self._chain_evidence.get((chain_rule["id"], str(group_val)))
         source_ip = triggering_event.get("source_ip")
-        if not source_ip or _is_internal_ip(source_ip):
-            logger.debug(
-                f"Skipping chain correlation (source_ip={source_ip!r}): "
-                f"rule={chain_rule.get('id', 'chain')}"
-            )
-            return
 
-        # v1.6.4.1: gate AEGIS_SAFE_IPS (crawlers/CDNs/monitors) BEFORE the
-        # event-bus publish. Previously this check lived only in the async
-        # _create_incident() at line ~3716, which ran ~100ms AFTER
-        # publish_critical() below. That race meant a safelisted crawler
-        # (e.g. Twitterbot from 199.16.156.0/22 hitting a URL that matched the
-        # SQLi mega-regex) would flash a "SQL Injection Attack Chain" alert on
-        # the dashboard even though the incident was correctly dropped in DB.
-        # Gating here suppresses both the dashboard alert and the incident.
-        if source_ip:
+        if chain_group == "source_ip":
+            # Drop events with no attributable source (null IP) AND events from
+            # internal/private/Tailscale IPs. A correlation rule with no attacker
+            # identity cannot produce an actionable incident, and null-IP events
+            # from self-referential log processing historically grouped together
+            # under `source_ip=None` and caused feedback-loop SQLi chain fires.
+            if not source_ip or _is_internal_ip(source_ip):
+                logger.debug(
+                    f"Skipping chain correlation (source_ip={source_ip!r}): "
+                    f"rule={chain_rule.get('id', 'chain')}"
+                )
+                return
+
+            # v1.6.4.1: gate AEGIS_SAFE_IPS (crawlers/CDNs/monitors) BEFORE the
+            # event-bus publish. Previously this check lived only in the async
+            # _create_incident() at line ~3716, which ran ~100ms AFTER
+            # publish_critical() below. That race meant a safelisted crawler
+            # (e.g. Twitterbot from 199.16.156.0/22 hitting a URL that matched the
+            # SQLi mega-regex) would flash a "SQL Injection Attack Chain" alert on
+            # the dashboard even though the incident was correctly dropped in DB.
+            # Gating here suppresses both the dashboard alert and the incident.
             try:
                 from app.core.attack_detector import _is_safe_ip
                 if _is_safe_ip(source_ip):
@@ -4038,6 +4480,20 @@ class CorrelationEngine:
                     return
             except Exception as exc:
                 logger.warning(f"correlation_engine chain safelist import failed: {exc}")
+            alert_source_ip = source_ip
+        else:
+            # Host-identity chain (group_by: hostname). Host telemetry carries no
+            # attacker IP at all — _on_edr_event stamps every EDR event with
+            # source_ip=127.0.0.1, which is both internal AND safelisted, so the
+            # IP gates above silently discarded every host-based chain. A
+            # ransomware kill-chain on the Mac Pro could not produce an incident
+            # no matter how complete the evidence.
+            #
+            # Such a chain is reported with source_ip=None on purpose: there is
+            # no attacker address, so the responder has nothing to block and the
+            # self-lockout failure mode that the IP gates exist to prevent cannot
+            # occur. The host identity travels in `host` instead.
+            alert_source_ip = None
 
         alert_data = {
             "event_type": "chain_correlation_triggered",
@@ -4046,17 +4502,29 @@ class CorrelationEngine:
             "severity": chain_rule.get("severity", "critical"),
             "mitre": chain_rule.get("mitre", []),
             "description": chain_rule.get("description", ""),
-            "chain_steps": [s.get("sigma_rule") or s.get("event_type") for s in chain_rule.get("chain", [])],
+            "chain_steps": [
+                s.get("describe") or s.get("sigma_rule") or s.get("event_type")
+                for s in chain_rule.get("chain", [])
+            ],
+            # The ordered stage timestamps _evaluate_chains actually matched.
+            # Without these an analyst saw only the chain's title and whichever
+            # event happened to arrive last, which is not evidence of a sequence.
+            "chain_evidence": evidence,
+            "group_by": chain_group,
+            "group_value": None if group_val == "__all__" else group_val,
             "triggering_event": triggering_event,
-            "source_ip": triggering_event.get("source_ip"),
+            "source_ip": alert_source_ip,
             "source": "correlation_engine_chain",
             "timestamp": datetime.utcnow().isoformat(),
         }
+        if chain_group != "source_ip":
+            alert_data["host"] = None if group_val == "__all__" else group_val
 
         logger.critical(
             f"[CHAIN CORRELATION] Chain '{chain_rule['id']}' fired | "
-            f"severity=CRITICAL | source_ip={triggering_event.get('source_ip')} | "
-            f"steps={len(chain_rule.get('chain', []))}"
+            f"severity=CRITICAL | {chain_group}={group_val} | "
+            f"steps={len(chain_rule.get('chain', []))} | "
+            f"span={(evidence or {}).get('span_seconds')}s"
         )
 
         if self._event_bus:
@@ -4305,6 +4773,40 @@ class CorrelationEngine:
                 )
         await self.evaluate(data)
 
+    async def _on_connection_event(self, data: dict) -> None:
+        """Handle IOC-peer connections from connection_monitor.
+
+        The collector already publishes rule-shaped payloads (event_type,
+        source_ip, destination_ip, destination_port, direction, protocol), so
+        there is no field translation to do here — see
+        connection_monitor.build_event for why source_ip carries the peer and
+        why target_type is deliberately absent.
+
+        The safelist gate is re-applied as defence in depth, matching
+        _on_normalized_event and _on_dos_event. It should never fire in
+        practice: an IOC that is also safelisted means the two lists disagree,
+        and in that case the operator's safelist wins — an explicitly trusted
+        peer is not blocked on the strength of a rule's indicator list.
+        """
+        if not isinstance(data, dict):
+            return
+        if not data.get("event_type") or not data.get("source_ip"):
+            return
+        try:
+            from app.core.attack_detector import _is_safe_ip
+            if _is_safe_ip(data["source_ip"]):
+                logger.info(
+                    "connection_monitor IOC peer %s is safelisted — dropped; "
+                    "the indicator list and AEGIS_SAFE_IPS disagree",
+                    data["source_ip"],
+                )
+                return
+        except Exception as exc:
+            logger.warning(
+                f"correlation_engine _on_connection_event safelist check failed: {exc}"
+            )
+        await self.evaluate(data)
+
     # ------------------------------------------------------------------
     # Raw-source event translators
     # ------------------------------------------------------------------
@@ -4378,9 +4880,40 @@ class CorrelationEngine:
             "source": "edr",
             "agent_id": data.get("agent_id"),
             "pid": data.get("pid"),
-            "path": data.get("path", data.get("exe", "")),
-            "process_name": data.get("name", ""),
-            "cmdline": data.get("cmdline", ""),
+            # BOTH producers -- host_monitor (in-process, live in prod) and the
+            # POST /edr/events agent endpoint -- publish these as
+            # process_name / process_path / command_line. This handler read
+            # name / path / exe / cmdline, which neither sends, so every
+            # process event reached the rules with all three fields EMPTY.
+            # The rules were reachable by event_type and passed synthetic tests
+            # built by hand, yet could never fire on real telemetry: the whole
+            # ransomware LOLBin set (vssadmin, wbadmin, bcdedit, certutil,
+            # rundll32) filters on exactly these fields. Verified by driving a
+            # real host_monitor bus_payload through this handler.
+            # The legacy names are kept as fallbacks so any third producer
+            # using them keeps working.
+            "path": data.get("process_path") or data.get("path") or data.get("exe", ""),
+            "process_name": data.get("process_name") or data.get("name", ""),
+            "cmdline": data.get("command_line") or data.get("cmdline", ""),
+            # Carried through so parent-process rules have something to read;
+            # host_monitor collects ppid already. The parent's NAME is still
+            # unavailable from any producer, so parent_process-keyed rules
+            # remain unfeedable -- see the audit notes.
+            "ppid": data.get("ppid"),
+            # Host identity. Neither producer sends `hostname` on the bus
+            # (host_monitor sends agent_id, the /edr/events endpoint sends it
+            # only on some payloads), so every host rule that declares
+            # `group_by: hostname` -- the whole ransomware LOLBin set and the
+            # recovery-inhibition set -- resolved its group key to "__all__",
+            # and every host-grouped CHAIN looked for its legs under a key
+            # nothing had ever written. Falling back to agent_id (host_monitor's
+            # AGENT_ID is "aegis-<hostname>") and then to this host's own name
+            # gives those rules and chains a stable per-host key.
+            "hostname": (
+                data.get("hostname")
+                or data.get("agent_id")
+                or _LOCAL_HOSTNAME
+            ),
         }
         await self.evaluate(event)
 
