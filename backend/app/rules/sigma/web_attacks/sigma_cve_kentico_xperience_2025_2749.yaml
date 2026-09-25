@@ -1,0 +1,30 @@
+id: sigma_cve_kentico_xperience_2025_2749
+name: Kentico Xperience Exploitation Attempt (CVE-2025-2749)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /staging/
+    - /sync/
+  count_threshold: 10
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: 'Detects attempted exploitation of CVE-2025-2749 in Kentico Xperience (CVSS 7.5).
+  Behavioural rule. The exploit payload for this CVE is not visible in the URL -- it travels
+  in the request body or a header, which this platform cannot read -- so the rule measures
+  rhythm instead of signature: ten or more requests to this endpoint from one source in five
+  minutes is consistent with automated payload iteration, not with a real user.'
+references:
+- https://devnet.kentico.com/download/hotfixes

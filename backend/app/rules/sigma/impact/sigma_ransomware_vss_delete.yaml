@@ -1,34 +1,37 @@
 id: ransomware_vss_delete
 name: Volume Shadow Copy Service deletion
 kind: sigma
-description: |
-  Detects vssadmin / wmic / powershell commands deleting Volume Shadow
+description: 'Detects vssadmin / wmic / powershell commands deleting Volume Shadow
+
   Copies. This is a hallmark precursor to ransomware encryption — the
+
   attacker removes recovery checkpoints before encrypting files.
+
+  '
 severity: critical
 tactics:
-  - Impact
+- Impact
 techniques:
-  - T1490
+- T1490
 data_sources:
-  - process_creation
-  - edr
+- process_creation
+- edr
 condition:
   event_type: process_creation
   count_threshold: 1
   time_window_seconds: 60
   group_by: hostname
   filter:
-    command_line_regex: '(?i)(vssadmin\s+delete\s+shadows|wmic\s+shadowcopy\s+delete|Get-WmiObject.*Win32_ShadowCopy)'
+    command_line_regex: (?i)(vssadmin(?:\.exe)?\s+delete\s+shadows|wmic(?:\.exe)?\s+shadowcopy\s+delete|Get-WmiObject.*Win32_ShadowCopy)
 entityMappings:
-  - type: Host
-    field: hostname
-  - type: Account
-    field: username
+- type: Host
+  field: hostname
+- type: Account
+  field: username
 customDetails:
   process_path: process_path
   command_line: command_line
   parent_process: parent_process_path
 references:
-  - https://attack.mitre.org/techniques/T1490/
-  - https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-061a
+- https://attack.mitre.org/techniques/T1490/
+- https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-061a

@@ -1,0 +1,26 @@
+id: sigma_cve_gitlab_2021_39935
+name: GitLab Exploitation Attempt (CVE-2021-39935)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /api/v4/projects
+    - ci/lint
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects attempted exploitation of CVE-2021-39935 in GitLab (CVSS 7.5). Signature
+  rule. These path fragments are distinctive to exploitation of this CVE and do not occur
+  in ordinary traffic, so a single hit is evidence in itself and the rule fires without a
+  threshold.
+references:
+- https://www.sentinelone.com/vulnerability-database/cve-2021-39935/

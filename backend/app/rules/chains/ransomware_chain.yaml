@@ -1,33 +1,63 @@
 id: ransomware_chain
-name: Ransomware kill-chain
+name: 'Ransomware kill-chain: payload staging then recovery inhibition'
 kind: chain
 severity: critical
 enabled: true
 tactics:
+- Execution
 - Impact
 techniques:
+- T1105
+- T1059.001
 - T1490
-- T1486
 data_sources:
 - correlation
-description: 'Same host: LOLBin staging (certutil) -> shadow copy deletion -> mass file extension change'
+# Two stages, not three, because the third stage the old rule wanted does not
+# exist as telemetry. Its final leg was `ransomware_extension_mass_change` on
+# event_type `file_extension_change`, which no producer emits; and AEGIS cannot
+# substitute "mass file modification" for it either, because host_monitor's FIM
+# watches /etc, /tmp, /var/log, ~/.ssh, the launch dirs and cloud-credential
+# dirs (see host_monitor.FIM_PATHS) — not user documents or web roots. Mass
+# encryption of a user's files is invisible here, so no stage is built on it.
+#
+# Both stages below come from host_monitor's process poller, which runs in
+# production and publishes `edr.process_start` / `edr.event` with the command
+# line. They are what this estate genuinely observes:
+#
+#   stage 1  process_creation — certutil/rundll32 staging, encoded PowerShell,
+#            reverse shell, WinRM exec
+#   stage 2  process_creation — vssadmin/wmic shadow delete, wbadmin delete
+#            catalog, bcdedit recovery off, tmutil/btrfs/zfs snapshot destroy
+#
+# Firing before encryption starts is the point: recovery inhibition is the last
+# reversible moment in a ransomware deployment. Each leg is already a high or
+# critical alert alone, so nothing is missed by the chain being strict — the
+# chain's job is to say "these two are the same operation, in order, on one
+# host", which is the difference between a suspicious command and an incident.
+description: 'Same host, in order: payload staging or scripted execution -> deletion
+  of backups, shadow copies or snapshots (pre-encryption recovery inhibition)'
 condition:
   event_type: __chain__
-sequence:
-- ransomware_lolbin_certutil
-- ransomware_vss_delete
-- ransomware_extension_mass_change
-max_window_seconds: 7200
-group_by: source_ip
+max_window_seconds: 3600
+group_by: hostname
+cooldown_seconds: 900
 chain:
-- sigma_rule: ransomware_lolbin_certutil
+- label: payload staging / scripted execution
+  any_of:
+  - ransomware_lolbin_certutil
+  - ransomware_lolbin_rundll32
+  - ransomware_winrm_exec
+  - sigma_c2_encoded_powershell
+  - sigma_c2_reverse_shell
+  - sigma_c2_lolbin
   within: 3600
-- sigma_rule: ransomware_vss_delete
-  within: 1800
-- sigma_rule: ransomware_extension_mass_change
-  within: 1200
+- label: recovery inhibition
+  any_of:
+  - ransomware_vss_delete
+  - ransomware_wbadmin_delete
+  - ransomware_bcdedit_recovery_disable
+  - ransomware_shadow_copy_delete
+  within: 3600
 entityMappings:
 - type: Host
   field: hostname
-- type: IP
-  field: source_ip

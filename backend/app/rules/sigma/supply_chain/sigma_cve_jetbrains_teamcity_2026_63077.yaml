@@ -1,0 +1,25 @@
+id: sigma_cve_jetbrains_teamcity_2026_63077
+name: JetBrains TeamCity Exploitation Attempt (CVE-2026-63077)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /app/agents/v1
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects attempted exploitation of CVE-2026-63077 in JetBrains TeamCity (CVSS
+  9.8, linked to ransomware campaigns). Signature rule. These path fragments are distinctive
+  to exploitation of this CVE and do not occur in ordinary traffic, so a single hit is evidence
+  in itself and the rule fires without a threshold.
+references:
+- https://blog.jetbrains.com/teamcity/2026/07/cve-2026-63077/

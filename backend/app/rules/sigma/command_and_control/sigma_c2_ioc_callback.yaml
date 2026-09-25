@@ -1,0 +1,35 @@
+id: sigma_c2_ioc_callback
+name: Confirmed C2 Indicator Observed in Application Logs
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- CommandAndControl
+techniques:
+- T1071
+data_sources:
+- http_logs
+- application_logs
+condition:
+  event_type: c2
+entityMappings:
+- type: IP
+  field: source_ip
+customDetails:
+  indicator: pattern_name
+  matched_threat: threat_type
+description: >-
+  Carries the normalizer's confirmed command-and-control indicator matches into an
+  incident. event_normalizer holds six C2 patterns that identify known-bad callback
+  infrastructure from published supply-chain compromises, and each emits an event
+  typed "c2" with severity_base critical. Until this rule existed no rule declared
+  that event type and no alias routed it anywhere, so every one of those matches
+  reached zero rules — and because correlation_engine.evaluate only runs fast_triage
+  "if triggered", an event that matches no rule produces no incident, no triage and
+  no response. The highest-confidence signal the platform has was being discarded.
+  This rule deliberately carries no filter: the pattern already performed the
+  identification against a known indicator, so the rule's only job is to make the
+  match reachable. Single-shot (no count_threshold) because one confirmed C2
+  callback is not a threshold question; per-rule cooldown still suppresses bursts of
+  identical events.
+references: []

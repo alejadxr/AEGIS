@@ -1,0 +1,29 @@
+id: sigma_cve_n8n_2025_68613
+name: n8n Exploitation Attempt (CVE-2025-68613)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /api/v1/workflows/execute
+  count_threshold: 10
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: 'Detects attempted exploitation of CVE-2025-68613 in n8n (CVSS 8.2). Behavioural
+  rule. The exploit payload for this CVE is not visible in the URL -- it travels in the request
+  body or a header, which this platform cannot read -- so the rule measures rhythm instead
+  of signature: ten or more requests to this endpoint from one source in five minutes is consistent
+  with automated payload iteration, not with a real user.'
+references:
+- https://github.com/n8n-io/n8n/security/advisories/GHSA-v98v-ff95-f3cp

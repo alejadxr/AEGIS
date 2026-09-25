@@ -1,0 +1,57 @@
+id: sigma_recon_offensive_scanner_ua
+name: Offensive Security Scanner Identified by User-Agent
+kind: sigma
+severity: medium
+enabled: true
+tactics:
+- Reconnaissance
+techniques:
+- T1595.002
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    ua_contains:
+    - sqlmap
+    - nikto
+    - nuclei
+    - masscan
+    - dirbuster
+    - gobuster
+    - wpscan
+    - acunetix
+    - nessus
+    - metasploit
+    - zgrab
+    - xsstrike
+    - commix
+    - feroxbuster
+    - whatweb
+  count_threshold: 3
+  time_window_seconds: 120
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+customDetails:
+  tool_signature: user_agent
+description: >-
+  Flags traffic from tools that announce themselves as offensive scanners in the
+  User-Agent header. This detection was impossible until the correlation engine's
+  filter vocabulary was generalised: the engine could only substring-match the URL
+  path, so a rule written as ua_contains loaded, validated and silently matched
+  nothing. user_agent has always been present on normalized events; only the
+  operator was missing.
+
+  The listed tools have no legitimate reason to be crawling production hosts, and
+  each sets a default User-Agent identifying itself. Deliberately EXCLUDED are
+  curl, wget and python-requests: those are used by monitoring, health checks,
+  webhooks and ordinary integrations, so matching them would bury real signal.
+
+  Rated medium rather than high because a User-Agent is trivially spoofed, so this
+  catches unsophisticated or unconcerned scanning, not a careful adversary -- its
+  absence proves nothing. Three hits in two minutes rather than single-shot, so a
+  lone spoofed header does not open an incident on its own. The operator's own
+  pentest traffic is excluded by AEGIS_SAFE_IPS upstream, not by this rule.
+references: []

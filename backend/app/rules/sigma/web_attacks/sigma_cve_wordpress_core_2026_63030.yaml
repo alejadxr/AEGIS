@@ -1,0 +1,25 @@
+id: sigma_cve_wordpress_core_2026_63030
+name: WordPress Core Exploitation Attempt (CVE-2026-63030)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /wp-json/batch/v1
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects attempted exploitation of CVE-2026-63030 in WordPress Core (CVSS 9.1).
+  Signature rule. These path fragments are distinctive to exploitation of this CVE and do
+  not occur in ordinary traffic, so a single hit is evidence in itself and the rule fires
+  without a threshold.
+references:
+- https://www.rapid7.com/blog/post/etr-cve-2026-63030-wp2shell-a-critical-remote-code-execution-vulnerability-in-wordpress-core/

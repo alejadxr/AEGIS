@@ -1,0 +1,25 @@
+id: sigma_cve_zimbra_2025_68645
+name: Zimbra Exploitation Attempt (CVE-2025-68645)
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /h/rest
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects attempted exploitation of CVE-2025-68645 in Zimbra (CVSS 8.8). Signature
+  rule. These path fragments are distinctive to exploitation of this CVE and do not occur
+  in ordinary traffic, so a single hit is evidence in itself and the rule fires without a
+  threshold.
+references:
+- https://www.sentinelone.com/vulnerability-database/cve-2025-68645/
