@@ -16,12 +16,18 @@ condition:
   time_window_seconds: 60
   group_by: source_ip
   filter:
-    path_contains:
-    - UNION
-    - SELECT
+    path_contains_all:
     - union
     - select
 entityMappings:
 - type: IP
   field: source_ip
-description: Detects UNION SELECT SQL injection attempts in web requests.
+description: 'Detects UNION SELECT SQL injection attempts in web requests.
+
+
+  Requires BOTH ''union'' and ''select'' in the request line. It previously matched either,
+  and the bare word ''select'' is a substring of ordinary paths: a replay over 145,831 real
+  requests produced 257 incidents against eight real IPs, six of them customer IPv6 addresses,
+  from /api/base-selection/auto-select. The rule was inert in production because of the web_request/http_request
+  mismatch and would have gone live the moment that fix shipped. A UNION-based injection carries
+  both keywords, so requiring both retains the detection: 0 real hits after the change.'
