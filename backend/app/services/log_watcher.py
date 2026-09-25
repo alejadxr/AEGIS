@@ -742,11 +742,19 @@ class LogWatcher:
         if not source_ip:
             return
 
-        event_path = _event_attr(event, "path")
+        # NormalizedEvent names these request_path / response_status /
+        # request_method. _event_attr is a plain dict.get with no alias
+        # resolution, so reading "path" / "status_code" / "method" returned
+        # None on EVERY event since the v1.6.4 refactor renamed them. The
+        # fallbacks keep any other producer that still uses the short names
+        # working.
+        event_path = _event_attr(event, "request_path") or _event_attr(event, "path")
         event_port = _event_attr(event, "target_port")
-        status_code = _event_attr(event, "status_code")
+        status_code = _event_attr(event, "response_status")
+        if status_code is None:
+            status_code = _event_attr(event, "status_code")
         event_type = _event_attr(event, "event_type")
-        event_method = _event_attr(event, "method")
+        event_method = _event_attr(event, "request_method") or _event_attr(event, "method")
         is_dashboard_request = _is_safe_path(line, event_path)
 
         # Defense-in-depth: a 401 that event_normalizer already classified as a

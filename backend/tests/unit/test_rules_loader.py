@@ -31,10 +31,39 @@ def test_sigma_rule_count(pack):
     )
 
 
-def test_chain_rule_count(pack):
-    assert len(pack.chains) >= 5, (
-        f"Expected >= 5 chain rules, got {len(pack.chains)}"
-    )
+def test_every_chain_step_references_a_live_rule(pack):
+    """No chain may depend on a rule that cannot fire.
+
+    Every chain shipped before v1.7.0 had at least one step naming a rule whose
+    event_type no producer emits, which is why not one of them was fireable. A
+    bare count of chains caught none of that and broke on every edit.
+
+    Resolution goes against the ENGINE's merged rule set, not pack.by_id: the
+    engine merges the YAML pack over BUILT_IN_RULES, and chains legitimately
+    reference in-code rules (brute_force_ssh, credential_stuffing) that have no
+    YAML file. Checking the pack alone reports those as missing when they are
+    perfectly live.
+    """
+    from app.services.correlation_engine import CorrelationEngine
+
+    engine = CorrelationEngine()
+    live = {
+        rule["id"]
+        for rules in engine._rules_by_type.values()
+        for rule in rules
+    }
+    assert pack.chains, "no chain rules loaded"
+    for chain in pack.chains:
+        for step in chain.get("chain", []):
+            named = []
+            if step.get("sigma_rule"):
+                named.append(step["sigma_rule"])
+            named.extend(step.get("any_of") or [])
+            for rule_id in named:
+                assert rule_id in live, (
+                    f"chain {chain['id']} waits on {rule_id}, which no loaded "
+                    f"rule provides -- the chain can never complete"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -78,13 +107,25 @@ def test_chain_steps_dict_access(pack):
     step = steps[0]
     # ChainStep must support .get() for engine compatibility
     assert step.get("within", 3600) > 0
-    # At least sigma_rule or event_type must be set
-    assert step.get("sigma_rule") or step.get("event_type")
+    # A step must name what it waits for, in one of the three supported forms.
+    # `any_of` was added in v1.7.0: a real attack stage is rarely one signature
+    # ("exploitation attempt" here means any of ~90 CVE rules), so a step that
+    # could only name a single rule described a far narrower stage than its
+    # chain claimed.
+    assert (
+        step.get("sigma_rule")
+        or step.get("event_type")
+        or step.get("any_of")
+    ), f"chain step names nothing to wait for: {step}"
 
 
-def test_advanced_intrusion_chain_exists(pack):
+def test_ransomware_chain_exists(pack):
+    """Pinned because it is the chain this estate most needs and the one whose
+    steps are genuinely observable here. The previous pin was
+    advanced_intrusion_chain, replaced in v1.7.0 along with the rest of the
+    chain pack, which had been written against telemetry AEGIS never collected."""
     ids = {c["id"] for c in pack.chains}
-    assert "advanced_intrusion_chain" in ids
+    assert "ransomware_chain" in ids, f"ransomware_chain missing; have {sorted(ids)}"
 
 
 # ---------------------------------------------------------------------------
