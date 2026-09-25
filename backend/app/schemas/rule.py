@@ -147,6 +147,20 @@ class ChainStep(BaseModel):
     # Human label for the stage, used in the incident's evidence trail. Falls
     # back to the rule/type name when omitted.
     label: str | None = None
+    # Every sigma rule id that can satisfy this step, resolved ONCE at load.
+    # This is read on every event for the first step of every chain — as a
+    # property it rebuilt a list per access, which is pure allocation on the
+    # hottest path in the system. Steps never change after load, so it is
+    # stored. Populated by sync_rule_ids; never set by a rule author.
+    rule_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def sync_rule_ids(self) -> ChainStep:
+        object.__setattr__(
+            self, "rule_ids",
+            (self.sigma_rule,) if self.sigma_rule else tuple(self.any_of),
+        )
+        return self
 
     def get(self, key: str, default: Any = None) -> Any:
         try:
@@ -157,13 +171,6 @@ class ChainStep(BaseModel):
 
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
-
-    @property
-    def rule_ids(self) -> list[str]:
-        """Every sigma rule id that can satisfy this step."""
-        if self.sigma_rule:
-            return [self.sigma_rule]
-        return list(self.any_of)
 
     @property
     def describe(self) -> str:
