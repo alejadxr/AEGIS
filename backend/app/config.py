@@ -161,6 +161,17 @@ class Settings(BaseSettings):
     AEGIS_DOS_NETSHIELD_SYN_RATE: int = 50    # per-source SYN pkts/sec (iptables hashlimit)
     AEGIS_DOS_NETSHIELD_CONNLIMIT: int = 100  # max concurrent conns/source (iptables connlimit)
 
+    # --- IOC connection monitor (app.modules.network.connection_monitor) ---
+    # Default OFF. Polls established connections and publishes an event ONLY
+    # when the remote peer is an IP an enabled network_connection/connection
+    # rule matches on, or a threat_intel `ip` row. Generic traffic is never
+    # published: ordinary outbound HTTPS fed to sigma_exfil_uncommon_port would
+    # open incidents against OpenRouter/Cloudflare and could firewall off
+    # AEGIS's own dependencies. Turn on only when you want outbound C2-callback
+    # detection (the log path cannot see a callback that writes no log line).
+    AEGIS_CONNECTION_MONITOR: bool = False
+    AEGIS_CONNECTION_MONITOR_INTERVAL: int = 5   # seconds between samples
+
     # CORS — comma-separated explicit allow-list. Wildcard ("*") is invalid
     # combined with allow_credentials=True and is never used here (P0-10).
     # Prod overrides via env with the real dashboard origin(s).
