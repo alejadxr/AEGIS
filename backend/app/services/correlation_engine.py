@@ -3178,7 +3178,7 @@ BUILT_IN_RULES: list[dict] = [
 # Multi-event temporal chain rules
 # ---------------------------------------------------------------------------
 
-# v1.6.4.10 — the five chains that used to live here (advanced_intrusion_chain,
+# v1.7.0 — the five chains that used to live here (advanced_intrusion_chain,
 # credential_theft_chain, web_attack_escalation, c2_establishment_chain,
 # priv_esc_exfil_chain) were deleted, not moved. Every one of them named at
 # least one leg whose event_type no producer in this codebase emits:
@@ -3775,7 +3775,7 @@ class CorrelationEngine:
 
         # A chain leg naming a rule id that does not exist can never be
         # satisfied, and the chain containing it is dead with no trace. That is
-        # how all six chains shipped before v1.6.4.10 came to be unfireable, so
+        # how all six chains shipped before v1.7.0 came to be unfireable, so
         # the condition is now reported at load rather than discovered by audit.
         self._report_unknown_chain_legs()
 
@@ -3822,28 +3822,41 @@ class CorrelationEngine:
         self._event_bus = bus
 
     def _report_unknown_chain_legs(self) -> list[tuple[str, str]]:
-        """Warn about chain legs naming a sigma rule that is not loaded.
+        """Warn about chain legs that can never be satisfied.
 
         Returns the (chain_id, rule_id) pairs found, so a test can assert the
-        shipped pack has none. A chain whose leg names a missing rule is not a
-        degraded chain — it is a dead one, because that stage can never be
-        satisfied.
+        shipped pack has none. A leg naming a rule that is not loaded, or one
+        that is loaded but DISABLED, does not degrade a chain — it kills it,
+        because evaluate() skips a disabled rule before _check_rule, so that leg
+        never reaches the fire-log and its stage never becomes satisfiable.
         """
-        known = {r["id"] for r in self._rules}
+        enabled_by_id = {r["id"]: r.get("enabled", True) for r in self._rules}
         missing: list[tuple[str, str]] = []
+        disabled: list[tuple[str, str]] = []
         for chain in self._chain_rules:
             for step in chain.get("chain", []):
                 ids = step.get("rule_ids")
                 if not ids:
                     ids = [step["sigma_rule"]] if step.get("sigma_rule") else list(step.get("any_of") or ())
                 for rid in ids:
-                    if rid and rid not in known:
+                    if not rid:
+                        continue
+                    if rid not in enabled_by_id:
                         missing.append((chain["id"], rid))
+                    elif not enabled_by_id[rid]:
+                        disabled.append((chain["id"], rid))
         for chain_id, rid in missing:
             logger.warning(
                 f"Chain '{chain_id}' references sigma rule '{rid}', which is not "
                 f"loaded — that stage can never be satisfied and the chain is dead."
             )
+        for chain_id, rid in disabled:
+            logger.warning(
+                f"Chain '{chain_id}' references sigma rule '{rid}', which is loaded "
+                f"but DISABLED — evaluate() skips it, so that stage can never be "
+                f"satisfied. Enable the rule or drop the leg."
+            )
+        missing.extend(disabled)
         return missing
 
     def _collect_chain_group_fields(self) -> tuple[str, ...]:
@@ -4178,6 +4191,7 @@ class CorrelationEngine:
             "chain_rules_total": len(self._chain_rules),
             "window_size": len(self._window),
             "sigma_fire_log_size": len(self._sigma_fire_log),
+            "chain_evidence_size": len(self._chain_evidence),
         }
 
     def list_chain_rules(self) -> list[dict]:
@@ -4321,15 +4335,22 @@ class CorrelationEngine:
             return sorted(times)
         step_event_type = step.get("event_type")
         if step_event_type:
+            # Through _event_type_satisfies, never a raw ==. A strict equality
+            # here would defeat _EVENT_TYPE_ALIASES exactly as it did in
+            # _check_rule: a step declaring `web_request` would never see the
+            # `http_request` events production actually emits, and the step
+            # would be dead with no trace. Both comparison sites in _check_rule
+            # were repaired for that reason; this is the third.
             for ts, ev in self._window:
-                if ev.get("event_type") == step_event_type and _resolve_chain_group(ev, chain_group) == group_val:
+                if (_event_type_satisfies(ev.get("event_type", ""), step_event_type)
+                        and _resolve_chain_group(ev, chain_group) == group_val):
                     times.append(ts)
         return sorted(times)
 
     def _evaluate_chains(self, event: dict, now: float) -> list[dict]:
         """Evaluate multi-event temporal chain rules — ORDERED, latched.
 
-        v1.6.4.10. The previous implementation asked, for every step
+        v1.7.0. The previous implementation asked, for every step
         independently, "did this fire at any point in the last `within`
         seconds?". That is an unordered AND, not a chain:
 
