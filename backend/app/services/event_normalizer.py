@@ -203,6 +203,38 @@ PATTERNS: tuple[LogPattern, ...] = (
         threat_type="c2",
         tags=("ioc",),
     ),
+    # TeamPCP supply-chain campaign. Indicators published by SANS ISC
+    # (2026-05-17). The two domains are typosquats of aquasecurity.com and
+    # litellm.com used for C2 by the Trivy and LiteLLM package compromises --
+    # a host resolving or fetching either is already running compromised code.
+    #
+    # NOT included, deliberately: the Shai-Hulud worm's reported use of
+    # api.github.com for long-poll C2. That is GitHub's real API. Matching it
+    # would flag every legitimate GitHub call this estate makes, and a rule
+    # that fires constantly is one an operator learns to ignore.
+    LogPattern(
+        name="teampcp_typosquat_c2_domain",
+        regex=re.compile(r"(?:scan\.aquasecurtiy\.org|models\.litellm\.cloud)"),
+        event_type="c2",
+        severity_base="critical",
+        threat_type="supply_chain",
+        tags=("ioc", "c2", "teampcp"),
+    ),
+    LogPattern(
+        name="teampcp_c2_infrastructure_ip",
+        # Trailing guard stops 45.148.10.122 from also matching 45.148.10.1223.
+        regex=re.compile(
+            r"\b(?:45\.148\.10\.(?:212|122)"
+            r"|83\.142\.209\.(?:11|203)"
+            r"|44\.252\.85\.168"
+            r"|67\.217\.57\.240"
+            r"|157\.20\.182\.49)(?![\d.])"
+        ),
+        event_type="c2",
+        severity_base="critical",
+        threat_type="supply_chain",
+        tags=("ioc", "c2", "teampcp"),
+    ),
     LogPattern(
         name="axios_sfrclak_c2",
         regex=re.compile(r"sfrclak\.com|142\.11\.206\.73"),

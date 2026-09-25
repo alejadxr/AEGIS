@@ -1,0 +1,63 @@
+id: chain_leg_auth_success
+name: Successful authentication on a credential endpoint
+kind: sigma
+severity: informational
+enabled: true
+chain_only: true
+tactics:
+- InitialAccess
+techniques:
+- T1078
+data_sources:
+- web_log
+# chain_only: this rule never opens an incident. It exists so
+# credential_breach_chain can see the one stage of a successful brute force that
+# AEGIS was blind to: the request that worked.
+#
+# A 2xx/3xx POST to a credential endpoint is an ordinary event — it is what
+# every legitimate login looks like — so on its own it is worth nothing and
+# alerting on it would be pure noise. In sequence, AFTER a credential-attack
+# burst from the same IP and BEFORE attacker activity from that session, it is
+# the difference between "someone tried" and "someone got in".
+#
+# Reachability: event_normalizer classifies a login POST with no attack
+# signature as event_type `http_request` carrying request_method, request_path
+# and response_status (verified against real access-log lines), so every field
+# this filter reads is present on the real event.
+#
+# 3xx is included because a successful form login usually answers 302 to the
+# post-login destination rather than 200.
+condition:
+  event_type: http_request
+  count_threshold: 1
+  time_window_seconds: 60
+  group_by: source_ip
+  # Every success is a distinct data point for the chain's ordering, so no
+  # cooldown may swallow one.
+  cooldown_seconds: 0
+  filter:
+    method: POST
+    status:
+    - 200
+    - 201
+    - 302
+    - 303
+    path_contains:
+    - /login
+    - /signin
+    - /sign-in
+    - /log-in
+    - /auth/login
+    - /auth/token
+    - /oauth/token
+    - /session
+    - /wp-login.php
+    - /xmlrpc.php
+    - /administrator/index.php
+    - /user/login
+entityMappings:
+- type: IP
+  field: source_ip
+description: Credential endpoint answered 2xx/3xx to a POST. Chain leg only — never
+  alerts on its own; used by credential_breach_chain to detect a brute force that
+  succeeded.

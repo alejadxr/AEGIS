@@ -1,0 +1,28 @@
+id: sigma_recon_ioc_infrastructure
+name: Known Reconnaissance Infrastructure Observed in Application Logs
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Reconnaissance
+techniques:
+- T1595
+data_sources:
+- http_logs
+condition:
+  event_type: recon
+entityMappings:
+- type: IP
+  field: source_ip
+customDetails:
+  indicator: pattern_name
+  matched_threat: threat_type
+description: >-
+  Carries the normalizer's reconnaissance-infrastructure indicator into an incident.
+  The pattern identifies traffic associated with a tracked scanning campaign and
+  emits an event typed "recon", which no rule declared and no alias routed — so the
+  match reached zero rules and produced no incident. Fires single-shot: the pattern
+  matched a specific known indicator, not a heuristic, so there is no threshold to
+  reach. Rated high rather than critical because reconnaissance precedes compromise
+  rather than evidencing it.
+references: []

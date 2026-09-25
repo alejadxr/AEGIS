@@ -1,0 +1,25 @@
+id: sigma_cve_microsoft_sharepoint_2026_55040
+name: Microsoft SharePoint Exploitation Attempt (CVE-2026-55040)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /_layouts/15/metadata/json/1
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects attempted exploitation of CVE-2026-55040 in Microsoft SharePoint (CVSS
+  9.1). Signature rule. These path fragments are distinctive to exploitation of this CVE and
+  do not occur in ordinary traffic, so a single hit is evidence in itself and the rule fires
+  without a threshold.
+references:
+- https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-55040

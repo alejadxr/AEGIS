@@ -1,0 +1,29 @@
+id: sigma_cve_laravel_livewire_2025_54068
+name: Laravel Livewire Exploitation Attempt (CVE-2025-54068)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /livewire/update
+  count_threshold: 10
+  time_window_seconds: 300
+  group_by: source_ip
+entityMappings:
+- type: IP
+  field: source_ip
+description: 'Detects attempted exploitation of CVE-2025-54068 in Laravel Livewire (CVSS 9.2).
+  Behavioural rule. The exploit payload for this CVE is not visible in the URL -- it travels
+  in the request body or a header, which this platform cannot read -- so the rule measures
+  rhythm instead of signature: ten or more requests to this endpoint from one source in five
+  minutes is consistent with automated payload iteration, not with a real user.'
+references:
+- https://github.com/livewire/livewire/security/advisories/GHSA-29cq-5w36-x7w3

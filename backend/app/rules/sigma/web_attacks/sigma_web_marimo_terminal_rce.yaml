@@ -2,7 +2,7 @@ id: sigma_web_marimo_terminal_rce
 name: Marimo Notebook Pre-Auth Terminal WebSocket RCE (CVE-2026-39987)
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - InitialAccess
 - Execution
@@ -24,8 +24,15 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: >
-  Marimo notebook server pre-authentication WebSocket RCE
-  (CVE-2026-39987, CVSS 9.3, KEV-listed). Affects marimo <0.23.0.
-  Connect to /terminal/ws without auth header → spawns shell on
-  host. Single request = compromise.
+description: 'DISABLED as a duplicate. Its condition block is byte-identical to sigma_ai_marimo_terminal_rce
+  in sigma/ai_infra/, so both fired on every matching request and opened two incidents for
+  one event. Marimo is notebook/AI infrastructure, so the ai_infra copy is the correct home
+  and remains active. Kept as a disabled file rather than deleted so the rule id still resolves
+  for any incident recorded before this change.
+
+
+  Marimo notebook server pre-authentication WebSocket RCE (CVE-2026-39987, CVSS 9.3, KEV-listed).
+  Affects marimo <0.23.0. Connect to /terminal/ws without auth header → spawns shell on host.
+  Single request = compromise.
+
+  '

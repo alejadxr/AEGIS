@@ -1,0 +1,29 @@
+id: sigma_ransomware_ioc_marker
+name: Ransomware Family Marker Observed in Application Logs
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Impact
+techniques:
+- T1486
+data_sources:
+- http_logs
+- file_monitoring
+condition:
+  event_type: ransomware
+entityMappings:
+- type: IP
+  field: source_ip
+customDetails:
+  indicator: pattern_name
+  matched_threat: threat_type
+description: >-
+  Carries the normalizer's ransomware family markers into an incident. Two patterns
+  identify the file-extension markers left by currently-tracked families and emit an
+  event typed "ransomware". No rule declared that event type and no alias routed it,
+  so those matches reached zero rules and produced no incident — the same silent
+  discard that affected the C2 indicators (see sigma_c2_ioc_callback). A marker
+  appearing in a log line means encrypted artefacts are already being referenced, so
+  this fires single-shot rather than waiting for a count.
+references: []

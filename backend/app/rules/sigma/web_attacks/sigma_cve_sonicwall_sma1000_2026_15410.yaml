@@ -1,0 +1,25 @@
+id: sigma_cve_sonicwall_sma1000_2026_15410
+name: SonicWall SMA1000 Exploitation Attempt (CVE-2026-15410)
+kind: sigma
+severity: critical
+enabled: true
+tactics:
+- InitialAccess
+techniques:
+- T1190
+data_sources:
+- http_logs
+condition:
+  event_type: http_request
+  filter:
+    path_contains:
+    - /workflow/remove_hotfix
+entityMappings:
+- type: IP
+  field: source_ip
+description: Detects attempted exploitation of CVE-2026-15410 in SonicWall SMA1000 (CVSS 7.2,
+  linked to ransomware campaigns). Signature rule. These path fragments are distinctive to
+  exploitation of this CVE and do not occur in ordinary traffic, so a single hit is evidence
+  in itself and the rule fires without a threshold.
+references:
+- https://www.tenable.com/blog/cve-2026-15409-cve-2026-15410-sonicwall-sma-1000-zero-day-vulnerabilities-exploited-in-the
