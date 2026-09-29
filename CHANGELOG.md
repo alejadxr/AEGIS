@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.3] - 2026-09-29 (the EDR works end to end)
+
+AEGIS ships endpoint agents for Windows, macOS and Linux. Their telemetry was
+being lost at every stage between the endpoint and a detection. This release
+repairs the whole path.
+
+### Fixed — the endpoint agent crashed and could not build
+- `hidden_command()` in the node-tauri agent called itself instead of spawning
+  a process — infinite recursion since v1.1.0. A stack overflow aborts a Rust
+  process, and it is called by the Windows event-log reader and the network
+  monitor, so the agent very likely died whenever those loops ran.
+- The agent did not compile against current dependencies: `Cargo.lock` was
+  gitignored and APIs had moved. Fixed, and the lockfile is now versioned so
+  the shipped binary builds from the exact set that was tested.
+- An agent enrolled more than ~15s after boot kept an empty id and silently
+  skipped every upload forever.
+
+### Fixed — telemetry never reached a rule
+- Enrollment never completed: `/nodes/enroll` discarded the pending entry, so
+  the agent never saw "active".
+- Uploads returned 401: the upload routes accepted only a tenant key or a user
+  JWT. Agents now receive a **per-node token** at enrollment (only a hash is
+  stored, revocable and rotatable, scoped to that node).
+- Accepted batches were published on a topic the correlation engine does not
+  subscribe to; `/agents/events` and `/nodes/events` never reached it either.
+- The kind map dropped registry, DLL, TCP, logon and ransomware-signal events,
+  ignored the fields where file paths and registry keys travel, and counted
+  process exits as process creations.
+- Endpoint detections carried `127.0.0.1` and were discarded by the
+  internal-source gate. They are now attributed to the host, and cannot produce
+  an IP block.
+
+### Changed — process rules match the command line
+- 22 rules that look for command-line shapes (`powershell -enc`, `chmod +s`,
+  `ssh -L`...) were matching the executable path. They now use precise
+  command-line patterns, validated against 47,896 real process starts: after
+  three false positives found by that replay were fixed, six days of real
+  activity produce one detection, a tar of a whole source tree.
+- 10 rules now genuinely fed are re-enabled (153 → 163 enabled).
+
+### Operator actions
+- Run `alembic upgrade head` (adds `endpoint_agents.node_token_hash`).
+- Ship a new agent build to endpoints; old builds cannot authenticate uploads.
+- Agents enrolled before this release obtain a token through
+  `/nodes/token/reissue`, which requires `AEGIS_NODE_SECRET` to be set on the
+  server and the agent. Without it, re-enroll those endpoints.
+
+---
+
 ## [1.7.2] - 2026-09-29 (honest rule count, quiet dead hub, honeypot reset)
 
 ### Changed — 59 rules that can never fire are disabled
