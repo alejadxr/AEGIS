@@ -370,13 +370,13 @@ class SBOMScanner:
                     {
                         "vendor": "AEGIS",
                         "name": "SBOM Scanner",
-                        "version": "1.0.0",
+                        "version": "1.0.0",  # version-literal-ok: component label inside the SBOM document
                     }
                 ],
                 "component": {
                     "type": "application",
                     "name": "aegis-host",
-                    "version": "1.0.0",
+                    "version": "1.0.0",  # version-literal-ok: component label inside the SBOM document
                 },
             },
             "components": components,

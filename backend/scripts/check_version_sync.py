@@ -36,6 +36,25 @@ if readme.exists():
     if schema and schema.group(1) != CANON:
         problems.append(f'README softwareVersion says {schema.group(1)!r}, expected {CANON!r}')
 
+# Python code must import the version, never restate it. The first pass at a
+# single source of truth missed app/__init__.py and two /health payloads in
+# main.py, so /health kept reporting 1.6.4.9 after the release shipped as 1.7.0.
+LITERAL = re.compile(r"""(?:__version__|["']version["'])\s*[:=]\s*["'](\d+\.\d+\.\d+(?:\.\d+)?)["']""")
+# Literals that are deliberately not the AEGIS release, kept out of the source
+# files themselves where an inline marker would be awkward.
+EXEMPT = {("backend/app/api/threats.py", "1.0.0")}  # hub protocol version
+
+for py in sorted((ROOT / "backend/app").rglob("*.py")):
+    if py.name == "version.py":
+        continue
+    for n, line in enumerate(py.read_text(errors="ignore").splitlines(), 1):
+        m = LITERAL.search(line)
+        # A literal that is deliberately not the AEGIS release (a protocol
+        # version, a honeypot's fake identity) is exempted in place, with a reason.
+        if m and m.group(1) != CANON and "version-literal-ok:" not in line \
+                and (str(py.relative_to(ROOT)), m.group(1)) not in EXEMPT:
+            problems.append(f"{py.relative_to(ROOT)}:{n} hardcodes {m.group(1)!r}")
+
 if problems:
     print(f"version drift against backend/app/version.py ({CANON}):")
     for p in problems:

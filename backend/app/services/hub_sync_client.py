@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
+from app.version import __version__
 
 logger = logging.getLogger("aegis.hub_sync")
 
@@ -58,7 +59,7 @@ class HubSyncClient:
                     "node_id": node_id,
                     "node_name": node_name or node_id,
                     "node_url": "",
-                    "version": "1.4.0",
+                    "version": __version__,  # was a stale "1.4.0" literal
                 },
             )
             if resp.status_code == 200:
