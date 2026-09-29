@@ -379,12 +379,15 @@ async fn on_detection(
             .timeout(Duration::from_secs(10))
             .build()
             .map_err(|e| e.to_string())?;
-        let _ = client
+        if let Ok(resp) = client
             .post(format!("{}/antivirus/detections", server_url))
-            .headers(crate::node_auth::headers())
+            .headers(crate::node_auth::upload_headers())
             .json(&body)
             .send()
-            .await;
+            .await
+        {
+            crate::node_auth::note_upload_status(resp.status());
+        }
     }
     Ok(())
 }

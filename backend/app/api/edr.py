@@ -28,7 +28,10 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.core.auth import AuthContext, require_analyst, require_admin, get_auth_context
+from app.core.auth import (
+    AuthContext, require_analyst, require_admin, enforce_node_scope,
+    get_node_or_tenant_context,
+)
 from app.core.events import event_bus
 from app.models.endpoint_agent import (
     AgentEvent, EndpointAgent, EventCategory, EventSeverity,
@@ -79,7 +82,7 @@ class EdrEventsOut(BaseModel):
 async def ingest_events(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
+    auth: AuthContext = Depends(get_node_or_tenant_context),
 ):
     # Accept gzipped bodies from the Rust uploader
     raw = await request.body()
@@ -95,6 +98,7 @@ async def ingest_events(
     except (json.JSONDecodeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"invalid payload: {e}")
 
+    enforce_node_scope(auth, payload.agent_id)
     agent = await db.get(EndpointAgent, payload.agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="agent not found")

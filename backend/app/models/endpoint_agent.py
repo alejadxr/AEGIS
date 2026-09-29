@@ -53,6 +53,9 @@ class EndpointAgent(Base, UUIDMixin, TimestampMixin):
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     node_type: Mapped[str] = mapped_column(String(32), default="workspace")  # "server" | "workspace"
     tags: Mapped[dict] = mapped_column(JSON, default=list)   # list stored as JSON
+    # SHA-256 hex of the per-node upload token (see app.core.auth). NULL = none
+    # issued yet; "revoked" = disabled. The plaintext is never stored.
+    node_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Relationships
     events = relationship(

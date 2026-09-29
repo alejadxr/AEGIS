@@ -22,7 +22,10 @@ from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.core.auth import AuthContext, require_analyst, get_auth_context
+from app.core.auth import (
+    AuthContext, require_analyst, get_auth_context, enforce_node_scope,
+    get_node_or_tenant_context,
+)
 from app.core.events import event_bus
 from app.models.av_detection import AvDetection
 from app.models.endpoint_agent import (
@@ -89,8 +92,9 @@ async def report_detection(
     payload: DetectionIn,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
+    auth: AuthContext = Depends(get_node_or_tenant_context),
 ):
+    enforce_node_scope(auth, payload.agent_id)
     agent = await db.get(EndpointAgent, payload.agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="agent not found")

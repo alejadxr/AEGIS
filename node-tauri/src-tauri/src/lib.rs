@@ -46,6 +46,50 @@ fn hidden_command(program: &str) -> std::process::Command {
 }
 
 #[cfg(test)]
+mod persisted_config_tests {
+    use super::*;
+
+    #[test]
+    fn token_round_trips_and_is_redacted_in_debug() {
+        let cfg = PersistedConfig {
+            server_url: "http://localhost/api".into(),
+            client_id: None,
+            client_name: None,
+            node_id: Some("node-1".into()),
+            node_token: Some(node_auth::Secret::new("tok-abc")),
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"node_token\":\"tok-abc\""));
+        let back: PersistedConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.node_token.as_ref().unwrap().expose(), "tok-abc");
+        assert!(!format!("{:?}", back).contains("tok-abc"));
+    }
+
+    #[test]
+    fn config_written_before_tokens_existed_still_loads() {
+        let old = r#"{"server_url":"http://localhost/api","client_id":null,"client_name":null,"node_id":"node-1"}"#;
+        let cfg: PersistedConfig = serde_json::from_str(old).unwrap();
+        assert!(cfg.node_token.is_none());
+        let out = serde_json::to_string(&cfg).unwrap();
+        assert!(!out.contains("node_token"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_file_is_owner_only_even_if_it_existed_wider() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join(format!("aegis-cfg-{}.json", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_private(&path, "new").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(mode, 0o600);
+    }
+}
+
+#[cfg(test)]
 mod hidden_command_tests {
     use super::hidden_command;
 
@@ -114,6 +158,10 @@ struct PersistedConfig {
     client_id: Option<String>,
     client_name: Option<String>,
     node_id: Option<String>,
+    /// Per-node upload token (a secret). Absent in configs written before
+    /// tokens existed; the heartbeat loop then asks the backend for one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    node_token: Option<node_auth::Secret>,
 }
 
 fn config_dir() -> PathBuf {
@@ -142,6 +190,7 @@ fn save_config(config: &NodeConfig) {
         client_id: config.client_id.clone(),
         client_name: config.client_name.clone(),
         node_id: config.node_id.clone(),
+        node_token: node_auth::token(),
     };
     let dir = config_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -151,13 +200,36 @@ fn save_config(config: &NodeConfig) {
     let path = config_path();
     match serde_json::to_string_pretty(&persisted) {
         Ok(json) => {
-            if let Err(e) = std::fs::write(&path, json) {
+            if let Err(e) = write_private(&path, &json) {
                 log::error!("Failed to write config to {:?}: {}", path, e);
             } else {
                 log::info!("Config saved to {:?}", path);
             }
         }
         Err(e) => log::error!("Failed to serialize config: {}", e),
+    }
+}
+
+/// Write a file only its owner can read (the config holds the node token).
+/// Windows keeps the per-user ACL of %APPDATA%.
+fn write_private(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        // `mode` only applies on creation; tighten a file written by an older version.
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        file.write_all(contents.as_bytes())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents)
     }
 }
 
@@ -217,6 +289,9 @@ impl NodeState {
         if let Some(persisted) = load_config() {
             if persisted.node_id.is_some() {
                 log::info!("Restoring enrolled session from disk");
+                if let (Some(id), Some(tok)) = (&persisted.node_id, &persisted.node_token) {
+                    node_auth::set_credentials(id, tok.expose());
+                }
                 return Self {
                     config: NodeConfig {
                         server_url: persisted.server_url,
@@ -338,6 +413,7 @@ async fn disconnect_node(
 ) -> Result<NodeConfig, String> {
     let mut s = state.lock().await;
     clear_config();
+    node_auth::clear_credentials();
     s.config.enroll_code = generate_enroll_code();
     s.config.enroll_expires_at = (Utc::now() + chrono::Duration::minutes(15)).to_rfc3339();
     s.config.status = "waiting".to_string();
@@ -633,6 +709,18 @@ async fn poll_enrollment(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle)
                         body.get("node_id").and_then(|v| v.as_str()).map(String::from);
                     s.monitoring = true;
 
+                    // The backend hands the per-node upload token over exactly
+                    // once, in this response. Never logged.
+                    match (
+                        s.config.node_id.as_deref(),
+                        body.get("node_token").and_then(|v| v.as_str()),
+                    ) {
+                        (Some(id), Some(tok)) => node_auth::set_credentials(id, tok),
+                        _ => log::warn!(
+                            "Enrolled without a node token; will request one via re-issue"
+                        ),
+                    }
+
                     // Task #1: Persist config immediately after enrollment
                     save_config(&s.config);
 
@@ -659,6 +747,44 @@ async fn poll_enrollment(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle)
 // ---------------------------------------------------------------------------
 // Task #4: Persistent heartbeat with exponential backoff + auto-reconnect
 // ---------------------------------------------------------------------------
+
+/// Claim a per-node upload token when this node has none (enrolled before
+/// tokens existed, or the old one was rotated/rejected). The backend only
+/// answers when the shared node secret matches and the node has no live token.
+async fn request_node_token(state: &Arc<Mutex<NodeState>>, server_url: &str, node_id: &str) {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+    let resp = match client
+        .post(format!("{}/nodes/token/reissue", server_url))
+        .headers(node_auth::headers())
+        .json(&serde_json::json!({ "node_id": node_id }))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("node token request failed: {}", e);
+            return;
+        }
+    };
+    if !resp.status().is_success() {
+        log::warn!("node token request refused: {}", resp.status());
+        return;
+    }
+    let token = resp
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|b| b.get("node_token").and_then(|v| v.as_str()).map(String::from));
+    if let Some(token) = token {
+        node_auth::set_credentials(node_id, &token);
+        let s = state.lock().await;
+        save_config(&s.config);
+        log::info!("Node token obtained");
+    }
+}
 
 async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) {
     let mut sys = System::new_all();
@@ -690,6 +816,10 @@ async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) 
             Some(id) => id,
             None => continue,
         };
+
+        if !node_auth::has_token() {
+            request_node_token(&state, &server_url, &node_id).await;
+        }
 
         sys.refresh_all();
 
@@ -734,6 +864,7 @@ async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) 
                     log::warn!("Heartbeat got 404 — node deleted on server. Resetting...");
                     let mut s = state.lock().await;
                     clear_config();
+                    node_auth::clear_credentials();
                     s.config.enroll_code = generate_enroll_code();
                     s.config.enroll_expires_at =
                         (Utc::now() + chrono::Duration::minutes(15)).to_rfc3339();
