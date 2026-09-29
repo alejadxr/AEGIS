@@ -156,6 +156,12 @@ _PORT_RE = re.compile(r":(\d{2,5})\b")
 _PATH_RE = re.compile(r'"(?:GET|POST|PUT|DELETE)\s+(\S+)\s+HTTP/')
 
 # EDR kind → correlation event_type mapping
+# Topic on which the agent ingest routes hand a whole batch of endpoint events to
+# the engine (see app/services/edr_transport.py). One bus message per batch, not
+# one per event: the bus runs handlers serially on a single worker, so 5000
+# per-event publishes would sit in front of every other event type.
+_EDR_BATCH_TOPIC = "edr.event_batch"
+
 _EDR_EVENT_MAP = {
     "fim": "file_modification",
     # real host_monitor kinds (v1.6.4.9 fix)
@@ -3818,6 +3824,8 @@ class CorrelationEngine:
         # unfireable — ransomware_chain declared `group_by: source_ip` while its
         # legs grouped by hostname, and nothing ever lined up.
         self._chain_group_fields: tuple[str, ...] = self._collect_chain_group_fields()
+        # Strong refs to in-flight EDR batch drains (see _on_edr_batch).
+        self._edr_batch_tasks: set = set()
         # Background memory-bounding sweep task (started in start()).
         self._prune_task: Optional["asyncio.Task"] = None
         self._stats = {
@@ -3921,6 +3929,7 @@ class CorrelationEngine:
         self._event_bus.subscribe("log_event", self._on_normalized_event)
         self._event_bus.subscribe("edr.event", self._on_edr_event)
         self._event_bus.subscribe("edr.process_start", self._on_edr_event)
+        self._event_bus.subscribe(_EDR_BATCH_TOPIC, self._on_edr_batch)
         self._event_bus.subscribe("honeypot_interaction", self._on_honeypot_event)
         # connection_monitor's IOC-peer topic. Bound to its own gated handler
         # rather than left to the auto-subscribed bare "network_connection"
@@ -3940,7 +3949,7 @@ class CorrelationEngine:
         logger.info(
             f"Correlation engine subscribed to {len(event_types)} rule types "
             f"({len(_DOS_EVENT_TYPES)} dos.* via gated handler) "
-            f"+ log_line, log_event, edr.event, edr.process_start, "
+            f"+ log_line, log_event, edr.event, edr.process_start, {_EDR_BATCH_TOPIC}, "
             f"honeypot_interaction, {_CONNECTION_TOPIC}"
         )
 
@@ -4107,8 +4116,10 @@ class CorrelationEngine:
             self._stats["chains_triggered"] += 1
             await self._on_chain_triggered(chain_rule, event)
 
-        # Campaign tracking — check for multi-phase attack campaigns
-        source_ip = event.get("source_ip")
+        # Campaign tracking — check for multi-phase attack campaigns. A
+        # host-only EDR event carries a placeholder address, not an attacker, so
+        # it must not accumulate kill-chain phases under 127.0.0.1 across hosts.
+        source_ip = None if event.get("host_only") else event.get("source_ip")
         for rule in triggered:
             campaign_alert = _campaign_tracker.track(rule["id"], source_ip, ts)
             if campaign_alert:
@@ -4648,8 +4659,24 @@ class CorrelationEngine:
         """Publish correlation alert and optionally create an AI incident."""
         # Drop events with no attributable source (null IP) AND internal IPs.
         # See _on_chain_triggered for full rationale.
+        host_only = bool(triggering_event.get("host_only"))
         source_ip = triggering_event.get("source_ip")
-        if not source_ip or _is_internal_ip(source_ip):
+        if host_only:
+            # Endpoint (EDR) detection: the subject is the host, and there is no
+            # attacker address to gate on. The IP gate below exists to stop
+            # AEGIS blocking its own infrastructure; that cannot happen here
+            # because the alert is emitted with source_ip=None, so nothing
+            # downstream has an address to block (see _on_chain_triggered for
+            # the same reasoning applied to host-grouped chains).
+            host = triggering_event.get("hostname") or triggering_event.get("agent_id")
+            if not host:
+                logger.debug(
+                    f"Skipping EDR correlation with no host identity: "
+                    f"rule={rule.get('id')}"
+                )
+                return
+            source_ip = None
+        elif not source_ip or _is_internal_ip(source_ip):
             logger.debug(
                 f"Skipping correlation (source_ip={source_ip!r}): "
                 f"rule={rule.get('id', 'chain')}"
@@ -4658,7 +4685,11 @@ class CorrelationEngine:
 
         # v1.6.4: apply per-event confidence factors to adjust severity.
         # A safelisted/internal source returns ('suppressed', 0) and we drop.
-        event_ctx = self._build_event_context(triggering_event)
+        # For a host-only event the placeholder address must not feed the
+        # internal/safelisted factors, or every endpoint firing is suppressed.
+        event_ctx = self._build_event_context(
+            {**triggering_event, "source_ip": None} if host_only else triggering_event
+        )
         adjusted_severity, multiplier = apply_confidence_factors(rule, event_ctx)
         if adjusted_severity == "suppressed":
             logger.debug(
@@ -4679,16 +4710,19 @@ class CorrelationEngine:
             "mitre": rule.get("mitre", []),
             "description": rule.get("description", ""),
             "triggering_event": triggering_event,
-            "source_ip": triggering_event.get("source_ip"),
+            "source_ip": source_ip,
             "source": "correlation_engine",
             "pattern": rule["id"],
             "timestamp": datetime.utcnow().isoformat(),
         }
+        if host_only:
+            alert_data["host"] = host
 
         logger.warning(
             f"[CORRELATION] Rule '{rule['id']}' fired | severity={rule['severity']} "
-            f"| source_ip={triggering_event.get('source_ip')} "
-            f"| event_type={triggering_event.get('event_type')}"
+            f"| source_ip={source_ip} "
+            + (f"| host={host} " if host_only else "")
+            + f"| event_type={triggering_event.get('event_type')}"
         )
 
         if self._event_bus:
@@ -4748,6 +4782,7 @@ class CorrelationEngine:
                     source=alert_data.get("source", "correlation_engine"),
                     window=INCIDENT_DEDUP_WINDOW,
                     kind=rule["id"],
+                    host=alert_data.get("host"),
                 )
                 if existing is not None:
                     await _escalate_incident(db, existing, rule, alert_data)
@@ -4934,9 +4969,17 @@ class CorrelationEngine:
         if not mapped_type:
             return
 
+        # Endpoint telemetry has no remote attacker address: its subject is the
+        # HOST. The 127.0.0.1 stamp only keeps source_ip-grouped rules from
+        # tripping over None; `host_only` records that it is a placeholder so
+        # _on_rule_triggered attributes the firing to the host instead of
+        # running the attacker-IP gate on it. An event that DOES carry its own
+        # source_ip is a real network observation and keeps the IP gate.
+        host_only = not data.get("source_ip")
         event = {
             "event_type": mapped_type,
-            "source_ip": data.get("source_ip", "127.0.0.1"),
+            "source_ip": data.get("source_ip") or "127.0.0.1",
+            "host_only": host_only,
             "severity": data.get("severity", "medium"),
             "timestamp": data.get("timestamp", datetime.utcnow().isoformat()),
             "source": "edr",
@@ -4978,6 +5021,33 @@ class CorrelationEngine:
             ),
         }
         await self.evaluate(event)
+
+    async def _on_edr_batch(self, data: dict) -> None:
+        """Fan an agent batch out to _on_edr_event without holding the bus.
+
+        The bus awaits handlers one at a time on a single worker, so evaluating
+        a 5000-event batch inline would stall delivery of every other event
+        type. Hand the batch to a background task and return; the task yields to
+        the loop after every event so API requests keep being served.
+        """
+        if not isinstance(data, dict):
+            return
+        events = data.get("events")
+        if not events:
+            return
+        from app.core.bg_tasks import fire_and_forget
+        task = fire_and_forget(self._drain_edr_batch(events), label="edr_batch")
+        if task is not None:
+            self._edr_batch_tasks.add(task)
+            task.add_done_callback(self._edr_batch_tasks.discard)
+
+    async def _drain_edr_batch(self, events: list) -> None:
+        for ev in events:
+            try:
+                await self._on_edr_event(ev)
+            except Exception as exc:
+                logger.error(f"correlation_engine: EDR batch event failed: {exc}")
+            await asyncio.sleep(0)
 
     async def _on_honeypot_event(self, data: dict) -> None:
         """Forward honeypot interactions with the correct event_type for chain rules."""

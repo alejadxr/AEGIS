@@ -554,7 +554,10 @@ def test_host_chain_reports_no_attacker_ip_so_nothing_can_be_blocked(engine):
     assert alert["source_ip"] is None
     assert alert["group_by"] == "hostname"
     assert alert["host"] == HOST
-    assert engine.incidents and engine.incidents[0][0] == "ransomware_chain"
+    # The single-rule firing of the recovery-inhibition leg now opens its own
+    # host incident too (EDR detections are attributed to the host), so the
+    # chain is one of the incidents rather than the only one.
+    assert "ransomware_chain" in [rid for rid, _ in engine.incidents]
 
 
 # ---------------------------------------------------------------------------

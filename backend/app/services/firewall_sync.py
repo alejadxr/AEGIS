@@ -188,10 +188,11 @@ async def find_recent_incident(
     db: AsyncSession,
     *,
     client_id: str,
-    source_ip: str,
+    source_ip: Optional[str],
     source: str,
     window: timedelta = INCIDENT_DEDUP_WINDOW,
     kind: Optional[str] = None,
+    host: Optional[str] = None,
     statuses: Optional[tuple] = ("open", "investigating", "auto_responded"),
     scan_limit: int = 50,
 ) -> Optional[Incident]:
@@ -213,6 +214,10 @@ async def find_recent_incident(
     raw_alert/ai_analysis JSON rather than pushed into the SQL WHERE clause,
     because `incidents.raw_alert`/`ai_analysis` are plain Postgres `json`
     columns (not `jsonb`), which has no equality operator to filter on.
+
+    `host` narrows the match to incidents about the same endpoint. Host-scoped
+    detections carry source_ip=None, so without it every host's repeat of a
+    rule would fold into one incident row (`source_ip IS NULL`).
 
     `statuses=None` disables the status filter (matches any status) —
     used by _sync_auto_response_events to preserve its pre-existing,
@@ -236,12 +241,16 @@ async def find_recent_incident(
     candidates = result.scalars().all()
     if not candidates:
         return None
-    if not kind:
+    if not kind and host is None:
         return candidates[0]
 
     for incident in candidates:
         raw = incident.raw_alert or {}
         analysis = incident.ai_analysis or {}
+        if host is not None and (raw.get("host") or raw.get("hostname")) != host:
+            continue
+        if not kind:
+            return incident
         existing_kind = (
             raw.get("pattern")
             or analysis.get("rule_id")
