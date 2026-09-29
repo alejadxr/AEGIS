@@ -19,4 +19,13 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Process creation via DCOM lateral movement technique.
+description: |
+  DISABLED (NEEDS AGENT CHANGE): filters on the PARENT process (parent_process
+  = mmc.exe; its command-token clause also needs retargeting from
+  path_contains to cmdline_regex). Endpoint agents send `ppid` only, never the
+  parent's name or path, and the backend does not resolve it before
+  evaluation. To revive it, have the agent send parent_name/parent_path with
+  process_start (or resolve ppid against the stored process tree in
+  edr_events), then set `enabled: true`.
+
+  Process creation via DCOM lateral movement technique.

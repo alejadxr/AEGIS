@@ -2,7 +2,7 @@ id: sigma_privesc_dll_hijack
 name: DLL Hijacking Attempt
 kind: sigma
 severity: high
-enabled: false
+enabled: true
 tactics:
 - PrivilegeEscalation
 techniques:
@@ -15,15 +15,14 @@ condition:
     path_contains:
     - \Temp\
     - \Downloads\
-    - \AppData\
 entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits `dll_load`
-  events (Windows-only telemetry; the EDR runs on macOS). This rule sits on
-  event type `dll_load`, so it can never receive an event and would only inflate
-  the advertised rule count. To revive it, add a Windows EDR sensor publishing
-  `dll_load` events, then set `enabled: true`.
+  Endpoint rule. Fed by image_load events (node-tauri ETW sensor on Windows, a
+  non-default build feature); the path is the loaded image. AppData was
+  dropped from the filter: browsers, Electron apps and updaters load DLLs from
+  it constantly. Installers extracting to Temp will still match, so treat this
+  as a hunting signal.
 
   DLL loaded from unexpected path suggesting DLL hijacking.

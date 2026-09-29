@@ -12,11 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - steghide
-    - openstego
-    - snow
-    - outguess
+    cmdline_regex: (?i)(\b(steghide|openstego|outguess)(\.exe)?\b|\bsnow(\.exe)?\s+-[a-z])
 entityMappings:
 - type: IP
   field: source_ip

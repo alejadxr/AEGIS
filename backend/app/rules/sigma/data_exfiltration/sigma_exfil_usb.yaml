@@ -17,10 +17,9 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits
-  `device_connect` events. This rule sits on event type `device_connect`, so it
-  can never receive an event and would only inflate the advertised rule count.
-  To revive it, add an endpoint agent reporting removable-device attach events,
-  then set `enabled: true`.
+  DISABLED (NEEDS AGENT CHANGE): needs `device_connect` events with
+  `device_type: usb_storage`. No agent reports removable-device attach. To
+  revive it, add a device-arrival sensor (WM_DEVICECHANGE / udev) to the agent
+  and map it in edr_events, then set `enabled: true`.
 
   USB mass storage device connected and mounted.

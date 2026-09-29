@@ -12,7 +12,8 @@ not from a hand-kept list of rule types, so it moves with the code:
   * log pipeline  -- event_normalizer.PATTERNS plus every type
                      _refine_auth_failure can return; fields from a real
                      normalize() result
-  * EDR           -- _EDR_EVENT_MAP values; fields from a real _on_edr_event run
+  * EDR           -- what translate_edr_event yields for real agent payloads
+                     (tests/unit/edr_payloads.py), sent through the real routes
   * dos_shield    -- _DOS_EVENT_TYPES
   * honeypots     -- honeypot_interaction
   * connection_monitor -- the event_type of build_event()
@@ -27,7 +28,6 @@ To revive a disabled rule, wire a producer for its event type / field and flip
 from __future__ import annotations
 
 import ast
-import asyncio
 import inspect
 from pathlib import Path
 
@@ -71,36 +71,38 @@ def _log_fields() -> set[str]:
     return set(event) | {"timestamp"}  # log_watcher stamps timestamp before publishing
 
 
-def _edr_fields() -> set[str]:
-    from app.services.correlation_engine import CorrelationEngine
+def _edr_producers() -> dict[str, set[str]]:
+    """event_type -> fields, from real agent payloads run through the real routes
+    and the real translator (tests/unit/edr_payloads.py)."""
+    from app.services.edr_events import EDR_EVENT_MAP, translate_edr_event
+    from . import edr_payloads
 
-    engine = CorrelationEngine()
-    seen: list[dict] = []
-
-    async def capture(event):
-        seen.append(event)
-        return []
-
-    engine.evaluate = capture  # type: ignore[method-assign]
-    asyncio.run(engine._on_edr_event({"kind": "process_start"}))
-    assert seen, "_on_edr_event published nothing for kind=process_start"
-    return set(seen[0])
+    out: dict[str, set[str]] = {}
+    for bus_event in edr_payloads.all_bus_events():
+        for event in translate_edr_event(bus_event, default_host="h"):
+            out.setdefault(event["event_type"], set()).update(event)
+    missing = {
+        t for kind, t in EDR_EVENT_MAP.items()
+        if kind not in _UNSUBSCRIBED_EDR_KINDS
+    } - set(out)
+    assert not missing, (
+        f"EDR_EVENT_MAP maps to {sorted(missing)} but no sample payload in "
+        "edr_payloads.py produces them; add one so the rules on them are checked"
+    )
+    return out
 
 
 def _producers() -> dict[str, set[str] | None]:
     """event_type -> populated fields (None = not modelled, accept any field)."""
     from app.modules.network.connection_monitor import ConnectionMonitor
-    from app.services.correlation_engine import _DOS_EVENT_TYPES, _EDR_EVENT_MAP
+    from app.services.correlation_engine import _DOS_EVENT_TYPES
     from app.services.event_normalizer import PATTERNS
 
     out: dict[str, set[str] | None] = {}
     log_types = {p.event_type for p in PATTERNS} | _refine_auth_types() | {"http_request"}
     for t in log_types:
         out[t] = _log_fields()
-    edr_fields = _edr_fields()
-    for kind, t in _EDR_EVENT_MAP.items():
-        if kind not in _UNSUBSCRIBED_EDR_KINDS:
-            out[t] = edr_fields
+    out.update(_edr_producers())
     for t in _DOS_EVENT_TYPES:
         out[t] = None
     out["honeypot_interaction"] = None

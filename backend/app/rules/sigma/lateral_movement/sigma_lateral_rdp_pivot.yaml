@@ -21,4 +21,17 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: RDP connection from internal host to multiple internal targets.
+description: |
+  DISABLED (NEEDS A NETWORK SENSOR; not feedable from endpoint agents): the
+  rule sits on event type `connection`, which no producer emits. Endpoint
+  agents report their OWN outbound connections as `network_connection` (remote
+  peer only, outbound only, public addresses only, one event per connection).
+  That describes a host reaching out, not a source probing many targets: this
+  rule counts connections per SOURCE address, and internal peers are dropped
+  on purpose so a LAN host is never taken for an attacker. To revive it,
+  publish flow-level `connection` events with source_ip, destination_ip,
+  target_port, direction and target_type from a network sensor
+  (Zeek/conntrack/pcap on the Pi gateway), and let _on_rule_triggered accept
+  internal-sourced firings, then set `enabled: true`.
+
+  RDP connection from internal host to multiple internal targets.

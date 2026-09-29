@@ -2,7 +2,7 @@ id: sigma_c2_tor
 name: Tor Network Usage Detected
 kind: sigma
 severity: high
-enabled: false
+enabled: true
 tactics:
 - CommandAndControl
 techniques:
@@ -10,7 +10,8 @@ techniques:
 data_sources:
 - network
 condition:
-  event_type: connection
+  event_type: network_connection
+  group_by: hostname
   filter:
     destination_port:
     - 9001
@@ -21,15 +22,11 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits `connection`
-  events (the only network collector, connection_monitor, publishes
-  `network_connection` for IOC-listed peers only and is opt-in; host_monitor's
-  network_anomaly needs root for psutil.net_connections on macOS and is
-  published on a topic the engine does not subscribe to). This rule sits on
-  event type `connection`, so it can never receive an event and would only
-  inflate the advertised rule count. To revive it, add a flow/connection
-  telemetry source (e.g. pcap, conntrack or Zeek on the Pi gateway) publishing
-  `connection` events, plus tolerance in _on_rule_triggered for internal-sourced
-  firings, then set `enabled: true`.
+  Endpoint rule. Fed by outbound connections from an AEGIS agent: tcp_connect
+  events (node-tauri ETW sensor, non-default build feature) and new outbound
+  connections to public addresses from the Python agent. source_ip is the
+  remote peer, never the endpoint; peers that are internal or safelisted are
+  dropped before evaluation. Matching on the Tor port alone is a heuristic, so
+  the incident is a lead, not proof.
 
   Connection to known Tor entry/exit nodes.

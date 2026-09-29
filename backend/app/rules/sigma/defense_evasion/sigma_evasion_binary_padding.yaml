@@ -21,10 +21,10 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): this rule is filed under a reachable
-  event type (`file_modification`) but filters on `size_change`, which
-  host_monitor never populates (it reports the path only), so its filter can
-  never match. To revive it, add host_monitor to publish the byte-size delta
-  with file events, then set `enabled: true`.
+  DISABLED (NEEDS AGENT CHANGE): filters on `size_change`, a byte-size delta.
+  The Python agent file monitor reports the path and before/after hashes only,
+  node-tauri file events carry the path only, and host_monitor reports the
+  path only. To revive it, add the size before/after to file events, map it in
+  edr_events, then set `enabled: true`.
 
   Executable modified with padding to evade hash-based detection.

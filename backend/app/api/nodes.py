@@ -23,6 +23,7 @@ from app.core.auth import AuthContext, require_analyst, require_viewer
 from app.core.events import event_bus
 from app.models.endpoint_agent import EndpointAgent, AgentStatus
 from app.services import asset_risk
+from app.services.edr_transport import publish_agent_batch
 
 logger = logging.getLogger("aegis.nodes")
 router = APIRouter(prefix="/nodes", tags=["nodes"])
@@ -506,6 +507,77 @@ async def check_enrollment_status(code: str):
     return {"status": "pending", "message": "Waiting for manager to enter code"}
 
 
+# /nodes/events types whose detection is owned by a Sigma rule; see receive_node_event.
+_RULE_OWNED_NODE_EVENTS = frozenset({"registry_persistence_new"})
+
+# The agent re-sends its newest Security-log records every ~15s with no record
+# id, so the same 4697 arrives over and over. Remember what was already handed to
+# the engine for a while instead of re-evaluating it each time.
+_NODE_EVENT_TTL_SECONDS = 600.0
+_NODE_EVENT_MAX_KEYS = 4096
+_node_event_seen: dict[tuple, float] = {}
+
+
+def _bridge_to_detection(body: "NodeEventRequest") -> dict | None:
+    """Shape a node event as the endpoint event the Sigma engine understands.
+
+    Only types that feed a rule are bridged. lotl_process_creation and
+    suspicious_powershell are deliberately NOT: they are the agent's own verdict
+    on process command lines that the process_start telemetry already delivers
+    to the same rules, and bridging them as well would double-count.
+    """
+    d = body.details if isinstance(body.details, dict) else {}
+    if body.event_type == "registry_persistence_new":
+        key = d.get("key")
+        if not key:
+            return None
+        hive = d.get("hive") or ""
+        return {
+            "kind": "registry_set",
+            "severity": body.severity,
+            "timestamp": body.timestamp or datetime.utcnow().isoformat(),
+            "target": f"{hive}\\{key}" if hive else str(key),
+            "extra": {"value": d.get("value"), "source": "node_registry_watch"},
+        }
+    if body.event_type == "new_service_installed":
+        return {
+            "kind": "service_install",
+            "severity": body.severity,
+            "timestamp": body.timestamp or datetime.utcnow().isoformat(),
+            "extra": {
+                "service_name": d.get("service_name"),
+                "service_path": d.get("service_path"),
+            },
+        }
+    return None
+
+
+def _node_event_is_new(node_id: str, bridged: dict) -> bool:
+    import time
+
+    extra = bridged.get("extra") or {}
+    ident = (
+        node_id,
+        bridged["kind"],
+        bridged.get("target"),
+        extra.get("value"),
+        extra.get("service_name"),
+        extra.get("service_path"),
+    )
+    now = time.monotonic()
+    if len(_node_event_seen) > _NODE_EVENT_MAX_KEYS:
+        cutoff = now - _NODE_EVENT_TTL_SECONDS
+        for k in [k for k, t in _node_event_seen.items() if t < cutoff]:
+            del _node_event_seen[k]
+        if len(_node_event_seen) > _NODE_EVENT_MAX_KEYS:
+            _node_event_seen.clear()
+    last = _node_event_seen.get(ident)
+    if last is not None and now - last < _NODE_EVENT_TTL_SECONDS:
+        return False
+    _node_event_seen[ident] = now
+    return True
+
+
 class NodeEventRequest(BaseModel):
     node_id: str
     event_type: str
@@ -528,7 +600,22 @@ async def receive_node_event(
 
     logger.info(f"Node event from {body.node_id}: {body.event_type} [{body.severity}]")
 
-    if body.severity in ("high", "critical"):
+    bridged = _bridge_to_detection(body)
+    if bridged is not None and _node_event_is_new(body.node_id, bridged):
+        await publish_agent_batch(
+            client_id=agent.client_id,
+            agent_id=agent.id,
+            hostname=agent.hostname,
+            events=[bridged],
+        )
+
+    # A registry Run-key persistence event is now evaluated by
+    # sigma_persist_registry_run, which opens the (host-attributed) incident.
+    # Writing a second one here would double it, and this one carried the
+    # agent's own LAN address as source_ip.
+    detected_by_rule = body.event_type in _RULE_OWNED_NODE_EVENTS
+
+    if body.severity in ("high", "critical") and not detected_by_rule:
         from app.models.incident import Incident
 
         incident = Incident(

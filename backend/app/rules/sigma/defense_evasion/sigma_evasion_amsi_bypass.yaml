@@ -12,10 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - AmsiUtils
-    - amsiInitFailed
-    - AmsiScanBuffer
+    cmdline_regex: (?i)(amsiutils|amsiinitfailed|amsiscanbuffer)
 entityMappings:
 - type: IP
   field: source_ip

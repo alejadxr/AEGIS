@@ -303,12 +303,14 @@ async def ingest_events(
         accepted += 1
 
         # This agent reports {category, details}, not a `kind`; the category is
-        # the closest thing, and the follow-up kind mapping decides what to do
-        # with it. Process fields are lifted from details under the names
-        # CorrelationEngine._on_edr_event reads.
+        # the closest thing, and edr_events.translate_edr_event decides what to
+        # do with it. The RAW category is used, not `cat`: EventCategory has no
+        # `windows_event` or `discovery`, so `cat` above coerces both to
+        # `process`, which would have handed a Windows logon record to the
+        # process rules as a process with no fields.
         details = ev.details or {}
         detection_events.append({
-            "kind": details.get("kind") or cat.value,
+            "kind": details.get("kind") or ev.category,
             "category": cat.value,
             "severity": sev.value,
             "timestamp": ts.isoformat(),

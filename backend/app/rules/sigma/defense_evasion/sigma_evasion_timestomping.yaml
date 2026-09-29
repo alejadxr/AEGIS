@@ -12,11 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - touch -t
-    - touch -d
-    - SetFileTime
-    - timestomp
+    cmdline_regex: (?i)(\btouch\s+(\S+\s+)*-[td]\s|\bsetfiletime\b|\btimestomp\b)
 entityMappings:
 - type: IP
   field: source_ip

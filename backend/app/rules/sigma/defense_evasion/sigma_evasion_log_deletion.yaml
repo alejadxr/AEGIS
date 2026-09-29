@@ -12,12 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - wevtutil
-    - cl Security
-    - rm /var/log
-    - truncate
-    - '> /var/log'
+    cmdline_regex: (?i)(\bwevtutil(\.exe)?\s+(cl|clear-log)\b|\bclear-eventlog\b|\brm\s+(-\S+\s+)*/var/log/\S|\btruncate\s+(-\S+\s+\S+\s+)*/var/log/\S)
 entityMappings:
 - type: IP
   field: source_ip

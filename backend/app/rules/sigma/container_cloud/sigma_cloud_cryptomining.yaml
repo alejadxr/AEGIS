@@ -12,12 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - xmrig
-    - minerd
-    - cpuminer
-    - stratum+tcp
-    - cryptonight
+    cmdline_regex: (?i)(\b(xmrig|minerd|cpuminer)\b|stratum\+(tcp|ssl)://|\bcryptonight\b)
 entityMappings:
 - type: IP
   field: source_ip

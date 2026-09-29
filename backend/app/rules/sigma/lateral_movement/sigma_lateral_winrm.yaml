@@ -16,4 +16,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Remote command execution via WinRM/PowerShell Remoting.
+description: |
+  DISABLED (NEEDS AGENT CHANGE): filters on the PARENT process (parent_process
+  = wsmprovhost.exe). Endpoint agents send `ppid` only, never the parent's
+  name or path, and the backend does not resolve it before evaluation. To
+  revive it, have the agent send parent_name/parent_path with process_start
+  (or resolve ppid against the stored process tree in edr_events), then set
+  `enabled: true`.
+
+  Remote command execution via WinRM/PowerShell Remoting.

@@ -15,12 +15,7 @@ condition:
   time_window_seconds: 120
   group_by: source_ip
   filter:
-    path_contains:
-    - tar
-    - zip
-    - 7z
-    - rar
-    - gzip
+    cmdline_regex: (?i)(\btar\s+(-?[a-z]*c[a-z]*|--create)\b|\b(7z|7za|rar)(\.exe)?\s+a\s|\bzip(\.exe)?\s+(-\S+\s+)*\S+|\bcompress-archive\b)
 entityMappings:
 - type: IP
   field: source_ip

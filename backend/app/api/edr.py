@@ -149,7 +149,7 @@ async def ingest_events(
         db.add(row)
         accepted += 1
 
-        # Field names are the ones CorrelationEngine._on_edr_event reads.
+        # Field names are the ones edr_events.translate_edr_event reads.
         detection_events.append({
             "kind": ev.kind,
             "severity": severity.value,
@@ -161,6 +161,8 @@ async def ingest_events(
             "command_line": ev.command_line,
             "user": ev.user,
             "target": ev.target,
+            # registry value, image path, ... -- see edr_events
+            "extra": ev.extra if isinstance(ev.extra, dict) else {},
         })
 
         # Only run chain detection on process starts — the ancestry lookup is

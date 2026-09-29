@@ -12,12 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - shred
-    - wipe
-    - srm
-    - sdelete
-    - cipher /w
+    cmdline_regex: (?i)(\bshred\s|\bsrm\s|\bsdelete(64)?(\.exe)?\s|\bcipher(\.exe)?\s+/w:?|\bwipe\s+-)
 entityMappings:
 - type: IP
   field: source_ip

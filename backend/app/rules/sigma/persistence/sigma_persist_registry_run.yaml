@@ -2,7 +2,7 @@ id: sigma_persist_registry_run
 name: Registry Run Key Persistence
 kind: sigma
 severity: high
-enabled: false
+enabled: true
 tactics:
 - Persistence
 techniques:
@@ -12,10 +12,13 @@ data_sources:
 condition:
   event_type: registry_modification
   filter:
-    path_contains:
-    - \Run
-    - \RunOnce
+    path_regex: (?i)\\(Run|RunOnce)(\\|$)
 entityMappings:
 - type: IP
   field: source_ip
-description: Modification of Windows registry Run key for persistence.
+description: |
+  Endpoint rule. Fed by registry_set events (node-tauri ETW sensor, a non-default build feature) and by the node Run/RunOnce key watcher via
+  /nodes/events (Windows). The path is the registry key. Only a Run or RunOnce
+  key component matches, not any key with "Run" in a name.
+
+  Modification of Windows registry Run key for persistence.

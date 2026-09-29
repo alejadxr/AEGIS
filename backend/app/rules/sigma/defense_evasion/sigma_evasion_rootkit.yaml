@@ -17,10 +17,10 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits
-  `kernel_module_load` events. This rule sits on event type
-  `kernel_module_load`, so it can never receive an event and would only inflate
-  the advertised rule count. To revive it, add a kernel/auditd feed publishing
-  `kernel_module_load` events, then set `enabled: true`.
+  DISABLED (NEEDS AGENT CHANGE): needs `kernel_module_load` events. No agent
+  reports module or driver loads (node-tauri's eBPF probes cover exec, connect, open and unlink;
+  its ETW session subscribes to no driver-load provider). To revive it, add a module-load sensor
+  (auditd/eBPF finit_module, ETW driver-load) and map it in edr_events, then
+  set `enabled: true`.
 
   Kernel module loading or syscall hooking detected.

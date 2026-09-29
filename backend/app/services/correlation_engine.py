@@ -162,20 +162,9 @@ _PATH_RE = re.compile(r'"(?:GET|POST|PUT|DELETE)\s+(\S+)\s+HTTP/')
 # per-event publishes would sit in front of every other event type.
 _EDR_BATCH_TOPIC = "edr.event_batch"
 
-_EDR_EVENT_MAP = {
-    "fim": "file_modification",
-    # real host_monitor kinds (v1.6.4.9 fix)
-    "file_create": "file_creation",
-    "file_modify": "file_modification",
-    "file_delete": "file_modification",
-    # legacy aliases kept for external agents
-    "file_created": "file_creation",
-    "file_modified": "file_modification",
-    "file_deleted": "file_modification",
-    "process_start": "process_creation",
-    "process_stop": "process_creation",
-    "network_anomaly": "connection",
-}
+# kind -> event_type lives with the payload translation, in edr_events.
+from app.services.edr_events import EDR_EVENT_MAP as _EDR_EVENT_MAP  # noqa: E402
+from app.services.edr_events import translate_edr_event  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Cooldown defaults per attack class (v1.6.4 protocol-aware tier)
@@ -3248,6 +3237,12 @@ _EVENT_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
     "sql_injection": ("web_request", "http_request"),
     "supply_chain": ("web_request", "http_request"),
     "path_traversal": ("web_request", "http_request"),
+    # Creating /etc/cron.d/x or ~/.ssh/authorized_keys is the canonical way to
+    # install what sigma_persist_cron / _ssh_keys / _systemd / _init_script are
+    # filed under (file_modification). Endpoint agents report the two as distinct
+    # events, so without this the very act those rules describe was invisible and
+    # only a later edit of an existing file could fire them.
+    "file_creation": ("file_modification",),
 }
 
 
@@ -4248,6 +4243,20 @@ class CorrelationEngine:
         producing a stable composite key, so a single attacker IP probing
         many endpoints fires once per (ip,port) tuple rather than per-path.
         """
+        if event.get("host_only"):
+            # Endpoint telemetry carries the 127.0.0.1 placeholder as source_ip,
+            # so a rule grouped by source_ip -- or by nothing -- would share one
+            # cooldown and one sliding window across EVERY host: the first host
+            # to trip a rule would silence it for all the others. The host is
+            # the entity that matters here, so it is the group.
+            host = str(event.get("hostname") or event.get("agent_id") or "__all__")
+            if group_by is None or group_by == "source_ip":
+                return host
+            if isinstance(group_by, (list, tuple)):
+                return "|".join(
+                    host if field == "source_ip" else str(event.get(field, "__all__"))
+                    for field in group_by
+                )
         if group_by is None:
             return "__all__"
         if isinstance(group_by, str):
@@ -4717,6 +4726,10 @@ class CorrelationEngine:
         }
         if host_only:
             alert_data["host"] = host
+        elif triggering_event.get("source") == "edr" and triggering_event.get("hostname"):
+            # An endpoint network detection is about a remote peer (source_ip),
+            # but the incident must still say WHICH endpoint saw it.
+            alert_data["host"] = triggering_event["hostname"]
 
         logger.warning(
             f"[CORRELATION] Rule '{rule['id']}' fired | severity={rule['severity']} "
@@ -4961,66 +4974,24 @@ class CorrelationEngine:
                 await self.evaluate(event)
 
     async def _on_edr_event(self, data: dict) -> None:
-        """Translate EDR events into correlation event types."""
-        if not isinstance(data, dict):
-            return
-        kind = data.get("kind") or data.get("type", "")
-        mapped_type = _EDR_EVENT_MAP.get(kind)
-        if not mapped_type:
-            return
-
-        # Endpoint telemetry has no remote attacker address: its subject is the
-        # HOST. The 127.0.0.1 stamp only keeps source_ip-grouped rules from
-        # tripping over None; `host_only` records that it is a placeholder so
-        # _on_rule_triggered attributes the firing to the host instead of
-        # running the attacker-IP gate on it. An event that DOES carry its own
-        # source_ip is a real network observation and keeps the IP gate.
-        host_only = not data.get("source_ip")
-        event = {
-            "event_type": mapped_type,
-            "source_ip": data.get("source_ip") or "127.0.0.1",
-            "host_only": host_only,
-            "severity": data.get("severity", "medium"),
-            "timestamp": data.get("timestamp", datetime.utcnow().isoformat()),
-            "source": "edr",
-            "agent_id": data.get("agent_id"),
-            "pid": data.get("pid"),
-            # BOTH producers -- host_monitor (in-process, live in prod) and the
-            # POST /edr/events agent endpoint -- publish these as
-            # process_name / process_path / command_line. This handler read
-            # name / path / exe / cmdline, which neither sends, so every
-            # process event reached the rules with all three fields EMPTY.
-            # The rules were reachable by event_type and passed synthetic tests
-            # built by hand, yet could never fire on real telemetry: the whole
-            # ransomware LOLBin set (vssadmin, wbadmin, bcdedit, certutil,
-            # rundll32) filters on exactly these fields. Verified by driving a
-            # real host_monitor bus_payload through this handler.
-            # The legacy names are kept as fallbacks so any third producer
-            # using them keeps working.
-            "path": data.get("process_path") or data.get("path") or data.get("exe", ""),
-            "process_name": data.get("process_name") or data.get("name", ""),
-            "cmdline": data.get("command_line") or data.get("cmdline", ""),
-            # Carried through so parent-process rules have something to read;
-            # host_monitor collects ppid already. The parent's NAME is still
-            # unavailable from any producer, so parent_process-keyed rules
-            # remain unfeedable -- see the audit notes.
-            "ppid": data.get("ppid"),
-            # Host identity. Neither producer sends `hostname` on the bus
-            # (host_monitor sends agent_id, the /edr/events endpoint sends it
-            # only on some payloads), so every host rule that declares
-            # `group_by: hostname` -- the whole ransomware LOLBin set and the
-            # recovery-inhibition set -- resolved its group key to "__all__",
-            # and every host-grouped CHAIN looked for its legs under a key
-            # nothing had ever written. Falling back to agent_id (host_monitor's
-            # AGENT_ID is "aegis-<hostname>") and then to this host's own name
-            # gives those rules and chains a stable per-host key.
-            "hostname": (
-                data.get("hostname")
-                or data.get("agent_id")
-                or _LOCAL_HOSTNAME
-            ),
-        }
-        await self.evaluate(event)
+        """Translate an endpoint event (see edr_events) and evaluate the result."""
+        for event in translate_edr_event(data, default_host=_LOCAL_HOSTNAME):
+            # The translator marks events whose subject is a remote address with
+            # `_gate_ip`. That address is what a response would act on, so it
+            # gets the same gates as connection_monitor's peers: an internal
+            # address is not an attacker, and an operator-safelisted one is
+            # never blocked on a rule's say-so.
+            gate_ip = event.pop("_gate_ip", None)
+            if gate_ip is not None:
+                if _is_internal_ip(gate_ip):
+                    continue
+                try:
+                    from app.core.attack_detector import _is_safe_ip
+                    if _is_safe_ip(gate_ip):
+                        continue
+                except Exception as exc:
+                    logger.warning(f"correlation_engine EDR safelist check failed: {exc}")
+            await self.evaluate(event)
 
     async def _on_edr_batch(self, data: dict) -> None:
         """Fan an agent batch out to _on_edr_event without holding the bus.

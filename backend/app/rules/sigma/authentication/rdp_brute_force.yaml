@@ -19,4 +19,14 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Multiple failed RDP authentication attempts from same IP.
+description: |
+  DISABLED (NEEDS TRANSLATION DECISION): the rule needs `auth_failure` with
+  `service: rdp` and the attacker's address. The Python agent forwards
+  Security 4625 with its StringInserts, whose index 19 is the source address,
+  so a backend-only translation is possible; it is deliberately not done
+  because the same auth_failure events would also feed every auth_failure rule
+  that has no service filter and count RDP failures twice. To revive it, map
+  4625 to auth_failure with service=rdp in edr_events and give the unfiltered
+  auth rules a service exclusion, then set `enabled: true`.
+
+  Multiple failed RDP authentication attempts from same IP.
