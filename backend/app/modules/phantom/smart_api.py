@@ -51,7 +51,7 @@ def _fake_config() -> dict:
     return {
         "app": {
             "name": "Internal Dashboard",
-            "version": "3.2.1",
+            "version": "3.2.1",  # version-literal-ok: honeypot decoy identity, deliberately fake
             "environment": "production",
             "debug": False,
         },
@@ -338,7 +338,7 @@ class SmartAPIHoneypot:
             "users_total": len(self._users),
             "active_sessions": random.randint(10, 200),
             "pending_tasks": random.randint(0, 15),
-            "version": "3.2.1",
+            "version": "3.2.1",  # version-literal-ok: honeypot decoy identity, deliberately fake
         }, headers=self._headers())
 
     async def _handle_admin_stats(self, request: web.Request) -> web.Response:
@@ -363,13 +363,13 @@ class SmartAPIHoneypot:
         return web.json_response({
             "status": "ok",
             "uptime": random.randint(100000, 999999),
-            "version": "3.2.1",
+            "version": "3.2.1",  # version-literal-ok: honeypot decoy identity, deliberately fake
             "timestamp": datetime.utcnow().isoformat(),
         }, headers=self._headers())
 
     async def _handle_version(self, request: web.Request) -> web.Response:
         return web.json_response({
-            "version": "3.2.1",
+            "version": "3.2.1",  # version-literal-ok: honeypot decoy identity, deliberately fake
             "build": "a7f3c2e",
             "node": "18.19.1",
             "environment": "production",

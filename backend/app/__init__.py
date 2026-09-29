@@ -1,1 +1,1 @@
-__version__ = "1.6.4.9"
+from app.version import __version__  # noqa: F401 -- single source, see app/version.py

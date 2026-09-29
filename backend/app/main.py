@@ -997,7 +997,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.9",
+        "version": __version__,
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
     }
@@ -1009,7 +1009,7 @@ async def api_health():
     return {
         "status": "healthy",
         "service": "cayde-6",
-        "version": "1.6.4.9",
+        "version": __version__,
         "ai_mode": _ai_mode.value,
     }
 
