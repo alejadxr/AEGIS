@@ -2,7 +2,7 @@ id: sigma_exfil_usb
 name: USB Storage Device Mounted
 kind: sigma
 severity: medium
-enabled: true
+enabled: false
 tactics:
 - Exfiltration
 techniques:
@@ -16,4 +16,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: USB mass storage device connected and mounted.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `device_connect` events. This rule sits on event type `device_connect`, so it
+  can never receive an event and would only inflate the advertised rule count.
+  To revive it, add an endpoint agent reporting removable-device attach events,
+  then set `enabled: true`.
+
+  USB mass storage device connected and mounted.

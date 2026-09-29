@@ -2,7 +2,7 @@ id: sigma_auth_impossible_travel
 name: Impossible Travel - Concurrent Sessions
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - DefenseEvasion
 techniques:
@@ -19,4 +19,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Same user authenticated from geographically distant locations simultaneously.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `auth_success` events (the log normalizer only classifies failures). This rule
+  sits on event type `auth_success`, so it can never receive an event and would
+  only inflate the advertised rule count. To revive it, add a normalizer pattern
+  for successful logins that also extracts user, geo and time context, then set
+  `enabled: true`.
+
+  Same user authenticated from geographically distant locations simultaneously.

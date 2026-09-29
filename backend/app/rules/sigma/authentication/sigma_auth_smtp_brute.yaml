@@ -2,7 +2,7 @@ id: sigma_auth_smtp_brute
 name: SMTP Authentication Brute Force
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - CredentialAccess
 techniques:
@@ -19,4 +19,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Multiple failed SMTP authentication attempts.
+description: |
+  DISABLED (unfeedable in this deployment): this rule is filed under a reachable
+  event type (`auth_failure`) but filters on `service`, which no producer
+  populates (the log normalizer emits protocol, not service), so its filter can
+  never match. To revive it, add the normalizer to extract the auth service
+  (ftp/smtp/vpn/ssh) onto auth_failure events, then set `enabled: true`.
+
+  Multiple failed SMTP authentication attempts.

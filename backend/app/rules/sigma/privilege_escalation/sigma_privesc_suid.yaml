@@ -2,7 +2,7 @@ id: sigma_privesc_suid
 name: SUID Binary Exploitation
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - PrivilegeEscalation
 techniques:
@@ -22,4 +22,10 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Execution of uncommon SUID binary suggesting privilege escalation.
+description: |
+  DISABLED (unfeedable in this deployment): this rule is filed under a reachable
+  event type (`process_creation`) but filters on `suid`, which host_monitor
+  never populates, so its filter can never match. To revive it, add host_monitor
+  to publish the setuid bit of the executable, then set `enabled: true`.
+
+  Execution of uncommon SUID binary suggesting privilege escalation.

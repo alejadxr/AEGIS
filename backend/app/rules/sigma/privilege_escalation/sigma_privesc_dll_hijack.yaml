@@ -2,7 +2,7 @@ id: sigma_privesc_dll_hijack
 name: DLL Hijacking Attempt
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - PrivilegeEscalation
 techniques:
@@ -19,4 +19,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: DLL loaded from unexpected path suggesting DLL hijacking.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `dll_load`
+  events (Windows-only telemetry; the EDR runs on macOS). This rule sits on
+  event type `dll_load`, so it can never receive an event and would only inflate
+  the advertised rule count. To revive it, add a Windows EDR sensor publishing
+  `dll_load` events, then set `enabled: true`.
+
+  DLL loaded from unexpected path suggesting DLL hijacking.

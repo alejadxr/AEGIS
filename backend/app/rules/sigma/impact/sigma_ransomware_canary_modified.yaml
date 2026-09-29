@@ -1,12 +1,19 @@
 id: ransomware_canary_modified
 name: Canary file modification (ransomware tripwire)
 description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `canary_modified` events (host_monitor reports plain `file_modification`, and
+  the canary-file hook does not publish this type). This rule sits on event type
+  `canary_modified`, so it can never receive an event and would only inflate the
+  advertised rule count. To revive it, add a canary-file watcher publishing
+  `canary_modified` events, then set `enabled: true`.
+
   An AEGIS-planted canary file was written or modified. By design no legitimate
   process ever touches canary files. A single event is sufficient to trip this
   rule — the threshold is intentionally 1 so the alarm is instant.
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - Impact
 techniques:

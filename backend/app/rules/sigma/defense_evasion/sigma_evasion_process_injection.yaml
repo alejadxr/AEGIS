@@ -2,7 +2,7 @@ id: sigma_evasion_process_injection
 name: Process Injection Detected
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - DefenseEvasion
 techniques:
@@ -17,4 +17,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Code injection into running process for defense evasion.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `process_injection` events (host_monitor only reports process start and file
+  changes). This rule sits on event type `process_injection`, so it can never
+  receive an event and would only inflate the advertised rule count. To revive
+  it, add an EDR sensor with memory/API-level visibility publishing
+  `process_injection` events, then set `enabled: true`.
+
+  Code injection into running process for defense evasion.

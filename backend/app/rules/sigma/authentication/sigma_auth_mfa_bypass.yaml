@@ -2,7 +2,7 @@ id: sigma_auth_mfa_bypass
 name: MFA Bypass Attempt
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - CredentialAccess
 techniques:
@@ -17,4 +17,10 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Successful auth without MFA after multiple MFA failures.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `mfa_failure` events. This rule sits on event type `mfa_failure`, so it can
+  never receive an event and would only inflate the advertised rule count. To
+  revive it, add an identity-provider log feed, then set `enabled: true`.
+
+  Successful auth without MFA after multiple MFA failures.

@@ -2,6 +2,12 @@ id: ransomware_smb_lateral
 name: Suspicious SMB Write to Admin Share — Ransomware Lateral Movement
 kind: sigma
 description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `smb_write`
+  events (no SMB audit telemetry exists). This rule sits on event type
+  `smb_write`, so it can never receive an event and would only inflate the
+  advertised rule count. To revive it, add SMB audit logs or a network sensor
+  publishing `smb_write` events, then set `enabled: true`.
+
   Detects high-volume SMB write activity targeting administrative shares
   (C$, ADMIN$, IPC$) from a single source IP within a 60-second window.
   Ransomware operators use SMB to push payloads across the network before
@@ -11,7 +17,7 @@ description: |
   anomaly. Threshold set at 20 writes/60 s — well above legitimate file
   server traffic to admin shares.
 severity: high
-enabled: true
+enabled: false
 tactics:
   - LateralMovement
 techniques:

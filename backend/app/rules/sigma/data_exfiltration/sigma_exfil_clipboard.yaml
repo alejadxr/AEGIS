@@ -2,7 +2,7 @@ id: sigma_exfil_clipboard
 name: Clipboard Data Access
 kind: sigma
 severity: medium
-enabled: true
+enabled: false
 tactics:
 - Exfiltration
 techniques:
@@ -17,4 +17,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Process accessing clipboard data for potential exfiltration.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `clipboard_access` events. This rule sits on event type `clipboard_access`, so
+  it can never receive an event and would only inflate the advertised rule
+  count. To revive it, add an endpoint agent reporting clipboard access, then
+  set `enabled: true`.
+
+  Process accessing clipboard data for potential exfiltration.

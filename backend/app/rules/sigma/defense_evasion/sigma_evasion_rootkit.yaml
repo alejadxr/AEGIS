@@ -2,7 +2,7 @@ id: sigma_evasion_rootkit
 name: Rootkit Behavior Detected
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - DefenseEvasion
 techniques:
@@ -16,4 +16,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Kernel module loading or syscall hooking detected.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `kernel_module_load` events. This rule sits on event type
+  `kernel_module_load`, so it can never receive an event and would only inflate
+  the advertised rule count. To revive it, add a kernel/auditd feed publishing
+  `kernel_module_load` events, then set `enabled: true`.
+
+  Kernel module loading or syscall hooking detected.
