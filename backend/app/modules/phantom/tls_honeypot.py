@@ -155,6 +155,16 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) ->
             raw = await asyncio.wait_for(reader.read(4096), timeout=3.0)
         except asyncio.TimeoutError:
             pass
+        except (ConnectionError, OSError):
+            # A scanner that connects and resets before sending a ClientHello
+            # (nmap's own service probe does this) is ordinary for a honeypot,
+            # not an error. This used to escape _handle: asyncio stores ONE
+            # exception object for the lost connection, so wait_closed() in the
+            # finally re-raised that same object, suppress() caught it there and
+            # grafted line "await writer.wait_closed()" onto its traceback, and
+            # the original then escaped -- logging "Unhandled exception in
+            # client_connected_cb" pointing at a line that was already guarded.
+            return
 
         if raw:
             ja4 = extract_ja4_from_client_hello(raw)
