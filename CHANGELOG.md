@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.1] - 2026-09-29 (credential-attack detection, found verifying the 1.7.0 deploy)
+
+### Fixed — brute-force detection could not see a brute force
+- `http_auth_brute_force` and `generic_credential_attack` excluded `/login` and
+  `/api/v1/auth/`. `path_excludes` is a substring match, so that dropped every
+  login endpoint — `/api/auth/login`, `/wp-login.php`, `/user/login` — and
+  AEGIS's own `POST /api/v1/auth/login`. Forty consecutive failed logins fired
+  nothing.
+
+### Fixed — expired sessions looked like password sprays
+- Web-app 401s fell through to the generic `auth_failure` fallback meant for
+  FTP/SMTP/RDP. Replaying a week of real traffic, the SID office's own client —
+  9,000+ successful requests and 233 `GET /api/notifications/*` → 401 from an
+  expired session still polling — opened brute-force incidents that would have
+  blocked the office. AEGIS's own API counted any 401 the same way, the pattern
+  that once locked this platform's operator out.
+- Credential attempts are POSTs. A `GET`/`HEAD`/`OPTIONS` 401 carries at most a
+  stale token and is now a plain request; a `POST` 401 on any web app is judged
+  by `http_auth_brute_force`. Trade-off documented in place: HTTP Basic-auth
+  brute force is sent as GET, and none of the fronted apps use Basic auth.
+
+### Fixed — `/health` reported 1.6.4.9 after 1.7.0 shipped
+- `app/__init__.py` and both `/health` payloads restated the version instead of
+  importing it, and the hub client registered this node as AEGIS 1.4.0.
+  `check_version_sync.py` now scans the backend for any hardcoded version.
+
+### Verified on production
+- 44,624 real events from the WilabIA/SID feed and 9,944 from Sable over the
+  past week: zero incidents. The landing site's seven detections are all genuine
+  attacks (a Vite `/@fs` traversal after `.env`, the WordPress WP2Shell probe,
+  Spring Actuator reconnaissance, Dolibarr config traversal).
+
+---
+
 ## [1.7.0] - 2026-09-25 (detection actually fires — three silent breaks repaired, 2026 CVE coverage 4x)
 
 This release is mostly about detections that existed, loaded, validated, counted
