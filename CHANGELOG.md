@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.2] - 2026-09-29 (honest rule count, quiet dead hub, honeypot reset)
+
+### Changed — 59 rules that can never fire are disabled
+- 50 declare an event type no producer in this deployment emits (`connection`,
+  `dns_query`, `network`, `cloud_api`, `auth_success`, `container_start`,
+  `process_injection` and 18 singletons). Network-flow telemetry needs root on
+  macOS, and outbound detections are dropped by the internal-source gate
+  anyway, so these are architecturally unfeedable, not merely unwired.
+- 9 sit on a live event type but filter on a field no producer populates
+  (`service`, `username`, `sni_host_mismatch`, `csrf_valid`, `suid`,
+  `account_type`, `size_change`, a parent-process path).
+- Files are kept, each with a note on what would revive it, so historical
+  incident ids still resolve. The README now states **153 enabled** rules
+  instead of 229. A new test fails if an enabled rule sits on an event type
+  nothing produces.
+
+### Fixed — a dead threat-intel hub logged an ERROR on every start
+- The Atlas cluster behind the shared hub no longer resolves. Every dependent
+  already degraded cleanly and the hub was never used in production; the only
+  defect was an ERROR carrying the cluster hostname. Now one INFO line.
+
+### Fixed — TLS honeypot leaked a traceback on every reset
+- A peer resetting before its ClientHello (AEGIS's own nmap scan does this)
+  escaped the handler. The traceback pointed at an already-guarded line because
+  asyncio reuses one exception object for a lost connection.
+
+---
+
 ## [1.7.1] - 2026-09-29 (credential-attack detection, found verifying the 1.7.0 deploy)
 
 ### Fixed — brute-force detection could not see a brute force
