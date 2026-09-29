@@ -77,6 +77,7 @@ pub async fn run(state: Arc<Mutex<EdrState>>) {
             .post(format!("{}/edr/events", server_url))
             .header("Content-Type", "application/json")
             .header("Content-Encoding", "gzip")
+            .headers(crate::node_auth::headers())
             .body(gz)
             .send()
             .await;

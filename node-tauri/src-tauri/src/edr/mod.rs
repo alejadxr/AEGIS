@@ -108,6 +108,38 @@ impl EdrState {
             tier2_active: false,
         }
     }
+
+    /// Adopt the node's current server URL and id. The id can appear after
+    /// this state was built (enrollment finishes later) or go away again
+    /// (disconnect), so this is re-applied periodically, not once.
+    pub fn sync_identity(&mut self, server_url: &str, node_id: &Option<String>) {
+        if self.server_url != server_url {
+            self.server_url = server_url.to_string();
+        }
+        if self.agent_id != *node_id {
+            self.agent_id = node_id.clone();
+            self.node_id = node_id.clone();
+        }
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn agent_id_appears_after_enrollment_and_clears_on_disconnect() {
+        let mut s = EdrState::new("http://a/api/v1".into(), None);
+        assert!(s.agent_id.is_none());
+
+        s.sync_identity("http://a/api/v1", &Some("node-1".into()));
+        assert_eq!(s.agent_id.as_deref(), Some("node-1"));
+        assert_eq!(s.node_id.as_deref(), Some("node-1"));
+
+        s.sync_identity("http://b/api/v1", &None);
+        assert!(s.agent_id.is_none());
+        assert_eq!(s.server_url, "http://b/api/v1");
+    }
 }
 
 /// Start the EDR module. Spawns collectors + the uploader.

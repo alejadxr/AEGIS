@@ -56,6 +56,11 @@ htmlcov/
 # Rust/Tauri build
 target/
 Cargo.lock
+# The endpoint agent is an application: its lockfile must be versioned so the
+# shipped .exe/.app builds from the exact dependency set that was tested. With
+# it ignored, every build resolved fresh versions and the agent stopped
+# compiling when sysinfo and chrono changed their APIs.
+!node-tauri/src-tauri/Cargo.lock
 package-lock.json
 
 # Qdrant data

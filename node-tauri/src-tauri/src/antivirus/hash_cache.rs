@@ -22,6 +22,7 @@ pub enum Status {
 mod sled_backend {
     use super::*;
 
+    #[derive(Debug)]
     pub struct Inner {
         db: sled::Db,
     }

@@ -14,6 +14,8 @@ use tauri::{
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 
+mod node_auth;
+
 // Task #2: Ransomware protection module
 mod ransomware;
 use ransomware::RansomwareState;
@@ -32,7 +34,8 @@ use antivirus::AntivirusState;
 
 /// Create a Command that runs hidden on Windows (no visible CMD window)
 fn hidden_command(program: &str) -> std::process::Command {
-    let mut cmd = hidden_command(program);
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+    let mut cmd = std::process::Command::new(program);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -40,6 +43,49 @@ fn hidden_command(program: &str) -> std::process::Command {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     cmd
+}
+
+#[cfg(test)]
+mod hidden_command_tests {
+    use super::hidden_command;
+
+    #[test]
+    fn returns_a_command_for_the_program_without_recursing() {
+        let cmd = hidden_command("some-program");
+        assert_eq!(cmd.get_program(), "some-program");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Identity propagation to the ransomware / EDR / antivirus modules
+//
+// Those modules are built ~15-20s after boot with whatever node_id exists at
+// that instant. A node that enrolls later (or re-enrolls after a disconnect)
+// would otherwise keep a stale `None` for its whole lifetime and every batch
+// would be skipped. Each module therefore gets a small task that re-applies
+// the node's current server_url / node_id from the shared NodeState.
+// ---------------------------------------------------------------------------
+
+const IDENTITY_SYNC_SECS: u64 = 2;
+
+fn spawn_identity_sync<T, F>(node: Arc<Mutex<NodeState>>, target: Arc<Mutex<T>>, apply: F)
+where
+    T: Send + 'static,
+    F: Fn(&mut T, &str, &Option<String>) + Send + 'static,
+{
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let (server_url, node_id) = {
+                let s = node.lock().await;
+                (s.config.server_url.clone(), s.config.node_id.clone())
+            };
+            {
+                let mut t = target.lock().await;
+                apply(&mut t, &server_url, &node_id);
+            }
+            tokio::time::sleep(Duration::from_secs(IDENTITY_SYNC_SECS)).await;
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -437,6 +483,7 @@ async fn auto_scan_assets(
     let client = reqwest::Client::new();
     match client
         .post(format!("{}/nodes/report-assets", server_url))
+        .headers(node_auth::headers())
         .json(&report)
         .send()
         .await
@@ -509,6 +556,7 @@ async fn auto_scan_loop(state: Arc<Mutex<NodeState>>) {
                 let client = reqwest::Client::new();
                 match client
                     .post(format!("{}/nodes/report-assets", server_url))
+                    .headers(node_auth::headers())
                     .json(&report)
                     .send()
                     .await
@@ -561,6 +609,7 @@ async fn poll_enrollment(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle)
 
         let _ = client
             .post(format!("{}/nodes/announce", server_url))
+            .headers(node_auth::headers())
             .json(&announce_body)
             .send()
             .await;
@@ -568,6 +617,7 @@ async fn poll_enrollment(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle)
         // GET status (check if manager enrolled us)
         if let Ok(resp) = client
             .get(format!("{}/nodes/status/{}", server_url, code))
+            .headers(node_auth::headers())
             .send()
             .await
         {
@@ -671,6 +721,7 @@ async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) 
 
         match client
             .post(format!("{}/nodes/heartbeat", server_url))
+            .headers(node_auth::headers())
             .json(&heartbeat)
             .send()
             .await
@@ -798,6 +849,7 @@ async fn event_reporter_loop(state: Arc<Mutex<NodeState>>) {
         for event in &events {
             match client
                 .post(format!("{}/nodes/events", server_url))
+                .headers(node_auth::headers())
                 .json(event)
                 .send()
                 .await
@@ -930,6 +982,7 @@ async fn fim_reporter_loop(state: Arc<Mutex<NodeState>>) {
                 let client = reqwest::Client::new();
                 match client
                     .post(format!("{}/nodes/events", server_url))
+                    .headers(node_auth::headers())
                     .json(&event)
                     .send()
                     .await
@@ -1087,6 +1140,7 @@ async fn windows_eventlog_loop(state: Arc<Mutex<NodeState>>) {
         for alert in &alerts {
             match client
                 .post(format!("{}/nodes/events", server_url))
+                .headers(node_auth::headers())
                 .json(alert)
                 .send()
                 .await
@@ -1338,6 +1392,7 @@ async fn network_monitor_loop(state: Arc<Mutex<NodeState>>) {
         for alert in alerts.iter().take(10) {
             let _ = client
                 .post(format!("{}/nodes/events", server_url))
+                .headers(node_auth::headers())
                 .json(alert)
                 .send()
                 .await;
@@ -1586,6 +1641,7 @@ async fn registry_persistence_loop(state: Arc<Mutex<NodeState>>) {
         for alert in alerts.iter().take(10) {
             match client
                 .post(format!("{}/nodes/events", server_url))
+                .headers(node_auth::headers())
                 .json(alert)
                 .send()
                 .await
@@ -1769,6 +1825,9 @@ pub fn run() {
                     let mut r = rstate.lock().await;
                     r.node_id = node_id;
                 }
+                spawn_identity_sync(state_ransom_seed.clone(), rstate.clone(), |r, url, id| {
+                    r.sync_identity(url, id)
+                });
                 ransomware::start(rstate).await;
             });
 
@@ -1781,6 +1840,9 @@ pub fn run() {
                     (s.config.server_url.clone(), s.config.node_id.clone())
                 };
                 let estate = Arc::new(Mutex::new(EdrState::new(server_url, node_id)));
+                spawn_identity_sync(state_edr_seed.clone(), estate.clone(), |e, url, id| {
+                    e.sync_identity(url, id)
+                });
                 edr::start(estate).await;
             });
 
@@ -1795,6 +1857,9 @@ pub fn run() {
                 match AntivirusState::new(server_url, node_id) {
                     Ok(av) => {
                         let av_state = Arc::new(Mutex::new(av));
+                        spawn_identity_sync(state_av_seed.clone(), av_state.clone(), |a, url, id| {
+                            a.sync_identity(url, id)
+                        });
                         antivirus::start(av_state).await;
                     }
                     Err(e) => log::error!("[av] failed to initialize: {}", e),

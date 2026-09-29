@@ -86,6 +86,16 @@ impl AntivirusState {
             watch_paths: default_watch_paths(),
         })
     }
+
+    /// See `EdrState::sync_identity`.
+    pub fn sync_identity(&mut self, server_url: &str, node_id: &Option<String>) {
+        if self.server_url != server_url {
+            self.server_url = server_url.to_string();
+        }
+        if self.agent_id != *node_id {
+            self.agent_id = node_id.clone();
+        }
+    }
 }
 
 fn default_watch_paths() -> Vec<PathBuf> {
@@ -371,6 +381,7 @@ async fn on_detection(
             .map_err(|e| e.to_string())?;
         let _ = client
             .post(format!("{}/antivirus/detections", server_url))
+            .headers(crate::node_auth::headers())
             .json(&body)
             .send()
             .await;

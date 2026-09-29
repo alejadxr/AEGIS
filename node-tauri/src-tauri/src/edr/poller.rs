@@ -14,7 +14,7 @@ use chrono::Utc;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
-use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tokio::sync::Mutex;
 
 use crate::edr::{EdrEvent, EdrEventKind, EdrState};
@@ -25,13 +25,13 @@ pub async fn run(state: Arc<Mutex<EdrState>>) {
     let mut sys = System::new_with_specifics(
         RefreshKind::default().with_processes(ProcessRefreshKind::everything()),
     );
-    sys.refresh_processes();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
     let mut known: HashSet<u32> = sys.processes().keys().map(|p| p.as_u32()).collect();
 
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        sys.refresh_processes();
+        sys.refresh_processes(ProcessesToUpdate::All, true);
         let mut current: HashSet<u32> = HashSet::new();
         let mut new_events: Vec<EdrEvent> = Vec::new();
 
