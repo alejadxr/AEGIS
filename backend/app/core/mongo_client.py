@@ -58,7 +58,15 @@ async def connect_mongo() -> bool:
         await _ensure_indexes()
         return True
     except Exception as e:
-        logger.error(f"Failed to connect to MongoDB Atlas: {e}")
+        # An unreachable hub (deleted/paused cluster, no DNS) is an expected,
+        # degraded-but-safe state: every consumer checks is_connected() / gets
+        # None collections. Log once at INFO, exception type only (driver
+        # messages can embed the cluster hostname).
+        logger.info(
+            f"MongoDB threat intel hub unreachable ({type(e).__name__}) - hub disabled"
+        )
+        if _client is not None:
+            _client.close()
         _client = None
         _db = None
         return False
