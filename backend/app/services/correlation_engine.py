@@ -289,15 +289,23 @@ BUILT_IN_RULES: list[dict] = [
             "group_by": ["source_ip"],
             "cooldown_seconds": COOLDOWN_AUTH,
             "filter": {
+                # This list used to also exclude "/api/v1/auth/" and "/login".
+                # path_excludes is a SUBSTRING match, so "/login" dropped every
+                # login endpoint there is -- /api/auth/login, /wp-login.php,
+                # /user/login -- and "/api/v1/auth/" dropped AEGIS's own
+                # POST /api/v1/auth/login. The brute-force rules could not see
+                # a brute force: 40 consecutive POST /api/v1/auth/login -> 401
+                # fired nothing. The entries were redundant anyway: session
+                # checks and stale-token GETs are turned back into plain
+                # http_request by event_normalizer before they reach these
+                # event types, so what arrives here is a credential attempt.
                 "path_excludes": [
-                    "/api/v1/auth/",
                     "/api/v1/auth/me",
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
                     "/api/v1/auth/session",
                     "/api/v1/dashboard/",
                     "/dashboard/",
-                    "/login",
                     "/ws",
                     "/api/v1/health",
                     "/api/v1/me",
@@ -358,15 +366,23 @@ BUILT_IN_RULES: list[dict] = [
             "group_by": ["source_ip"],
             "cooldown_seconds": COOLDOWN_AUTH,
             "filter": {
+                # This list used to also exclude "/api/v1/auth/" and "/login".
+                # path_excludes is a SUBSTRING match, so "/login" dropped every
+                # login endpoint there is -- /api/auth/login, /wp-login.php,
+                # /user/login -- and "/api/v1/auth/" dropped AEGIS's own
+                # POST /api/v1/auth/login. The brute-force rules could not see
+                # a brute force: 40 consecutive POST /api/v1/auth/login -> 401
+                # fired nothing. The entries were redundant anyway: session
+                # checks and stale-token GETs are turned back into plain
+                # http_request by event_normalizer before they reach these
+                # event types, so what arrives here is a credential attempt.
                 "path_excludes": [
-                    "/api/v1/auth/",
                     "/api/v1/auth/me",
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
                     "/api/v1/auth/session",
                     "/api/v1/dashboard/",
                     "/dashboard/",
-                    "/login",
                     "/ws",
                     "/api/v1/health",
                     "/api/v1/me",
