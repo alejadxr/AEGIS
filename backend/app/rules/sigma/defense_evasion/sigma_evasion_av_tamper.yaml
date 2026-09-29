@@ -12,13 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - sc stop
-    - net stop
-    - taskkill
-    - Defender
-    - MsMpEng
-    - Set-MpPreference
+    cmdline_regex: (?i)(\bsc(\.exe)?\s+(stop|delete|config)\s+(windefend|wdnissvc|sense|mssense|wscsvc)|\bnet1?\s+stop\s+"?(windefend|security center|wdnissvc)|\bset-mppreference\b.*-disable\w+\s+\$?(true|1)|\badd-mppreference\b.*-exclusion\w+|\btaskkill\b.*/im\s+(msmpeng|nissrv|msseces|mssense)\S*)
 entityMappings:
 - type: IP
   field: source_ip

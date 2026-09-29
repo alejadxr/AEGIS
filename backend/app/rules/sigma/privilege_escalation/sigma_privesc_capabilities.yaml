@@ -12,10 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - cap_setuid
-    - cap_sys_admin
-    - setcap
+    cmdline_regex: (?i)\bsetcap\b.*\bcap_(setuid|setgid|sys_admin|sys_ptrace|dac_override)
 entityMappings:
 - type: IP
   field: source_ip

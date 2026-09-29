@@ -25,5 +25,9 @@ description: |
   it can never receive an event and would only inflate the advertised rule
   count. To revive it, add a DNS query log feed (e.g. Pi-hole/dnsmasq/Unbound
   logs) normalised into `dns_query` events, then set `enabled: true`.
+  Endpoint side: node-tauri defines a dns_query event kind but no sensor emits
+  it (its ETW session subscribes to no DNS provider) and edr_events does not
+  map it. To revive it, add a DNS-Client ETW subscription to the agent and map
+  dns_query in edr_events.
 
   DNS queries for many subdomains of same domain.

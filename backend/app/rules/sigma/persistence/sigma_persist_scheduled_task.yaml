@@ -2,7 +2,7 @@ id: sigma_persist_scheduled_task
 name: Scheduled Task Created
 kind: sigma
 severity: high
-enabled: false
+enabled: true
 tactics:
 - Persistence
 techniques:
@@ -12,10 +12,12 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - schtasks
-    - /create
+    cmdline_regex: (?i)\bschtasks(\.exe)?\s+.*/create\b
 entityMappings:
 - type: IP
   field: source_ip
-description: New scheduled task created via schtasks or Task Scheduler.
+description: |
+  Endpoint rule. Fed by process_start events from an AEGIS agent (node-tauri
+  or the Python agent); it matches the command line, not the executable path.
+
+  New scheduled task created via schtasks or Task Scheduler.

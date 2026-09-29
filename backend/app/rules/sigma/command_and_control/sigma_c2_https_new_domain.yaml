@@ -19,15 +19,10 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits `connection`
-  events (the only network collector, connection_monitor, publishes
-  `network_connection` for IOC-listed peers only and is opt-in; host_monitor's
-  network_anomaly needs root for psutil.net_connections on macOS and is
-  published on a topic the engine does not subscribe to). This rule sits on
-  event type `connection`, so it can never receive an event and would only
-  inflate the advertised rule count. To revive it, add a flow/connection
-  telemetry source (e.g. pcap, conntrack or Zeek on the Pi gateway) publishing
-  `connection` events, plus tolerance in _on_rule_triggered for internal-sourced
-  firings, then set `enabled: true`.
+  DISABLED (NOT FEEDABLE without an external source): needs `domain_age_days`
+  (domain intelligence such as WHOIS/passive DNS) and the TLS server name;
+  endpoint agents report the remote IP and port only. The engine also has no
+  `_lt` operator. To revive it, add a domain-intel enrichment step for TLS
+  connections and a `_lt` operator, then set `enabled: true`.
 
   HTTPS connection to recently registered or low-reputation domain.

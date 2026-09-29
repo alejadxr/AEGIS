@@ -13,12 +13,9 @@ condition:
   event_type: process_creation
   count_threshold: 3
   time_window_seconds: 60
-  group_by: username
+  group_by: hostname
   filter:
-    path_contains:
-    - sudo
-    - -u root
-    - NOPASSWD
+    cmdline_regex: (?i)\bsudo\b.*(-u\s+root\b|nopasswd)
 entityMappings:
 - type: IP
   field: source_ip

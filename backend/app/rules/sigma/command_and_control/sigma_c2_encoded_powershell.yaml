@@ -12,11 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - powershell
-    - -enc
-    - -EncodedCommand
-    - FromBase64String
+    cmdline_regex: (?i)^\s*(?:"[^"]*[\\/]|'[^']*[\\/]|[^\s"']*[\\/])?(powershell|pwsh)(\.exe)?["']?(?=\s).*(\s-e(nc\w*|c)?\s+[A-Za-z0-9+/=]{12,}|frombase64string)
 entityMappings:
 - type: IP
   field: source_ip

@@ -19,15 +19,16 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits `connection`
-  events (the only network collector, connection_monitor, publishes
-  `network_connection` for IOC-listed peers only and is opt-in; host_monitor's
-  network_anomaly needs root for psutil.net_connections on macOS and is
-  published on a topic the engine does not subscribe to). This rule sits on
-  event type `connection`, so it can never receive an event and would only
-  inflate the advertised rule count. To revive it, add a flow/connection
-  telemetry source (e.g. pcap, conntrack or Zeek on the Pi gateway) publishing
-  `connection` events, plus tolerance in _on_rule_triggered for internal-sourced
-  firings, then set `enabled: true`.
+  DISABLED (NEEDS A NETWORK SENSOR; not feedable from endpoint agents): the
+  rule sits on event type `connection`, which no producer emits. Endpoint
+  agents report their OWN outbound connections as `network_connection` (remote
+  peer only, outbound only, public addresses only, one event per connection).
+  That describes a host reaching out, not a source probing many targets: this
+  rule counts connections per SOURCE address, and internal peers are dropped
+  on purpose so a LAN host is never taken for an attacker. To revive it,
+  publish flow-level `connection` events with source_ip, destination_ip,
+  target_port, direction and target_type from a network sensor
+  (Zeek/conntrack/pcap on the Pi gateway), and let _on_rule_triggered accept
+  internal-sourced firings, then set `enabled: true`.
 
   Low-and-slow port scanning to evade detection.

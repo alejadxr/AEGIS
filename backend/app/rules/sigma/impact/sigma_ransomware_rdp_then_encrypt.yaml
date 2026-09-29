@@ -2,11 +2,11 @@ id: ransomware_rdp_then_encrypt
 name: Successful RDP Login from External IP
 kind: sigma
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits `rdp_login`
-  events (Windows-only telemetry). This rule sits on event type `rdp_login`, so
-  it can never receive an event and would only inflate the advertised rule
-  count. To revive it, add a Windows event-log feed publishing `rdp_login`
-  events, then set `enabled: true`.
+  Endpoint rule. Fed by Security event 4624 with logon type 10 from the Python
+  agent on Windows (pywin32). Only logons whose source address
+  (StringInserts[18]) is a non-internal, non-safelisted IP are delivered. The
+  event is host-only: the address is kept as rdp_source_ip and is never a
+  block target, because a successful login is not proof of an attacker.
 
   Detects a successful RDP authentication originating from a non-RFC1918
   address. This is the RDP-leg of the composite "RDP then encrypt" attack
@@ -17,7 +17,7 @@ description: |
   alone and feeds the chain rule's sigma_fire_log so the chain can correlate
   it with ransomware_extension_mass_change (T1486).
 severity: critical
-enabled: false
+enabled: true
 tactics:
   - InitialAccess
   - LateralMovement

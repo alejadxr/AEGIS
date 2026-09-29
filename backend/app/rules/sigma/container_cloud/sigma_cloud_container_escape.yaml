@@ -12,11 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - nsenter
-    - chroot
-    - /proc/1/root
-    - /.dockerenv
+    cmdline_regex: (?i)(\bnsenter\b.*(-t|--target)[ =]*1\b|/proc/1/root|\bchroot\s+/(host|mnt|proc))
 entityMappings:
 - type: IP
   field: source_ip

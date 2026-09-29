@@ -2,7 +2,7 @@ id: sigma_lateral_psexec
 name: PsExec Remote Execution
 kind: sigma
 severity: high
-enabled: false
+enabled: true
 tactics:
 - LateralMovement
 techniques:
@@ -18,4 +18,9 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: PsExec service installation or usage detected on remote host.
+description: |
+  Endpoint rule. Fed by Security event 4697 (new service installed) reported
+  by the node-tauri agent through /nodes/events on Windows; other service-
+  install sources (System 7045) are not collected.
+
+  PsExec service installation or usage detected on remote host.

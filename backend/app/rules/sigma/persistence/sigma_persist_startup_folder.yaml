@@ -2,7 +2,7 @@ id: sigma_persist_startup_folder
 name: Startup Folder Persistence
 kind: sigma
 severity: high
-enabled: false
+enabled: true
 tactics:
 - Persistence
 techniques:
@@ -18,4 +18,8 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: File placed in Windows Startup folder for automatic execution.
+description: |
+  Endpoint rule. Fed by file_create events (node-tauri ETW/eBPF sensor, a non-default build feature) and by the Python agent file-integrity monitor; the
+  event path is the created file.
+
+  File placed in Windows Startup folder for automatic execution.

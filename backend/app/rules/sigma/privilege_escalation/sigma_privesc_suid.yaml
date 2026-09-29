@@ -23,9 +23,11 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): this rule is filed under a reachable
-  event type (`process_creation`) but filters on `suid`, which host_monitor
-  never populates, so its filter can never match. To revive it, add host_monitor
-  to publish the setuid bit of the executable, then set `enabled: true`.
+  DISABLED (NEEDS AGENT CHANGE): filters on `suid`, the setuid bit of the
+  executable. No agent stats the binary it reports. The setuid-change rule
+  (chmod 4755 / u+s) is live and covers the act of setting the bit. To revive
+  this one, have the agent report the executable's mode with process_start,
+  then retarget its command-token clause to cmdline_regex and set `enabled:
+  true`.
 
   Execution of uncommon SUID binary suggesting privilege escalation.

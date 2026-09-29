@@ -1,12 +1,13 @@
 id: ransomware_extension_mass_change
 name: Mass file extension change suggestive of encryption
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits
-  `file_extension_change` events (host_monitor reports only
-  file_creation/file_modification). This rule sits on event type
-  `file_extension_change`, so it can never receive an event and would only
-  inflate the advertised rule count. To revive it, add a file-rename watcher
-  publishing `file_extension_change` events, then set `enabled: true`.
+  DISABLED (NEEDS AGENT CHANGE): needs `file_extension_change` events (old and
+  new extension, per process). No agent emits renames: the Python monitor
+  forwards `moved` without the destination path, and node-tauri's
+  mass_extension_change exists only as a signal inside a forensic incident
+  that is posted after two signals already correlated on the endpoint. To
+  revive it, have the agent emit a rename event with the new path and pid, map
+  it in edr_events, then set `enabled: true`.
 
   Detects a single process renaming more than 50 files to ransomware-associated
   extensions within 60 seconds. This is the strongest behavioural signal of an

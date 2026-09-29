@@ -19,10 +19,8 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits
-  `pipe_creation` events (Windows-only telemetry). This rule sits on event type
-  `pipe_creation`, so it can never receive an event and would only inflate the
-  advertised rule count. To revive it, add a Windows EDR sensor publishing
-  `pipe_creation` events, then set `enabled: true`.
+  DISABLED (NEEDS AGENT CHANGE): needs `pipe_creation` events. node-tauri's
+  ETW session subscribes to no named-pipe provider. To revive it, add one to
+  the Windows sensor and map it in edr_events, then set `enabled: true`.
 
   Named pipe created for token impersonation.

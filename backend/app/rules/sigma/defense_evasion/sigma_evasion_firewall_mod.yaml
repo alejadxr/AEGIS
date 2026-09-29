@@ -12,11 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - netsh advfirewall
-    - iptables -D
-    - iptables -F
-    - ufw disable
+    cmdline_regex: (?i:\bnetsh(\.exe)?\s+advfirewall\b)|\biptables\s+(-D|-F|--flush)\b|(?i:\bufw\s+disable\b)
 entityMappings:
 - type: IP
   field: source_ip

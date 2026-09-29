@@ -12,11 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - chmod
-    - +s
-    - '4755'
-    - '2755'
+    cmdline_regex: (?i)\bchmod\s+(-\S+\s+)*([ugoa]*\+[rwxXt]*s|[2467][0-7]{3}\b)
 entityMappings:
 - type: IP
   field: source_ip

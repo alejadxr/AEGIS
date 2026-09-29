@@ -12,12 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - certutil
-    - bitsadmin
-    - mshta
-    - regsvr32
-    - rundll32
+    cmdline_regex: (?i)(\bcertutil(\.exe)?\s.*(-urlcache|-decode|-f\s+https?:)|\bbitsadmin(\.exe)?\s.*/transfer|\bmshta(\.exe)?\s+\S*(https?:|vbscript:|javascript:)|\bregsvr32(\.exe)?\s.*(/i:\s*https?:|scrobj\.dll)|\brundll32(\.exe)?\s.*(javascript:|mshtml,|\\temp\\|\\appdata\\))
 entityMappings:
 - type: IP
   field: source_ip

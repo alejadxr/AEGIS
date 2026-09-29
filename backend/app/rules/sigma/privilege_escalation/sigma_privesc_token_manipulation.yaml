@@ -18,10 +18,10 @@ entityMappings:
 - type: IP
   field: source_ip
 description: |
-  DISABLED (unfeedable in this deployment): no AEGIS producer emits
-  `token_manipulation` events (Windows-only telemetry). This rule sits on event
-  type `token_manipulation`, so it can never receive an event and would only
-  inflate the advertised rule count. To revive it, add a Windows EDR sensor
-  publishing `token_manipulation` events, then set `enabled: true`.
+  DISABLED (NEEDS AGENT CHANGE): needs `token_manipulation` events. No agent
+  sensor reports token duplication or impersonation. To revive it, add a
+  Windows sensor for it (ETW Security-Auditing 4703/4672 correlation or the
+  Threat-Intelligence provider) and map it in edr_events, then set `enabled:
+  true`.
 
   Token impersonation or theft for privilege escalation.

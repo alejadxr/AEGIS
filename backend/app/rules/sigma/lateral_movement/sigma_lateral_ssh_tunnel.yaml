@@ -12,11 +12,7 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - ssh
-    - -L
-    - -R
-    - -D
+    cmdline_regex: (?i:\bssh(\.exe)?)\s+(\S+\s+)*-[LRD]\s*\S
 entityMappings:
 - type: IP
   field: source_ip

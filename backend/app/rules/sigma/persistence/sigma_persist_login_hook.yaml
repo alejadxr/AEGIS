@@ -2,7 +2,7 @@ id: sigma_persist_login_hook
 name: macOS Login Hook Persistence
 kind: sigma
 severity: high
-enabled: false
+enabled: true
 tactics:
 - Persistence
 techniques:
@@ -12,11 +12,12 @@ data_sources:
 condition:
   event_type: process_creation
   filter:
-    path_contains:
-    - defaults write
-    - LoginHook
-    - LogoutHook
+    cmdline_regex: (?i)\bdefaults\s+write\s+\S*loginwindow\s+(login|logout)hook\b
 entityMappings:
 - type: IP
   field: source_ip
-description: Login or logout hook configured for persistence on macOS.
+description: |
+  Endpoint rule. Fed by process_start events from an AEGIS agent (node-tauri
+  or the Python agent); it matches the command line, not the executable path.
+
+  Login or logout hook configured for persistence on macOS.

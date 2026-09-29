@@ -2,12 +2,11 @@ id: ransomware_winrm_exec
 name: WinRM Remote Execution — wsmprovhost Under svchost
 kind: sigma
 description: |
-  DISABLED (unfeedable in this deployment): this rule is filed under a reachable
-  event type (`process_creation`) but filters on `process_path` and
-  `parent_process_path`, which host_monitor never populates (it publishes `path`
-  and `process_name`, and no parent process name or path), so its filter can
-  never match. To revive it, add host_monitor to publish the parent process path
-  and a `process_path` field, then set `enabled: true`.
+  DISABLED (NEEDS AGENT CHANGE): filters on `parent_process_path_regex`.
+  `process_path` is now populated (the executable), but endpoint agents send
+  the parent's `ppid` only, never its path. To revive it, have the agent send
+  parent_path with process_start (or resolve ppid against the stored process
+  tree in edr_events), then set `enabled: true`.
 
   Detects wsmprovhost.exe spawned as a child of svchost.exe, the canonical
   process tree for incoming WinRM / PowerShell Remoting sessions (T1021.006).
