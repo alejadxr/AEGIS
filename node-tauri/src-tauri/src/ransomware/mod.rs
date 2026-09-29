@@ -59,6 +59,31 @@ impl RansomwareState {
             incidents_reported: 0,
         }
     }
+
+    /// See `EdrState::sync_identity`.
+    pub fn sync_identity(&mut self, server_url: &str, node_id: &Option<String>) {
+        if self.server_url != server_url {
+            self.server_url = server_url.to_string();
+        }
+        if self.node_id != *node_id {
+            self.node_id = node_id.clone();
+        }
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn node_id_follows_enrollment() {
+        let mut s = RansomwareState::new("http://a/api/v1".into());
+        assert!(s.node_id.is_none());
+        s.sync_identity("http://a/api/v1", &Some("node-1".into()));
+        assert_eq!(s.node_id.as_deref(), Some("node-1"));
+        s.sync_identity("http://a/api/v1", &None);
+        assert!(s.node_id.is_none());
+    }
 }
 
 /// Forensic chain reported to backend on a ransomware incident.
@@ -270,6 +295,7 @@ async fn post_incident(
 
     let resp = client
         .post(format!("{}/agents/events", server_url))
+        .headers(crate::node_auth::headers())
         .json(&body)
         .send()
         .await
