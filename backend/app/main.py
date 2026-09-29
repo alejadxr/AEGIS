@@ -603,7 +603,7 @@ async def lifespan(app: FastAPI):
         await threat_intel_hub.start()
         logger.info("MongoDB threat intel hub started")
     else:
-        logger.info("MongoDB not configured - threat intel hub disabled")
+        logger.info("MongoDB threat intel hub disabled (not configured or unreachable)")
 
     # --- Threat Sharing Hub Sync ---
     from app.services.hub_sync_client import hub_sync_client
