@@ -20,6 +20,7 @@ from slowapi.util import get_remote_address
 from app.database import get_db
 from app.core.auth import AuthContext, require_analyst, require_viewer, get_auth_context
 from app.core.events import event_bus
+from app.services.edr_transport import publish_agent_batch
 
 limiter = Limiter(key_func=get_remote_address)
 from app.models.endpoint_agent import (
@@ -260,15 +261,17 @@ async def ingest_events(
 
     # Verify agent exists
     result = await db.execute(
-        select(EndpointAgent.id).where(
+        select(EndpointAgent.id, EndpointAgent.hostname).where(
             EndpointAgent.id == body.agent_id,
             EndpointAgent.client_id == client.id,
         )
     )
-    if not result.scalar_one_or_none():
+    agent_row = result.first()
+    if not agent_row:
         raise HTTPException(status_code=404, detail="Agent not registered")
 
     accepted = 0
+    detection_events: list[dict] = []
     for ev in body.events:
         try:
             cat = EventCategory(ev.category)
@@ -299,6 +302,25 @@ async def ingest_events(
         db.add(event)
         accepted += 1
 
+        # This agent reports {category, details}, not a `kind`; the category is
+        # the closest thing, and the follow-up kind mapping decides what to do
+        # with it. Process fields are lifted from details under the names
+        # CorrelationEngine._on_edr_event reads.
+        details = ev.details or {}
+        detection_events.append({
+            "kind": details.get("kind") or cat.value,
+            "category": cat.value,
+            "severity": sev.value,
+            "timestamp": ts.isoformat(),
+            "title": ev.title,
+            "pid": details.get("pid"),
+            "process_name": details.get("process_name"),
+            "process_path": details.get("process_path") or details.get("exe"),
+            "command_line": details.get("command_line") or details.get("cmdline"),
+            "path": details.get("file_path"),
+            "details": details,
+        })
+
         # Broadcast critical/high to WebSocket
         if sev in (EventSeverity.critical, EventSeverity.high):
             try:
@@ -314,6 +336,14 @@ async def ingest_events(
                 pass
 
     await db.commit()
+
+    # Persisting is not detecting: hand the batch to the correlation engine.
+    await publish_agent_batch(
+        client_id=client.id,
+        agent_id=body.agent_id,
+        hostname=agent_row.hostname,
+        events=detection_events,
+    )
 
     logger.info(
         f"Ingested {accepted} events from agent {body.agent_id}"

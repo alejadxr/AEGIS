@@ -34,6 +34,7 @@ from app.models.endpoint_agent import (
     AgentEvent, EndpointAgent, EventCategory, EventSeverity,
 )
 from app.models.incident import Incident
+from app.services.edr_transport import publish_agent_batch
 from app.services.process_tree import build_process_tree
 from app.services.attack_chain_detector import evaluate_event, CMD_PATTERN_RULES
 from app.services.host_monitor import host_monitor, AGENT_ID as HOST_MONITOR_AGENT_ID
@@ -108,6 +109,7 @@ async def ingest_events(
 
     accepted = 0
     chain_match_count = 0
+    detection_events: list[dict] = []
 
     async def ancestry_fetcher(pid: int) -> list[dict]:
         tree = await build_process_tree(db, agent.id, pid)
@@ -147,6 +149,20 @@ async def ingest_events(
         db.add(row)
         accepted += 1
 
+        # Field names are the ones CorrelationEngine._on_edr_event reads.
+        detection_events.append({
+            "kind": ev.kind,
+            "severity": severity.value,
+            "timestamp": ts.isoformat(),
+            "pid": ev.pid,
+            "ppid": ev.ppid,
+            "process_name": ev.process_name,
+            "process_path": ev.process_path,
+            "command_line": ev.command_line,
+            "user": ev.user,
+            "target": ev.target,
+        })
+
         # Only run chain detection on process starts — the ancestry lookup is
         # expensive and the other event kinds don't drive chain rules.
         if ev.kind == "process_start":
@@ -156,6 +172,15 @@ async def ingest_events(
             chain_match_count += len(matches)
 
     await db.commit()
+
+    # Deliver the batch to the Sigma correlation engine. Without this the
+    # events were stored and charted but never evaluated against any rule.
+    await publish_agent_batch(
+        client_id=agent.client_id,
+        agent_id=agent.id,
+        hostname=agent.hostname,
+        events=detection_events,
+    )
 
     # Fan out a live-dashboard event so widgets refresh
     try:
