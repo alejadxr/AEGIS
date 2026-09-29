@@ -18,7 +18,10 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.database import get_db
-from app.core.auth import AuthContext, require_analyst, require_viewer, get_auth_context
+from app.core.auth import (
+    AuthContext, require_analyst, require_viewer, get_auth_context,
+    enforce_node_scope, get_node_or_tenant_context,
+)
 from app.core.events import event_bus
 from app.services.edr_transport import publish_agent_batch
 
@@ -250,13 +253,14 @@ async def agent_heartbeat(
 @router.post("/events", response_model=EventBatchResponse)
 async def ingest_events(
     body: EventBatchRequest,
-    auth: AuthContext = Depends(get_auth_context),
+    auth: AuthContext = Depends(get_node_or_tenant_context),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Agent sends a batch of events (process, network, FIM, breadcrumb).
     Server stores them and emits WebSocket events for critical/high severity.
     """
+    enforce_node_scope(auth, body.agent_id)
     client = auth.client
 
     # Verify agent exists

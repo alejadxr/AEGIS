@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import os
 import secrets
 from datetime import datetime, timedelta
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.client import Client
+from app.models.endpoint_agent import EndpointAgent
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -20,6 +23,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Security schemes
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 bearer_scheme = HTTPBearer(auto_error=False)
+node_token_header = APIKeyHeader(name="X-AEGIS-Node-Token", auto_error=False)
+node_id_header = APIKeyHeader(name="X-AEGIS-Node-Id", auto_error=False)
 
 
 def hash_password(password: str) -> str:
@@ -185,6 +190,74 @@ async def get_current_client(
 ) -> Client:
     """Backward-compatible: returns the Client object from auth context."""
     return auth.client
+
+
+# --- Per-node agent credentials ---
+#
+# The endpoint agent authenticates its telemetry uploads with a random token
+# minted for that one node at enrollment. Only a SHA-256 of it is stored (the
+# token is 256 bits of entropy, so a fast hash is enough), on
+# EndpointAgent.node_token_hash. It is deliberately NOT accepted by
+# get_auth_context: only routes that depend on get_node_or_tenant_context see it.
+
+NODE_TOKEN_REVOKED = "revoked"  # sentinel: never equals a hex digest, blocks re-issue
+_NODE_TOKEN_DUMMY_HASH = hashlib.sha256(b"aegis-no-such-node").hexdigest()
+
+
+def hash_node_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def new_node_token() -> tuple[str, str]:
+    """Return (plaintext, hash). The plaintext is shown to the agent once."""
+    token = secrets.token_urlsafe(32)
+    return token, hash_node_token(token)
+
+
+class NodeAuthContext(AuthContext):
+    """A node authenticated by its own token: limited to posting for `node_id`."""
+
+    def __init__(self, client: Client, node_id: str):
+        super().__init__(client=client, role="node")
+        self.node_id = node_id
+
+
+async def get_node_or_tenant_context(
+    api_key: Optional[str] = Security(api_key_header),
+    bearer: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+    node_token: Optional[str] = Security(node_token_header),
+    node_id: Optional[str] = Security(node_id_header),
+    db: AsyncSession = Depends(get_db),
+) -> AuthContext:
+    """Auth for the agent upload routes: a node token, or any normal credential.
+
+    A request carrying X-AEGIS-Node-Token is judged only on that token; it never
+    falls through to the tenant credentials. Without the header this is exactly
+    get_auth_context.
+    """
+    if not node_token:
+        return await get_auth_context(api_key, bearer, db)
+    if not node_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    agent = await db.get(EndpointAgent, node_id)
+    stored = (agent.node_token_hash if agent else None) or _NODE_TOKEN_DUMMY_HASH
+    ok = hmac.compare_digest(stored, hash_node_token(node_token))
+    if not agent or not agent.node_token_hash or not ok:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    result = await db.execute(select(Client).where(Client.id == agent.client_id))
+    client = result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    return NodeAuthContext(client=client, node_id=agent.id)
+
+
+def enforce_node_scope(auth: AuthContext, agent_id: str) -> None:
+    """A node-token caller may only post for its own node."""
+    scoped = getattr(auth, "node_id", None)
+    if scoped is not None and scoped != agent_id:
+        raise HTTPException(status_code=403, detail="node token does not match agent_id")
 
 
 # --- Role-checking dependencies ---

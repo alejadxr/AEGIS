@@ -6,6 +6,7 @@ generates a short code (C6-XXXX-XXXX), the user pastes it in the
 dashboard, and the backend validates and creates an agent record.
 """
 
+import hmac
 import logging
 import os
 import secrets
@@ -15,11 +16,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.core.auth import AuthContext, require_analyst, require_viewer
+from app.core.auth import (
+    NODE_TOKEN_REVOKED, AuthContext, new_node_token, require_analyst, require_viewer,
+)
 from app.core.events import event_bus
 from app.models.endpoint_agent import EndpointAgent, AgentStatus
 from app.services import asset_risk
@@ -54,12 +57,26 @@ def _verify_node_secret(x_aegis_node_auth: Optional[str] = Header(default=None))
     if x_aegis_node_auth != expected:
         raise HTTPException(status_code=401, detail="invalid or missing X-AEGIS-Node-Auth header")
 
+
+
+def _verify_node_secret_strict(x_aegis_node_auth: Optional[str] = Header(default=None)) -> None:
+    """Like _verify_node_secret but with NO compat mode: token re-issue is a
+    credential-minting path, so it stays closed unless a secret is configured."""
+    expected = os.getenv("AEGIS_NODE_SECRET", "").strip()
+    if not expected:
+        raise HTTPException(status_code=403, detail="node token re-issue disabled: AEGIS_NODE_SECRET is not set")
+    if not x_aegis_node_auth or not hmac.compare_digest(x_aegis_node_auth, expected):
+        raise HTTPException(status_code=401, detail="invalid or missing X-AEGIS-Node-Auth header")
+
 # ---------------------------------------------------------------------------
 # In-memory pending enrollment codes
 # In production, use Redis with TTL keys.
 # ---------------------------------------------------------------------------
 
 # code -> { agent_id, hostname, os_info, ip_address, created_at, agent_version }
+# After the manager enrolls the code the entry is kept (enrolled=True) until it
+# expires, so the agent's next /status poll learns its node_id and collects its
+# one-time node_token.
 _pending_enrollments: dict[str, dict] = {}
 
 ENROLLMENT_TTL_MINUTES = 15
@@ -278,7 +295,12 @@ async def enroll_node(
     )
     existing = result.scalar_one_or_none()
 
+    # Per-node upload credential: only the hash is stored; the plaintext is
+    # handed to the agent once, by /nodes/status/{code}.
+    node_token, node_token_hash = new_node_token()
+
     if existing:
+        existing.node_token_hash = node_token_hash
         existing.hostname = _hostname
         existing.os_info = _os_info
         existing.ip_address = _ip_address
@@ -300,9 +322,20 @@ async def enroll_node(
             last_heartbeat=datetime.utcnow(),
             tags=["enrolled-via-code"],
             config={},
+            node_token_hash=node_token_hash,
         )
         db.add(agent)
         await db.commit()
+
+    _pending_enrollments[code] = {
+        **(info or {}),
+        "created_at": datetime.utcnow(),
+        "enrolled": True,
+        "client_id": client.id,
+        "client_name": client.name,
+        "node_id": agent_id,
+        "node_token": node_token,
+    }
 
     logger.info(f"Node enrolled via code {code}: {agent_id} ({_hostname})")
 
@@ -448,6 +481,71 @@ async def remove_node(
     logger.info(f"Node deleted: {node_id}")
 
 
+async def _set_token_state(node_id: str, client_id: str, value: Optional[str], db: AsyncSession) -> None:
+    result = await db.execute(
+        update(EndpointAgent)
+        .where(EndpointAgent.id == node_id, EndpointAgent.client_id == client_id)
+        .values(node_token_hash=value)
+    )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Node not found")
+    await db.commit()
+
+
+@router.post("/{node_id}/token/revoke", status_code=204)
+async def revoke_node_token(
+    node_id: str,
+    auth: AuthContext = Depends(require_analyst),
+    db: AsyncSession = Depends(get_db),
+):
+    """Disable the node's upload token. It cannot be re-issued until rotated."""
+    await _set_token_state(node_id, auth.client.id, NODE_TOKEN_REVOKED, db)
+    logger.info(f"Node token revoked: {node_id}")
+
+
+@router.post("/{node_id}/token/rotate", status_code=204)
+async def rotate_node_token(
+    node_id: str,
+    auth: AuthContext = Depends(require_analyst),
+    db: AsyncSession = Depends(get_db),
+):
+    """Invalidate the node's token and let the agent claim a fresh one."""
+    await _set_token_state(node_id, auth.client.id, None, db)
+    logger.info(f"Node token rotated (awaiting re-issue): {node_id}")
+
+
+class TokenReissueRequest(BaseModel):
+    node_id: str
+
+
+@router.post("/token/reissue", dependencies=[Depends(_verify_node_secret_strict)])
+async def reissue_node_token(
+    body: TokenReissueRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """One-time token claim for a node that has none (enrolled before per-node
+    tokens existed, or rotated by an admin).
+
+    Requires the shared node secret (and refuses to run without one). The
+    UPDATE only matches while node_token_hash IS NULL, so a node that already
+    holds a token, or whose token was revoked, can never be re-minted here.
+    """
+    node_token, node_token_hash = new_node_token()
+    result = await db.execute(
+        update(EndpointAgent)
+        .where(EndpointAgent.id == body.node_id, EndpointAgent.node_token_hash.is_(None))
+        .values(node_token_hash=node_token_hash)
+    )
+    if result.rowcount == 0:
+        exists = await db.execute(select(EndpointAgent.id).where(EndpointAgent.id == body.node_id))
+        if exists.first() is None:
+            raise HTTPException(status_code=404, detail="Node not found")
+        raise HTTPException(status_code=409, detail="Node already has a token")
+    await db.commit()
+    logger.info(f"Node token issued via re-issue: {body.node_id}")
+    return {"node_token": node_token}
+
+
 # ---------------------------------------------------------------------------
 # Node-facing endpoints (no auth)
 # ---------------------------------------------------------------------------
@@ -498,12 +596,17 @@ async def check_enrollment_status(code: str):
     if not info:
         return {"status": "expired", "message": "Code expired or not found"}
     if info.get("enrolled"):
-        return {
+        out = {
             "status": "active",
             "client_id": info.get("client_id"),
             "client_name": info.get("client_name"),
             "node_id": info.get("node_id"),
         }
+        # Handed out exactly once; a lost response is recovered via /token/reissue.
+        node_token = info.pop("node_token", None)
+        if node_token:
+            out["node_token"] = node_token
+        return out
     return {"status": "pending", "message": "Waiting for manager to enter code"}
 
 

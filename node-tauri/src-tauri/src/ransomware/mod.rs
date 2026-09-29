@@ -295,12 +295,13 @@ async fn post_incident(
 
     let resp = client
         .post(format!("{}/agents/events", server_url))
-        .headers(crate::node_auth::headers())
+        .headers(crate::node_auth::upload_headers())
         .json(&body)
         .send()
         .await
         .map_err(|e| e.to_string())?;
 
+    crate::node_auth::note_upload_status(resp.status());
     if !resp.status().is_success() {
         return Err(format!("server responded with {}", resp.status()));
     }

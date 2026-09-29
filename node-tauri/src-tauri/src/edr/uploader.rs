@@ -77,7 +77,7 @@ pub async fn run(state: Arc<Mutex<EdrState>>) {
             .post(format!("{}/edr/events", server_url))
             .header("Content-Type", "application/json")
             .header("Content-Encoding", "gzip")
-            .headers(crate::node_auth::headers())
+            .headers(crate::node_auth::upload_headers())
             .body(gz)
             .send()
             .await;
@@ -88,6 +88,7 @@ pub async fn run(state: Arc<Mutex<EdrState>>) {
                 s.events_sent = s.events_sent.saturating_add(batch.len() as u64);
             }
             Ok(resp) => {
+                crate::node_auth::note_upload_status(resp.status());
                 log::warn!("[edr] uploader: server returned {}", resp.status());
                 // Requeue — but bounded, so oldest events may be dropped.
                 requeue(&state, batch).await;
