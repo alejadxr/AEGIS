@@ -27,7 +27,9 @@ from app.version import __version__
 
 logger = logging.getLogger("aegis.auto_updater")
 
-GITHUB_REPO = "alejandxr/AEGIS"
+# Was "alejandxr/AEGIS" -- a typo for the real repo, so every update check
+# got a 404 and the updater never saw a release.
+GITHUB_REPO = "alejadxr/AEGIS"
 GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 # Imported, never hardcoded: a stale copy here makes AEGIS report an
 # update as available forever, because _is_newer() compares the newest

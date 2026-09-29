@@ -73,6 +73,35 @@ execute it against the shape of data the system really produces.
   byte-identical conditions under two ids. The web_attacks copy is disabled
   rather than deleted so the id still resolves for incidents already recorded.
 
+### Fixed — 570 false positives against real customer traffic
+- Found by replaying 197,861 verbatim production requests (Sep 15-25) through the
+  real normalizer and engine, with per-event timestamps and the deployed
+  safelist. Every incident would have been an autonomous block of a real IP.
+- `sigma_cve_ray_2025_62593` matched `/api/jobs`, a prefix of the WilabIA
+  dashboard's own routes: **313 critical incidents** against two legitimate IPs.
+  Ray is not installed anywhere. Now matches only `/api/job_agent/jobs`.
+- `sigma_web_sqli_union` matched the bare word `select`, a substring of
+  `/api/base-selection/auto-select`, on the first request: **257 incidents**, six
+  of them against customer IPv6 addresses. It had been inert because of the
+  alias bug above and would have gone live the moment that fix shipped — the two
+  changes have to deploy together. Now requires both `union` and `select`.
+
+### Fixed — the chain evaluator was an unordered AND, not a chain
+- Steps were checked independently, so the exact reverse of an attack fired the
+  chain; the evidence attached was whatever event arrived last; stale evidence
+  re-fired every cooldown (25 critical incidents from one attack);
+  `max_window_seconds` was read by nobody; and a step naming a missing or
+  disabled rule was silently satisfied, quietly shortening the chain.
+- The evaluator now walks stages in order, each within its own window of the
+  previous one, bounded by `max_window_seconds`, and re-fires only when the
+  attack genuinely advances. The six chains were replaced by four whose every
+  step a real producer can feed.
+
+### Fixed — the auto-updater never found a release
+- It queried `alejandxr/AEGIS`, a typo for `alejadxr/AEGIS`, so every check
+  returned 404. Combined with the stale version constant, update detection had
+  never worked.
+
 ### Added — 2026 CVE coverage, measured against CISA KEV
 - 52 new CVE detection rules. Coverage of CVEs added to the CISA Known Exploited
   Vulnerabilities catalogue during 2026 went from **15 to 66**, and from 4 to 16
