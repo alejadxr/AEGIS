@@ -2,7 +2,7 @@ id: sigma_lateral_port_forward
 name: Port Forwarding Detected
 kind: sigma
 severity: medium
-enabled: true
+enabled: false
 tactics:
 - LateralMovement
 techniques:
@@ -16,4 +16,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Local or remote port forwarding established.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `network`
+  events (no flow or byte-count telemetry exists in this deployment). This rule
+  sits on event type `network`, so it can never receive an event and would only
+  inflate the advertised rule count. To revive it, add a flow-volume telemetry
+  source (e.g. NetFlow/pcap on the Pi gateway) publishing `network` events with
+  byte counts, then set `enabled: true`.
+
+  Local or remote port forwarding established.

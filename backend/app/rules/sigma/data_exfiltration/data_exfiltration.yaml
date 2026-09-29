@@ -2,7 +2,7 @@ id: data_exfiltration
 name: Possible Data Exfiltration
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - Exfiltration
 techniques:
@@ -17,4 +17,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Large outbound data transfer to external IP.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `network`
+  events (no flow or byte-count telemetry exists in this deployment). This rule
+  sits on event type `network`, so it can never receive an event and would only
+  inflate the advertised rule count. To revive it, add a flow-volume telemetry
+  source (e.g. NetFlow/pcap on the Pi gateway) publishing `network` events with
+  byte counts, then set `enabled: true`.
+
+  Large outbound data transfer to external IP.

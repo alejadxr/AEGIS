@@ -2,7 +2,7 @@ id: sigma_web_csrf
 name: CSRF Attack Detected
 kind: sigma
 severity: medium
-enabled: true
+enabled: false
 tactics:
 - InitialAccess
 techniques:
@@ -21,4 +21,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Cross-site request forgery detected via missing/invalid CSRF token.
+description: |
+  DISABLED (unfeedable in this deployment): this rule is filed under a reachable
+  event type (`web_request`) but filters on `csrf_valid`, which no producer
+  populates (access logs carry no CSRF state), so its filter can never match. To
+  revive it, add an application-side envelope reporting CSRF validation, then
+  set `enabled: true`.
+
+  Cross-site request forgery detected via missing/invalid CSRF token.

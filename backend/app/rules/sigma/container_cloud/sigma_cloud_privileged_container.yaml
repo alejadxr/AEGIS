@@ -2,7 +2,7 @@ id: sigma_cloud_privileged_container
 name: Privileged Container Launched
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - Defense Evasion
 techniques:
@@ -16,4 +16,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Docker container started with --privileged flag.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `container_start` events (no container runtime telemetry exists). This rule
+  sits on event type `container_start`, so it can never receive an event and
+  would only inflate the advertised rule count. To revive it, add a
+  Docker/containerd event feed publishing `container_start` events, then set
+  `enabled: true`.
+
+  Docker container started with --privileged flag.

@@ -2,7 +2,7 @@ id: sigma_evasion_binary_padding
 name: Binary Padding Evasion
 kind: sigma
 severity: medium
-enabled: true
+enabled: false
 tactics:
 - DefenseEvasion
 techniques:
@@ -20,4 +20,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Executable modified with padding to evade hash-based detection.
+description: |
+  DISABLED (unfeedable in this deployment): this rule is filed under a reachable
+  event type (`file_modification`) but filters on `size_change`, which
+  host_monitor never populates (it reports the path only), so its filter can
+  never match. To revive it, add host_monitor to publish the byte-size delta
+  with file events, then set `enabled: true`.
+
+  Executable modified with padding to evade hash-based detection.

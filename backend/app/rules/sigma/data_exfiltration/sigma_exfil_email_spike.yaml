@@ -2,7 +2,7 @@ id: sigma_exfil_email_spike
 name: Email Attachment Spike
 kind: sigma
 severity: medium
-enabled: true
+enabled: false
 tactics:
 - Exfiltration
 techniques:
@@ -19,4 +19,10 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Unusual volume of email with attachments from single user.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `email_sent`
+  events. This rule sits on event type `email_sent`, so it can never receive an
+  event and would only inflate the advertised rule count. To revive it, add a
+  mail-gateway log feed, then set `enabled: true`.
+
+  Unusual volume of email with attachments from single user.

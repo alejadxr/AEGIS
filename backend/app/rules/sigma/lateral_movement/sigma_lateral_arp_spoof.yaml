@@ -2,7 +2,7 @@ id: sigma_lateral_arp_spoof
 name: ARP Spoofing Detected
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - LateralMovement
 techniques:
@@ -17,4 +17,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Gratuitous ARP packets suggesting ARP cache poisoning.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `arp_anomaly` events (no layer-2 telemetry exists). This rule sits on event
+  type `arp_anomaly`, so it can never receive an event and would only inflate
+  the advertised rule count. To revive it, add an ARP watcher on the gateway
+  publishing `arp_anomaly` events, then set `enabled: true`.
+
+  Gratuitous ARP packets suggesting ARP cache poisoning.

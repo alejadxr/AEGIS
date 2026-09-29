@@ -2,7 +2,7 @@ id: sigma_c2_domain_fronting
 name: Domain Fronting Detected
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - CommandAndControl
 techniques:
@@ -17,4 +17,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: TLS SNI mismatch with HTTP Host header suggesting domain fronting.
+description: |
+  DISABLED (unfeedable in this deployment): this rule is filed under a reachable
+  event type (`web_request`) but filters on `sni_host_mismatch`, which no
+  producer populates (no TLS inspection exists), so its filter can never match.
+  To revive it, add a TLS-inspecting sensor reporting SNI/Host mismatches, then
+  set `enabled: true`.
+
+  TLS SNI mismatch with HTTP Host header suggesting domain fronting.

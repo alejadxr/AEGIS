@@ -2,7 +2,7 @@ id: sigma_cloud_bucket_misconfig
 name: Cloud Storage Bucket Public Access
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - Collection
 techniques:
@@ -19,4 +19,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Cloud storage bucket configured with public access.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `cloud_api`
+  events (no cloud audit-log ingestion exists). This rule sits on event type
+  `cloud_api`, so it can never receive an event and would only inflate the
+  advertised rule count. To revive it, add a cloud audit-log ingester
+  (CloudTrail, GCP Audit, Kubernetes audit) publishing `cloud_api` events, then
+  set `enabled: true`.
+
+  Cloud storage bucket configured with public access.

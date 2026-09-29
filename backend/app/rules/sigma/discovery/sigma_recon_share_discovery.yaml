@@ -2,7 +2,7 @@ id: sigma_recon_share_discovery
 name: Network Share Discovery
 kind: sigma
 severity: medium
-enabled: true
+enabled: false
 tactics:
 - Discovery
 techniques:
@@ -18,4 +18,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Enumeration of network shares across multiple hosts.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `smb_access`
+  events (no SMB audit telemetry exists). This rule sits on event type
+  `smb_access`, so it can never receive an event and would only inflate the
+  advertised rule count. To revive it, add SMB audit logs or a network sensor
+  publishing `smb_access` events, then set `enabled: true`.
+
+  Enumeration of network shares across multiple hosts.

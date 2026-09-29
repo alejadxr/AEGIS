@@ -2,7 +2,7 @@ id: sigma_privesc_token_manipulation
 name: Access Token Manipulation
 kind: sigma
 severity: critical
-enabled: true
+enabled: false
 tactics:
 - PrivilegeEscalation
 techniques:
@@ -17,4 +17,11 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Token impersonation or theft for privilege escalation.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `token_manipulation` events (Windows-only telemetry). This rule sits on event
+  type `token_manipulation`, so it can never receive an event and would only
+  inflate the advertised rule count. To revive it, add a Windows EDR sensor
+  publishing `token_manipulation` events, then set `enabled: true`.
+
+  Token impersonation or theft for privilege escalation.

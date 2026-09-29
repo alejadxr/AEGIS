@@ -2,7 +2,7 @@ id: sigma_cloud_untrusted_image
 name: Container Image from Untrusted Registry
 kind: sigma
 severity: medium
-enabled: true
+enabled: false
 tactics:
 - Defense Evasion
 techniques:
@@ -16,4 +16,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Docker image pulled from non-approved registry.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits
+  `container_pull` events (no container runtime telemetry exists). This rule
+  sits on event type `container_pull`, so it can never receive an event and
+  would only inflate the advertised rule count. To revive it, add a
+  Docker/containerd event feed publishing `container_pull` events, then set
+  `enabled: true`.
+
+  Docker image pulled from non-approved registry.

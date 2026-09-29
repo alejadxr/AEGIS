@@ -2,7 +2,7 @@ id: sigma_recon_ad_enum
 name: Active Directory Enumeration
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - Discovery
 techniques:
@@ -18,4 +18,10 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: LDAP queries suggesting Active Directory reconnaissance.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `ldap_query`
+  events. This rule sits on event type `ldap_query`, so it can never receive an
+  event and would only inflate the advertised rule count. To revive it, add a
+  domain-controller LDAP audit feed, then set `enabled: true`.
+
+  LDAP queries suggesting Active Directory reconnaissance.

@@ -2,7 +2,7 @@ id: sigma_exfil_dns
 name: DNS Data Exfiltration
 kind: sigma
 severity: high
-enabled: true
+enabled: false
 tactics:
 - Exfiltration
 techniques:
@@ -19,4 +19,12 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Large or encoded DNS queries suggesting data exfiltration via DNS.
+description: |
+  DISABLED (unfeedable in this deployment): no AEGIS producer emits `dns_query`
+  events (dns_monitor only tails Linux resolver logs that do not exist on the
+  macOS host, and emits nothing). This rule sits on event type `dns_query`, so
+  it can never receive an event and would only inflate the advertised rule
+  count. To revive it, add a DNS query log feed (e.g. Pi-hole/dnsmasq/Unbound
+  logs) normalised into `dns_query` events, then set `enabled: true`.
+
+  Large or encoded DNS queries suggesting data exfiltration via DNS.
