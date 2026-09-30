@@ -118,6 +118,42 @@ async def test_token_minted_once_and_only_hash_stored(env):
     assert "node_token" not in announce
 
 
+async def test_enroll_unknown_code_404_creates_nothing(env):
+    http, factory = env
+    r = await http.post("/nodes/enroll", headers={"X-API-Key": "key-a"},
+                        json={"code": "C6-ZZZZ-ZZZZ"})
+    assert r.status_code == 404
+    assert "Unknown or expired" in r.json()["detail"]
+    async with factory() as s:
+        assert (await s.execute(select(EndpointAgent))).scalars().all() == []
+    assert "C6-ZZZZ-ZZZZ" not in nodes_api._pending_enrollments
+
+
+async def test_enroll_announced_code_becomes_active_with_token(env):
+    http, factory = env
+    code = "C6-AAAA-BBBB"
+    await http.post("/nodes/announce", headers=NODE_AUTH,
+                    json={"enroll_code": code, "hostname": "real-host"})
+    pending = (await http.get(f"/nodes/status/{code}", headers=NODE_AUTH)).json()
+    assert pending["status"] == "pending"
+    r = await http.post("/nodes/enroll", headers={"X-API-Key": "key-a"}, json={"code": code})
+    assert r.status_code == 200 and r.json()["hostname"] == "real-host"
+    st = (await http.get(f"/nodes/status/{code}", headers=NODE_AUTH)).json()
+    assert st["status"] == "active" and st["node_id"] == r.json()["node_id"]
+    assert len(st["node_token"]) >= 40
+    async with factory() as s:
+        assert len((await s.execute(select(EndpointAgent))).scalars().all()) == 1
+
+
+async def test_enroll_same_code_twice_409(env):
+    http, factory = env
+    code, _, _ = await enroll(http)
+    r = await http.post("/nodes/enroll", headers={"X-API-Key": "key-a"}, json={"code": code})
+    assert r.status_code == 409
+    async with factory() as s:
+        assert len((await s.execute(select(EndpointAgent))).scalars().all()) == 1
+
+
 @pytest.mark.parametrize("route", ROUTES)
 async def test_valid_token_accepted(env, route):
     http, _ = env

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.6] - 2026-09-30 (enrollment accepts only codes an agent announced)
+
+### Fixed — a mistyped enrollment code created a phantom node
+- `POST /nodes/enroll` accepted any well-formed code and, when no agent had
+  announced it, created an online node named `node-XXXX` with a live upload
+  token. An unknown or expired code now returns 404 and creates nothing; a
+  code that was already enrolled returns 409.
+
+---
+
 ## [1.7.5] - 2026-09-30 (enforce acts only on the process it can name)
 
 ### Fixed — enforce killed an unrelated process
