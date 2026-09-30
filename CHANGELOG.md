@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.11] - 2026-09-30 (endpoint detections without the noise)
+
+### Fixed
+- `/nodes/events` `suspicious_process` no longer opens a CRITICAL incident for
+  every `cmd.exe` or `powershell.exe`: the same processes arrive as process
+  telemetry on `/edr/events`, where the Sigma rules judge the command line.
+  Other endpoint detections on that path are attributed to the host and never
+  carry the endpoint's LAN address as `source_ip`.
+- `ransomware_note_dropped` matched every ordinary `README.txt`. The pattern is
+  anchored to the file name and keeps the real ransom-note shapes
+  (`README_FOR_DECRYPT`, `!!!README!!!`, `HOW_TO_RESTORE`, …).
+
+### Added — `AEGIS_EDR_TRUSTED_PARENTS`
+- Comma-separated full executable paths of trusted management tooling. Process
+  creations whose parent is exactly one of these paths skip process-creation
+  rules. Exact path only, empty by default; shells, `sshd.exe` and core system
+  binaries are rejected, and paths outside Program Files log a warning.
+- Limit: the parent is resolved from process events already seen, so a parent
+  started before the agent or the server is not recognised until it starts
+  again.
+
+---
+
 ## [1.7.10] - 2026-09-30 (endpoint process events carry their command line)
 
 ### Fixed — every command-line rule was blind on real endpoints

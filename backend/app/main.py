@@ -312,6 +312,10 @@ async def lifespan(app: FastAPI):
         admin_password=settings.AEGIS_ADMIN_PASSWORD,
     )
 
+    # Validate AEGIS_EDR_TRUSTED_PARENTS once at boot so bad entries are logged.
+    from app.services.edr_trusted_parents import get_trusted_parents
+    get_trusted_parents()
+
     # P0-7: DeceptionCampaign isn't imported by app/models/__init__.py (out of
     # scope for this change), so its table wouldn't be registered on
     # Base.metadata in time for create_all below without this explicit

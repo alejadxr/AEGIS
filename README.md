@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
 [![Docker](https://img.shields.io/badge/docker-compose-blue)]()
-[![Version](https://img.shields.io/badge/version-1.7.10-cyan)]()
+[![Version](https://img.shields.io/badge/version-1.7.11-cyan)]()
 
 [What is AEGIS?](#what-is-aegis) · [Install](#5-minute-install) · [Ransomware Defense](#ransomware-defense-v16) · [Detection](#detection-1111-verified) · [vs Wazuh / OSSEC / Elastic](#aegis-vs-wazuh--ossec--elastic-security) · [Architecture](#architecture) · [Docs](docs/)
 
@@ -284,6 +284,7 @@ cd frontend && npm install && npm run build && npm start
 | `AEGIS_EXTRA_LOG_PATHS` | unset | Colon-separated extra log files to tail (globs supported), e.g. a unified web-app feed |
 | `AEGIS_SAFE_IPS` | `127.0.0.1,::1,localhost` | IPs/CIDRs never blocked and never turned into an incident, on **every** detection path. RFC1918, CGNAT/Tailscale (`100.64.0.0/10`) and published crawler CIDRs are folded in unconditionally |
 | `AEGIS_INTERNAL_IPS` | unset | Additive twin of `AEGIS_SAFE_IPS` — same gate, clearer intent for "this one is mine" |
+| `AEGIS_EDR_TRUSTED_PARENTS` | unset | Comma-separated FULL Windows executable paths of management tooling (e.g. `C:\Program Files\Vendor\agent.exe`). Endpoint processes whose **parent** is exactly one of these paths (case-insensitive, never by file name) skip the process-creation rules, so a fleet agent's legitimate `powershell -EncodedCommand` does not alert. Keep entries under an admin-protected directory (a startup warning is logged for anything outside `C:\Program Files` / `C:\Program Files (x86)`); `sshd.exe`, `cmd.exe`, `powershell.exe`, `pwsh.exe`, `explorer.exe`, `services.exe` and `svchost.exe` are rejected at load. A parent whose path is not known is never excluded |
 | `AEGIS_PROVISIONAL_BLOCK_TTL_HOURS` | `6` | How long an *unconfirmed* auto-block stays in force before it lifts itself |
 | `AEGIS_FULL_SCAN_HOURS` | `8` | Full nmap + nuclei scan interval |
 | `AEGIS_DOS_MODE` | `monitor` | `monitor` (detect only) or `active` (enforce) |
@@ -577,7 +578,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
       "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 163 enabled Sigma rules + 4 chain detections. Offline-capable. No cloud AI required.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux, macOS, Windows",
-      "softwareVersion": "1.7.10",
+      "softwareVersion": "1.7.11",
       "datePublished": "2026-05-01",
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "url": "https://github.com/alejadxr/AEGIS",
