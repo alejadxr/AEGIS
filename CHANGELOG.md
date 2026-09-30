@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.12] - 2026-09-30
+
+### Fixed
+- `AEGIS_EDR_TRUSTED_PARENTS` set in `backend/.env` was ignored: it was read
+  from the process environment only. It is now read from the application
+  settings first, like the IP safelists.
+
+---
+
 ## [1.7.11] - 2026-09-30 (endpoint detections without the noise)
 
 ### Fixed
