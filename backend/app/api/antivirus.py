@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timeutil import parse_agent_ts
 from app.database import get_db
 from app.core.auth import (
     AuthContext, require_analyst, get_auth_context, enforce_node_scope,
@@ -101,14 +102,7 @@ async def report_detection(
     if auth.client_id and agent.client_id != auth.client_id:
         raise HTTPException(status_code=403, detail="agent does not belong to this client")
 
-    try:
-        detected = (
-            datetime.fromisoformat(payload.detected_at.replace("Z", "+00:00"))
-            if payload.detected_at
-            else datetime.utcnow()
-        )
-    except ValueError:
-        detected = datetime.utcnow()
+    detected = parse_agent_ts(payload.detected_at)
 
     row = AvDetection(
         client_id=agent.client_id,

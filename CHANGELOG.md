@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.9] - 2026-09-30 (the first real endpoint could upload, and was not blocked for it)
+
+Found by the first Windows agent running as a service in production.
+
+### Fixed — every EDR upload returned 500
+- Agents send RFC 3339 timestamps with an offset; the event columns are naive
+  UTC, and asyncpg refused the mix. Agent-supplied times are now normalised to
+  naive UTC on `/edr/events`, `/agents/events`, `/ransomware/events` and
+  `/antivirus/detections`.
+
+### Fixed — AEGIS auto-blocked its own endpoint
+- The HTTP attack detector inspected telemetry bodies, found process command
+  lines (`powershell.exe …`, `cmd.exe /c …`), flagged them as critical command
+  injection and blocked the endpoint's IP locally and on the firewall
+  executor. Body inspection is now skipped on agent telemetry routes when the
+  request carries a node token; path, query and header inspection still run,
+  and the route itself rejects invalid tokens.
+
+---
+
 ## [1.7.8] - 2026-09-30 (the antivirus watches every user when run as a service)
 
 ### Fixed — service-mode antivirus watched the service account's profile

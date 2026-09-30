@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timeutil import parse_agent_ts
 from app.database import get_db
 from app.core.auth import (
     AuthContext, require_analyst, require_admin, enforce_node_scope,
@@ -124,10 +125,7 @@ async def ingest_events(
         category = _event_category(ev.kind)
         severity = _event_severity(ev.kind)
 
-        try:
-            ts = datetime.fromisoformat(ev.at.replace("Z", "+00:00"))
-        except ValueError:
-            ts = datetime.utcnow()
+        ts = parse_agent_ts(ev.at)
 
         details = {
             "kind": ev.kind,

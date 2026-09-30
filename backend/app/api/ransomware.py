@@ -20,6 +20,7 @@ Dashboard additions:
 import logging
 import uuid
 from datetime import datetime, timedelta
+from app.core.timeutil import parse_agent_ts
 from pathlib import Path
 from typing import Optional
 
@@ -142,10 +143,7 @@ async def report_ransomware_incident(
     if auth.client_id and agent.client_id != auth.client_id:
         raise HTTPException(status_code=403, detail="agent does not belong to this client")
 
-    try:
-        detected = datetime.fromisoformat(payload.detected_at.replace("Z", "+00:00"))
-    except ValueError:
-        detected = datetime.utcnow()
+    detected = parse_agent_ts(payload.detected_at)
 
     # 1. Create the forensic record
     event = RansomwareEvent(
