@@ -149,6 +149,9 @@ def load_rules(path: Path = _DEFAULT_RULES_PATH) -> RulePack:
 # Hot-reload watcher (optional — requires watchdog)
 # ---------------------------------------------------------------------------
 
+_WATCH_EVENT_TYPES = frozenset({"created", "modified", "deleted", "moved"})
+
+
 def start_watcher(pack: RulePack, path: Path = _DEFAULT_RULES_PATH) -> Any:
     """
     Start a filesystem watcher that reloads rules on file change.
@@ -168,6 +171,12 @@ def start_watcher(pack: RulePack, path: Path = _DEFAULT_RULES_PATH) -> Any:
     class _Handler(FileSystemEventHandler):
         def on_any_event(self, event):
             if event.is_directory:
+                return
+            # Only real changes. inotify (Linux) also reports "opened" and
+            # "closed_no_write" for plain reads, and load_rules() itself reads
+            # every YAML — without this filter each reload triggers the next
+            # one in an endless loop.
+            if getattr(event, "event_type", "") not in _WATCH_EVENT_TYPES:
                 return
             src = getattr(event, "src_path", "")
             if not src.endswith(".yaml"):
