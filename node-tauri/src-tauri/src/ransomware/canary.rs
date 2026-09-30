@@ -20,8 +20,6 @@ use crate::ransomware::RansomwareState;
 
 /// Known ransom note filename patterns (case-insensitive).
 const RANSOM_NOTE_PATTERNS: &[&str] = &[
-    "readme.txt",
-    "read_me.txt",
     "how_to_decrypt",
     "how-to-decrypt",
     "decrypt_instructions",
@@ -31,6 +29,11 @@ const RANSOM_NOTE_PATTERNS: &[&str] = &[
     "restore_files",
     "ransom",
 ];
+
+/// True if a lowercased filename looks like a ransom note.
+fn is_ransom_note(lower_name: &str) -> bool {
+    RANSOM_NOTE_PATTERNS.iter().any(|p| lower_name.contains(p))
+}
 
 /// Seed 10 canary files across user directories.
 pub fn seed_canaries() -> Result<Vec<PathBuf>, String> {
@@ -185,7 +188,7 @@ pub async fn watch_canaries(state: Arc<Mutex<RansomwareState>>) -> Result<(), St
             // 2. Known ransom note dropped?
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 let lower = name.to_ascii_lowercase();
-                if RANSOM_NOTE_PATTERNS.iter().any(|p| lower.contains(p)) {
+                if is_ransom_note(&lower) {
                     let sig = Signal {
                         kind: SignalKind::RansomNoteDropped,
                         detail: format!("ransom note dropped: {}", path.display()),
@@ -202,4 +205,22 @@ pub async fn watch_canaries(state: Arc<Mutex<RansomwareState>>) -> Result<(), St
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_readme_is_not_a_ransom_note() {
+        assert!(!is_ransom_note("readme.txt"));
+        assert!(!is_ransom_note("read_me.txt"));
+    }
+
+    #[test]
+    fn explicit_ransom_notes_still_match() {
+        for n in ["!!!readme!!!.txt", "how_to_decrypt.html", "restore_files.txt", "your_files_are_encrypted.txt"] {
+            assert!(is_ransom_note(n), "{n}");
+        }
+    }
 }
