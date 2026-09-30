@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     # would leave the operator's entire safelist inert.
     AEGIS_SAFE_IPS: str = ""
     AEGIS_INTERNAL_IPS: str = ""
+    AEGIS_EDR_TRUSTED_PARENTS: str = ""
 
     # External firewall API URL (e.g. AEGIS Firewall Agent on Raspberry Pi).
     # When set, AEGIS uses this for real iptables blocking + threat intel.

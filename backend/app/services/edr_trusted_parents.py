@@ -79,10 +79,22 @@ def parse_trusted_parents(raw: Optional[str]) -> frozenset[str]:
 _cache: tuple[Optional[str], frozenset[str]] = (None, frozenset())
 
 
+def _read_raw() -> str:
+    """pydantic `settings` FIRST (values in backend/.env never reach os.environ),
+    then os.environ for values exported by the process manager."""
+    raw = ""
+    try:
+        from app.config import settings as _settings
+        raw = str(getattr(_settings, ENV_VAR, "") or "")
+    except Exception:  # pragma: no cover - defensive
+        raw = ""
+    return raw or os.environ.get(ENV_VAR, "")
+
+
 def get_trusted_parents() -> frozenset[str]:
     """Parsed AEGIS_EDR_TRUSTED_PARENTS, re-parsed (and re-logged) only on change."""
     global _cache
-    raw = os.environ.get(ENV_VAR, "")
+    raw = _read_raw()
     if _cache[0] != raw:
         _cache = (raw, parse_trusted_parents(raw))
     return _cache[1]
