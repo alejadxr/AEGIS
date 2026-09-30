@@ -108,3 +108,13 @@ def test_empty_by_default():
 
     assert get_trusted_parents() == frozenset()
     assert not is_trusted_parent(TRUSTED)
+
+
+def test_value_from_settings_only_is_honoured(monkeypatch, engine):
+    """backend/.env values land in pydantic settings, never in os.environ."""
+    from app.config import settings
+    import os
+    monkeypatch.setattr(settings, "AEGIS_EDR_TRUSTED_PARENTS", TRUSTED, raising=False)
+    assert "AEGIS_EDR_TRUSTED_PARENTS" not in os.environ
+    alerts = _run(monkeypatch, engine, _parent(TRUSTED), P.PS_ENC)
+    assert RULE not in alerts
