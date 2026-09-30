@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.10] - 2026-09-30 (endpoint process events carry their command line)
+
+### Fixed — every command-line rule was blind on real endpoints
+- The agent's process poller used sysinfo's default refresh, which loads
+  nothing for newly seen processes: of the first 75 process starts from a real
+  Windows endpoint, none had a command line. The poller now loads the command
+  line, executable, user and working directory once per process, so rules such
+  as encoded PowerShell and certutil download can match.
+
+### Known limitation
+- Polling every 500 ms can miss processes that exit faster than that. Kernel
+  event tracing (ETW) closes that gap and is the next step.
+
+---
+
 ## [1.7.9] - 2026-09-30 (the first real endpoint could upload, and was not blocked for it)
 
 Found by the first Windows agent running as a service in production.
