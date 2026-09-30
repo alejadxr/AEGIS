@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.13] - 2026-09-30
+
+### Fixed — rules hot-reload looped forever on Linux
+- The rules watcher reloaded on every filesystem event. On Linux, inotify also
+  reports plain reads, and a reload reads every rule file, so each reload
+  triggered the next one. It now reacts only to created, modified, deleted and
+  moved files. This was also what made the backend test job fail on CI (and
+  the Release workflow skip its build and Docker steps).
+
+---
+
 ## [1.7.12] - 2026-09-30
 
 ### Fixed
