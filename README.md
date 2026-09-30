@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
 [![Docker](https://img.shields.io/badge/docker-compose-blue)]()
-[![Version](https://img.shields.io/badge/version-1.7.6-cyan)]()
+[![Version](https://img.shields.io/badge/version-1.7.7-cyan)]()
 
 [What is AEGIS?](#what-is-aegis) · [Install](#5-minute-install) · [Ransomware Defense](#ransomware-defense-v16) · [Detection](#detection-1111-verified) · [vs Wazuh / OSSEC / Elastic](#aegis-vs-wazuh--ossec--elastic-security) · [Architecture](#architecture) · [Docs](docs/)
 
@@ -149,6 +149,21 @@ The hardened Rust agent in `agent-rust/` provides:
 - **Process killer** — forensic snapshot captured before `SIGKILL` (Linux) / `TerminateProcess` (Windows)
 - **Self-protection** — `prctl(PR_SET_DUMPABLE, 0)` on Linux; `SetProcessMitigationPolicy` on Windows
 - **Rollback** — calls SnapshotManager via API (gated by `AEGIS_REAL_RECOVERY=1`)
+
+#### Running the node agent without a window
+
+The node agent (`node-tauri/`) is one binary with an optional GUI console. An endpoint sensor has to run with the screen locked, before login and on servers, so the window is not required:
+
+```bash
+aegis_node --headless          # or AEGIS_NODE_HEADLESS=1; no window, no tray. Ctrl-C to stop
+aegis_node --install-service   # Windows, elevated prompt: registers "AEGISNode" (LocalSystem, auto-start, restart on failure)
+aegis_node --uninstall-service # Windows, elevated prompt
+sc start AEGISNode
+```
+
+- Headless logs to `<data dir>/logs/aegis-node.log` (rotated at 10 MB; `AEGIS_NODE_LOG=debug` raises verbosity). The `Node agent started -- ... code: C6-XXXX-XXXX` line and every regenerated enrollment code are logged there.
+- Data directory: Windows GUI `%APPDATA%\aegis-node`; Windows headless/service `%ProgramData%\aegis-node` (restricted to SYSTEM and Administrators, since it holds the node token); macOS/Linux `~/.config/aegis-node` in every mode.
+- As a service, ransomware canaries are seeded and watched in every real user profile under `C:\Users` (Documents, Desktop, Downloads), not in the SYSTEM profile. Profiles created after start are picked up on the next restart.
 
 ### Dashboard
 
@@ -562,7 +577,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
       "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 163 enabled Sigma rules + 4 chain detections. Offline-capable. No cloud AI required.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux, macOS, Windows",
-      "softwareVersion": "1.7.6",
+      "softwareVersion": "1.7.7",
       "datePublished": "2026-05-01",
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "url": "https://github.com/alejadxr/AEGIS",

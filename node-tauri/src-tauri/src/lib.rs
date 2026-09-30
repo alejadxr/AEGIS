@@ -14,7 +14,11 @@ use tauri::{
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 
+mod cli;
+mod headless;
 mod node_auth;
+#[cfg(target_os = "windows")]
+mod winservice;
 
 // Task #2: Ransomware protection module
 mod ransomware;
@@ -175,6 +179,30 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// UI notifications
+// ---------------------------------------------------------------------------
+
+/// Sends events to the GUI when there is one; a no-op in headless/service mode.
+#[derive(Clone)]
+struct Notifier(Option<tauri::AppHandle>);
+
+impl Notifier {
+    fn none() -> Self {
+        Notifier(None)
+    }
+
+    fn gui(handle: tauri::AppHandle) -> Self {
+        Notifier(Some(handle))
+    }
+
+    fn emit<S: Serialize + Clone>(&self, event: &str, payload: S) {
+        if let Some(h) = &self.0 {
+            let _ = h.emit(event, payload);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Enroll code generation
 // ---------------------------------------------------------------------------
 
@@ -191,7 +219,8 @@ fn generate_enroll_code() -> String {
 // ---------------------------------------------------------------------------
 
 /// Config file that gets persisted to disk.
-/// Windows: %APPDATA%/aegis-node/config.json
+/// Windows GUI: %APPDATA%/aegis-node/config.json
+/// Windows headless/service: %ProgramData%/aegis-node/config.json
 /// macOS:   ~/.config/aegis-node/config.json
 /// Linux:   ~/.config/aegis-node/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,20 +246,9 @@ fn default_true() -> bool {
     true
 }
 
+/// GUI: per-user dir. Headless/service: see `cli::data_dir_for`.
 fn config_dir() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join("aegis-node");
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(".config").join("aegis-node");
-        }
-    }
-    PathBuf::from(".").join("aegis-node")
+    cli::data_dir()
 }
 
 fn config_path() -> PathBuf {
@@ -434,6 +452,7 @@ async fn regenerate_code(
 ) -> Result<NodeConfig, String> {
     let mut s = state.lock().await;
     s.config.enroll_code = generate_enroll_code();
+    log::info!("New enrollment code: {}", s.config.enroll_code);
     s.config.enroll_expires_at = (Utc::now() + chrono::Duration::minutes(15)).to_rfc3339();
     s.config.status = "waiting".to_string();
     s.config.client_id = None;
@@ -480,6 +499,7 @@ async fn disconnect_node(
     clear_config();
     node_auth::clear_credentials();
     s.config.enroll_code = generate_enroll_code();
+    log::info!("New enrollment code: {}", s.config.enroll_code);
     s.config.enroll_expires_at = (Utc::now() + chrono::Duration::minutes(15)).to_rfc3339();
     s.config.status = "waiting".to_string();
     s.config.client_id = None;
@@ -717,7 +737,7 @@ async fn auto_scan_loop(state: Arc<Mutex<NodeState>>) {
 // Background: poll enrollment status (with Task #1 persistence)
 // ---------------------------------------------------------------------------
 
-async fn poll_enrollment(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) {
+async fn poll_enrollment(state: Arc<Mutex<NodeState>>, notifier: Notifier) {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -797,7 +817,7 @@ async fn poll_enrollment(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle)
                         }
                     }
 
-                    let _ = handle.emit("node-enrolled", &s.config);
+                    notifier.emit("node-enrolled", &s.config);
                     log::info!(
                         "Node enrolled to {} (node_id={})",
                         s.config.client_name.as_deref().unwrap_or("unknown"),
@@ -851,7 +871,7 @@ async fn request_node_token(state: &Arc<Mutex<NodeState>>, server_url: &str, nod
     }
 }
 
-async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) {
+async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, notifier: Notifier) {
     let mut sys = System::new_all();
     sys.refresh_all();
 
@@ -931,6 +951,7 @@ async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) 
                     clear_config();
                     node_auth::clear_credentials();
                     s.config.enroll_code = generate_enroll_code();
+                    log::info!("New enrollment code: {}", s.config.enroll_code);
                     s.config.enroll_expires_at =
                         (Utc::now() + chrono::Duration::minutes(15)).to_rfc3339();
                     s.config.status = "waiting".to_string();
@@ -938,7 +959,7 @@ async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) 
                     s.config.client_name = None;
                     s.config.node_id = None;
                     s.monitoring = false;
-                    let _ = handle.emit("node-disconnected", &s.config);
+                    notifier.emit("node-disconnected", &s.config);
                     interval_secs = 30;
                     consecutive_failures = 0;
                     continue;
@@ -947,7 +968,7 @@ async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) 
                 // Success — reset backoff
                 if consecutive_failures > 0 {
                     log::info!("Heartbeat recovered after {} failures", consecutive_failures);
-                    let _ = handle.emit("heartbeat-status", "connected");
+                    notifier.emit("heartbeat-status", "connected");
                 }
                 consecutive_failures = 0;
                 interval_secs = 30;
@@ -968,7 +989,7 @@ async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, handle: tauri::AppHandle) 
                     e,
                     interval_secs
                 );
-                let _ = handle.emit(
+                notifier.emit(
                     "heartbeat-status",
                     serde_json::json!({
                         "status": "error",
@@ -1860,11 +1881,185 @@ async fn registry_persistence_loop(state: Arc<Mutex<NodeState>>) {
 }
 
 // ---------------------------------------------------------------------------
+// Sensor startup (shared by the GUI, --headless and the Windows service)
+// ---------------------------------------------------------------------------
+
+/// Spawn every background loop of the sensor. Needs a tauri::async_runtime
+/// to spawn on: the Tauri app's in GUI mode, ours in headless mode.
+fn start_sensor(state: Arc<Mutex<NodeState>>, notifier: Notifier) {
+    // --- Initial PID snapshot ---
+    let state_clone = state.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        let mut s = state_clone.lock().await;
+        let _ = monitor::monitor_processes(&sys, &mut s.known_pids);
+        log::info!(
+            "Node agent started -- {} known PIDs, code: {}, status: {}",
+            s.known_pids.len(),
+            s.config.enroll_code,
+            s.config.status
+        );
+    });
+
+    // --- Background: enrollment polling ---
+    let state_enroll = state.clone();
+    let notifier_enroll = notifier.clone();
+    tauri::async_runtime::spawn(async move {
+        poll_enrollment(state_enroll, notifier_enroll).await;
+    });
+
+    // --- Background: heartbeat with backoff (Task #4) ---
+    let state_hb = state.clone();
+    let notifier_hb = notifier.clone();
+    tauri::async_runtime::spawn(async move {
+        heartbeat_loop(state_hb, notifier_hb).await;
+    });
+
+    // --- Background: auto-scan assets (Task #3) ---
+    let state_scan = state.clone();
+    tauri::async_runtime::spawn(async move {
+        auto_scan_loop(state_scan).await;
+    });
+
+    // --- Background: event reporter for suspicious processes (Task #6) ---
+    let state_events = state.clone();
+    tauri::async_runtime::spawn(async move {
+        event_reporter_loop(state_events).await;
+    });
+
+    // --- Background: FIM reporter (Task #6) ---
+    let state_fim = state.clone();
+    tauri::async_runtime::spawn(async move {
+        fim_reporter_loop(state_fim).await;
+    });
+
+    // --- Background: Windows Event Log monitor ---
+    #[cfg(target_os = "windows")]
+    {
+        let state_evtlog = state.clone();
+        tauri::async_runtime::spawn(async move {
+            windows_eventlog_loop(state_evtlog).await;
+        });
+    }
+
+    // --- Background: Network connection monitor ---
+    let state_netmon = state.clone();
+    tauri::async_runtime::spawn(async move {
+        network_monitor_loop(state_netmon).await;
+    });
+
+    // --- Background: Registry persistence detection ---
+    #[cfg(target_os = "windows")]
+    {
+        let state_reg = state.clone();
+        tauri::async_runtime::spawn(async move {
+            registry_persistence_loop(state_reg).await;
+        });
+    }
+
+    // --- Task #2: Ransomware protection module ---
+    let state_ransom_seed = state.clone();
+    tauri::async_runtime::spawn(async move {
+        // Wait for enrollment to resolve server_url/node_id
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        let (server_url, node_id) = {
+            let s = state_ransom_seed.lock().await;
+            (s.config.server_url.clone(), s.config.node_id.clone())
+        };
+        let rstate = Arc::new(Mutex::new(RansomwareState::new(server_url)));
+        {
+            let mut r = rstate.lock().await;
+            r.node_id = node_id;
+            if let Some(cfg) = load_config() {
+                r.response_mode = cfg.response_mode;
+                r.enabled = cfg.ransomware_enabled;
+            }
+        }
+        spawn_identity_sync(state_ransom_seed.clone(), rstate.clone(), |r, url, id| {
+            r.sync_identity(url, id)
+        });
+        ransomware::start(rstate).await;
+    });
+
+    // --- Task #5: EDR/XDR core ---
+    let state_edr_seed = state.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        let (server_url, node_id) = {
+            let s = state_edr_seed.lock().await;
+            (s.config.server_url.clone(), s.config.node_id.clone())
+        };
+        let estate = Arc::new(Mutex::new(EdrState::new(server_url, node_id)));
+        spawn_identity_sync(state_edr_seed.clone(), estate.clone(), |e, url, id| {
+            e.sync_identity(url, id)
+        });
+        edr::start(estate).await;
+    });
+
+    // --- Task #6: Antivirus engine ---
+    let state_av_seed = state.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        let (server_url, node_id) = {
+            let s = state_av_seed.lock().await;
+            (s.config.server_url.clone(), s.config.node_id.clone())
+        };
+        match AntivirusState::new(server_url, node_id) {
+            Ok(av) => {
+                let av_state = Arc::new(Mutex::new(av));
+                spawn_identity_sync(state_av_seed.clone(), av_state.clone(), |a, url, id| {
+                    a.sync_identity(url, id)
+                });
+                antivirus::start(av_state).await;
+            }
+            Err(e) => log::error!("[av] failed to initialize: {}", e),
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Tauri entry point
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let env_headless = std::env::var("AEGIS_NODE_HEADLESS").ok();
+    let cmd = cli::parse_args(std::env::args().skip(1), env_headless.as_deref());
+    let result = match cmd {
+        cli::Command::Gui => {
+            run_gui();
+            Ok(())
+        }
+        cli::Command::Headless => {
+            #[cfg(target_os = "windows")]
+            winservice::attach_parent_console();
+            headless::run_headless()
+        }
+        #[cfg(target_os = "windows")]
+        cli::Command::Service => winservice::run_dispatcher(),
+        #[cfg(target_os = "windows")]
+        cli::Command::InstallService => {
+            winservice::attach_parent_console();
+            winservice::install()
+        }
+        #[cfg(target_os = "windows")]
+        cli::Command::UninstallService => {
+            winservice::attach_parent_console();
+            winservice::uninstall()
+        }
+        #[cfg(not(target_os = "windows"))]
+        cli::Command::Service | cli::Command::InstallService | cli::Command::UninstallService => {
+            Err("Windows service commands are only available on Windows".to_string())
+        }
+    };
+    if let Err(e) = result {
+        eprintln!("aegis-node: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run_gui() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
         .manage(Arc::new(Mutex::new(NodeState::new())))
@@ -1936,135 +2131,7 @@ pub fn run() {
                 });
             }
 
-            // --- Initial PID snapshot ---
-            let state_clone = state.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut sys = System::new_all();
-                sys.refresh_all();
-                let mut s = state_clone.lock().await;
-                let _ = monitor::monitor_processes(&sys, &mut s.known_pids);
-                log::info!(
-                    "Node agent started -- {} known PIDs, code: {}, status: {}",
-                    s.known_pids.len(),
-                    s.config.enroll_code,
-                    s.config.status
-                );
-            });
-
-            // --- Background: enrollment polling ---
-            let state_enroll = state.clone();
-            let handle_enroll = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                poll_enrollment(state_enroll, handle_enroll).await;
-            });
-
-            // --- Background: heartbeat with backoff (Task #4) ---
-            let state_hb = state.clone();
-            let handle_hb = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                heartbeat_loop(state_hb, handle_hb).await;
-            });
-
-            // --- Background: auto-scan assets (Task #3) ---
-            let state_scan = state.clone();
-            tauri::async_runtime::spawn(async move {
-                auto_scan_loop(state_scan).await;
-            });
-
-            // --- Background: event reporter for suspicious processes (Task #6) ---
-            let state_events = state.clone();
-            tauri::async_runtime::spawn(async move {
-                event_reporter_loop(state_events).await;
-            });
-
-            // --- Background: FIM reporter (Task #6) ---
-            let state_fim = state.clone();
-            tauri::async_runtime::spawn(async move {
-                fim_reporter_loop(state_fim).await;
-            });
-
-            // --- Background: Windows Event Log monitor ---
-            #[cfg(target_os = "windows")]
-            {
-                let state_evtlog = state.clone();
-                tauri::async_runtime::spawn(async move {
-                    windows_eventlog_loop(state_evtlog).await;
-                });
-            }
-
-            // --- Background: Network connection monitor ---
-            let state_netmon = state.clone();
-            tauri::async_runtime::spawn(async move {
-                network_monitor_loop(state_netmon).await;
-            });
-
-            // --- Background: Registry persistence detection ---
-            #[cfg(target_os = "windows")]
-            {
-                let state_reg = state.clone();
-                tauri::async_runtime::spawn(async move {
-                    registry_persistence_loop(state_reg).await;
-                });
-            }
-
-            // --- Task #2: Ransomware protection module ---
-            let state_ransom_seed = state.clone();
-            tauri::async_runtime::spawn(async move {
-                // Wait for enrollment to resolve server_url/node_id
-                tokio::time::sleep(Duration::from_secs(15)).await;
-                let (server_url, node_id) = {
-                    let s = state_ransom_seed.lock().await;
-                    (s.config.server_url.clone(), s.config.node_id.clone())
-                };
-                let rstate = Arc::new(Mutex::new(RansomwareState::new(server_url)));
-                {
-                    let mut r = rstate.lock().await;
-                    r.node_id = node_id;
-                    if let Some(cfg) = load_config() {
-                        r.response_mode = cfg.response_mode;
-                        r.enabled = cfg.ransomware_enabled;
-                    }
-                }
-                spawn_identity_sync(state_ransom_seed.clone(), rstate.clone(), |r, url, id| {
-                    r.sync_identity(url, id)
-                });
-                ransomware::start(rstate).await;
-            });
-
-            // --- Task #5: EDR/XDR core ---
-            let state_edr_seed = state.clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(15)).await;
-                let (server_url, node_id) = {
-                    let s = state_edr_seed.lock().await;
-                    (s.config.server_url.clone(), s.config.node_id.clone())
-                };
-                let estate = Arc::new(Mutex::new(EdrState::new(server_url, node_id)));
-                spawn_identity_sync(state_edr_seed.clone(), estate.clone(), |e, url, id| {
-                    e.sync_identity(url, id)
-                });
-                edr::start(estate).await;
-            });
-
-            // --- Task #6: Antivirus engine ---
-            let state_av_seed = state.clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(20)).await;
-                let (server_url, node_id) = {
-                    let s = state_av_seed.lock().await;
-                    (s.config.server_url.clone(), s.config.node_id.clone())
-                };
-                match AntivirusState::new(server_url, node_id) {
-                    Ok(av) => {
-                        let av_state = Arc::new(Mutex::new(av));
-                        spawn_identity_sync(state_av_seed.clone(), av_state.clone(), |a, url, id| {
-                            a.sync_identity(url, id)
-                        });
-                        antivirus::start(av_state).await;
-                    }
-                    Err(e) => log::error!("[av] failed to initialize: {}", e),
-                }
-            });
+            start_sensor(state, Notifier::gui(handle));
 
             Ok(())
         })
