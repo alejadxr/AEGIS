@@ -88,6 +88,34 @@ mod persisted_config_tests {
         assert!(!out.contains("node_token"));
     }
 
+    #[test]
+    fn config_with_node_id_and_token_restores_enrolled_state() {
+        let json = r#"{"server_url":"https://aegis.example.com/api/v1","node_id":"node-1","node_token":"tok-xyz"}"#;
+        let cfg: PersistedConfig = serde_json::from_str(json).unwrap();
+        let nc = initial_config(Some(&cfg), "C6-AAAA-BBBB".into(), "x".into());
+        assert_eq!(nc.status, "connected");
+        assert_eq!(nc.node_id.as_deref(), Some("node-1"));
+        assert_eq!(nc.server_url, "https://aegis.example.com/api/v1");
+    }
+
+    #[test]
+    fn unenrolled_agent_still_takes_server_url_from_config() {
+        let json = r#"{"server_url":"https://aegis.example.com/api/v1"}"#;
+        let cfg: PersistedConfig = serde_json::from_str(json).unwrap();
+        let nc = initial_config(Some(&cfg), "C6-AAAA-BBBB".into(), "x".into());
+        assert_eq!(nc.status, "waiting");
+        assert!(nc.node_id.is_none());
+        assert_eq!(nc.server_url, "https://aegis.example.com/api/v1");
+    }
+
+    #[test]
+    fn no_or_blank_config_falls_back_to_default_url() {
+        let nc = initial_config(None, "c".into(), "x".into());
+        assert_eq!((nc.server_url.as_str(), nc.status.as_str()), (DEFAULT_SERVER_URL, "waiting"));
+        let cfg: PersistedConfig = serde_json::from_str(r#"{"server_url":"  "}"#).unwrap();
+        assert_eq!(initial_config(Some(&cfg), "c".into(), "x".into()).server_url, DEFAULT_SERVER_URL);
+    }
+
     #[cfg(unix)]
     #[test]
     fn config_file_is_owner_only_even_if_it_existed_wider() {
@@ -309,48 +337,56 @@ struct NodeState {
     fim_watcher: Option<notify::RecommendedWatcher>,
 }
 
+const DEFAULT_SERVER_URL: &str = "http://localhost:8000/api/v1";
+
+/// Initial node config from what is on disk.
+///
+/// server_url always comes from the persisted config when it has one, enrolled
+/// or not: an orchestrator (or the user) may point an un-enrolled agent at a
+/// server before it enrolls. A config with a node_id is an enrolled session
+/// (this is also what a provisioned config.json looks like: server_url +
+/// node_id + node_token, client fields optional), so it starts connected and
+/// never announces. Pure: credentials are installed by the caller.
+fn initial_config(persisted: Option<&PersistedConfig>, code: String, expires: String) -> NodeConfig {
+    let server_url = persisted
+        .map(|p| p.server_url.trim())
+        .filter(|u| !u.is_empty())
+        .unwrap_or(DEFAULT_SERVER_URL)
+        .to_string();
+    let enrolled = persisted.filter(|p| p.node_id.is_some());
+    NodeConfig {
+        server_url,
+        enroll_code: code,
+        enroll_expires_at: expires,
+        client_id: enrolled.and_then(|p| p.client_id.clone()),
+        client_name: enrolled.and_then(|p| p.client_name.clone()),
+        node_id: enrolled.and_then(|p| p.node_id.clone()),
+        status: if enrolled.is_some() { "connected" } else { "waiting" }.to_string(),
+    }
+}
+
 impl NodeState {
     fn new() -> Self {
         let code = generate_enroll_code();
         let expires = (Utc::now() + chrono::Duration::minutes(15)).to_rfc3339();
 
         // Task #1: Try loading persisted config
-        if let Some(persisted) = load_config() {
-            if persisted.node_id.is_some() {
-                log::info!("Restoring enrolled session from disk");
-                if let (Some(id), Some(tok)) = (&persisted.node_id, &persisted.node_token) {
+        let persisted = load_config();
+        let config = initial_config(persisted.as_ref(), code, expires);
+        let enrolled = config.status == "connected";
+        if enrolled {
+            log::info!("Restoring enrolled session from disk");
+            if let Some(p) = &persisted {
+                if let (Some(id), Some(tok)) = (&p.node_id, &p.node_token) {
                     node_auth::set_credentials(id, tok.expose());
                 }
-                return Self {
-                    config: NodeConfig {
-                        server_url: persisted.server_url,
-                        enroll_code: code,
-                        enroll_expires_at: expires,
-                        client_id: persisted.client_id,
-                        client_name: persisted.client_name,
-                        node_id: persisted.node_id,
-                        status: "connected".to_string(),
-                    },
-                    known_pids: HashSet::new(),
-                    monitoring: true,
-                    events_count: 0,
-                    fim_watcher: None,
-                };
             }
         }
 
         Self {
-            config: NodeConfig {
-                server_url: "http://localhost:8000/api/v1".to_string(),
-                enroll_code: code,
-                enroll_expires_at: expires,
-                client_id: None,
-                client_name: None,
-                node_id: None,
-                status: "waiting".to_string(),
-            },
+            config,
             known_pids: HashSet::new(),
-            monitoring: false,
+            monitoring: enrolled,
             events_count: 0,
             fim_watcher: None,
         }
