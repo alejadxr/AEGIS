@@ -15,7 +15,6 @@ use chrono::{DateTime, Duration, Utc};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use sysinfo::System;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration as TokioDuration};
 
@@ -254,7 +253,7 @@ pub(crate) struct Correlation {
 /// HIGH-confidence signal and `enforce` mode; everything else is report-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Response {
-    /// Kill the process tree, roll back, report.
+    /// Kill the attributed process tree (if any), roll back, report.
     Enforce,
     /// HIGH signal seen but mode is `observe`: report only.
     Observed,
@@ -289,53 +288,27 @@ pub async fn run_correlator(state: Arc<Mutex<RansomwareState>>) {
         if let Some((corr, mode)) = fire {
             let response = decide(mode, corr.has_high);
             let signals = corr.signals;
-            // Best-effort: pick a pid from the most recent signal that has one
+            // Only a pid attributed by a signal is used. Never guessed: see
+            // `kill_target`.
             let pid = signals.iter().rev().find_map(|s| s.pid);
-            if response != Response::Enforce {
-                // No local action: skip the process guess, just report.
-                let files: Vec<PathBuf> = signals.iter().filter_map(|s| s.path.clone()).collect();
-                tokio::spawn(handle_incident(state.clone(), pid, signals, files, response));
-                continue;
-            }
-            // Collect affected files from signals that have paths
-            let files: Vec<PathBuf> = signals
-                .iter()
-                .filter_map(|s| s.path.clone())
-                .collect();
-
-            // If we don't have a pid from the signal, pick the most recently
-            // started process whose executable exists in a writable path as a
-            // last-resort heuristic (Tier 1; ETW improves this in task #5).
-            let pid = pid.or_else(guess_offending_pid);
-
+            let files: Vec<PathBuf> = signals.iter().filter_map(|s| s.path.clone()).collect();
             tokio::spawn(handle_incident(state.clone(), pid, signals, files, response));
         }
     }
 }
 
-/// Best-effort Tier-1 heuristic: find the most recently started process
-/// that is neither a system process nor AEGIS itself. This is intentionally
-/// coarse; the ETW integration in Task #5 gives us precise per-write PIDs.
-fn guess_offending_pid() -> Option<u32> {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let own_pid: u32 = std::process::id();
-
-    let mut candidates: Vec<(u32, u64, String)> = Vec::new();
-    for (pid, proc_) in sys.processes() {
-        let pid_u = pid.as_u32();
-        if pid_u == own_pid || pid_u < 100 {
-            continue;
-        }
-        let name = proc_.name().to_string_lossy().to_string();
-        if name.eq_ignore_ascii_case("system") || name.eq_ignore_ascii_case("idle") {
-            continue;
-        }
-        candidates.push((pid_u, proc_.start_time(), name));
+/// Which process to kill for a correlation. Killing requires enforce mode AND
+/// a pid attributed by a signal. With no attribution we do not kill anything:
+/// guessing (e.g. "newest process") hits unrelated processes such as a
+/// compiler or browser and misses the real encryptor. Per-PID attribution via
+/// ETW/eBPF is future work; until then unattributed incidents are reported and
+/// rolled back only.
+pub(crate) fn kill_target(response: Response, pid: Option<u32>) -> Option<u32> {
+    if response == Response::Enforce {
+        pid
+    } else {
+        None
     }
-    candidates.sort_by_key(|(_, t, _)| std::cmp::Reverse(*t));
-    candidates.first().map(|(p, _, _)| *p)
 }
 
 #[cfg(test)]
@@ -369,6 +342,22 @@ mod tests {
                 assert_ne!(decide(ResponseMode::Enforce, c.has_high), Response::Enforce);
             }
         }
+    }
+
+    #[test]
+    fn enforce_without_attributed_pid_kills_nothing() {
+        assert_eq!(kill_target(Response::Enforce, None), None);
+    }
+
+    #[test]
+    fn enforce_with_attributed_pid_targets_that_pid() {
+        assert_eq!(kill_target(Response::Enforce, Some(4242)), Some(4242));
+    }
+
+    #[test]
+    fn non_enforce_never_kills_even_with_pid() {
+        assert_eq!(kill_target(Response::Observed, Some(4242)), None);
+        assert_eq!(kill_target(Response::ReportOnly, Some(4242)), None);
     }
 
     #[test]

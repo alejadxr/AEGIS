@@ -113,7 +113,7 @@ pub struct RansomwareIncident {
     pub rollback_status: String,
     pub rollback_files_restored: u64,
     pub severity: String,
-    /// "enforced" | "observed" | "report_only"
+    /// "enforced" | "enforced_unattributed" (no pid attributed, nothing killed) | "observed" | "report_only"
     pub response: String,
 }
 
@@ -209,7 +209,11 @@ pub async fn handle_incident(
     let mut process_name: Option<String> = None;
     let mut process_path: Option<String> = None;
 
-    if let Some(pid) = pid.filter(|_| enforce) {
+    let unattributed = enforce && pid.is_none();
+    if unattributed {
+        log::warn!("[ransomware] enforce: offending process not attributed, no process killed");
+    }
+    if let Some(pid) = detector::kill_target(response, pid) {
         match killer::terminate_process_tree(pid) {
             Ok(result) => {
                 killed_pids = result.killed_pids;
@@ -258,6 +262,7 @@ pub async fn handle_incident(
         }
         .into(),
         response: match response {
+            Response::Enforce if unattributed => "enforced_unattributed",
             Response::Enforce => "enforced",
             Response::Observed => "observed",
             Response::ReportOnly => "report_only",
@@ -314,6 +319,7 @@ async fn post_incident(
                 "Ransomware activity {} (pid={:?}, {} signals)",
                 match incident.response.as_str() {
                     "enforced" => "detected and contained",
+                    "enforced_unattributed" => "detected (no process killed: offender could not be attributed; rollback attempted)",
                     "observed" => "detected (observe mode, no action taken)",
                     _ => "suspected (low-confidence signals only, no action taken)",
                 },

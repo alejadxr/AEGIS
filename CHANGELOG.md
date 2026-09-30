@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.5] - 2026-09-30 (enforce acts only on the process it can name)
+
+### Fixed — enforce killed an unrelated process
+- None of today's live ransomware signals (canary modification, ransom note,
+  shadow-copy deletion) identifies the process that caused it. In `enforce`
+  mode the agent then fell back to killing the tree of the most recently
+  started process on the machine: during a build that is the compiler or a
+  browser tab, and never the encryptor, which started earlier. The guess is
+  gone. `enforce` kills only a process attributed by a signal; an unattributed
+  incident is reported as `enforced_unattributed`, with rollback attempted and
+  nothing killed. Per-process attribution (ETW) is the next step, and is what
+  makes `enforce` stop ransomware in time.
+- Plain `readme.txt` / `read_me.txt` no longer count as ransom notes.
+
+### Fixed — an un-enrolled agent ignored its configured server
+- `server_url` in the agent's `config.json` was read only after enrollment, so
+  an agent installed without its window always announced to
+  `localhost:8000`. It is now read whether or not the agent is enrolled.
+
+---
+
 ## [1.7.4] - 2026-09-30 (the endpoint agent starts in observe mode)
 
 ### Fixed — a software build must never be treated as ransomware
