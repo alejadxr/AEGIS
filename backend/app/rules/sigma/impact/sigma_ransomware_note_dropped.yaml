@@ -21,7 +21,10 @@ condition:
   time_window_seconds: 60
   group_by: hostname
   filter:
-    file_name_regex: '(?i)(readme.*\.(txt|hta|html)|how_to_decrypt|decrypt[_-]?instructions|recover[_-]?files|!!!.*-files-have-been|HOW_TO_RESTORE)'
+    # Matched with re.search against the full path (see correlation_engine
+    # file_name alias), so every alternative is anchored to the BASENAME. A
+    # bare `readme.*\.txt` matched every ordinary README.txt.
+    file_name_regex: '(?i)(?:^|[\\/])(?:[^\\/]*read[_ -]?me[_ -]?(?:for[_ -]?|to[_ -]?)?(?:decrypt|restore|recover|unlock)[^\\/]*\.(?:txt|hta|html?)|!{2,}[^\\/]*read[_ -]?me[^\\/]*|[^\\/]*(?:how[_ -]?to[_ -]?(?:decrypt|restore|recover)|decrypt[_-]?instructions?|recover[_-]?files?|-files-have-been)[^\\/]*)$'
 customDetails: {}
 entityMappings:
 - type: Host
