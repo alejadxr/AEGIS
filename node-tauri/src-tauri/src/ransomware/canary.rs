@@ -35,11 +35,21 @@ fn is_ransom_note(lower_name: &str) -> bool {
     RANSOM_NOTE_PATTERNS.iter().any(|p| lower_name.contains(p))
 }
 
-/// Seed 10 canary files across user directories.
+/// Seed 10 canary files across user directories (per profile in service mode).
 pub fn seed_canaries() -> Result<Vec<PathBuf>, String> {
-    let targets = target_dirs();
     let mut out = Vec::new();
+    for targets in target_groups() {
+        seed_group(&targets, &mut out);
+    }
 
+    if out.is_empty() {
+        return Err("no canary files could be created".into());
+    }
+    Ok(out)
+}
+
+/// Seed up to 10 canaries across one profile's directories.
+fn seed_group(targets: &[PathBuf], out: &mut Vec<PathBuf>) {
     // 10 canaries total, split across dirs
     let templates: [(&str, &[u8]); 5] = [
         ("_aegis_ledger.docx", b"aegis canary document v1"),
@@ -51,7 +61,7 @@ pub fn seed_canaries() -> Result<Vec<PathBuf>, String> {
 
     let mut rng = rand::thread_rng();
     let mut count = 0;
-    'outer: for dir in &targets {
+    'outer: for dir in targets {
         if !dir.exists() {
             let _ = std::fs::create_dir_all(dir);
         }
@@ -79,11 +89,6 @@ pub fn seed_canaries() -> Result<Vec<PathBuf>, String> {
             }
         }
     }
-
-    if out.is_empty() {
-        return Err("no canary files could be created".into());
-    }
-    Ok(out)
 }
 
 #[cfg(target_os = "windows")]
@@ -98,6 +103,61 @@ fn set_hidden(path: &Path) -> std::io::Result<()> {
         .status();
     let _ = status;
     Ok(())
+}
+
+/// Directories to seed canaries in, one group per profile.
+///
+/// GUI/headless: the current user's profile. Windows service (LocalSystem):
+/// `USERPROFILE` is the systemprofile, so every real profile under the Users
+/// directory gets its own group instead.
+fn target_groups() -> Vec<Vec<PathBuf>> {
+    #[cfg(target_os = "windows")]
+    {
+        if crate::cli::is_service() {
+            return service_profile_groups();
+        }
+    }
+    vec![target_dirs()]
+}
+
+/// All directories canaries live in (used for watching).
+fn all_target_dirs() -> Vec<PathBuf> {
+    target_groups().into_iter().flatten().collect()
+}
+
+const PROFILE_SUBDIRS: [&str; 3] = ["Documents", "Desktop", "Downloads"];
+
+/// The Documents/Desktop/Downloads folders of a profile that exist.
+/// Profiles without any of them yield nothing.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn existing_profile_dirs(profile: &Path) -> Vec<PathBuf> {
+    PROFILE_SUBDIRS
+        .iter()
+        .map(|d| profile.join(d))
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn service_profile_groups() -> Vec<Vec<PathBuf>> {
+    let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+    let users = PathBuf::from(format!("{}\\Users", drive));
+    let names: Vec<String> = match std::fs::read_dir(&users) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect(),
+        Err(e) => {
+            log::warn!("[canary] cannot list {:?}: {}", users, e);
+            return Vec::new();
+        }
+    };
+    crate::cli::real_profile_names(names.iter().map(String::as_str))
+        .into_iter()
+        .map(|n| existing_profile_dirs(&users.join(n)))
+        .filter(|d| !d.is_empty())
+        .collect()
 }
 
 /// Return the set of user directories we want to seed canaries in.
@@ -135,7 +195,7 @@ pub async fn watch_canaries(state: Arc<Mutex<RansomwareState>>) -> Result<(), St
     .map_err(|e| e.to_string())?;
 
     // Watch the parent directories of each canary recursively
-    let dirs: Vec<PathBuf> = target_dirs();
+    let dirs: Vec<PathBuf> = all_target_dirs();
     for dir in &dirs {
         if dir.exists() {
             if let Err(e) = watcher.watch(dir, RecursiveMode::Recursive) {
@@ -222,5 +282,28 @@ mod tests {
         for n in ["!!!readme!!!.txt", "how_to_decrypt.html", "restore_files.txt", "your_files_are_encrypted.txt"] {
             assert!(is_ransom_note(n), "{n}");
         }
+    }
+}
+
+#[cfg(test)]
+mod profile_dir_tests {
+    use super::*;
+
+    #[test]
+    fn only_existing_standard_folders_are_used() {
+        let root = std::env::temp_dir().join(format!("aegis-canary-{}", uuid::Uuid::new_v4()));
+        let full = root.join("alice");
+        let partial = root.join("bob");
+        let empty = root.join("carol");
+        for d in ["Documents", "Desktop", "Downloads"] {
+            std::fs::create_dir_all(full.join(d)).unwrap();
+        }
+        std::fs::create_dir_all(partial.join("Documents")).unwrap();
+        std::fs::create_dir_all(&empty).unwrap();
+
+        assert_eq!(existing_profile_dirs(&full).len(), 3);
+        assert_eq!(existing_profile_dirs(&partial), vec![partial.join("Documents")]);
+        assert!(existing_profile_dirs(&empty).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

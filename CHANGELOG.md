@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.7] - 2026-09-30 (the endpoint agent runs without a desktop)
+
+### Fixed — the agent could not start without an interactive desktop
+- On Windows the agent panicked at startup (WebView2 `ERROR_INVALID_WINDOW_HANDLE`)
+  whenever no user desktop was available: over SSH, from a scheduled task or as
+  a service. A sensor that only runs while someone is logged in with the window
+  open does not protect a locked or unattended machine.
+
+### Added — headless and Windows service modes
+- `--headless` (or `AEGIS_NODE_HEADLESS=1`) runs the full sensor with no window
+  and no tray; the Tauri window is now an optional console.
+- `--install-service` / `--uninstall-service` register the `AEGISNode` service
+  (LocalSystem, automatic start, restart on failure); `--service` is the SCM
+  entry point.
+- Headless and service data live in `%ProgramData%\aegis-node\` (config.json,
+  `logs\aegis-node.log`), restricted to SYSTEM and Administrators. Every new
+  enrollment code is logged, so an orchestrator can enroll the node unattended.
+- As a service, ransomware canaries are seeded in every real user profile.
+
+### Known limitations
+- Windows service lifecycle, console attach and the ProgramData ACL are
+  type-checked but first exercised on a real Windows build.
+- The antivirus watch paths still resolve the service account's profile when
+  running as a service.
+
+---
+
 ## [1.7.6] - 2026-09-30 (enrollment accepts only codes an agent announced)
 
 ### Fixed — a mistyped enrollment code created a phantom node
