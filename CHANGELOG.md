@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.14] - 2026-09-30
+
+### Fixed — desktop installers carried the wrong version
+- The desktop app (`desktop-tauri`) still declared 1.6.2, so the installers
+  attached to v1.7.13 were named `AEGIS_1.6.2_*`. It now follows the product
+  version, and `check_version_sync.py` checks it.
+
+---
+
 ## [1.7.13] - 2026-09-30
 
 ### Fixed — rules hot-reload looped forever on Linux
