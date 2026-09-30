@@ -275,16 +275,25 @@ async def enroll_node(
     if not re.match(r"^C6-[A-Z0-9]{4}-[A-Z0-9]{4}$", code):
         raise HTTPException(status_code=400, detail="Invalid code format. Expected C6-XXXX-XXXX.")
 
-    # Accept any valid code — node app will connect via heartbeat later
-    info = _pending_enrollments.pop(code, None)
+    # Only a code an agent announced (or generate-code issued) can be enrolled.
+    # Peek, don't pop: the entry is replaced below once the agent row is saved,
+    # so a failure before then leaves the pending code intact.
+    info = _pending_enrollments.get(code)
+    if info is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Unknown or expired enrollment code — make sure the agent is running and showing this code",
+        )
+    if info.get("enrolled"):
+        raise HTTPException(status_code=409, detail="This enrollment code has already been used.")
 
     client = auth.client
     agent_id = f"node-{secrets.token_hex(8)}"
-    _hostname = info["hostname"] if info else f"node-{code[-4:]}"
-    _os_info = info.get("os_info") if info else None
-    _ip_address = info.get("ip_address") if info else None
-    _agent_version = info.get("agent_version", "pending") if info else "pending"
-    _node_type = body.node_type if body.node_type != "workspace" else (info.get("node_type", "workspace") if info else "workspace")
+    _hostname = info["hostname"]
+    _os_info = info.get("os_info")
+    _ip_address = info.get("ip_address")
+    _agent_version = info.get("agent_version", "pending")
+    _node_type = body.node_type if body.node_type != "workspace" else info.get("node_type", "workspace")
 
     # Check if already registered
     result = await db.execute(
@@ -328,7 +337,7 @@ async def enroll_node(
         await db.commit()
 
     _pending_enrollments[code] = {
-        **(info or {}),
+        **info,
         "created_at": datetime.utcnow(),
         "enrolled": True,
         "client_id": client.id,
