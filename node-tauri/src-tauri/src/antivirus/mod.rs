@@ -102,6 +102,14 @@ fn default_watch_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
     #[cfg(target_os = "windows")]
     {
+        if crate::cli::is_service() {
+            // LocalSystem's USERPROFILE is the systemprofile: watch every real user.
+            return crate::cli::service_profile_roots()
+                .iter()
+                .flat_map(|p| crate::cli::av_watch_paths_for_profile(p))
+                .filter(|p| p.is_dir())
+                .collect();
+        }
         if let Ok(up) = std::env::var("USERPROFILE") {
             let base = PathBuf::from(up);
             paths.push(base.join("Downloads"));

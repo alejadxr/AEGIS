@@ -28,8 +28,14 @@ pub struct QuarantineMeta {
 fn quarantine_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
-            return PathBuf::from(appdata).join("aegis-node").join("quarantine");
+        if let Some(d) = crate::cli::windows_store_dir(
+            crate::cli::is_service(),
+            &crate::cli::data_dir(),
+            std::env::var("LOCALAPPDATA").ok().as_deref(),
+            "quarantine",
+            "quarantine",
+        ) {
+            return d;
         }
     }
     if let Ok(home) = std::env::var("HOME") {

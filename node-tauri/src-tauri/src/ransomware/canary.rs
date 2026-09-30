@@ -140,22 +140,9 @@ fn existing_profile_dirs(profile: &Path) -> Vec<PathBuf> {
 
 #[cfg(target_os = "windows")]
 fn service_profile_groups() -> Vec<Vec<PathBuf>> {
-    let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
-    let users = PathBuf::from(format!("{}\\Users", drive));
-    let names: Vec<String> = match std::fs::read_dir(&users) {
-        Ok(rd) => rd
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_dir())
-            .filter_map(|e| e.file_name().into_string().ok())
-            .collect(),
-        Err(e) => {
-            log::warn!("[canary] cannot list {:?}: {}", users, e);
-            return Vec::new();
-        }
-    };
-    crate::cli::real_profile_names(names.iter().map(String::as_str))
-        .into_iter()
-        .map(|n| existing_profile_dirs(&users.join(n)))
+    crate::cli::service_profile_roots()
+        .iter()
+        .map(|p| existing_profile_dirs(p))
         .filter(|d| !d.is_empty())
         .collect()
 }

@@ -125,8 +125,14 @@ impl HashCache {
     fn db_path() -> PathBuf {
         #[cfg(target_os = "windows")]
         {
-            if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
-                return PathBuf::from(appdata).join("aegis-node").join("hash_cache");
+            if let Some(d) = crate::cli::windows_store_dir(
+                crate::cli::is_service(),
+                &crate::cli::data_dir(),
+                std::env::var("LOCALAPPDATA").ok().as_deref(),
+                "hash_cache",
+                "cache",
+            ) {
+                return d;
             }
         }
         if let Ok(home) = std::env::var("HOME") {
