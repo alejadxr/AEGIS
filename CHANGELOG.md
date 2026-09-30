@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.4] - 2026-09-30 (the endpoint agent starts in observe mode)
+
+### Fixed — a software build must never be treated as ransomware
+- The agent's ransomware correlator acted on any two signals in a short window,
+  and two of them (entropy spike, mass extension change) are what a compiler
+  produces. Local action now requires a HIGH-confidence signal — ransom note,
+  shadow-copy deletion or canary modification. LOW-only correlations are
+  reported, never acted on.
+- LOW signals from regenerable build directories and artifact extensions are
+  ignored; HIGH signals are never filtered by path.
+
+### Added — `response_mode: observe | enforce`, default `observe`
+- New and existing agent installs report detections without killing or rolling
+  back until an operator sets `enforce` in the local agent config.
+
+### Verified
+- The agent builds cleanly on Windows (rustc 1.98.1; tauri 2.12 needs ≥ 1.90),
+  producing an MSI and an NSIS installer.
+
+---
+
 ## [1.7.3] - 2026-09-29 (the EDR works end to end)
 
 AEGIS ships endpoint agents for Windows, macOS and Linux. Their telemetry was
