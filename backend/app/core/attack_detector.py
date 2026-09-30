@@ -244,6 +244,32 @@ SKIP_PATHS = frozenset({
 
 # Module-level constants (avoid per-request allocation)
 _MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH"})
+
+# Endpoint-agent telemetry uploads. Their JSON bodies legitimately carry
+# process command lines (powershell.exe -NoProfile, cmd.exe /c ...) that the
+# body inspection would flag as command_injection and auto-block the agent's
+# own IP. Explicit allowlist: keep it narrow.
+_AGENT_TELEMETRY_PATHS = frozenset({
+    "/api/v1/edr/events",
+    "/api/v1/agents/events",
+    "/api/v1/agents/forensic",
+    "/api/v1/nodes/events",
+    "/api/v1/nodes/report-assets",
+    "/api/v1/ransomware/events",
+    "/api/v1/antivirus/detections",
+})
+
+
+def _skip_body_inspection(path: str, headers) -> bool:
+    """True for agent telemetry uploads that present node credentials.
+
+    Header presence only (no DB lookup): the route itself rejects bad tokens
+    and the body is parsed as JSON data, never executed. Path, query and
+    header inspection still run.
+    """
+    if path.rstrip("/") not in _AGENT_TELEMETRY_PATHS:
+        return False
+    return bool(headers.get("x-aegis-node-token"))
 _AUTH_PATHS = ("/auth/login", "/auth/user/login", "/auth/token")
 
 # ---------------------------------------------------------------------------
@@ -914,7 +940,11 @@ class AttackDetectorMiddleware(BaseHTTPMiddleware):
         match_result = _check_mega(check_text)
 
         # Only read body if path+query was clean AND method is mutation
-        if not match_result and method in _MUTATION_METHODS:
+        if (
+            not match_result
+            and method in _MUTATION_METHODS
+            and not _skip_body_inspection(path, request.headers)
+        ):
             try:
                 body_bytes = await request.body()
                 if body_bytes and len(body_bytes) < 65536:  # max 64KB

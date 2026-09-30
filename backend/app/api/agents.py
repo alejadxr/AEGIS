@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app.core.timeutil import parse_agent_ts
 from app.database import get_db
 from app.core.auth import (
     AuthContext, require_analyst, require_viewer, get_auth_context,
@@ -287,12 +288,7 @@ async def ingest_events(
         except ValueError:
             sev = EventSeverity.info
 
-        ts = datetime.utcnow()
-        if ev.timestamp:
-            try:
-                ts = datetime.fromisoformat(ev.timestamp)
-            except ValueError:
-                pass
+        ts = parse_agent_ts(ev.timestamp)
 
         event = AgentEvent(
             agent_id=body.agent_id,
