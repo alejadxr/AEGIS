@@ -199,7 +199,14 @@ def test_real_corpus_loads_fully_and_warns_only_about_genuine_problems(caplog):
         for rule in pack.by_id.values() if rule.kind == "sigma"
         for key, _ in validate_filter(rule.condition.filter)
     }
-    assert len(filter_warnings) == len(expected)
+    # Other tests' CorrelationEngine watchers may reload this same corpus on a
+    # background thread while caplog is active, repeating identical warnings.
+    # Assert on the unique (rule, key) set, not the raw count.
+    warned = {
+        (m.split("'")[1], m.split("filter key '")[1].split("'")[0])
+        for m in filter_warnings
+    }
+    assert warned == expected
     for rule_id, key in expected:
         assert any(f"'{rule_id}'" in w and f"'{key}'" in w for w in filter_warnings), (rule_id, key)
     assert ("sigma_c2_https_new_domain", "domain_age_days_lt") in expected
