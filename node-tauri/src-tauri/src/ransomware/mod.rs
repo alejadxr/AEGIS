@@ -35,7 +35,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::ransomware::detector::{Detector, Signal, SignalKind};
+use crate::ransomware::detector::{Detector, Response, Signal, SignalKind};
+
+/// Local-only setting: whether a HIGH-confidence correlation may kill and
+/// roll back, or is only reported. Read from the on-disk config at startup;
+/// nothing received from the server can change it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResponseMode {
+    #[default]
+    Observe,
+    Enforce,
+}
 
 /// Shared state for the ransomware module.
 #[derive(Debug)]
@@ -43,6 +54,7 @@ pub struct RansomwareState {
     pub detector: Detector,
     pub canary_paths: Vec<PathBuf>,
     pub enabled: bool,
+    pub response_mode: ResponseMode,
     pub server_url: String,
     pub node_id: Option<String>,
     pub incidents_reported: u64,
@@ -54,6 +66,7 @@ impl RansomwareState {
             detector: Detector::new(),
             canary_paths: Vec::new(),
             enabled: true,
+            response_mode: ResponseMode::Observe,
             server_url,
             node_id: None,
             incidents_reported: 0,
@@ -100,6 +113,8 @@ pub struct RansomwareIncident {
     pub rollback_status: String,
     pub rollback_files_restored: u64,
     pub severity: String,
+    /// "enforced" | "observed" | "report_only"
+    pub response: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,20 +193,23 @@ pub async fn handle_incident(
     pid: Option<u32>,
     signals: Vec<Signal>,
     affected_files: Vec<PathBuf>,
+    response: Response,
 ) {
     log::warn!(
-        "[ransomware] INCIDENT DETECTED pid={:?} signals={} files={}",
+        "[ransomware] INCIDENT DETECTED pid={:?} signals={} files={} response={:?}",
         pid,
         signals.len(),
         affected_files.len(),
+        response,
     );
+    let enforce = response == Response::Enforce;
 
     // 1. Kill the process tree
     let mut killed_pids: Vec<u32> = Vec::new();
     let mut process_name: Option<String> = None;
     let mut process_path: Option<String> = None;
 
-    if let Some(pid) = pid {
+    if let Some(pid) = pid.filter(|_| enforce) {
         match killer::terminate_process_tree(pid) {
             Ok(result) => {
                 killed_pids = result.killed_pids;
@@ -209,7 +227,11 @@ pub async fn handle_incident(
         .map(|p| p.to_string_lossy().to_string())
         .collect();
 
-    let (rollback_status, rollback_restored) = rollback_files(&affected_files).await;
+    let (rollback_status, rollback_restored) = if enforce {
+        rollback_files(&affected_files).await
+    } else {
+        ("not_attempted".to_string(), 0)
+    };
 
     // 3. Post forensic chain to backend
     let now = chrono::Utc::now().to_rfc3339();
@@ -230,7 +252,17 @@ pub async fn handle_incident(
         killed_pids,
         rollback_status,
         rollback_files_restored: rollback_restored,
-        severity: "critical".into(),
+        severity: match response {
+            Response::Enforce | Response::Observed => "critical",
+            Response::ReportOnly => "medium",
+        }
+        .into(),
+        response: match response {
+            Response::Enforce => "enforced",
+            Response::Observed => "observed",
+            Response::ReportOnly => "report_only",
+        }
+        .into(),
     };
 
     if let Err(e) = post_incident(&server_url, &incident).await {
@@ -277,9 +309,14 @@ async fn post_incident(
         "agent_id": incident.node_id.clone().unwrap_or_default(),
         "events": [{
             "category": "forensic",
-            "severity": "critical",
+            "severity": incident.severity,
             "title": format!(
-                "Ransomware activity detected (pid={:?}, {} signals)",
+                "Ransomware activity {} (pid={:?}, {} signals)",
+                match incident.response.as_str() {
+                    "enforced" => "detected and contained",
+                    "observed" => "detected (observe mode, no action taken)",
+                    _ => "suspected (low-confidence signals only, no action taken)",
+                },
                 incident.process_pid,
                 incident.signals.len()
             ),

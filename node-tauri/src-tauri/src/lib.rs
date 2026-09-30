@@ -57,12 +57,26 @@ mod persisted_config_tests {
             client_name: None,
             node_id: Some("node-1".into()),
             node_token: Some(node_auth::Secret::new("tok-abc")),
+            response_mode: ransomware::ResponseMode::Observe,
+            ransomware_enabled: true,
         };
         let json = serde_json::to_string(&cfg).unwrap();
         assert!(json.contains("\"node_token\":\"tok-abc\""));
         let back: PersistedConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.node_token.as_ref().unwrap().expose(), "tok-abc");
         assert!(!format!("{:?}", back).contains("tok-abc"));
+    }
+
+    #[test]
+    fn default_config_is_observe_and_enabled() {
+        let old = r#"{"server_url":"http://localhost/api","client_id":null,"client_name":null,"node_id":"node-1"}"#;
+        let cfg: PersistedConfig = serde_json::from_str(old).unwrap();
+        assert_eq!(cfg.response_mode, ransomware::ResponseMode::Observe);
+        assert!(cfg.ransomware_enabled);
+        let on = r#"{"server_url":"u","client_id":null,"client_name":null,"node_id":null,"response_mode":"enforce","ransomware_enabled":false}"#;
+        let cfg: PersistedConfig = serde_json::from_str(on).unwrap();
+        assert_eq!(cfg.response_mode, ransomware::ResponseMode::Enforce);
+        assert!(!cfg.ransomware_enabled);
     }
 
     #[test]
@@ -162,6 +176,17 @@ struct PersistedConfig {
     /// tokens existed; the heartbeat loop then asks the backend for one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     node_token: Option<node_auth::Secret>,
+    /// Ransomware response: `observe` (report only) or `enforce`. Local
+    /// config only; there is no remote path that writes it.
+    #[serde(default)]
+    response_mode: ransomware::ResponseMode,
+    /// Ransomware detection on/off. Off = no detection at all.
+    #[serde(default = "default_true")]
+    ransomware_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn config_dir() -> PathBuf {
@@ -185,12 +210,16 @@ fn config_path() -> PathBuf {
 }
 
 fn save_config(config: &NodeConfig) {
+    let existing = load_config();
     let persisted = PersistedConfig {
         server_url: config.server_url.clone(),
         client_id: config.client_id.clone(),
         client_name: config.client_name.clone(),
         node_id: config.node_id.clone(),
         node_token: node_auth::token(),
+        // Not part of NodeConfig: carry the operator's local choices over.
+        response_mode: existing.as_ref().map(|c| c.response_mode).unwrap_or_default(),
+        ransomware_enabled: existing.as_ref().map_or(true, |c| c.ransomware_enabled),
     };
     let dir = config_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -1955,6 +1984,10 @@ pub fn run() {
                 {
                     let mut r = rstate.lock().await;
                     r.node_id = node_id;
+                    if let Some(cfg) = load_config() {
+                        r.response_mode = cfg.response_mode;
+                        r.enabled = cfg.ransomware_enabled;
+                    }
                 }
                 spawn_identity_sync(state_ransom_seed.clone(), rstate.clone(), |r, url, id| {
                     r.sync_identity(url, id)
