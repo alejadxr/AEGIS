@@ -4,7 +4,7 @@
 //! (no window, no tray) or as a Windows service. Everything that depends on
 //! that choice hangs off the single `RunMode` set once at startup.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// What the process was asked to do.
@@ -142,6 +142,57 @@ pub fn real_profile_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<&
         .collect()
 }
 
+/// Real profile directories under `%SystemDrive%\Users` (service mode).
+#[cfg(target_os = "windows")]
+pub fn service_profile_roots() -> Vec<PathBuf> {
+    let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+    let users = PathBuf::from(format!("{}\\Users", drive));
+    let names: Vec<String> = match std::fs::read_dir(&users) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect(),
+        Err(e) => {
+            log::warn!("cannot list {:?}: {}", users, e);
+            return Vec::new();
+        }
+    };
+    real_profile_names(names.iter().map(String::as_str))
+        .into_iter()
+        .map(|n| users.join(n))
+        .collect()
+}
+
+/// Folders the antivirus watches inside one Windows profile (same as the GUI).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn av_watch_paths_for_profile(profile: &Path) -> Vec<PathBuf> {
+    vec![
+        profile.join("Downloads"),
+        profile.join("Documents"),
+        profile.join("Desktop"),
+        profile.join("AppData").join("Local").join("Temp"),
+    ]
+}
+
+/// Windows store directory (quarantine, hash cache).
+/// Service: `<data_dir>/<service_name>` (inherits the SYSTEM+Admins ACL).
+/// GUI: `%LOCALAPPDATA%\aegis-node\<gui_name>`; `None` when it is unset.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn windows_store_dir(
+    service: bool,
+    data_dir: &Path,
+    local_app_data: Option<&str>,
+    gui_name: &str,
+    service_name: &str,
+) -> Option<PathBuf> {
+    if service {
+        Some(data_dir.join(service_name))
+    } else {
+        local_app_data.map(|l| PathBuf::from(l).join("aegis-node").join(gui_name))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,5 +266,31 @@ mod tests {
         let names = ["Default", "Default User", "Public", "All Users", "alice", "Bob", "desktop.ini"];
         assert_eq!(real_profile_names(names), vec!["alice", "Bob"]);
         assert!(real_profile_names(["DEFAULT", "public"]).is_empty());
+    }
+
+    #[test]
+    fn av_watch_paths_match_gui_set() {
+        let p = av_watch_paths_for_profile(Path::new("P"));
+        assert_eq!(p.len(), 4);
+        assert_eq!(p[0], Path::new("P").join("Downloads"));
+        assert_eq!(p[3], Path::new("P").join("AppData").join("Local").join("Temp"));
+    }
+
+    #[test]
+    fn windows_store_dir_selection() {
+        let dd = Path::new("D");
+        assert_eq!(
+            windows_store_dir(true, dd, Some("L"), "quarantine", "quarantine"),
+            Some(dd.join("quarantine"))
+        );
+        assert_eq!(
+            windows_store_dir(true, dd, None, "hash_cache", "cache"),
+            Some(dd.join("cache"))
+        );
+        assert_eq!(
+            windows_store_dir(false, dd, Some("L"), "hash_cache", "cache"),
+            Some(Path::new("L").join("aegis-node").join("hash_cache"))
+        );
+        assert_eq!(windows_store_dir(false, dd, None, "x", "y"), None);
     }
 }

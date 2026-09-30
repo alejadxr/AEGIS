@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.8] - 2026-09-30 (the antivirus watches every user when run as a service)
+
+### Fixed — service-mode antivirus watched the service account's profile
+- As the `AEGISNode` service (LocalSystem), the antivirus watch paths,
+  quarantine and hash cache resolved to the system profile. The antivirus now
+  watches Downloads, Documents, Desktop and `AppData\Local\Temp` of every real
+  user profile, and keeps its quarantine and cache under
+  `%ProgramData%\aegis-node\`. GUI mode and macOS/Linux are unchanged.
+
+---
+
 ## [1.7.7] - 2026-09-30 (the endpoint agent runs without a desktop)
 
 ### Fixed — the agent could not start without an interactive desktop
