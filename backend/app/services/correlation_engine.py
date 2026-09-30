@@ -165,6 +165,7 @@ _EDR_BATCH_TOPIC = "edr.event_batch"
 # kind -> event_type lives with the payload translation, in edr_events.
 from app.services.edr_events import EDR_EVENT_MAP as _EDR_EVENT_MAP  # noqa: E402
 from app.services.edr_events import translate_edr_event  # noqa: E402
+from app.services.edr_trusted_parents import ProcessPathIndex, is_trusted_parent  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Cooldown defaults per attack class (v1.6.4 protocol-aware tier)
@@ -3821,6 +3822,7 @@ class CorrelationEngine:
         self._chain_group_fields: tuple[str, ...] = self._collect_chain_group_fields()
         # Strong refs to in-flight EDR batch drains (see _on_edr_batch).
         self._edr_batch_tasks: set = set()
+        self._proc_paths = ProcessPathIndex()
         # Background memory-bounding sweep task (started in start()).
         self._prune_task: Optional["asyncio.Task"] = None
         self._stats = {
@@ -4991,7 +4993,26 @@ class CorrelationEngine:
                         continue
                 except Exception as exc:
                     logger.warning(f"correlation_engine EDR safelist check failed: {exc}")
+            if self._is_trusted_parent_child(event):
+                continue
             await self.evaluate(event)
+
+    def _is_trusted_parent_child(self, event: dict) -> bool:
+        """Track process paths and apply AEGIS_EDR_TRUSTED_PARENTS.
+
+        The parent path comes from the pid -> path index built from earlier
+        process events of the same agent. Unresolvable parent -> not excluded.
+        """
+        etype = event.get("event_type")
+        agent_id = event.get("agent_id")
+        if etype == "process_termination":
+            self._proc_paths.forget(agent_id, event.get("pid"))
+            return False
+        if etype != "process_creation":
+            return False
+        parent = self._proc_paths.parent_path(agent_id, event.get("ppid"))
+        self._proc_paths.record(agent_id, event.get("pid"), event.get("process_path"))
+        return is_trusted_parent(parent)
 
     async def _on_edr_batch(self, data: dict) -> None:
         """Fan an agent batch out to _on_edr_event without holding the bus.

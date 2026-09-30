@@ -209,19 +209,41 @@ def test_canary_modified_fires_with_any_canary_id():
 # note_dropped — parametrized filename matching
 # ---------------------------------------------------------------------------
 
-NOTE_DROPPED_REGEX = re.compile(
-    r'(?i)(readme.*\.(txt|hta|html)|how_to_decrypt|decrypt[_-]?instructions'
-    r'|recover[_-]?files|!!!.*-files-have-been|HOW_TO_RESTORE)'
-)
+def _load_note_regex():
+    import yaml
+    rule_file = RULES_PATH / "sigma" / "impact" / "sigma_ransomware_note_dropped.yaml"
+    data = yaml.safe_load(rule_file.read_text())
+    return re.compile(data["condition"]["filter"]["file_name_regex"])
+
+
+# The rule's own regex, not a copy: a copy is how a bare `readme.*\.txt` went
+# unnoticed. The engine searches the FULL path, so cases are paths too.
+NOTE_DROPPED_REGEX = _load_note_regex()
 
 
 @pytest.mark.parametrize("filename,should_match_regex", [
     ("README_FOR_DECRYPT.txt", True),
-    ("readme.txt", True),
     ("HOW_TO_DECRYPT.html", True),
     ("HOW_TO_RESTORE.txt", True),
+    ("HOW_TO_RESTORE", True),
     ("decrypt_instructions.txt", True),
     ("recover-files.txt", True),
+    ("recover_files.hta", True),
+    ("!!!README!!!.txt", True),
+    ("!!readme!!!.txt", True),
+    ("!!!-Your-files-have-been-encrypted.txt", True),
+    ("all-files-have-been-locked.html", True),
+    (r"C:\Users\WIN-TEST\Documents\README_FOR_DECRYPT.txt", True),
+    ("/home/u/docs/HOW_TO_RESTORE_FILES.hta", True),
+    # ordinary readmes, at any depth, must not match
+    ("readme.txt", False),
+    ("README.txt", False),
+    ("README.html", False),
+    ("readme.hta", False),
+    ("readme-en.txt", False),
+    (r"C:\Program Files\App\README.txt", False),
+    (r"C:\src\readme-docs\notes.txt", False),
+    ("/home/u/readme/decrypt.txt", False),
     ("readme.md", False),
     ("document.docx", False),
     ("notes.txt", False),
@@ -270,8 +292,7 @@ def test_note_dropped_no_fire_on_benign_file_create():
     event = _note_dropped_event("readme.md")
     eng._window.append((now, event))
 
-    # readme.md is NOT a ransom-note pattern (regex requires .txt/.hta/.html
-    # suffix or specific keywords like how_to_decrypt). Engine must reject.
+    # readme.md is NOT a ransom-note pattern. Engine must reject.
     assert not eng._check_rule(rule, event, now)
 
 
@@ -296,3 +317,12 @@ def test_note_dropped_in_event_index(pack):
     rules_for_type = pack.rules.get("file_creation", [])
     ids = [r["id"] for r in rules_for_type]
     assert "ransomware_note_dropped" in ids
+
+
+def test_note_dropped_no_fire_on_plain_readme_txt():
+    eng = _make_engine(RULES_PATH)
+    rule = eng._rule_pack.by_id["ransomware_note_dropped"]
+    now = time.time()
+    event = _note_dropped_event(r"C:\\Program Files\\App\\README.txt")
+    eng._window.append((now, event))
+    assert not eng._check_rule(rule, event, now)

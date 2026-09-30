@@ -620,7 +620,11 @@ async def check_enrollment_status(code: str):
 
 
 # /nodes/events types whose detection is owned by a Sigma rule; see receive_node_event.
-_RULE_OWNED_NODE_EVENTS = frozenset({"registry_persistence_new"})
+# suspicious_process is the agent's own name/cmdline heuristic over the same
+# process list it already streams as process telemetry to /edr/events, where
+# the Sigma rules judge it. Opening an incident here as well made cmd.exe and
+# powershell.exe alone a CRITICAL incident.
+_RULE_OWNED_NODE_EVENTS = frozenset({"registry_persistence_new", "suspicious_process"})
 
 # The agent re-sends its newest Security-log records every ~15s with no record
 # id, so the same 4697 arrives over and over. Remember what was already handed to
@@ -724,20 +728,30 @@ async def receive_node_event(
     # A registry Run-key persistence event is now evaluated by
     # sigma_persist_registry_run, which opens the (host-attributed) incident.
     # Writing a second one here would double it, and this one carried the
-    # agent's own LAN address as source_ip.
+    # agent's own LAN address as source_ip. suspicious_process is likewise left
+    # to the rules that read its process telemetry.
     detected_by_rule = body.event_type in _RULE_OWNED_NODE_EVENTS
 
     if body.severity in ("high", "critical") and not detected_by_rule:
         from app.models.incident import Incident
 
+        # Endpoint detections are about the HOST: the agent's own LAN address
+        # is not an attacker and must never reach anything that can block an
+        # IP, so source_ip stays empty and the host is carried in the record.
         incident = Incident(
             client_id=agent.client_id,
             title=f"EDR: {body.event_type}",
-            description=str(body.details),
+            description=f"host={agent.hostname} {body.details}",
             severity=body.severity,
             status="open",
             source=f"node:{body.node_id}",
-            source_ip=agent.ip_address,
+            source_ip=None,
+            raw_alert={
+                "host": agent.hostname,
+                "agent_id": agent.id,
+                "event_type": body.event_type,
+                "details": body.details,
+            },
         )
         db.add(incident)
         await db.commit()
