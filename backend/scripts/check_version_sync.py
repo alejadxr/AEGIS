@@ -26,6 +26,25 @@ if pkg.exists():
     if got != CANON:
         problems.append(f"frontend/package.json says {got!r}, expected {CANON!r}")
 
+# The Tauri desktop app names its installers from these, so a stale copy ships
+# as AEGIS_1.6.2_* on a 1.7.x release. node-tauri/ (the endpoint agent) is
+# deliberately NOT checked: it has its own independent version (0.1.0).
+desktop = ROOT / "desktop-tauri"
+if (desktop / "package.json").exists():
+    got = json.loads((desktop / "package.json").read_text()).get("version")
+    if got != CANON:
+        problems.append(f"desktop-tauri/package.json says {got!r}, expected {CANON!r}")
+conf = desktop / "src-tauri/tauri.conf.json"
+if conf.exists():
+    got = json.loads(conf.read_text()).get("version")
+    if got != CANON:
+        problems.append(f"desktop-tauri/src-tauri/tauri.conf.json says {got!r}, expected {CANON!r}")
+cargo = desktop / "src-tauri/Cargo.toml"
+if cargo.exists():
+    m = re.search(r'^\[package\].*?^version\s*=\s*"([^"]+)"', cargo.read_text(), re.S | re.M)
+    if m and m.group(1) != CANON:
+        problems.append(f"desktop-tauri/src-tauri/Cargo.toml says {m.group(1)!r}, expected {CANON!r}")
+
 readme = ROOT / "README.md"
 if readme.exists():
     text = readme.read_text()
