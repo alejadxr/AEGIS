@@ -668,7 +668,7 @@ def _bridge_to_detection(body: "NodeEventRequest") -> dict | None:
     return None
 
 
-def _node_event_is_new(node_id: str, bridged: dict) -> bool:
+def _node_event_is_new(node_id: str, bridged: dict, ttl: float = _NODE_EVENT_TTL_SECONDS) -> bool:
     import time
 
     extra = bridged.get("extra") or {}
@@ -688,10 +688,39 @@ def _node_event_is_new(node_id: str, bridged: dict) -> bool:
         if len(_node_event_seen) > _NODE_EVENT_MAX_KEYS:
             _node_event_seen.clear()
     last = _node_event_seen.get(ident)
-    if last is not None and now - last < _NODE_EVENT_TTL_SECONDS:
+    if last is not None and now - last < ttl:
         return False
     _node_event_seen[ident] = now
     return True
+
+
+_NO_REMOTE_SOURCE = frozenset({"", "unknown", "-", "::1", "::", "127.0.0.1", "localhost", "0.0.0.0"})
+
+
+def _brute_force_attribution(d: dict) -> tuple[str | None, str | None]:
+    """(remote source, target account) of a brute_force_attempt, None for each
+    the agent could not name. A burst naming neither is a count of failed
+    logons with no subject (an older agent folded every failure under
+    "unknown") and cannot be told apart from our own tooling retrying."""
+    src = str(d.get("source_ip") or "").strip()
+    acct = str(d.get("target_account") or "").strip()
+    return (None if src.lower() in _NO_REMOTE_SOURCE else src), (acct or None)
+
+
+_UNATTRIBUTED_BRUTE_FORCE_TTL = 1800.0
+
+
+def _is_unattributed_bf(body: "NodeEventRequest") -> bool:
+    d = body.details if isinstance(body.details, dict) else {}
+    return body.event_type == "brute_force_attempt" and "unattributed" in str(d.get("note", ""))
+
+
+def _brute_force_is_new(node_id: str, remote: str | None, acct: str | None) -> bool:
+    """One incident per (node, remote source, account) per TTL."""
+    return _node_event_is_new(
+        node_id, {"kind": "brute_force_attempt", "target": remote,
+                  "extra": {"value": acct}},
+    )
 
 
 class NodeEventRequest(BaseModel):
@@ -732,7 +761,28 @@ async def receive_node_event(
     # to the rules that read its process telemetry.
     detected_by_rule = body.event_type in _RULE_OWNED_NODE_EVENTS
 
-    if body.severity in ("high", "critical") and not detected_by_rule:
+    # Failed-logon bursts should be attributable: a remote source or the target
+    # account. Older agents folded every failure under "unknown" and re-sent the
+    # same records (40 incidents in 19 minutes on one fresh node), so an
+    # unattributed burst is kept but demoted to LOW and deduplicated per node
+    # for 30 minutes. Attributed bursts dedupe per (node, source, account).
+    if body.event_type == "brute_force_attempt":
+        details = body.details if isinstance(body.details, dict) else {}
+        remote, acct = _brute_force_attribution(details)
+        if remote is None and acct is None:
+            if not _node_event_is_new(
+                body.node_id,
+                {"kind": "brute_force_attempt", "target": "unattributed"},
+                ttl=_UNATTRIBUTED_BRUTE_FORCE_TTL,
+            ):
+                return {"status": "received", "event_type": body.event_type, "ignored": "duplicate"}
+            body.severity = "low"
+            body.details = {**details, "note": "unattributed: old agent, update node-tauri"}
+            detected_by_rule = False
+        elif not _brute_force_is_new(body.node_id, remote, acct):
+            return {"status": "received", "event_type": body.event_type, "ignored": "duplicate"}
+
+    if (body.severity in ("high", "critical") or _is_unattributed_bf(body)) and not detected_by_rule:
         from app.models.incident import Incident
 
         # Endpoint detections are about the HOST: the agent's own LAN address

@@ -17,6 +17,7 @@
 // ---------------------------------------------------------------------------
 
 pub mod event_buffer;
+pub mod logon_events;
 pub mod uploader;
 
 #[cfg(target_os = "windows")]
