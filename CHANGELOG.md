@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.17] - 2026-10-03
+
+### Security — the firewall executor accepted unauthenticated commands
+- The Pi block executor (`firewall-agent`) accepted `POST /block`,
+  `DELETE /block/{ip}`, the DoS endpoints and AI chat from anyone on the LAN.
+  The shared-secret check existed but stayed in compatibility mode because
+  `AEGIS_FIREWALL_SECRET` was never set, and the backend read it only from
+  the process environment. The backend now reads it from settings and sends
+  it from every caller; when set, the agent requires it (constant-time
+  compare) on every route except `GET /health` and a read-only allowlist
+  (`AEGIS_FIREWALL_PUBLIC_READ`, default `/blocked`). See
+  `firewall-agent/README.md` for the rollout.
+
+### Fixed — a critical attack lost its incident
+- `actions.status` was `VARCHAR(20)`; the status `skipped_not_applicable`
+  overflowed it and the error escaped the action loop. Widened to 32
+  (migration `d5f2a8c13e47`), and one action failing to persist no longer
+  aborts the rest. Run `alembic upgrade head`.
+
+---
+
 ## [1.7.16] - 2026-10-03 (our own management tooling is not a threat)
 
 ### Fixed — the first fleet install raised criticals against our own tooling
