@@ -16,4 +16,4 @@ Anything that needs the version imports it from here. The one copy that cannot
 scripts/check_version_sync.py.
 """
 
-__version__ = "1.7.17"
+__version__ = "1.7.18"

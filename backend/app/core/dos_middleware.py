@@ -172,7 +172,7 @@ class DoSShieldMiddleware(BaseHTTPMiddleware):
 
         # (2) Safe-IP fast-exit (crawlers / Tailscale / localhost / AEGIS_SAFE_IPS).
         ip = _client_ip(request)
-        if _is_safe_ip(ip):
+        if _is_safe_ip(ip, request.headers.get("user-agent", "")):
             return await call_next(request)
 
         # (3) Hot-path record.
