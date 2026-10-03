@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.15] - 2026-10-03 (hardening after an attack-spike review)
+
+A full review of an attack spike found no successful exploitation. It did find
+weaknesses in the defence itself, fixed here.
+
+### Fixed
+- **Blocks expired too soon.** Provisional blocks lasted ~6 h regardless of
+  what the source did; an IP with six CVE-exploit incidents was released the
+  same night. Critical and exploit-class blocks (CVE rules, path traversal,
+  command injection, webshell, RCE) now last 30 days
+  (`AEGIS_BLOCK_TTL_CRITICAL_HOURS`), and a source blocked again within 30 days
+  doubles its TTL up to `AEGIS_BLOCK_TTL_MAX_HOURS`.
+- **The nightly retention purge never ran.** Deleting incidents violated the
+  `actions` foreign key every night. Children are now removed (audit rows are
+  detached, not deleted) in bounded batches.
+- **The host packet-filter layer failed silently.** Without root, every block
+  logged a pfctl permission error. The layer now disables itself once with a
+  clear warning and reports `local_fw` on `GET /firewall/stats`. Note that a
+  host behind a Cloudflare Tunnel only sees cloudflared, so this layer cannot
+  stop tunnelled traffic in any case.
+- **XXE false positives.** `sigma_web_xxe` matched any path containing
+  `system` (e.g. `/media/system/js/core.js`). It now requires entity/DOCTYPE
+  payload markers.
+
+---
+
 ## [1.7.14] - 2026-09-30
 
 ### Fixed — desktop installers carried the wrong version
