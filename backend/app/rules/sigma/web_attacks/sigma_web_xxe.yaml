@@ -18,9 +18,13 @@ condition:
   filter:
     path_contains:
     - <!ENTITY
-    - SYSTEM
-    - file://
-    - expect://
+    - <!DOCTYPE
+    - 'SYSTEM "file:'
+    - 'SYSTEM "http:'
+    - 'SYSTEM "expect:'
+    - 'SYSTEM ''file:'
+    - '%3C!ENTITY'
+    - '%3C!DOCTYPE'
 entityMappings:
 - type: IP
   field: source_ip
