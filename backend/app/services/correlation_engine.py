@@ -165,7 +165,7 @@ _EDR_BATCH_TOPIC = "edr.event_batch"
 # kind -> event_type lives with the payload translation, in edr_events.
 from app.services.edr_events import EDR_EVENT_MAP as _EDR_EVENT_MAP  # noqa: E402
 from app.services.edr_events import translate_edr_event  # noqa: E402
-from app.services.edr_trusted_parents import ProcessPathIndex, is_trusted_parent  # noqa: E402
+from app.services.edr_trusted_parents import TrustResolver, is_protected_rule  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Cooldown defaults per attack class (v1.6.4 protocol-aware tier)
@@ -3822,7 +3822,7 @@ class CorrelationEngine:
         self._chain_group_fields: tuple[str, ...] = self._collect_chain_group_fields()
         # Strong refs to in-flight EDR batch drains (see _on_edr_batch).
         self._edr_batch_tasks: set = set()
-        self._proc_paths = ProcessPathIndex()
+        self._trust = TrustResolver()
         # Background memory-bounding sweep task (started in start()).
         self._prune_task: Optional["asyncio.Task"] = None
         self._stats = {
@@ -4066,8 +4066,13 @@ class CorrelationEngine:
             extra = self._rules_by_type.get(_alias)
             if extra:
                 candidates = candidates + extra
+        trusted = bool(event.get("trusted_by"))
         for rule in candidates:
             if not rule.get("enabled", True):
+                continue
+            # A trusted process (management agent subtree, provisioning window)
+            # is judged by the protected rules only.
+            if trusted and not is_protected_rule(rule):
                 continue
             if self._check_rule(rule, event, ts):
                 # A chain-only rule feeds chains but never alerts on its own, so
@@ -4993,26 +4998,36 @@ class CorrelationEngine:
                         continue
                 except Exception as exc:
                     logger.warning(f"correlation_engine EDR safelist check failed: {exc}")
-            if self._is_trusted_parent_child(event):
-                continue
+            self._apply_edr_trust(event)
             await self.evaluate(event)
 
-    def _is_trusted_parent_child(self, event: dict) -> bool:
-        """Track process paths and apply AEGIS_EDR_TRUSTED_PARENTS.
+    def _apply_edr_trust(self, event: dict) -> None:
+        """Track the process tree and apply AEGIS_EDR_TRUSTED_PARENTS.
 
-        The parent path comes from the pid -> path index built from earlier
-        process events of the same agent. Unresolvable parent -> not excluded.
+        A trusted event is NOT dropped: it is stamped `trusted_by` and evaluate()
+        then runs only the protected rules (ransomware, credential dumping,
+        canaries) on it. The verdict is the ingest route's when it made one
+        (it knows the node's enrollment time and can read the stored history);
+        otherwise this engine's own ancestry walk decides. An unresolvable
+        parent is never trusted.
         """
         etype = event.get("event_type")
         agent_id = event.get("agent_id")
         if etype == "process_termination":
-            self._proc_paths.forget(agent_id, event.get("pid"))
-            return False
+            self._trust.forget(agent_id, event.get("pid"))
+            return
         if etype != "process_creation":
-            return False
-        parent = self._proc_paths.parent_path(agent_id, event.get("ppid"))
-        self._proc_paths.record(agent_id, event.get("pid"), event.get("process_path"))
-        return is_trusted_parent(parent)
+            return
+        verdict = self._trust.observe(
+            agent_id, event.get("pid"), event.get("ppid"),
+            event.get("process_path"), event.get("cmdline"),
+            parent_path=event.get("parent_path"),
+        )
+        if event.get("trusted_by"):
+            return
+        if verdict is not None:
+            event["trusted_by"] = verdict.by
+            event["trust_reason"] = verdict.reason
 
     async def _on_edr_batch(self, data: dict) -> None:
         """Fan an agent batch out to _on_edr_event without holding the bus.

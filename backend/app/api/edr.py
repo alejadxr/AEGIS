@@ -39,6 +39,9 @@ from app.models.endpoint_agent import (
 )
 from app.models.incident import Incident
 from app.services.edr_transport import publish_agent_batch
+from app.services.edr_trusted_parents import (
+    TrustResolver, in_provisioning_window, resolve_parent_from_db, trust_configured,
+)
 from app.services.process_tree import build_process_tree
 from app.services.attack_chain_detector import evaluate_event, CMD_PATTERN_RULES
 from app.services.host_monitor import host_monitor, AGENT_ID as HOST_MONITOR_AGENT_ID
@@ -115,6 +118,8 @@ async def ingest_events(
     accepted = 0
     chain_match_count = 0
     detection_events: list[dict] = []
+    trust_on = trust_configured()
+    enrolled_at = getattr(agent, "created_at", None)
 
     async def ancestry_fetcher(pid: int) -> list[dict]:
         tree = await build_process_tree(db, agent.id, pid)
@@ -138,6 +143,25 @@ async def ingest_events(
             "target": ev.target,
             "extra": ev.extra or {},
         }
+        parent_path, trust, provisioning = None, None, False
+        if trust_on and ev.kind in ("process_start", "process_stop"):
+            if ev.kind == "process_stop":
+                _ingest_trust.forget(agent.id, ev.pid)
+            else:
+                parent_path = await _resolve_parent_path(db, agent.id, ev, ts)
+                provisioning = in_provisioning_window(enrolled_at, ts)
+                trust = _ingest_trust.observe(
+                    agent.id, ev.pid, ev.ppid, ev.process_path, ev.command_line,
+                    parent_path=parent_path, provisioning=provisioning,
+                )
+        if parent_path:
+            details["parent_path"] = parent_path
+        if trust is not None:
+            # Auditable: the stored event says why the engine did not judge it.
+            details["trusted_by"] = trust.by
+            details["trust_reason"] = trust.reason
+            if trust.reason == "installer":
+                details["provisioning"] = True
 
         row = AgentEvent(
             agent_id=agent.id,
@@ -165,6 +189,12 @@ async def ingest_events(
             "target": ev.target,
             # registry value, image path, ... -- see edr_events
             "extra": ev.extra if isinstance(ev.extra, dict) else {},
+            **({"parent_path": parent_path} if parent_path else {}),
+            **({
+                "trusted_by": trust.by,
+                "trust_reason": trust.reason,
+                **({"provisioning": True} if trust.reason == "installer" else {}),
+            } if trust is not None else {}),
         })
 
         # Only run chain detection on process starts — the ancestry lookup is
@@ -204,6 +234,34 @@ async def ingest_events(
         dropped=payload.events_dropped_total,
         chain_matches=chain_match_count,
     )
+
+
+# Server-side view of the process tree, used only to stamp stored events with
+# the trust verdict (the correlation engine keeps its own for the other routes).
+_ingest_trust = TrustResolver()
+
+
+async def _resolve_parent_path(db, agent_id: str, ev, ts) -> str | None:
+    """Path of the parent of a process start.
+
+    Order: what the server itself saw start (the agent's claim is least
+    trusted), then the stored history, then the `parent_path` the agent sent
+    in `extra`. A parent that started before the agent and was never stored
+    can only come from the agent."""
+    claimed = ev.extra.get("parent_path") if isinstance(ev.extra, dict) else None
+    ppid = ev.ppid
+    if ppid in (None, 0):
+        return claimed or None
+    known = _ingest_trust.parent_path(agent_id, ppid)
+    if known:
+        return known
+    if not _ingest_trust.known_miss(agent_id, ppid):
+        found = await resolve_parent_from_db(db, agent_id, ppid, before=ts)
+        if found and found[0]:
+            _ingest_trust.seed(agent_id, ppid, found[0], found[1])
+            return found[0]
+        _ingest_trust.note_miss(agent_id, ppid)
+    return claimed if isinstance(claimed, str) and claimed else None
 
 
 def _event_category(kind: str) -> EventCategory:
