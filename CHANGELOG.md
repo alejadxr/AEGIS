@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.18] - 2026-10-03
+
+### Security — attackers on Google Cloud and Azure were invisible
+- `34.64.0.0/10` (~4M Google Cloud addresses), `35.190.0.0/17` and
+  `13.66.0.0/17` were treated as safe on every detection path to avoid
+  crawler false positives, so any attacker renting a VM there was never
+  detected or blocked. Precise crawler ranges (Googlebot, Bing, Meta,
+  Twitter, Apple) stay unconditionally safe. A shared-cloud address is safe
+  only when it presents a crawler User-Agent **and** its forward-confirmed
+  reverse DNS ends in googlebot.com, google.com or search.msn.com (verified in
+  the background, cached). A spoofed Googlebot User-Agent from a cloud VM now
+  gets normal detection.
+- The firewall agent ignores broad `AEGIS_SAFE_IPS` entries over these ranges.
+
+---
+
 ## [1.7.17] - 2026-10-03
 
 ### Security — the firewall executor accepted unauthenticated commands
