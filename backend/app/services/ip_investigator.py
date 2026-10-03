@@ -258,7 +258,8 @@ class IPInvestigator:
             import aiohttp
             firewall_url = os.getenv("AEGIS_FIREWALL_URL", "")
             if firewall_url:
-                async with aiohttp.ClientSession() as session:
+                from app.core.firewall_client import firewall_auth_headers
+                async with aiohttp.ClientSession(headers=firewall_auth_headers()) as session:
                     await session.post(
                         f"{firewall_url}/unblock",
                         json={"ip": ip, "reason": "aegis_false_positive_auto_unblock"},

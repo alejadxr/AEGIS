@@ -20,6 +20,7 @@ Deployment note (BUG-3 fix, 2026-05-31):
 """
 
 import asyncio
+import hmac
 import ipaddress
 import json
 import logging
@@ -844,33 +845,65 @@ app.add_middleware(
 )
 
 
+# Read-only GET paths reachable without the secret once it is set. Exists for
+# consumers that cannot send the header (the Sable middleware polls /blocked).
+# Only GET is ever public; mutating methods always need the secret.
+_PUBLIC_READ_PATHS = frozenset(
+    p.strip().rstrip("/") or "/"
+    for p in os.getenv("AEGIS_FIREWALL_PUBLIC_READ", "/blocked").split(",")
+    if p.strip()
+)
+_REJECT_LOG_INTERVAL = 30.0  # seconds, per (client ip, method, path)
+_reject_last_logged: dict[tuple, float] = {}
+
+
+def _log_rejected(request: Request) -> None:
+    """WARNING for a rejected request, at most once per interval per key."""
+    client_ip = request.client.host if request.client else "unknown"
+    key = (client_ip, request.method, request.url.path)
+    now = time.monotonic()
+    if now - _reject_last_logged.get(key, -_REJECT_LOG_INTERVAL) < _REJECT_LOG_INTERVAL:
+        return
+    if len(_reject_last_logged) > 1000:
+        _reject_last_logged.clear()
+    _reject_last_logged[key] = now
+    logger.warning(
+        "auth rejected: %s %s from %s (missing/invalid X-AEGIS-FW-Auth)",
+        request.method, request.url.path, client_ip,
+    )
+
+
+def _is_public_read(request: Request) -> bool:
+    path = request.url.path.rstrip("/") or "/"
+    return request.method == "GET" and path in _PUBLIC_READ_PATHS
+
+
 @app.middleware("http")
 async def _enforce_shared_secret(request: Request, call_next):
     """Authenticate the Mac Pro <-> Pi firewall channel (B5 / P0-12).
 
-    Every request must carry header `X-AEGIS-FW-Auth: <shared secret>`
-    matching this agent's AEGIS_FIREWALL_SECRET env var. `/health` is
-    exempt (used by uptime probes / systemd health checks that shouldn't
-    need the secret).
+    When AEGIS_FIREWALL_SECRET is set, every request must carry header
+    `X-AEGIS-FW-Auth: <shared secret>` (compared in constant time), except:
+      * GET /health (uptime probes)
+      * GET on the paths in AEGIS_FIREWALL_PUBLIC_READ (default "/blocked",
+        needed by the Sable middleware, which cannot send the header).
+    Mutating methods are never public. Rejections are logged at WARNING,
+    rate-limited per (client, method, path).
 
-    OPTIONAL-ACCEPT / ATOMIC-ROLLOUT COMPAT MODE:
-    If AEGIS_FIREWALL_SECRET is NOT set on this agent (empty/unset), the
-    check is skipped entirely and ALL requests are accepted, exactly as
-    before this change. This is intentional: the Mac Pro client and this
-    agent are deployed independently, so during a staged rollout one side
-    may be updated before the other. Requiring the secret unconditionally
-    here would risk locking AEGIS out of its own firewall executor mid
-    rollout. Once an operator sets AEGIS_FIREWALL_SECRET on the Pi's
-    systemd unit (matching the Mac Pro's value), enforcement turns on
-    automatically for every route except /health.
+    COMPAT MODE: if AEGIS_FIREWALL_SECRET is unset, nothing is enforced and
+    all requests are accepted, so a staged rollout cannot lock AEGIS out.
     """
-    if request.url.path == "/health":
+    if request.url.path == "/health" and request.method in ("GET", "HEAD"):
         return await call_next(request)
     if not AEGIS_FIREWALL_SECRET:
-        # Compat mode: no secret configured yet on this agent — accept.
+        return await call_next(request)
+    if request.method == "OPTIONS":
+        return await call_next(request)  # CORS preflight carries no headers
+    if _is_public_read(request):
         return await call_next(request)
     supplied = request.headers.get("X-AEGIS-FW-Auth", "")
-    if supplied != AEGIS_FIREWALL_SECRET:
+    if not hmac.compare_digest(supplied.encode(), AEGIS_FIREWALL_SECRET.encode()):
+        _log_rejected(request)
         return JSONResponse(
             status_code=401,
             content={"detail": "invalid or missing X-AEGIS-FW-Auth header"},

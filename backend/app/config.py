@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     # External firewall API URL (e.g. AEGIS Firewall Agent on Raspberry Pi).
     # When set, AEGIS uses this for real iptables blocking + threat intel.
     AEGIS_FIREWALL_URL: str = ""
+    # Shared secret for the Mac Pro <-> Pi firewall channel (header
+    # X-AEGIS-FW-Auth). Declared here because backend/.env values only reach
+    # pydantic Settings, never os.environ (extra="ignore").
+    AEGIS_FIREWALL_SECRET: str = ""
 
     # Opt-in incident reconciliation: when enabled, the firewall sync pass will
     # auto-resolve incidents whose source_ip is no longer in the Pi blocklist.
