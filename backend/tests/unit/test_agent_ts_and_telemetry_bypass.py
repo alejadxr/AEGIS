@@ -65,7 +65,7 @@ def client(monkeypatch):
         blocked.append((ip, reason))
 
     monkeypatch.setattr(ad, "_block_ip", fake_block)
-    monkeypatch.setattr(ad, "_is_safe_ip", lambda ip: False)
+    monkeypatch.setattr(ad, "_is_safe_ip", lambda ip, user_agent=None: False)
     monkeypatch.setattr(ad, "_blocked_ips", set())
     ad._attack_log.clear()
 
