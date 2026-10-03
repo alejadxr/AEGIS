@@ -280,6 +280,8 @@ cd frontend && npm install && npm run build && npm start
 | `AEGIS_REAL_RECOVERY` | unset | Set to `1` to enable real snapshot restore |
 | `AEGIS_LIVEFIRE` | unset | Set to `1` to run the ransomware emulation harness |
 | `AEGIS_FIREWALL_URL` | unset | Optional remote firewall agent URL |
+| `AEGIS_FIREWALL_SECRET` | unset | Shared secret for the backend <-> firewall agent channel (header `X-AEGIS-FW-Auth`). Set the SAME value in the backend `.env` and in the agent's environment. Unset on the agent = no auth enforced (compat mode). See [firewall-agent/README.md](firewall-agent/README.md) |
+| `AEGIS_FIREWALL_PUBLIC_READ` | `/blocked` | Agent side only: comma-separated GET paths reachable without the secret once it is set. Mutating methods are never public |
 | `AEGIS_MONITORED_APPS` | all PM2 apps | Comma-separated PM2 app names to tail |
 | `AEGIS_EXTRA_LOG_PATHS` | unset | Colon-separated extra log files to tail (globs supported), e.g. a unified web-app feed |
 | `AEGIS_SAFE_IPS` | `127.0.0.1,::1,localhost` | IPs/CIDRs never blocked and never turned into an incident, on **every** detection path. RFC1918, CGNAT/Tailscale (`100.64.0.0/10`) and published crawler CIDRs are folded in unconditionally |
