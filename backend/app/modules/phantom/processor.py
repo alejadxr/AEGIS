@@ -332,7 +332,8 @@ class InteractionProcessor:
                 if source_ip not in trusted_ips and firewall_url:
                     try:
                         import aiohttp
-                        async with aiohttp.ClientSession() as _sess:
+                        from app.core.firewall_client import firewall_auth_headers
+                        async with aiohttp.ClientSession(headers=firewall_auth_headers()) as _sess:
                             await _sess.post(
                                 f"{firewall_url}/analyze",
                                 json={"ip": source_ip, "attack_type": "honeypot_interaction"},

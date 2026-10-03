@@ -11,6 +11,8 @@ WorkingDirectory=/opt/aegis-firewall
 ExecStart=/opt/aegis-firewall/venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8765
 Restart=always
 RestartSec=5
+# Secrets/overrides (AEGIS_FIREWALL_SECRET, AEGIS_SAFE_IPS, ...). Optional file, chmod 600.
+EnvironmentFile=-/etc/aegis/firewall.env
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 [Install]

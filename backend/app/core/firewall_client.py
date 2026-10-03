@@ -12,6 +12,19 @@ FIREWALL_API = (settings.AEGIS_FIREWALL_URL or "").rstrip("/")
 TIMEOUT = 30.0
 
 
+def get_firewall_secret() -> str:
+    """Resolve AEGIS_FIREWALL_SECRET: pydantic Settings first (backend/.env
+    only lands there), then os.environ (systemd/PM2 env)."""
+    return (
+        getattr(settings, "AEGIS_FIREWALL_SECRET", "") or os.getenv("AEGIS_FIREWALL_SECRET", "")
+    ).strip()
+
+
+def firewall_auth_headers() -> dict:
+    """Auth header for ANY call to the Pi agent. Use this from every caller."""
+    return {"X-AEGIS-FW-Auth": get_firewall_secret()}
+
+
 def _auth_headers() -> dict:
     """Shared-secret header attached to every request sent to the Pi agent.
 
@@ -21,7 +34,7 @@ def _auth_headers() -> dict:
     AEGIS_FIREWALL_SECRET is configured on both sides (see
     firewall-agent/main.py for the enforcement/compat behavior).
     """
-    return {"X-AEGIS-FW-Auth": os.getenv("AEGIS_FIREWALL_SECRET", "")}
+    return firewall_auth_headers()
 
 
 class FirewallClient:
