@@ -29,6 +29,8 @@ from sqlalchemy import delete, select, update
 
 from app.database import async_session
 from app.models.incident import Incident
+from app.models.action import Action
+from app.models.audit_log import AuditLog
 from app.models.attacker_profile import AttackerProfile
 from app.models.honeypot import HoneypotInteraction
 from app.models.threat_intel import ThreatIntel
@@ -40,6 +42,7 @@ STUCK_CLOSER_HOURS = int(os.environ.get("AEGIS_STUCK_CLOSER_HOURS", "24"))
 # Scans get a tighter window than incidents: the full-scan nmap timeout is 600s,
 # so anything still "running" after hours is dead, not slow.
 SCAN_STUCK_HOURS = int(os.environ.get("AEGIS_SCAN_STUCK_HOURS", "3"))
+PURGE_BATCH_SIZE = int(os.environ.get("AEGIS_RETENTION_BATCH_SIZE", "500"))
 DRY_RUN = os.environ.get("AEGIS_RETENTION_DRY_RUN", "0").strip().lower() in {"1", "true", "yes"}
 AUDIT_LOG_PATH = Path(os.environ.get(
     "AEGIS_RETENTION_AUDIT_LOG",
@@ -58,6 +61,33 @@ def _audit(event: dict) -> None:
         logger.debug(f"retention audit log write failed: {exc}")
 
 
+async def _purge_incidents(db, cutoff: datetime) -> int:
+    """Delete expired terminal incidents plus their FK children, in bounded batches.
+
+    actions.incident_id (NOT NULL) and audit_log.incident_id reference
+    incidents without ON DELETE, so deleting an incident that still has either
+    raises ForeignKeyViolationError and aborts the whole nightly purge.
+    Actions are deleted; audit_log rows are kept with incident_id set NULL.
+    (ransomware_events / av_detections are ON DELETE SET NULL and need nothing.)
+    Children go first, in the same transaction as their parents; the caller commits.
+    """
+    total = 0
+    while True:
+        ids = [row[0] for row in (await db.execute(
+            select(Incident.id).where(
+                Incident.detected_at < cutoff,
+                Incident.status.in_(("resolved", "auto_responded")),
+            ).limit(PURGE_BATCH_SIZE)
+        )).all()]
+        if not ids:
+            return total
+        await db.execute(delete(Action).where(Action.incident_id.in_(ids)))
+        # The audit trail outlives the incident: detach rather than delete.
+        await db.execute(update(AuditLog).where(AuditLog.incident_id.in_(ids)).values(incident_id=None))
+        result = await db.execute(delete(Incident).where(Incident.id.in_(ids)))
+        total += result.rowcount or 0
+
+
 async def nightly_retention_purge() -> dict:
     """Delete records older than RETENTION_DAYS. Returns count summary."""
     cutoff = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
@@ -73,13 +103,7 @@ async def nightly_retention_purge() -> dict:
             )
             summary["incidents"] = len(preview.all())
         else:
-            result = await db.execute(
-                delete(Incident).where(
-                    Incident.detected_at < cutoff,
-                    Incident.status.in_(("resolved", "auto_responded")),
-                )
-            )
-            summary["incidents"] = result.rowcount or 0
+            summary["incidents"] = await _purge_incidents(db, cutoff)
 
         # Attacker profiles — last_seen older than cutoff
         if DRY_RUN:

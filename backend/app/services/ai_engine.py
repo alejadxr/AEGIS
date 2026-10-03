@@ -636,6 +636,9 @@ class AIDecisionEngine:
                     ),
                     db=db,
                     incident_id=incident.id,
+                    alert_data=alert_data,
+                    severity=triage.get("severity") or alert_data.get("severity"),
+                    threat_type=threat_type,
                 )
             else:
                 action = await guardrail_engine.evaluate_action(
@@ -835,6 +838,9 @@ class AIDecisionEngine:
         ai_reasoning: str,
         db: AsyncSession,
         incident_id: Optional[str] = None,
+        alert_data: Optional[dict] = None,
+        severity: Optional[str] = None,
+        threat_type: Optional[str] = None,
     ):
         """Create a PROVISIONAL block_ip Action — auto-approved, but expiring.
 
@@ -877,7 +883,20 @@ class AIDecisionEngine:
 
         from app.models.action import Action
 
-        expires_at = datetime.utcnow() + timedelta(hours=PROVISIONAL_BLOCK_TTL_HOURS)
+        # Severity-aware: critical / exploit-class sources get a long block, and
+        # repeat offenders double it (see app.services.block_ttl).
+        from app.services import block_ttl
+        try:
+            prior_blocks = await block_ttl.count_recent_blocks(db, target)
+        except Exception:
+            prior_blocks = 0
+        ttl_hours = block_ttl.compute_ttl_hours(
+            severity,
+            block_ttl.collect_rule_ids(alert_data or {}),
+            threat_type,
+            prior_blocks,
+        )
+        expires_at = datetime.utcnow() + timedelta(hours=ttl_hours)
         action = Action(
             incident_id=incident_id or "",
             client_id=client.id,
@@ -888,13 +907,14 @@ class AIDecisionEngine:
             parameters={
                 "provisional": True,
                 "expires_at": expires_at.isoformat(),
-                "ttl_hours": PROVISIONAL_BLOCK_TTL_HOURS,
+                "ttl_hours": ttl_hours,
+                "prior_blocks": prior_blocks,
             },
             status="approved",       # executes now — no human in the loop
             requires_approval=False,
             ai_reasoning=(
                 f"{ai_reasoning} [PROVISIONAL: auto-expires "
-                f"{expires_at.isoformat()}Z ({PROVISIONAL_BLOCK_TTL_HOURS}h)]"
+                f"{expires_at.isoformat()}Z ({ttl_hours}h)]"
             ),
         )
         db.add(action)
@@ -903,7 +923,7 @@ class AIDecisionEngine:
 
         logger.info(
             f"Provisional auto-block on {target} "
-            f"(expires in {PROVISIONAL_BLOCK_TTL_HOURS}h): {ai_reasoning[:120]}"
+            f"(expires in {ttl_hours}h): {ai_reasoning[:120]}"
         )
         await event_bus.publish("action_auto_approved", {
             "action_id": str(action.id),

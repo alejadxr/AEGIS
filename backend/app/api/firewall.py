@@ -274,6 +274,7 @@ class FirewallStatsResponse(BaseModel):
     attackers_24h: int
     pi_reachable: bool
     real_firewall_active: bool
+    local_fw: str = "disabled"
 
 
 async def _fetch_pi_blocked() -> tuple[list[str], bool]:
@@ -359,8 +360,13 @@ async def firewall_stats(
     local_ips = set(ip_blocker_service.list_blocked())
     blocked_count = len(set(pi_ips) | local_ips)
 
+    local_fw = "disabled"
+    if os.environ.get("AEGIS_REAL_FW") == "1":
+        from app.services import firewall_local as _fw_local
+        local_fw = _fw_local.get_firewall().status()
     real_firewall_active = bool(
-        os.environ.get("AEGIS_REAL_FW") or settings.AEGIS_FIREWALL_URL
+        (os.environ.get("AEGIS_REAL_FW") and local_fw == "active")
+        or settings.AEGIS_FIREWALL_URL
     )
 
     return FirewallStatsResponse(
@@ -371,6 +377,7 @@ async def firewall_stats(
         attackers_24h=attackers_24h,
         pi_reachable=pi_reachable,
         real_firewall_active=real_firewall_active,
+        local_fw=local_fw,
     )
 
 
