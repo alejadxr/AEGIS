@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.16] - 2026-10-03 (our own management tooling is not a threat)
+
+### Fixed — the first fleet install raised criticals against our own tooling
+- Trusted management tooling (`AEGIS_EDR_TRUSTED_PARENTS`) was only recognised
+  as a direct parent, and only if its start had been seen. Trust now follows
+  the process tree (bounded depth, never rooted at a shell or `sshd`), and a
+  parent that started before the agent is resolved from stored events or from
+  the agent's `parent_path`.
+- Trusted processes are still evaluated by the protected rules: ransomware,
+  canaries, credential dumping and recovery inhibition are never suppressed.
+- Opt-in provisioning window: `AEGIS_EDR_TRUSTED_INSTALLERS` +
+  `AEGIS_EDR_PROVISIONING_GRACE_MIN` (off by default).
+
+### Fixed — 40 failed-logon alerts from a handful of failures
+- The agent re-read the newest Security records every 15 s and counted the
+  same 4625 events again, and parsed localized text, so on a non-English
+  Windows the source was always "unknown". It now reads 4625 by record id
+  from XML and reports account, logon type and caller process. Unattributed
+  bursts from older agents open one LOW incident per node per 30 minutes.
+
+### Agent
+- Process events carry `parent_path`. Rebuild and redeploy the endpoint agent.
+
+---
+
 ## [1.7.15] - 2026-10-03 (hardening after an attack-spike review)
 
 A full review of an attack spike found no successful exploitation. It did find

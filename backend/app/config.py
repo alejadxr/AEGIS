@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     AEGIS_SAFE_IPS: str = ""
     AEGIS_INTERNAL_IPS: str = ""
     AEGIS_EDR_TRUSTED_PARENTS: str = ""
+    AEGIS_EDR_TRUSTED_INSTALLERS: str = ""
+    AEGIS_EDR_PROVISIONING_GRACE_MIN: str = ""
 
     # External firewall API URL (e.g. AEGIS Firewall Agent on Raspberry Pi).
     # When set, AEGIS uses this for real iptables blocking + threat intel.

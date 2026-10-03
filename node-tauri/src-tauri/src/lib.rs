@@ -1249,8 +1249,8 @@ async fn windows_eventlog_loop(state: Arc<Mutex<NodeState>>) {
 
     log::info!("EDR: Windows Event Log monitor started");
 
-    // Track failed logon attempts: IP -> (count, first_seen)
-    let mut failed_logons: HashMap<String, (u32, Instant)> = HashMap::new();
+    // Failed logons (4625): see edr::logon_events. Counted once per record id.
+    let mut logon_bursts = crate::edr::logon_events::BurstTracker::new();
 
     loop {
         tokio::time::sleep(Duration::from_secs(15)).await;
@@ -1293,7 +1293,6 @@ async fn windows_eventlog_loop(state: Arc<Mutex<NodeState>>) {
                             &current_event_id,
                             &current_data,
                             &node_id,
-                            &mut failed_logons,
                         ) {
                             alerts.push(alert);
                         }
@@ -1312,10 +1311,40 @@ async fn windows_eventlog_loop(state: Arc<Mutex<NodeState>>) {
                     &current_event_id,
                     &current_data,
                     &node_id,
-                    &mut failed_logons,
                 ) {
                     alerts.push(alert);
                 }
+            }
+        }
+
+        // --- Failed logons (4625), locale-independent XML, deduped by record id ---
+        if let Ok(output) = hidden_command("wevtutil")
+            .args(["qe", "Security", "/q:*[System[(EventID=4625)]]", "/c:50", "/rd:true", "/f:xml"])
+            .output()
+        {
+            let xml = String::from_utf8_lossy(&output.stdout);
+            let logons = crate::edr::logon_events::parse_failed_logons(&xml);
+            for b in logon_bursts.ingest(logons, Utc::now(), Instant::now()) {
+                alerts.push(serde_json::json!({
+                    "node_id": node_id,
+                    "event_type": "brute_force_attempt",
+                    "severity": "high",
+                    "details": {
+                        "event_id": 4625,
+                        "source": "Security",
+                        "failures": b.count,
+                        "window_secs": 60,
+                        "source_ip": b.last.source_ip.clone().unwrap_or_else(|| "local".to_string()),
+                        "target_account": b.last.target_account,
+                        "target_domain": b.last.target_domain,
+                        "logon_type": b.last.logon_type,
+                        "caller_process": b.last.caller_process,
+                        "workstation": b.last.workstation,
+                        "status": b.last.status,
+                        "sub_status": b.last.sub_status,
+                    },
+                    "timestamp": Utc::now().to_rfc3339(),
+                }));
             }
         }
 
@@ -1349,10 +1378,6 @@ async fn windows_eventlog_loop(state: Arc<Mutex<NodeState>>) {
             }
         }
 
-        // Clean up old failed logon entries (older than 60s)
-        let now = Instant::now();
-        failed_logons.retain(|_, (_, first)| now.duration_since(*first).as_secs() < 120);
-
         // Send alerts
         for alert in &alerts {
             match client
@@ -1383,7 +1408,6 @@ fn process_security_event(
     event_id: &str,
     data: &std::collections::HashMap<String, String>,
     node_id: &str,
-    failed_logons: &mut std::collections::HashMap<String, (u32, std::time::Instant)>,
 ) -> Option<serde_json::Value> {
     match event_id {
         // Process Creation
@@ -1419,36 +1443,8 @@ fn process_security_event(
                 None
             }
         }
-        // Failed Logon
-        "4625" => {
-            let source_ip = data.get("Source Network Address")
-                .cloned()
-                .unwrap_or_else(|| "unknown".to_string());
-            let entry = failed_logons
-                .entry(source_ip.clone())
-                .or_insert((0, std::time::Instant::now()));
-            entry.0 += 1;
-
-            if entry.0 >= 5 {
-                // Reset counter after alerting
-                entry.0 = 0;
-                entry.1 = std::time::Instant::now();
-                Some(serde_json::json!({
-                    "node_id": node_id,
-                    "event_type": "brute_force_attempt",
-                    "severity": "high",
-                    "details": {
-                        "event_id": 4625,
-                        "source_ip": source_ip,
-                        "failures": "5+ in 60s",
-                        "source": "Security",
-                    },
-                    "timestamp": Utc::now().to_rfc3339(),
-                }))
-            } else {
-                None
-            }
-        }
+        // 4625 (failed logon) is handled by edr::logon_events: it needs record
+        // ids, the target account and a locale-independent format.
         // Service Install
         "4697" => {
             let svc_name = data.get("Service Name")

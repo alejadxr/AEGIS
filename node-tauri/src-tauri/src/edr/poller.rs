@@ -66,6 +66,13 @@ fn poll_once(sys: &mut System, known: &HashSet<u32>) -> (Vec<EdrEvent>, HashSet<
                 extra: serde_json::json!({
                     "source": "tier1_poll",
                     "start_time": proc_.start_time(),
+                    // Lets the server judge the lineage of a process whose
+                    // parent started before the agent (never seen starting).
+                    "parent_path": proc_
+                        .parent()
+                        .and_then(|pp| sys.process(pp))
+                        .and_then(|pp| pp.exe())
+                        .map(|p| p.to_string_lossy().to_string()),
                 }),
             };
             new_events.push(ev);
@@ -160,5 +167,11 @@ mod tests {
         assert!(cmd.contains("30.123"), "command_line was {cmd:?}");
         assert!(ev.process_path.is_some(), "exe missing");
         assert!(ev.user.is_some(), "user missing");
+        let me = std::env::current_exe().unwrap().to_string_lossy().to_string();
+        assert_eq!(
+            ev.extra["parent_path"].as_str(),
+            Some(me.as_str()),
+            "parent_path should be this test binary"
+        );
     }
 }

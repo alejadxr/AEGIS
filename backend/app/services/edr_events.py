@@ -134,10 +134,31 @@ def _timestamp(data: dict) -> str:
     return str(_first(data.get("timestamp"), data.get("at"), datetime.utcnow().isoformat()))
 
 
+def _trust_fields(data: dict) -> dict:
+    """Parent path and the server's trust verdict, only when present.
+
+    `trusted_by` / `trust_reason` / `provisioning` are read from the TOP level
+    only: the ingest routes build that dict themselves, whereas anything an agent
+    sends lands in `details` / `extra`. `parent_path` may also come from the
+    agent's `extra`; the resolver prefers its own record of the parent over it."""
+    extra = data.get("extra") if isinstance(data.get("extra"), dict) else {}
+    out = {}
+    parent_path = _text(_first(data.get("parent_path"), extra.get("parent_path")))
+    if parent_path:
+        out["parent_path"] = parent_path
+    if data.get("trusted_by"):
+        out["trusted_by"] = str(data["trusted_by"])
+        out["trust_reason"] = str(data.get("trust_reason") or "")
+    if data.get("provisioning") is True:
+        out["provisioning"] = True
+    return out
+
+
 def _base(data: dict, details: dict, event_type: str, default_host: str) -> dict:
     """Fields every endpoint event carries, whatever produced it."""
     own_ip = data.get("source_ip")
     return {
+        **_trust_fields(data),
         "event_type": event_type,
         # Endpoint telemetry has no remote attacker: its subject is the HOST.
         # The 127.0.0.1 stamp only keeps source_ip-grouped rules from meeting
