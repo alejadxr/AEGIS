@@ -76,8 +76,29 @@ AEGIS_FIREWALL_SECRET = os.getenv("AEGIS_FIREWALL_SECRET", "").strip()
 # CIDR AEGIS itself considers safe even if AEGIS forwards the request.
 _EXTRA_SAFE_IPS: set[str] = set()
 _safe_ips_env = os.getenv("AEGIS_SAFE_IPS", "")
+# Shared general-purpose cloud space (GCP / Azure customer VMs). Never
+# unconditionally safe: crawlers there are handled by _verify_crawler (published
+# feeds + FCrDNS), and only for behavioural threats. A broad AEGIS_SAFE_IPS
+# entry overlapping these would blind the agent to attackers renting a VM.
+_SHARED_CLOUD_NETS = [
+    ipaddress.ip_network(c) for c in ("34.64.0.0/10", "35.190.0.0/17", "13.66.0.0/17")
+]
+_SHARED_CLOUD_MAX_SAFE_PREFIX = 24  # operator may pin a /24 or narrower
+
+
+def _overlaps_shared_cloud_too_broadly(net) -> bool:
+    return net.prefixlen < _SHARED_CLOUD_MAX_SAFE_PREFIX and any(
+        net.version == c.version and net.overlaps(c) for c in _SHARED_CLOUD_NETS
+    )
+
+
 for _entry in (e.strip() for e in _safe_ips_env.split(",") if e.strip()):
     try:
+        if _overlaps_shared_cloud_too_broadly(ipaddress.ip_network(_entry, strict=False)):
+            print(f"[aegis-firewall] AEGIS_SAFE_IPS: ignoring {_entry!r}: broad shared "
+                  f"cloud range (use /{_SHARED_CLOUD_MAX_SAFE_PREFIX} or narrower; "
+                  "crawlers there are verified via feeds/FCrDNS instead)")
+            continue
         if "/" in _entry:
             _SAFE_NETWORKS.append(ipaddress.ip_network(_entry, strict=False))
         else:

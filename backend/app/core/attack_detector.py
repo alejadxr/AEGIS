@@ -126,6 +126,10 @@ _SAFE_NETWORKS: list = [
 # Twitter/X, Meta/Facebook ASN blocks, Apple 17.0.0.0/8). Ranges intentionally
 # err on the wider side for stability; UA + mega-regex still protect against
 # spoofed crawler UAs from non-crawler IPs.
+#
+# PRECISE ranges only: networks the vendor itself operates and does NOT rent
+# out. Shared general-purpose cloud ranges (GCP / Azure customer space) live in
+# `_SHARED_CLOUD_NETWORKS` below and are only safe conditionally.
 _CRAWLER_NETWORKS: list = [
     _ipaddress.ip_network(_cidr)
     for _cidr in (
@@ -134,22 +138,10 @@ _CRAWLER_NETWORKS: list = [
         "66.102.0.0/20",    # Google secondary (research, feeds, AMP)
         "64.233.160.0/19",  # Google infrastructure
         "216.239.32.0/19",  # Google infrastructure
-        # TRADEOFF (intentional, do NOT narrow): 34.64.0.0/10 is ~4M GCP IPs.
-        # GoogleOther / cloud-hosted crawlers rotate across the whole block,
-        # so a tighter range would let crawler FPs through. We accept the blind
-        # spot: attacks HOSTED on Google Cloud from this /10 will be treated as
-        # safe. Rationale — crawler FP suppression is prioritized over GCP-hosted
-        # attack detection here; real observed attackers came from AWS/DO, not
-        # GCP. If a GCP-hosted attack is ever seen, add its specific /24 to a
-        # denylist checked BEFORE this crawler safelist rather than shrinking
-        # this range.
-        "34.64.0.0/10",     # Google Cloud (GoogleOther / cloud-hosted crawlers)
-        "35.190.0.0/17",    # Google Cloud LB / crawlers
         # --- Microsoft / Bing ---
         "40.77.0.0/16",     # Bingbot
         "157.55.0.0/16",    # Bingbot / MSN
         "207.46.0.0/16",    # Bingbot legacy
-        "13.66.0.0/17",     # Azure-hosted Bing crawlers
         # --- Twitter / X ---
         "199.16.156.0/22",  # Twitterbot / X card fetcher
         "192.133.76.0/22",  # Twitter / X secondary
@@ -167,8 +159,116 @@ _CRAWLER_NETWORKS: list = [
 ]
 
 
+# Shared general-purpose cloud ranges. Crawlers (GoogleOther, Bing on Azure)
+# do run here, but so does every customer who rents a VM -- including the
+# scanners and attackers we most want to see. Previously these were
+# unconditionally safe (a ~4M-IP blind spot). Now an IP in these ranges is safe
+# ONLY when the request's User-Agent claims a known crawler AND forward-confirmed
+# reverse DNS (googlebot.com / google.com / search.msn.com) has verified the IP.
+# Any caller without a UA (EDR, honeypots, chain detector, firewall sync) treats
+# these IPs as NOT safe.
+_SHARED_CLOUD_NETWORKS: list = [
+    _ipaddress.ip_network(_cidr)
+    for _cidr in (
+        "34.64.0.0/10",     # Google Cloud (customer VMs + GoogleOther)
+        "35.190.0.0/17",    # Google Cloud LB / customer VMs
+        "13.66.0.0/17",     # Azure (customer VMs + Bing crawlers)
+    )
+]
+
+# PTR suffixes accepted for FCrDNS. Narrow on purpose: no googleusercontent.com,
+# amazonaws.com, cloudapp.azure.com etc. -- any tenant can obtain those PTRs.
+_CRAWLER_PTR_SUFFIXES = (".googlebot.com", ".google.com", ".search.msn.com")
+_RDNS_TTL_VERIFIED = 6 * 3600.0
+_RDNS_TTL_REJECTED = 15 * 60.0
+_RDNS_TIMEOUT_S = 3.0
+_RDNS_CACHE_MAX = 4096
+_RDNS_INFLIGHT_MAX = 32
+_rdns_cache: dict = {}        # ip -> (verified: bool, expires_monotonic)
+_rdns_inflight: set = set()
+
+
+def _is_shared_cloud_ip(ip: str) -> bool:
+    """True if `ip` is inside a shared cloud range (conditionally safe only)."""
+    if not ip:
+        return False
+    try:
+        addr = _ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return False
+    return any(addr in net for net in _SHARED_CLOUD_NETWORKS)
+
+
+def _fcrdns_verify_blocking(ip: str) -> bool:
+    """Forward-confirmed reverse DNS. BLOCKING -- run via a thread only."""
+    try:
+        host = socket.gethostbyaddr(ip)[0].rstrip(".").lower()
+        if not host.endswith(_CRAWLER_PTR_SUFFIXES):
+            return False
+        want = _ipaddress.ip_address(ip)
+        forward = {_ipaddress.ip_address(i[4][0]) for i in socket.getaddrinfo(host, None)}
+        return want in forward
+    except Exception:
+        return False
+
+
+def _rdns_cached_verdict(ip: str):
+    """Cache-only lookup (no I/O). True/False if known and fresh, else None."""
+    entry = _rdns_cache.get(ip)
+    if entry is None:
+        return None
+    if entry[1] < time.monotonic():
+        _rdns_cache.pop(ip, None)
+        return None
+    return entry[0]
+
+
+async def _rdns_verify_task(ip: str) -> None:
+    try:
+        ok = await asyncio.wait_for(
+            asyncio.to_thread(_fcrdns_verify_blocking, ip), timeout=_RDNS_TIMEOUT_S
+        )
+    except Exception:
+        ok = False
+    finally:
+        _rdns_inflight.discard(ip)
+    if len(_rdns_cache) >= _RDNS_CACHE_MAX:
+        now = time.monotonic()
+        for k in [k for k, v in _rdns_cache.items() if v[1] < now]:
+            _rdns_cache.pop(k, None)
+        while len(_rdns_cache) >= _RDNS_CACHE_MAX:
+            _rdns_cache.pop(next(iter(_rdns_cache)), None)
+    ttl = _RDNS_TTL_VERIFIED if ok else _RDNS_TTL_REJECTED
+    _rdns_cache[ip] = (ok, time.monotonic() + ttl)
+
+
+def _schedule_rdns_verification(ip: str) -> None:
+    """Fire-and-forget FCrDNS for `ip`. Never blocks, never raises."""
+    if ip in _rdns_inflight or len(_rdns_inflight) >= _RDNS_INFLIGHT_MAX:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    _rdns_inflight.add(ip)
+    loop.create_task(_rdns_verify_task(ip))
+
+
+def _is_verified_shared_crawler(ip: str, user_agent: str) -> bool:
+    """True iff `ip` is in a shared cloud range, `user_agent` claims a known
+    crawler, and cached FCrDNS verified the IP. On a cache miss, schedules the
+    verification and returns False (normal detection applies meanwhile)."""
+    if not user_agent or not _is_shared_cloud_ip(ip) or not _check_benign_ua(user_agent):
+        return False
+    verdict = _rdns_cached_verdict(ip)
+    if verdict is None:
+        _schedule_rdns_verification(ip)
+        return False
+    return verdict
+
+
 def _is_crawler_ip(ip: str) -> bool:
-    """True if `ip` falls inside a published crawler/CDN network.
+    """True if `ip` falls inside a PRECISE published crawler/CDN network.
 
     Parse-safe: returns False for malformed input. This is an always-on
     default layer independent of AEGIS_SAFE_IPS.
@@ -208,8 +308,12 @@ _SAFE_NETWORKS.extend(_internal_ips_nets)
 SAFE_IPS = frozenset(_safe_literals) | _auto_ips
 
 
-def _is_safe_ip(ip: str) -> bool:
+def _is_safe_ip(ip: str, user_agent: Optional[str] = None) -> bool:
     """Check if an IP is safe (never block / never create incident).
+
+    Shared cloud ranges (`_SHARED_CLOUD_NETWORKS`) are safe only when the caller
+    supplies a `user_agent` that claims a known crawler and the IP has passed
+    FCrDNS (`_is_verified_shared_crawler`). UA-less callers get False for them.
 
     Safe = literal SAFE_IPS (includes AEGIS_SAFE_IPS + AEGIS_INTERNAL_IPS
     literals), loopback, a private/Tailscale/AEGIS_SAFE_IPS/AEGIS_INTERNAL_IPS
@@ -229,7 +333,9 @@ def _is_safe_ip(ip: str) -> bool:
         return True
     if any(addr in net for net in _SAFE_NETWORKS):
         return True
-    return any(addr in net for net in _CRAWLER_NETWORKS)
+    if any(addr in net for net in _CRAWLER_NETWORKS):
+        return True
+    return bool(user_agent) and _is_verified_shared_crawler(ip, user_agent)
 
 # ---------------------------------------------------------------------------
 # FAST-PATH: paths that skip ALL detection (internal/health endpoints)
@@ -861,15 +967,17 @@ class AttackDetectorMiddleware(BaseHTTPMiddleware):
         if path in SKIP_PATHS:
             return await call_next(request)
 
-        # Skip safe IPs entirely
-        if _is_safe_ip(ip):
+        # Skip safe IPs entirely (shared-cloud IPs need UA + verified rDNS)
+        user_agent = request.headers.get("user-agent", "")
+        if _is_safe_ip(ip, user_agent):
             return await call_next(request)
 
         # v1.6.4: Skip benign-UA bots entirely (crawlers / monitors with
         # rotating IPs that publish stable UAs). Equivalent to a safelist
-        # bypass but matched by User-Agent instead of source IP.
-        user_agent = request.headers.get("user-agent", "")
-        if user_agent and _check_benign_ua(user_agent):
+        # bypass but matched by User-Agent instead of source IP. Not applied to
+        # shared cloud ranges: there a UA is trivially spoofable, and the
+        # verified case was already handled by _is_safe_ip above.
+        if user_agent and _check_benign_ua(user_agent) and not _is_shared_cloud_ip(ip):
             _record_timing(time.perf_counter_ns() - t0)
             return await call_next(request)
 
