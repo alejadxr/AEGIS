@@ -594,67 +594,89 @@ class AIDecisionEngine:
         result["block_confirmed"] = block_confirmed
         result["block_confirmation_reason"] = block_reason
 
+        incident_id = incident.id
         actions = []
         for action_type in recommended:
-            # Resolve the entity this specific action operates on. Handing every
-            # action the source IP dispatched kill_process against an address
-            # and isolate_host against a machine AEGIS does not own.
-            target, skip_reason = resolve_action_target(action_type, alert_data)
-            if target is None:
-                action = await self._create_unsupported_action(
-                    client=client,
-                    action_type=action_type,
-                    reason=skip_reason,
-                    threat_type=threat_type,
-                    db=db,
-                    incident_id=incident.id,
-                )
+            try:
+                # Resolve the entity this specific action operates on. Handing every
+                # action the source IP dispatched kill_process against an address
+                # and isolate_host against a machine AEGIS does not own.
+                target, skip_reason = resolve_action_target(action_type, alert_data)
+                if target is None:
+                    action = await self._create_unsupported_action(
+                        client=client,
+                        action_type=action_type,
+                        reason=skip_reason,
+                        threat_type=threat_type,
+                        db=db,
+                        incident_id=incident_id,
+                    )
+                    actions.append({
+                        "id": action.id,
+                        "type": action.action_type,
+                        "status": action.status,
+                        "requires_approval": action.requires_approval,
+                    })
+                    continue
+
+                reasoning = f"AI recommended {action_type} for {threat_type} threat. {triage.get('summary', '')}"
+
+                # Gate IP-blocking actions on the confirmation verdict. Non-blocking
+                # actions (firewall_rule for XSS, etc.) still follow their policy.
+                if action_type == "block_ip" and not block_confirmed:
+                    logger.warning(
+                        f"GUARDRAIL (ai_engine): withholding auto-block_ip on {target} "
+                        f"— attack NOT confirmed (reason={block_reason}, "
+                        f"threat={threat_type}). Requires operator approval."
+                    )
+                    action = await self._create_pending_block(
+                        client=client,
+                        target=target,
+                        ai_reasoning=(
+                            f"Auto-block WITHHELD (unconfirmed: {block_reason}). "
+                            f"{reasoning}"
+                        ),
+                        db=db,
+                        incident_id=incident_id,
+                        alert_data=alert_data,
+                        severity=triage.get("severity") or alert_data.get("severity"),
+                        threat_type=threat_type,
+                    )
+                else:
+                    action = await guardrail_engine.evaluate_action(
+                        client=client,
+                        action_type=action_type,
+                        target=target,
+                        ai_reasoning=reasoning,
+                        db=db,
+                        incident_id=incident_id,
+                    )
                 actions.append({
                     "id": action.id,
                     "type": action.action_type,
                     "status": action.status,
                     "requires_approval": action.requires_approval,
                 })
-                continue
+            except Exception as exc:
+                # One action that cannot be persisted must not take the incident
+                # down with it: the incident is already committed, so roll back
+                # only the failed action and carry on with the rest.
+                logger.error(
+                    f"Failed to persist action {action_type} for incident "
+                    f"{incident_id}: {exc}"
+                )
+                try:
+                    await db.rollback()
+                    await db.refresh(incident)
+                except Exception:
+                    pass
+                actions.append({
+                    "id": None,
+                    "type": action_type,
+                    "status": "persist_failed",
+                    "requires_approval": False,
+                })
 
-            reasoning = f"AI recommended {action_type} for {threat_type} threat. {triage.get('summary', '')}"
-
-            # Gate IP-blocking actions on the confirmation verdict. Non-blocking
-            # actions (firewall_rule for XSS, etc.) still follow their policy.
-            if action_type == "block_ip" and not block_confirmed:
-                logger.warning(
-                    f"GUARDRAIL (ai_engine): withholding auto-block_ip on {target} "
-                    f"— attack NOT confirmed (reason={block_reason}, "
-                    f"threat={threat_type}). Requires operator approval."
-                )
-                action = await self._create_pending_block(
-                    client=client,
-                    target=target,
-                    ai_reasoning=(
-                        f"Auto-block WITHHELD (unconfirmed: {block_reason}). "
-                        f"{reasoning}"
-                    ),
-                    db=db,
-                    incident_id=incident.id,
-                    alert_data=alert_data,
-                    severity=triage.get("severity") or alert_data.get("severity"),
-                    threat_type=threat_type,
-                )
-            else:
-                action = await guardrail_engine.evaluate_action(
-                    client=client,
-                    action_type=action_type,
-                    target=target,
-                    ai_reasoning=reasoning,
-                    db=db,
-                    incident_id=incident.id,
-                )
-            actions.append({
-                "id": action.id,
-                "type": action.action_type,
-                "status": action.status,
-                "requires_approval": action.requires_approval,
-            })
         result["actions_taken"] = actions
         result["stage"] = "actions_decided"
 

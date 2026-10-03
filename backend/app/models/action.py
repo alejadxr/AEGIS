@@ -13,7 +13,7 @@ class Action(Base, UUIDMixin):
     action_type: Mapped[str] = mapped_column(String(50), nullable=False)
     target: Mapped[Optional[str]] = mapped_column(String(500))
     parameters: Mapped[dict] = mapped_column(JSON, default=dict)
-    status: Mapped[str] = mapped_column(String(20), default="pending")
+    status: Mapped[str] = mapped_column(String(32), default="pending")
     requires_approval: Mapped[bool] = mapped_column(Boolean, default=False)
     approved_by: Mapped[Optional[str]] = mapped_column(String(100))
     ai_reasoning: Mapped[Optional[str]] = mapped_column(Text)

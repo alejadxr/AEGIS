@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.auth import AuthContext, require_admin, require_viewer
+from app.core.firewall_client import firewall_auth_headers
 from app.core.ip_blocker import BLOCKED_IPS_FILE, ip_blocker_service
 from app.database import get_db
 from app.models.action import Action
@@ -284,7 +285,7 @@ async def _fetch_pi_blocked() -> tuple[list[str], bool]:
     if not _PI_BASE:
         return [], False
     try:
-        async with httpx.AsyncClient(timeout=_PI_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_PI_TIMEOUT, headers=firewall_auth_headers()) as client:
             resp = await client.get(f"{_PI_BASE}/blocked")
             resp.raise_for_status()
             data = resp.json()
@@ -398,7 +399,7 @@ async def unblock_ip(
     # Unblock from Pi
     if _PI_BASE:
         try:
-            async with httpx.AsyncClient(timeout=_PI_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=_PI_TIMEOUT, headers=firewall_auth_headers()) as client:
                 resp = await client.delete(f"{_PI_BASE}/block/{normalized}")
                 results["pi"] = {"success": resp.status_code < 300, "status_code": resp.status_code}
         except Exception as exc:

@@ -681,7 +681,8 @@ async def _notify_firewall(ip: str, reason: str):
         return
     try:
         import aiohttp
-        async with aiohttp.ClientSession() as session:
+        from app.core.firewall_client import firewall_auth_headers
+        async with aiohttp.ClientSession(headers=firewall_auth_headers()) as session:
             async with session.post(
                 f"{FIREWALL_URL}/block",
                 json={

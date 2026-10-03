@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12-blue)]()
 [![Docker](https://img.shields.io/badge/docker-compose-blue)]()
-[![Version](https://img.shields.io/badge/version-1.7.16-cyan)]()
+[![Version](https://img.shields.io/badge/version-1.7.17-cyan)]()
 
 [What is AEGIS?](#what-is-aegis) · [Install](#5-minute-install) · [Ransomware Defense](#ransomware-defense-v16) · [Detection](#detection-1111-verified) · [vs Wazuh / OSSEC / Elastic](#aegis-vs-wazuh--ossec--elastic-security) · [Architecture](#architecture) · [Docs](docs/)
 
@@ -280,6 +280,8 @@ cd frontend && npm install && npm run build && npm start
 | `AEGIS_REAL_RECOVERY` | unset | Set to `1` to enable real snapshot restore |
 | `AEGIS_LIVEFIRE` | unset | Set to `1` to run the ransomware emulation harness |
 | `AEGIS_FIREWALL_URL` | unset | Optional remote firewall agent URL |
+| `AEGIS_FIREWALL_SECRET` | unset | Shared secret for the backend <-> firewall agent channel (header `X-AEGIS-FW-Auth`). Set the SAME value in the backend `.env` and in the agent's environment. Unset on the agent = no auth enforced (compat mode). See [firewall-agent/README.md](firewall-agent/README.md) |
+| `AEGIS_FIREWALL_PUBLIC_READ` | `/blocked` | Agent side only: comma-separated GET paths reachable without the secret once it is set. Mutating methods are never public |
 | `AEGIS_MONITORED_APPS` | all PM2 apps | Comma-separated PM2 app names to tail |
 | `AEGIS_EXTRA_LOG_PATHS` | unset | Colon-separated extra log files to tail (globs supported), e.g. a unified web-app feed |
 | `AEGIS_SAFE_IPS` | `127.0.0.1,::1,localhost` | IPs/CIDRs never blocked and never turned into an incident, on **every** detection path. RFC1918, CGNAT/Tailscale (`100.64.0.0/10`) and published crawler CIDRs are folded in unconditionally |
@@ -580,7 +582,7 @@ Paste this block into any HTML landing page <head> to enable rich results.
       "description": "Open-source, self-hosted autonomous cybersecurity defense platform. Detects ransomware, lateral movement, and intrusions in <1 ms using 163 enabled Sigma rules + 4 chain detections. Offline-capable. No cloud AI required.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux, macOS, Windows",
-      "softwareVersion": "1.7.16",
+      "softwareVersion": "1.7.17",
       "datePublished": "2026-05-01",
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "url": "https://github.com/alejadxr/AEGIS",
