@@ -150,9 +150,12 @@ class ActiveResponder:
 
         # 3. System-level firewall (pfctl / iptables) — gated by AEGIS_REAL_FW=1
         try:
-            fw_ok = firewall_local.get_firewall().block(target)
+            _fw = firewall_local.get_firewall()
+            fw_ok = _fw.block(target)
             if fw_ok:
                 fw_logger.info(f"System firewall blocked {target} successfully")
+            elif not getattr(_fw, "available", True):
+                pass  # layer disabled (one warning already logged); no per-block spam
             else:
                 fw_logger.warning(f"System firewall block returned False for {target} (non-fatal)")
         except Exception as e:
@@ -187,9 +190,12 @@ class ActiveResponder:
 
         # System-level unblock — gated by AEGIS_REAL_FW=1
         try:
-            fw_ok = firewall_local.get_firewall().unblock(target)
+            _fw = firewall_local.get_firewall()
+            fw_ok = _fw.unblock(target)
             if fw_ok:
                 fw_logger.info(f"System firewall unblocked {target} successfully")
+            elif not getattr(_fw, "available", True):
+                pass  # layer disabled (one warning already logged)
             else:
                 fw_logger.warning(f"System firewall unblock returned False for {target} (non-fatal)")
         except Exception as e:
