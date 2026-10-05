@@ -31,6 +31,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import Optional
@@ -370,6 +371,23 @@ class LogWatcher:
         # Incident deduplication: (ip, threat_type) -> last_created timestamp
         self._incident_cooldown: dict[str, datetime] = {}
         self._COOLDOWN_SECONDS = 300  # 5 min between incidents for same IP+type
+        # Liveness counters (exposed via /health) so a silently dead tail or
+        # pipeline is visible instead of looking like "no attacks".
+        self._stats = {
+            "lines_read": 0,
+            "lines_processed": 0,
+            "events_published": 0,
+            "tail_restarts": 0,
+            "stall_warnings": 0,
+            "last_line_at": None,
+            "last_event_at": None,
+        }
+        self._tail_paths: list[str] = []
+        self._tail_sizes: dict[str, int] = {}
+        self._unserved_since: Optional[float] = None  # monotonic ts of unread growth
+        self._lines_read_at_check = 0
+        self._STALL_SECONDS = int(os.environ.get("AEGIS_TAIL_STALL_MINUTES", "5")) * 60
+        self._liveness_task: Optional[asyncio.Task] = None
 
     async def start(self):
         if self._running:
@@ -383,11 +401,14 @@ class LogWatcher:
         self._sweep_task = asyncio.create_task(
             self._sweep_loop(), name="log_watcher_sweep"
         )
+        self._liveness_task = asyncio.create_task(
+            self._liveness_loop(), name="log_watcher_liveness"
+        )
         logger.info("Log watcher started")
 
     async def stop(self):
         self._running = False
-        for t in (self._task, self._sweep_task):
+        for t in (self._task, self._sweep_task, self._liveness_task):
             if t and not t.done():
                 t.cancel()
                 try:
@@ -395,6 +416,69 @@ class LogWatcher:
                 except asyncio.CancelledError:
                     pass
         logger.info("Log watcher stopped")
+
+    def liveness(self) -> dict:
+        """Counters + last-activity timestamps for GET /health."""
+        return {
+            **self._stats,
+            "running": self._running,
+            "tail_task_alive": bool(self._task and not self._task.done()),
+            "tailed_files": len(self._tail_paths),
+            "stalled": self._unserved_since is not None
+            and time.monotonic() - self._unserved_since >= self._STALL_SECONDS,
+        }
+
+    def check_liveness(self, now: Optional[float] = None) -> bool:
+        """Return True when tailed files grew but no line was read for
+        AEGIS_TAIL_STALL_MINUTES. Pure bookkeeping; the caller restarts."""
+        now = time.monotonic() if now is None else now
+        grew = False
+        for path in self._tail_paths:
+            try:
+                size = os.stat(path).st_size
+            except OSError:
+                continue
+            prev = self._tail_sizes.get(path)
+            if prev is not None and size > prev:
+                grew = True
+            self._tail_sizes[path] = size
+        read = self._stats["lines_read"]
+        if read != self._lines_read_at_check:
+            self._lines_read_at_check = read
+            self._unserved_since = None
+        elif grew and self._unserved_since is None:
+            self._unserved_since = now
+        return self._unserved_since is not None and now - self._unserved_since >= self._STALL_SECONDS
+
+    async def _liveness_loop(self, interval_s: int = 60):
+        """Warn and restart the tail task if files grow but nothing is read."""
+        while self._running:
+            try:
+                await asyncio.sleep(interval_s)
+                if self.check_liveness():
+                    self._stats["stall_warnings"] += 1
+                    logger.warning(
+                        "log_watcher: tailed files are growing but no line was read for "
+                        f">= {self._STALL_SECONDS // 60} min "
+                        f"(lines_read={self._stats['lines_read']}); restarting tail task"
+                    )
+                    await self._restart_tail()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(f"log_watcher liveness error: {exc}")
+
+    async def _restart_tail(self):
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._task = asyncio.create_task(self._watch_loop(), name="log_watcher")
+        self._stats["tail_restarts"] += 1
+        self._unserved_since = None
+        self._tail_sizes.clear()
 
     async def _sweep_loop(self, interval_s: int = 60):
         """Background idle-key eviction for all per-IP tracker dicts."""
@@ -611,6 +695,8 @@ class LogWatcher:
 
         rotation_check_interval = 30.0
         last_rotation_check = asyncio.get_event_loop().time()
+        self._tail_paths = [h[2] for h in handles]
+        self._tail_sizes.clear()
 
         try:
             while self._running:
@@ -622,6 +708,8 @@ class LogWatcher:
                             break
                         line = line.rstrip("\n").rstrip("\r")
                         if line:
+                            self._stats["lines_read"] += 1
+                            self._stats["last_line_at"] = datetime.utcnow().isoformat()
                             await self._process_line(line, source=app_name)
 
                 await asyncio.sleep(0.5)
@@ -632,9 +720,16 @@ class LogWatcher:
                     for handle in handles:
                         fp, inode, path, app_name, stream_kind = handle
                         try:
-                            new_inode = os.stat(path).st_ino
+                            st = os.stat(path)
+                            new_inode = st.st_ino
                         except OSError:
                             continue
+                        if new_inode == inode and st.st_size < fp.tell():
+                            # copytruncate-style rotation: same inode, shorter
+                            # file. Without this the read offset stays past EOF
+                            # and the tail silently returns nothing forever.
+                            logger.info(f"log_watcher: truncation detected for {path}, rewinding")
+                            fp.seek(0)
                         if new_inode != inode:
                             logger.info(f"log_watcher: rotation detected for {path}, reopening")
                             try:
@@ -648,6 +743,7 @@ class LogWatcher:
                             except Exception as exc:
                                 logger.warning(f"log_watcher: reopen failed for {path}: {exc}")
         finally:
+            self._tail_paths = []
             for handle in handles:
                 try:
                     handle[0].close()
@@ -674,6 +770,7 @@ class LogWatcher:
                port-scan / breadcrumb) — these still create their own
                incidents because they observe ACROSS events.
         """
+        self._stats["lines_processed"] += 1
         # 1) Raw stream for the operator's "Live Log" widget.
         try:
             from app.core.events import event_bus
@@ -723,6 +820,8 @@ class LogWatcher:
             if source_ip and "source_ip" not in payload:
                 payload["source_ip"] = source_ip
             await event_bus.publish("log_event", payload)
+            self._stats["events_published"] += 1
+            self._stats["last_event_at"] = datetime.utcnow().isoformat()
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug(f"event_bus.publish(log_event) failed: {exc}")
 

@@ -3831,6 +3831,9 @@ class CorrelationEngine:
             "chains_triggered": 0,
             "custom_rules": 0,
             "started_at": datetime.utcnow().isoformat(),
+            # Liveness: when the engine last saw an event / last fired a rule.
+            "last_event_at": None,
+            "last_rule_fired_at": None,
         }
         # Lazily imported to avoid circular dependency at module load time
         self._event_bus = None
@@ -4041,6 +4044,7 @@ class CorrelationEngine:
         ts = _now_ts()
         self._window.append((ts, event))
         self._stats["events_processed"] += 1
+        self._stats["last_event_at"] = datetime.utcnow().isoformat()
 
         triggered = []
         # O(1) dispatch: _rules_by_type covers both YAML pack rules and any
@@ -4084,6 +4088,7 @@ class CorrelationEngine:
                 if not rule.get("chain_only", False):
                     triggered.append(rule)
                     self._stats["rules_triggered"] += 1
+                    self._stats["last_rule_fired_at"] = datetime.utcnow().isoformat()
 
                 # Record sigma fire for chain rule evaluation, once per group
                 # field any chain keys on (source_ip, plus e.g. hostname). A

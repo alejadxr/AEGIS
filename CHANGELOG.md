@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.19] - 2026-10-05
+
+### Added — secret-file probing is detected on every tailed app
+- Scanners requesting `/.env`, `/.git/`, `/.aws/`, `/.ssh/`, `wp-config`,
+  `phpinfo` and similar on apps behind the tunnel produced no incident: no rule
+  covered those paths for tailed logs, and the inline detector only runs in the
+  API middleware. In two days, ~270 such probes from five addresses went
+  unrecorded. New rule `sigma_web_sensitive_file_probe` (high) fires on three
+  or more such paths from one source within five minutes.
+
+### Added — detection can no longer fail silently
+- `log_watcher` and the correlation engine count lines read and processed,
+  events published and rules fired, with last-activity timestamps, on
+  `GET /health/detection` and in `/health`.
+- A watchdog restarts the tail task if watched files grow but nothing is read
+  for `AEGIS_TAIL_STALL_MINUTES` (default 5).
+- In-place truncation (copytruncate) now rewinds the read offset.
+
+---
+
 ## [1.7.18] - 2026-10-03
 
 ### Security — attackers on Google Cloud and Azure were invisible
