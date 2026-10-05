@@ -1,0 +1,51 @@
+id: sigma_web_sensitive_file_probe
+name: Sensitive File / Secret Disclosure Probing
+kind: sigma
+severity: high
+enabled: true
+tactics:
+- Reconnaissance
+- Credential Access
+techniques:
+- T1595.003
+- T1552.001
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 3
+  time_window_seconds: 300
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /.env
+    - /.git/
+    - /.git-credentials
+    - /.aws/
+    - /.ssh/
+    - /.npmrc
+    - /.htpasswd
+    - /.ds_store
+    - /wp-config
+    - /phpinfo
+    - /info.php
+    - /secrets.json
+    - /credentials
+    - /config.php
+    - /docker-compose.yml
+    - /database.sql
+    - /vendor/composer/installed.json
+    - /wp-content/debug.log
+    - /server-status
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  A single source requested several well-known secret / configuration /
+  VCS paths (.env, .git, cloud credentials, phpinfo, SQL dumps) within five
+  minutes. This is automated credential-harvesting recon; the web-log pipeline
+  had no rule for it, so dozens of such scanners went undetected (the inline
+  attack_detector only sees traffic hitting the API itself, not tailed app
+  logs). Three hits are required so one stray /.env or favicon-style request
+  does not raise an incident on its own.

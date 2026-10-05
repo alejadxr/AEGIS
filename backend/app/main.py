@@ -1004,6 +1004,27 @@ async def health():
         "version": __version__,
         "environment": settings.AEGIS_ENV,
         "ai_mode": _ai_mode.value,
+        "detection": {
+            **log_watcher.liveness(),
+            "rules_triggered": correlation_engine.stats().get("rules_triggered"),
+            "last_rule_fired_at": correlation_engine.stats().get("last_rule_fired_at"),
+        },
+    }
+
+
+@app.get("/health/detection")
+async def health_detection():
+    """Detection-pipeline liveness: tail -> events -> rules, with last-activity times."""
+    lw = log_watcher.liveness()
+    ce = correlation_engine.stats()
+    return {
+        "status": "degraded" if (lw["stalled"] or not lw["tail_task_alive"]) else "healthy",
+        "log_watcher": lw,
+        "correlation": {
+            k: ce.get(k)
+            for k in ("events_processed", "rules_triggered", "chains_triggered",
+                      "last_event_at", "last_rule_fired_at", "rules_enabled")
+        },
     }
 
 
