@@ -939,12 +939,12 @@ def _asn_reputation(asn: str | None) -> dict[str, Any]:
 # Behavioral fingerprint (from local aegis-feed.jsonl)
 # ---------------------------------------------------------------------------
 
-_FEED_PATH_DEFAULT = "/Users/operator/web-logs/aegis-feed.jsonl"
+_FEED_PATH_DEFAULT = "~/web-logs/aegis-feed.jsonl"
 _FEED_MAX_BYTES = 8 * 1024 * 1024  # tail last 8 MB
 
 
 def _feed_path() -> Path:
-    return Path(os.environ.get("AEGIS_FEED_PATH", _FEED_PATH_DEFAULT))
+    return Path(os.environ.get("AEGIS_FEED_PATH", _FEED_PATH_DEFAULT)).expanduser()
 
 
 def _read_feed_tail(path: Path, max_bytes: int = _FEED_MAX_BYTES) -> list[str]:

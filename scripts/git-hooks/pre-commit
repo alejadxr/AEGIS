@@ -9,6 +9,11 @@
 # Install:  git config core.hooksPath scripts/git-hooks
 # Bypass:   git commit --no-verify   (only when you have actually checked)
 #
+# Private patterns: this file is public, so it cannot name YOUR infrastructure.
+# Put extra regexes/literals (one per line, '#' comments) in the untracked file
+# $HOME/.aegis-private-patterns (chmod 600). They are matched against staged
+# additions exactly like INFRA_RE. Missing file = skipped silently.
+#
 # NOTE ON STYLE: findings are accumulated with command substitution, never via
 # `grep ... | while read`. A while loop on the right of a pipe runs in a
 # SUBSHELL, so any flag it sets is discarded when the subshell exits — the
@@ -31,16 +36,32 @@ INFRA_RE='/Users/(alejandxr)|/home/diego|somoswilab\.com|100\.(8[0-9]|9[0-9]|1[0
 # between "our network" and "an indicator of compromise".
 ALLOW_RE='example|placeholder|your_|<USER>|<user>|xxx|dummy|getenv|environ|process\.env|\$\{|CHANGELOG|169\.254\.169\.254|100\.100\.100\.200|metadata\.google\.internal'
 
+# Local, untracked patterns (real IPs, hostnames, emails). Never committed.
+PRIV_FILE="${AEGIS_PRIVATE_PATTERNS:-$HOME/.aegis-private-patterns}"
+PRIV_RE=""
+if [ -r "$PRIV_FILE" ]; then
+  PRIV_RE=$(grep -vE '^[[:space:]]*(#|$)' "$PRIV_FILE" | paste -sd'|' - || true)
+fi
+
 for f in $staged; do
   [ -f "$f" ] || continue
-  case "$f" in scripts/git-hooks/*|CHANGELOG.md) continue;; esac
+  case "$f" in scripts/git-hooks/*) continue;; esac
   content=$(git show ":$f" 2>/dev/null) || continue
 
-  hit=$(printf '%s' "$content" | grep -nIE "$CRED_RE" 2>/dev/null | grep -viE "$ALLOW_RE" | head -2)
-  [ -n "$hit" ] && findings+="  SECRETO  $f"$'\n'"$hit"$'\n'
+  # CHANGELOG legitimately narrates infra history; it skips the generic
+  # checks but is still scanned for the local private patterns below.
+  if [ "$f" != "CHANGELOG.md" ]; then
+    hit=$(printf '%s' "$content" | grep -nIE "$CRED_RE" 2>/dev/null | grep -viE "$ALLOW_RE" | head -2)
+    [ -n "$hit" ] && findings+="  SECRETO  $f"$'\n'"$hit"$'\n'
 
-  hit=$(printf '%s' "$content" | grep -nIE "$INFRA_RE" 2>/dev/null | grep -viE "$ALLOW_RE" | head -2)
-  [ -n "$hit" ] && findings+="  INFRA    $f"$'\n'"$hit"$'\n'
+    hit=$(printf '%s' "$content" | grep -nIE "$INFRA_RE" 2>/dev/null | grep -viE "$ALLOW_RE" | head -2)
+    [ -n "$hit" ] && findings+="  INFRA    $f"$'\n'"$hit"$'\n'
+  fi
+
+  if [ -n "$PRIV_RE" ]; then
+    hit=$(printf '%s' "$content" | grep -nIE "$PRIV_RE" 2>/dev/null | head -2)
+    [ -n "$hit" ] && findings+="  PRIVADO-LOCAL  $f (patron de ~/.aegis-private-patterns)"$'\n'"$hit"$'\n'
+  fi
 done
 
 priv=$(printf '%s\n' "$staged" | grep -E '^pi-deploy/(sid-backend|wilabia-backend|landing-wilab|sable)/|^docs/superpowers/|^investigations/|^\.agents/|^deploy\.(py|sh)$' || true)

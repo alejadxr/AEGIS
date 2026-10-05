@@ -30,7 +30,7 @@ def test_is_lookupable_public_ip():
 
 
 def test_is_lookupable_internal_skips():
-    for ip in ("127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "100.64.0.3"):
+    for ip in ("127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "100.64.0.10"):
         assert _is_lookupable(ip) is False, f"{ip} should be skipped"
 
 

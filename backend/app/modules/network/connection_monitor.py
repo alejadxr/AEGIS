@@ -8,7 +8,7 @@ WHY THIS EXISTS (and why it is not ndr_lite)
 `ndr_lite` and `dns_monitor` in this package are both inert on the Mac Pro:
 
   * ndr_lite's only data source is `psutil.net_connections()`, which on macOS
-    requires root. cayde6-api runs under PM2 as `alejandxr` (uid 501), so both
+    requires root. cayde6-api runs under PM2 as an unprivileged user (uid 501), so both
     the `kind="inet"` call and its `kind="tcp"` fallback raise AccessDenied and
     `_snapshot_connections()` returns before taking a sample — every 5s,
     forever. Verified against prod. `host_monitor`'s own network section

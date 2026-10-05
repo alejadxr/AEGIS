@@ -35,7 +35,7 @@
  * ============================================================================
  * DEPLOY (operator runs this — do NOT auto-apply):
  *   pm2 delete cayde6-api cayde6-frontend
- *   pm2 start /Users/operator/Cayde-6/ecosystem.config.js
+ *   pm2 start ~/Cayde-6/ecosystem.config.js
  *   pm2 save
  * ============================================================================
  *
@@ -43,9 +43,9 @@
  * the app (pydantic-settings). Only non-secret operational flags are set below.
  */
 
-// Absolute prod root on Mac Pro (macOS, user `alejandxr`). NOT /root/... —
+// Absolute prod root on Mac Pro (macOS). NOT /root/... —
 // the diagnosis assumed a Linux layout; the real prod host is macOS.
-const AEGIS_ROOT = "/Users/operator/Cayde-6";
+const AEGIS_ROOT = process.env.AEGIS_ROOT || require("path").join(require("os").homedir(), "Cayde-6");
 
 module.exports = {
   apps: [
