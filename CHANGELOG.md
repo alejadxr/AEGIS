@@ -993,7 +993,7 @@ benign traffic on its own merits.
 Hotfix on top of v1.6.3.5. Two root-cause defects identified by operator review.
 
 ### Root cause #1 — Operator's ISP was missing from safelist
-- WHOIS verified that `203.0.113.10` belongs to `Compañía Dominicana de Teléfonos S.A.` (a residential ISP/a residential ISP) with CIDR allocation `203.0.113.0/24`. Same ISP as the previously-safelisted `152.166.0.0/16` and `190.166.0.0/16`. The v1.6.3.5 audit conservatively classified this IP as "real attacker, keep blocked" based purely on the 1428-incident volume, without WHOIS verification.
+- WHOIS verified that `203.0.113.10` belongs to `a residential ISP` with CIDR allocation `203.0.113.0/24`. Same ISP as the previously-safelisted `152.166.0.0/16` and `190.166.0.0/16`. The v1.6.3.5 audit conservatively classified this IP as "real attacker, keep blocked" based purely on the 1428-incident volume, without WHOIS verification.
 - `203.0.113.0/24` (entire a residential ISP residential allocation) appended to `AEGIS_SAFE_IPS`.
 - `203.0.113.10` removed from Mac Pro `blocked_ips.txt` and Pi `/blocked`. `threat_intel.firewall` entry purged.
 - 1437 incidents re-prefixed `[FP-USER-DEVICE-179]` (was `[FP-DEDUP-SSH]`).
@@ -1028,7 +1028,7 @@ incident back to its root cause. Closes 1431+ false-positive incidents and
 adds 4 code-level safelist gates that were leaking events to the database.
 
 ### Headline numbers
-- **0 IPs unblocked** — all 39 currently-enforced blocks are confirmed real attackers (a residential ISP botnet `203.0.113.10`, Tor exits, SSH brute farms, exploit-scanning VPS).
+- **0 IPs unblocked** — all 39 currently-enforced blocks are confirmed real attackers (residential botnet `203.0.113.10`, Tor exits, SSH brute farms, exploit-scanning VPS).
 - **1431 FP incidents resolved** with audit-trail prefixes (`[FP-DEDUP-SSH]` for 1428 dedup artifacts from `203.0.113.10`, `[FP-CRAWLER-TWITTER]` for 3 Twitter/X crawler events).
 - **11 new CIDR ranges** added to `AEGIS_SAFE_IPS` covering Bingbot /16, Meta CDN /16, Cloudflare edge, Twitter API, Google secondary ranges, LinkedIn Australia.
 - **15 new crawler User-Agent substrings** added to `BENIGN_UAS` (Threadsbot, meta-externalagent, GoogleOther, Google-Extended, GPTBot, ClaudeBot, PerplexityBot, anthropic-ai, CCBot, ImagesiftBot, BingPreview, WhatsApp, FacebookBot, Slack-ImgProxy, Applebot-Extended).
@@ -1085,7 +1085,7 @@ and a stale light-mode default that masked the v1.6.3.2 warm-charcoal theme.
 
 ### Operational
 - `/health` reports `version=1.6.3.4`.
-- `/dashboard` verified via Playwright against the production deployment at `http://100.64.0.1:3007` (single hero, single set of stat labels, cartographic map renders, login attempts dots visible, no console `width(-1)` errors).
+- `/dashboard` verified via Playwright against the production deployment at `http://<server-host>:3007` (single hero, single set of stat labels, cartographic map renders, login attempts dots visible, no console `width(-1)` errors).
 - `/dashboard/ransomware` no longer 404s on the three previously-missing endpoints.
 
 ---

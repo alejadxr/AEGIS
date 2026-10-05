@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     # Extra log paths to tail in addition to PM2 stdout/stderr.
     # Colon-separated, supports glob patterns. Used to point AEGIS at the
     # unified aegis-feed.jsonl that web apps write to.
-    # Example: AEGIS_EXTRA_LOG_PATHS=/Users/operator/web-logs/aegis-feed.jsonl
+    # Example: AEGIS_EXTRA_LOG_PATHS=/Users/example/web-logs/aegis-feed.jsonl
     AEGIS_EXTRA_LOG_PATHS: str = ""
 
     # Attacker allow-list — comma-separated IPs that bypass the internal-IP

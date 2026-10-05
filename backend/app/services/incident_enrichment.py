@@ -45,6 +45,9 @@ def _enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+_CGNAT_V4 = ipaddress.ip_network("100.64.0.0/10")
+
+
 def _is_lookupable(ip: str | None) -> bool:
     """Skip enrichment for private/loopback/CGNAT — ip_intel filters them too,
     but doing it here avoids spawning unnecessary tasks."""
@@ -52,6 +55,8 @@ def _is_lookupable(ip: str | None) -> bool:
         return False
     try:
         addr = ipaddress.ip_address(ip)
+        if addr.version == 4 and addr in _CGNAT_V4:
+            return False  # Tailscale/RFC6598: not is_private on Python 3.13+
         return not (addr.is_loopback or addr.is_private or addr.is_link_local)
     except (ValueError, TypeError):
         return False
