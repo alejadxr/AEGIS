@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.21] - 2026-10-09 (no more CPU bursts)
+
+v1.7.20 fixed the memory leak on endpoint uploads; the API still showed
+30-45 s bursts at 100% CPU every few minutes. Two more causes, both fixed.
+
+### Fixed — chain evaluation reloaded the process index for every event
+- The in-process host monitor emits ~30 process events a minute and each
+  one reloaded up to 5000 rows. A bounded per-agent process index is now
+  kept in memory, loaded once and refreshed on a TTL or a rate-limited miss.
+  300 events: 300 loads and 17.5 s before, 1 load and 0.07 s after.
+
+### Fixed — rewritten logs were replayed from the start
+- An access logger that trims its file by rewriting it in place made the
+  tail replay megabytes of already-processed lines, flooding the event
+  queue. The tail now works on true byte offsets and resumes right after the
+  last processed line on any truncation or rotation. Text-mode `tell()`
+  (an opaque cookie on multi-byte UTF-8) is no longer used for this check.
+
+### Result in production
+- 20 minutes after deploy: no CPU bursts, memory flat at ~400 MB, zero
+  queue overflows, and a real log rewrite resumed at the right byte.
+
+---
+
 ## [1.7.20] - 2026-10-09
 
 ### Fixed — the API leaked memory and CPU under endpoint telemetry
