@@ -1,6 +1,6 @@
 {
   "name": "aegis-desktop-tauri",
-  "version": "1.7.19",
+  "version": "1.7.20",
   "private": true,
   "scripts": {
     "dev": "tauri dev",
