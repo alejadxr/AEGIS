@@ -69,6 +69,24 @@ _KNOWN_SAFE_IPS = frozenset({
 # Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
 from app.config import settings as _settings
 
+
+def _is_truncated(fp, inode: int, st) -> bool:
+    """True if the file behind ``fp`` was truncated in place (same inode, shrunk).
+
+    ``fp`` is a text-mode file: its ``tell()`` is an opaque cookie that can
+    exceed the file size on multi-byte UTF-8 content, so it must not be compared
+    with ``st_size``. The OS-level position of the descriptor is a real byte
+    offset (bytes consumed by the buffered reader), which is only greater than
+    the size when the file really shrank.
+    """
+    if st.st_ino != inode:
+        return False
+    try:
+        pos = os.lseek(fp.fileno(), 0, os.SEEK_CUR)
+    except (OSError, ValueError):
+        return False
+    return st.st_size < pos
+
 # Import the canonical safe-IP gate. `_SAFE_NETWORKS` (RFC1918 + CGNAT/
 # Tailscale, plus any CIDRs an operator added via AEGIS_SAFE_IPS or
 # AEGIS_INTERNAL_IPS) and `_is_safe_ip` both live in attack_detector.py --
@@ -724,7 +742,7 @@ class LogWatcher:
                             new_inode = st.st_ino
                         except OSError:
                             continue
-                        if new_inode == inode and st.st_size < fp.tell():
+                        if _is_truncated(fp, inode, st):
                             # copytruncate-style rotation: same inode, shorter
                             # file. Without this the read offset stays past EOF
                             # and the tail silently returns nothing forever.
