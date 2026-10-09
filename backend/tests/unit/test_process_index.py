@@ -17,6 +17,14 @@ from app.models.endpoint_agent import (
 )
 from app.services.process_tree import ProcessIndex, compute_tree
 
+@pytest.fixture(autouse=True)
+def _fresh_process_cache():
+    from app.services import process_tree
+    process_tree.reset_cache()
+    yield
+    process_tree.reset_cache()
+
+
 AGENT = "agent-px-1"
 CLIENT = "client-px-1"
 NOW = datetime.utcnow()
@@ -188,6 +196,9 @@ def _run_ingest(monkeypatch, payload, seed_n):
         )
         monkeypatch.setattr(edr_transport, "event_bus", _Bus())
         monkeypatch.setattr(edr_api, "event_bus", _Bus())
+        # Deployed .env may configure trusted parents; that path runs its own
+        # parent-lookup query on agent_events, which is not the index load.
+        monkeypatch.setattr(edr_api, "trust_configured", lambda: False)
 
         async def spy(db, agent, ev, fetch):
             seen[ev["pid"]] = [a["pid"] for a in await fetch(int(ev["pid"]))]
