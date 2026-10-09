@@ -13,6 +13,36 @@ concurrency:
 
 jobs:
   # ------------------------------------------------------------------
+  # Public-repo guard (server side, cannot be skipped from a laptop)
+  #
+  # This repository is public. The pre-commit hook is local config
+  # (core.hooksPath is never cloned) and `git commit --no-verify` skips it, so
+  # on its own it cannot stop a leak. This job re-runs the same checks against
+  # the tracked tree on the runner. It reads only the checked-out commit (no
+  # history scan), so it finishes in a couple of seconds. It fails when any of
+  # these is tracked:
+  #   - an agent/assistant file: CLAUDE.md, AGENTS.md, MEMORY.md, GEMINI.md
+  #     (any depth, any letter case), anything under a .claude/ directory, or
+  #     .claude.json
+  #   - a real env file: .env or .env.* (only *.example templates are allowed)
+  #   - an infrastructure identifier SHAPE: a home path (/Users/<name>/,
+  #     /home/<name>/), a Tailscale-range host address (100.64.0.0/10), or a
+  #     non-default 192.168.x.y LAN address
+  # The shapes and the allow-list of documentation values live in
+  # scripts/git-hooks/pre-commit (one definition for the hook and for CI); the
+  # failure output names each offending path and line and says what to remove.
+  # This file stays free of real identifiers: specific names live only in each
+  # maintainer's untracked ~/.aegis-private-patterns.
+  # ------------------------------------------------------------------
+  public-repo-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Refuse private files and infrastructure identifiers
+        run: bash scripts/git-hooks/pre-commit --tracked
+
+  # ------------------------------------------------------------------
   # Lint backend (ruff)
   # ------------------------------------------------------------------
   lint-backend:

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.20] - 2026-10-09
+
+### Fixed — the API leaked memory and CPU under endpoint telemetry
+- Every event in an EDR batch (up to 5000) rebuilt the process tree with a
+  query that loaded up to 5000 full rows and kept them in the request's
+  database session. With a busy endpoint the API grew from 0.5 GB to 2-5 GB
+  within minutes at 100% CPU and was restarted by its process manager over
+  200 times in a day. The process index is now built once per batch from a
+  column-only query and updated in memory; ancestry lookups never hit the
+  database. A 2000-event batch went from minutes to under a second in tests;
+  in production memory stays flat at ~400 MB.
+
+### Changed — the public-repo guard
+- The pre-commit hook blocks agent and environment files by name (even with
+  `git add -f`), uses shape-only patterns, reads operator-specific patterns
+  from an untracked local file, and covers the full 100.64.0.0/10 range. A CI
+  job runs the same checks on the tracked tree, so a clone without the hook or
+  a `--no-verify` commit still fails the build.
+
+---
+
 ## [1.7.19] - 2026-10-05
 
 ### Added — secret-file probing is detected on every tailed app

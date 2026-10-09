@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AEGIS pre-commit secret guard.
+# AEGIS public-repo guard.
 #
 # This repo is public. It has already leaked a sudo password (2 months, 7 forks)
 # and ~820 lines of unrelated private projects, both because a .gitignore rule
@@ -7,69 +7,239 @@
 # control; this hook is the enforcement.
 #
 # Install:  git config core.hooksPath scripts/git-hooks
+#           (hooksPath is LOCAL config: a fresh clone does not have it, so run
+#           that line once per clone. CI re-runs this script as a backstop.)
 # Bypass:   git commit --no-verify   (only when you have actually checked)
+# Audit:    scripts/git-hooks/pre-commit --tracked
+#           Checks the whole tracked tree instead of the staged diff. CI runs
+#           this form, so a `--no-verify` commit or a clone without the hook
+#           still fails the build.
+#
+# What it enforces, in order of strictness:
+#   1. FILENAME GATE. Agent/assistant instruction files (CLAUDE.md, AGENTS.md,
+#      MEMORY.md, GEMINI.md, anything under .claude/, .claude.json) and real
+#      env files (.env, .env.*, except *.example) are refused by NAME, at any
+#      depth, case-insensitively. Content is never consulted, so `git add -f`
+#      cannot launder them and "the file looks clean" is not a way through.
+#   2. Private project paths (other products / internal docs).
+#   3. Credentials and infrastructure SHAPES in file content (see INFRA_RE).
+#   4. Your own literal identifiers from ~/.aegis-private-patterns (below).
 #
 # Private patterns: this file is public, so it cannot name YOUR infrastructure.
-# Put extra regexes/literals (one per line, '#' comments) in the untracked file
-# $HOME/.aegis-private-patterns (chmod 600). They are matched against staged
-# additions exactly like INFRA_RE. Missing file = skipped silently.
+# It only knows SHAPES (a home path, a Tailscale-range address); the actual
+# usernames, hostnames, domains, IPs and ISP names live, one regex or literal
+# per line ('#' comments), in the untracked file $HOME/.aegis-private-patterns
+# (chmod 600). They are matched against staged additions exactly like INFRA_RE.
+# Missing file = skipped silently; a file with an invalid regex = commit refused
+# (a bad pattern must never silently turn the private checks off).
 #
 # NOTE ON STYLE: findings are accumulated with command substitution, never via
 # `grep ... | while read`. A while loop on the right of a pipe runs in a
 # SUBSHELL, so any flag it sets is discarded when the subshell exits — the
 # first version of this hook printed its findings and then exited 0, detecting
-# everything and blocking nothing.
+# everything and blocking nothing. File lists are read with `done < <(...)`
+# (NUL-delimited, so paths with spaces are scanned instead of silently skipped).
 set -uo pipefail
+export LC_ALL=C   # byte semantics: odd encodings must not make grep error out (= silently pass)
 
-staged=$(git diff --cached --name-only --diff-filter=ACM)
-[ -z "$staged" ] && exit 0
+MODE=staged
+case "${1:-}" in
+  "") ;;
+  --tracked) MODE=tracked ;;
+  *) echo "usage: pre-commit [--tracked]" >&2; exit 2 ;;
+esac
 
-findings=""
-
-CRED_RE='(echo[[:space:]]+[0-9]{4,}[[:space:]]*\||sshpass|BEGIN [A-Z ]*PRIVATE KEY|(password|passwd|secret|api[_-]?key|token)[[:space:]]*[:=][[:space:]]*['"'"'"][^'"'"'"]{8,}['"'"'"])'
-INFRA_RE='/Users/(alejandxr)|/home/diego|somoswilab\.com|100\.(8[0-9]|9[0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}'
-# Well-known PUBLIC addresses that legitimately appear in detection rules and
-# IOC lists. 169.254.169.254 is the cloud metadata endpoint; 100.100.100.200 is
-# Alibaba's, which falls numerically inside Tailscale's 100.64.0.0/10 CGNAT
-# block and therefore trips the infra regex. Blocking those would mean this
-# repo could never carry an SSRF rule — the guard has to know the difference
-# between "our network" and "an indicator of compromise".
-ALLOW_RE='example|placeholder|your_|<USER>|<user>|xxx|dummy|getenv|environ|process\.env|\$\{|CHANGELOG|169\.254\.169\.254|100\.100\.100\.200|metadata\.google\.internal'
-
-# Local, untracked patterns (real IPs, hostnames, emails). Never committed.
-PRIV_FILE="${AEGIS_PRIVATE_PATTERNS:-$HOME/.aegis-private-patterns}"
-PRIV_RE=""
-if [ -r "$PRIV_FILE" ]; then
-  PRIV_RE=$(grep -vE '^[[:space:]]*(#|$)' "$PRIV_FILE" | paste -sd'|' - || true)
+if [ "$MODE" = tracked ]; then
+  list_paths() { git ls-files -z; }
+else
+  # --no-renames: a rename is reported as delete+add, so the new path is gated
+  # and its content scanned (plain ACM skipped renamed files entirely).
+  list_paths() { git diff --cached --name-only -z --no-renames --diff-filter=ACMT; }
 fi
 
-for f in $staged; do
-  [ -f "$f" ] || continue
-  case "$f" in scripts/git-hooks/*) continue;; esac
-  content=$(git show ":$f" 2>/dev/null) || continue
+names=$(list_paths | tr '\0' '\n')
+[ -z "$names" ] && exit 0
 
-  # CHANGELOG legitimately narrates infra history; it skips the generic
-  # checks but is still scanned for the local private patterns below.
-  if [ "$f" != "CHANGELOG.md" ]; then
-    hit=$(printf '%s' "$content" | grep -nIE "$CRED_RE" 2>/dev/null | grep -viE "$ALLOW_RE" | head -2)
-    [ -n "$hit" ] && findings+="  SECRETO  $f"$'\n'"$hit"$'\n'
+findings=""
+note() { findings+="$1"$'\n'; }
+if [ "$MODE" = tracked ]; then
+  L_FORBID="FORBIDDEN FILE"; L_SECRET="SECRET"; L_PRIV="PRIVATE"; L_PRIVLOCAL="PRIVATE-LOCAL"
+else
+  L_FORBID="ARCHIVO PROHIBIDO"; L_SECRET="SECRETO"; L_PRIV="PRIVADO"; L_PRIVLOCAL="PRIVADO-LOCAL"
+fi
+indent() { sed 's/^/    /'; }
 
-    hit=$(printf '%s' "$content" | grep -nIE "$INFRA_RE" 2>/dev/null | grep -viE "$ALLOW_RE" | head -2)
-    [ -n "$hit" ] && findings+="  INFRA    $f"$'\n'"$hit"$'\n'
+# ---------------------------------------------------------------------------
+# Patterns
+# ---------------------------------------------------------------------------
+# Filename gate. Matched case-insensitively against the full path.
+AGENT_RE='(^|/)(claude|agents|memory|gemini)\.md$|(^|/)claude\.local\.md$|(^|/)\.claude(/|$)|(^|/)\.claude\.json$'
+ENV_RE='(^|/)\.env(\..+)?$'
+ENV_OK_RE='(^|/)\.env(\..+)?\.example$'
+# Other projects' source and internal docs that .gitignore also lists.
+PRIVPATH_RE='^pi-deploy/(sid-backend|wilabia-backend|landing-wilab|sable)/|^docs/superpowers/|^investigations/|^\.agents/|^deploy\.(py|sh)$'
+
+CRED_RE='(echo[[:space:]]+[0-9]{4,}[[:space:]]*\||sshpass|BEGIN [A-Z ]*PRIVATE KEY|(password|passwd|secret|api[_-]?key|token)[[:space:]]*[:=][[:space:]]*['"'"'"][^'"'"'"]{8,}['"'"'"])'
+
+# Infrastructure SHAPES only. Nothing here may name a real user, host or domain:
+# the specific literals belong in ~/.aegis-private-patterns.
+#   /Users/<name>/ and /home/<name>/   an operator's home path (any account)
+#   100.64.0.0/10 host addresses       Tailscale/CGNAT: second octet 64-127
+#   192.168.<n>.<m>, n not 0 or 1      a real lab LAN. 192.168.0.x / 192.168.1.x
+#                                      are the factory-default subnets and fill
+#                                      docs and tests, so they stay legal.
+INFRA_RE='/Users/[A-Za-z][A-Za-z0-9_.-]{2,}/|/home/[A-Za-z][A-Za-z0-9_.-]{2,}/|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}|192\.168\.([2-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.[0-9]{1,3}'
+
+# Lines matching ALLOW_RE are exempt from the credential and infra checks.
+# - Well-known PUBLIC addresses that legitimately appear in detection rules and
+#   IOC lists. 169.254.169.254 is the cloud metadata endpoint; 100.100.100.200 is
+#   Alibaba's, which falls numerically inside Tailscale's CGNAT block and therefore
+#   trips the infra regex. Blocking those would mean this repo could never carry an
+#   SSRF rule — the guard has to know the difference between "our network" and "an
+#   indicator of compromise".
+# - Placeholders: `your_api_key`, `your-api-key-here`, "example", "dummy", ...
+# - A fixture the regexes cannot recognise can carry a `# pragma: allowlist secret`
+#   comment instead of getting a regex hole.
+ALLOW_RE='example|placeholder|your[_-]|<USER>|<user>|xxx|dummy|getenv|environ|process\.env|\$\{|allowlist secret|169\.254\.169\.254|100\.100\.100\.200|metadata\.google\.internal'
+
+# Documentation values that match an INFRA shape but name nothing real. They are
+# removed from a hit line and the line is re-tested, so a line that ALSO carries
+# a real identifier is still caught.
+#   100.64.0.x (+ the /10 range itself)  documentation block for tailnet hosts
+#   100.100.1.1, 100.64.1.2              fixed fixtures used by the test suite
+#   /Users|home/<generic>/               placeholder accounts, not people
+#   /Users/admin/.ssh/                   fixture path in the chain-rule tests
+# (The fixed-fixture expression is listed twice on purpose: each match also
+# consumes the character after it, so two such values separated by one character
+# need a second pass.)
+benign_strip() {
+  sed -E \
+    -e 's#(^|[^0-9.])100\.64\.0\.[0-9]{1,3}(/[0-9]{1,2})?#\1_#g' \
+    -e 's#(^|[^0-9.])(100\.100\.1\.1|100\.64\.1\.2)($|[^0-9])#\1_\3#g' \
+    -e 's#(^|[^0-9.])(100\.100\.1\.1|100\.64\.1\.2)($|[^0-9])#\1_\3#g' \
+    -e 's#/(Users|home)/(example|operator|user|jdoe|dev|runner|Shared)/#/_/#g' \
+    -e 's#/Users/admin/\.ssh/#/_/#g'
+}
+
+# stdin: `grep -n` hits (N:text). Keeps a hit only if INFRA_RE still matches once
+# documentation values are removed. (A pipe-fed loop is fine here: it only writes
+# to stdout and sets no flags — see NOTE ON STYLE.)
+infra_filter() {
+  local l
+  while IFS= read -r l; do
+    if printf '%s\n' "${l#*:}" | benign_strip | grep -qE "$INFRA_RE"; then
+      printf '%s\n' "$l"
+    fi
+  done
+}
+
+# Local, untracked patterns (real IPs, hostnames, usernames, ISPs). Never committed.
+PRIV_FILE="${AEGIS_PRIVATE_PATTERNS:-${HOME:-/nonexistent}/.aegis-private-patterns}"
+PRIV_RE=""
+if [ -r "$PRIV_FILE" ]; then
+  PRIV_RE=$(tr -d '\r' < "$PRIV_FILE" | grep -vE '^[[:space:]]*(#|$)' | paste -sd'|' - || true)
+  if [ -n "$PRIV_RE" ]; then
+    printf '' | grep -E "$PRIV_RE" >/dev/null 2>&1
+    if [ $? -ge 2 ]; then
+      echo "pre-commit: $PRIV_FILE contains an invalid regex; refusing to run with the private checks silently off." >&2
+      exit 1
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 1. Filename gate — decided by NAME alone; content cannot satisfy it.
+# ---------------------------------------------------------------------------
+bad_agent=$(printf '%s\n' "$names" | grep -iE "$AGENT_RE" || true)
+bad_env=$(printf '%s\n' "$names" | grep -iE "$ENV_RE" | grep -viE "$ENV_OK_RE" || true)
+bad_priv=$(printf '%s\n' "$names" | grep -E "$PRIVPATH_RE" || true)
+
+if [ -n "$bad_agent" ]; then
+  note "  $L_FORBID (agent/assistant file: never public, not even with 'git add -f'):"
+  note "$(printf '%s\n' "$bad_agent" | indent)"
+fi
+if [ -n "$bad_env" ]; then
+  note "  $L_FORBID (real env file; only *.example templates may be tracked):"
+  note "$(printf '%s\n' "$bad_env" | indent)"
+fi
+if [ -n "$bad_priv" ]; then
+  note "  $L_PRIV  other project / internal doc:"
+  note "$(printf '%s\n' "$bad_priv" | indent)"
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Content checks
+# ---------------------------------------------------------------------------
+tmp=$(mktemp "${TMPDIR:-/tmp}/aegis-guard.XXXXXX") || exit 1
+trap 'rm -f "$tmp"' EXIT
+
+# Which files get the (slow, per-file) content pass. Staged mode: all of them.
+# Tracked mode (CI, whole tree): one `git grep` over the index picks the files
+# where a content pattern can match at all, so a 800-file audit takes a couple
+# of seconds instead of half a minute. Any git-grep error falls back to every file.
+content_paths() {
+  if [ "$MODE" != tracked ]; then list_paths; return; fi
+  local gargs=(-e "$INFRA_RE") rc
+  [ -n "$PRIV_RE" ] && gargs+=(-e "$PRIV_RE")
+  git grep --cached -lIzE "${gargs[@]}"
+  rc=$?
+  if [ $rc -ge 2 ]; then list_paths; fi
+}
+
+while IFS= read -r -d '' f; do
+  git show ":$f" > "$tmp" 2>/dev/null || continue
+
+  # The hook directory defines the regexes above, so it is exempt from the
+  # credential/infra pattern checks — but never from the private patterns, which
+  # is what keeps a real identifier from being hardcoded back into this file.
+  src=0
+  case "$f" in scripts/git-hooks/*) src=1;; esac
+
+  if [ $src -eq 0 ]; then
+    # CHANGELOG narrates past credential rotations, so it skips the credential
+    # check. It narrates infrastructure too, which is exactly why it does NOT
+    # skip the infra check below.
+    if [ "$MODE" = staged ] && [ "$f" != "CHANGELOG.md" ]; then
+      hit=$(grep -nIE "$CRED_RE" "$tmp" 2>/dev/null | grep -viE "$ALLOW_RE" | head -2)
+      [ -n "$hit" ] && note "  $L_SECRET  $f"$'\n'"$hit"
+    fi
+
+    hit=$(grep -nIE "$INFRA_RE" "$tmp" 2>/dev/null | grep -viE "$ALLOW_RE" | infra_filter | head -2)
+    [ -n "$hit" ] && note "  INFRA    $f"$'\n'"$hit"
   fi
 
   if [ -n "$PRIV_RE" ]; then
-    hit=$(printf '%s' "$content" | grep -nIE "$PRIV_RE" 2>/dev/null | head -2)
-    [ -n "$hit" ] && findings+="  PRIVADO-LOCAL  $f (patron de ~/.aegis-private-patterns)"$'\n'"$hit"$'\n'
+    hit=$(grep -nIE "$PRIV_RE" "$tmp" 2>/dev/null | head -2)
+    [ -n "$hit" ] && note "  $L_PRIVLOCAL  $f (pattern from ~/.aegis-private-patterns)"$'\n'"$hit"
   fi
-done
+done < <(content_paths)
 
-priv=$(printf '%s\n' "$staged" | grep -E '^pi-deploy/(sid-backend|wilabia-backend|landing-wilab|sable)/|^docs/superpowers/|^investigations/|^\.agents/|^deploy\.(py|sh)$' || true)
-[ -n "$priv" ] && findings+="  PRIVADO  otro proyecto / doc interno:"$'\n'"$priv"$'\n'
-
+# ---------------------------------------------------------------------------
+# Verdict
+# ---------------------------------------------------------------------------
 if [ -n "$findings" ]; then
-  printf '\n\033[31mCOMMIT BLOQUEADO\033[0m — este repo es publico.\n\n%s\n' "$findings"
-  echo "Corrige lo anterior, o 'git commit --no-verify' si ya lo verificaste."
+  if [ "$MODE" = tracked ]; then
+    printf '\nPUBLIC-REPO GUARD FAILED: this repository is public and its tracked tree contains:\n\n%s\n' "$findings"
+    cat <<'MSG'
+What to remove:
+  * agent / env / private-project files:  git rm --cached -- <path>   (they must not be tracked at all)
+  * INFRA lines: edit the listed file:line and use a placeholder instead
+    (/Users/example/..., /home/user/..., 100.64.0.x, 203.0.113.x, 192.168.1.x)
+Then commit and push again. Rewrite history too if the file already shipped.
+MSG
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+      printf '%s\n' "$bad_agent" "$bad_env" "$bad_priv" | grep -v '^$' | while IFS= read -r p; do
+        echo "::error file=$p::Forbidden file is tracked. Remove it with: git rm --cached -- $p"
+      done
+    fi
+  else
+    printf '\n\033[31mCOMMIT BLOQUEADO\033[0m — este repo es publico.\n\n%s\n' "$findings"
+    if [ -n "$bad_agent$bad_env$bad_priv" ]; then
+      echo "Los ARCHIVOS PROHIBIDOS se rechazan por nombre: sacalos con 'git restore --staged -- <ruta>'."
+      echo "(Si ya estaban versionados: 'git rm --cached -- <ruta>'.)"
+    fi
+    echo "Corrige lo anterior, o 'git commit --no-verify' si ya lo verificaste (CI lo vuelve a comprobar)."
+  fi
   exit 1
 fi
 exit 0

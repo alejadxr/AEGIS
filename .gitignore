@@ -14,10 +14,13 @@ venv/
 *.db
 *.sqlite3
 
-# Environment
+# Environment: real env files never go in, *.example templates do.
+# (The pre-commit hook and CI refuse real env files by NAME too, because
+# `git add -f` defeats this file.)
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+!.env.*.example
 
 # Node / Next.js
 node_modules/
@@ -73,9 +76,7 @@ reports/
 # Misc
 *.bak
 *.tmp
-.claude/
 docs/superpowers/
-CLAUDE.md
 
 # Internal docs (not for public repo)
 AEGIS_CONTEXT.md
@@ -98,8 +99,18 @@ scripts/setup-wizard.py
 .DS_Store
 CHANGES.md
 
-# Local agent instructions — not for the public repo
+# Agent / assistant instruction files and local config. They hold private
+# infrastructure details by definition and must NEVER reach this public repo.
+# This list is only the first barrier: `git add -f` ignores it, so
+# scripts/git-hooks/pre-commit and the CI job refuse these paths by NAME,
+# case-insensitively, at any depth (and anything under a .claude/ directory).
 CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+MEMORY.md
+GEMINI.md
+.claude/
+.claude.json
 
 # Agent session scratch — working logs, not source (contains request history)
 .agents/
