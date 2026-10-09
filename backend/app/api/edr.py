@@ -43,7 +43,7 @@ from app.services.edr_trusted_parents import (
     TrustResolver, in_provisioning_window, resolve_parent_from_db, trust_configured,
 )
 from app.services.process_tree import (
-    ProcessIndex, build_process_tree, compute_tree, load_process_index,
+    build_process_tree, ancestors_for, feed_event,
 )
 from app.services.attack_chain_detector import evaluate_event, CMD_PATTERN_RULES
 from app.services.host_monitor import host_monitor, AGENT_ID as HOST_MONITOR_AGENT_ID
@@ -123,23 +123,13 @@ async def ingest_events(
     trust_on = trust_configured()
     enrolled_at = getattr(agent, "created_at", None)
 
-    # One column-only index per request, built lazily on first ancestry need
-    # and kept current with this batch's own process events (a parent started
-    # earlier in the batch must be visible, as the old autoflush path did).
-    proc_index: ProcessIndex | None = None
-    batch_proc_events: list[tuple] = []  # events seen before the index existed
+    # Ancestry comes from the per-agent cached index (process_tree), which is
+    # fed with this batch's own process events as they are staged so a parent
+    # started earlier in the batch is visible to later children.
     window_start = datetime.utcnow() - timedelta(hours=24)
 
     async def ancestry_fetcher(pid: int) -> list[dict]:
-        nonlocal proc_index
-        if proc_index is None:
-            # Rows of this batch are not flushed yet, so the query sees only
-            # history; replay the batch's earlier events on top of it.
-            proc_index = await load_process_index(db, agent.id)
-            for t in batch_proc_events:
-                proc_index.add_event(*t)
-            batch_proc_events.clear()
-        return compute_tree(proc_index, pid, ancestors_only=True).get("ancestors", [])
+        return await ancestors_for(agent.id, pid, db=db)
 
     for ev in payload.events:
         # Map kind -> category/severity
@@ -191,11 +181,7 @@ async def ingest_events(
         db.add(row)
         accepted += 1
         if category == EventCategory.process and ts is not None and ts >= window_start:
-            rec = (ts, row.title, details)
-            if proc_index is not None:
-                proc_index.add_event(*rec)
-            else:
-                batch_proc_events.append(rec)
+            feed_event(agent.id, ts, row.title, details)
 
         # Field names are the ones edr_events.translate_edr_event reads.
         detection_events.append({

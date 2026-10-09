@@ -432,20 +432,15 @@ CMD_PATTERN_RULES: list[CmdPatternRule] = [
 # Evaluation entry point
 # ---------------------------------------------------------------------------
 
-async def evaluate_event(
-    db: AsyncSession,
-    agent: EndpointAgent,
-    event: dict,
-    ancestry_fetcher,
-) -> list[ChainMatch]:
+async def match_event(event: dict, ancestry_fetcher) -> tuple[Optional[dict], list[ChainMatch]]:
     """
-    Run all chain rules against a single incoming EDR event. `ancestry_fetcher`
-    is an async callable that returns the ancestor list for a given pid.
+    Run all chain rules against a single incoming EDR event, without touching
+    the database. `ancestry_fetcher` is an async callable that returns the
+    ancestor list for a given pid. Returns (anchor, matches); anchor is None
+    when the event carries no pid.
 
     Also runs cmd_pattern regex rules against the command_line field for
     immediate detection without needing a process ancestry chain.
-
-    Creates Incident rows for each match.
     """
     anchor = {
         "pid": event.get("pid"),
@@ -454,7 +449,7 @@ async def evaluate_event(
         "command_line": event.get("command_line"),
     }
     if anchor["pid"] is None:
-        return []
+        return None, []
 
     ancestors = await ancestry_fetcher(int(anchor["pid"]))
 
@@ -490,6 +485,17 @@ async def evaluate_event(
             except Exception as e:
                 logger.debug("cmd_pattern rule %s failed: %s", cpr.rule_id, e)
 
+    return anchor, matches
+
+
+def persist_matches(
+    db: AsyncSession,
+    agent: EndpointAgent,
+    anchor: dict,
+    event: dict,
+    matches: list[ChainMatch],
+) -> None:
+    """Create Incident rows for `matches` (the caller commits)."""
     # --- Create incidents for all matches ---
     # Skip incident creation if the agent's source_ip is internal/Tailscale
     # — we still return the matches so the caller can log them, but we don't
@@ -497,7 +503,7 @@ async def evaluate_event(
     source_ip = agent.ip_address
     if source_ip and _is_internal_ip(source_ip):
         logger.debug(f"Skipping chain incident from internal IP {source_ip}")
-        return matches
+        return
     # v1.6.3.5: also honor AEGIS_SAFE_IPS so EDR chain rules don't fire on
     # CDN / partner crawler / monitoring infrastructure.
     if source_ip:
@@ -505,7 +511,7 @@ async def evaluate_event(
             from app.core.attack_detector import _is_safe_ip
             if _is_safe_ip(source_ip):
                 logger.debug(f"Skipping chain incident from safe IP {source_ip} (AEGIS_SAFE_IPS)")
-                return matches
+                return
         except Exception as exc:
             logger.warning(f"attack_chain_detector safelist import failed: {exc}")
 
@@ -527,4 +533,15 @@ async def evaluate_event(
         )
         db.add(incident)
 
+
+async def evaluate_event(
+    db: AsyncSession,
+    agent: EndpointAgent,
+    event: dict,
+    ancestry_fetcher,
+) -> list[ChainMatch]:
+    """match_event + persist_matches: creates Incident rows for each match."""
+    anchor, matches = await match_event(event, ancestry_fetcher)
+    if anchor is not None and matches:
+        persist_matches(db, agent, anchor, event, matches)
     return matches

@@ -69,6 +69,148 @@ _KNOWN_SAFE_IPS = frozenset({
 # Attacker allow-list loaded once at module load from AEGIS_ATTACKER_IPS.
 from app.config import settings as _settings
 
+
+def _is_truncated(fp, inode: int, st) -> bool:
+    """True if the file behind ``fp`` was truncated in place (same inode, shrunk).
+
+    ``fp`` is a text-mode file: its ``tell()`` is an opaque cookie that can
+    exceed the file size on multi-byte UTF-8 content, so it must not be compared
+    with ``st_size``. The OS-level position of the descriptor is a real byte
+    offset (bytes consumed by the buffered reader), which is only greater than
+    the size when the file really shrank.
+    """
+    if st.st_ino != inode:
+        return False
+    try:
+        pos = os.lseek(fp.fileno(), 0, os.SEEK_CUR)
+    except (OSError, ValueError):
+        return False
+    return st.st_size < pos
+
+
+# Resume-after-rewrite tuning. Some writers trim their log by rewriting it in
+# place ("w" mode) or via temp file + rename; the rewritten file still holds
+# the lines we already processed, so rewinding to 0 would replay megabytes.
+_RESUME_SCAN_MAX_BYTES = 8 * 1024 * 1024   # how far back from EOF we look
+_RESUME_SCAN_CHUNK = 1024 * 1024
+_RESUME_FALLBACK_MAX_BYTES = 2 * 1024 * 1024  # bigger + no anchor -> skip to EOF
+_FINGERPRINT_LINE_CAP = 4096  # bytes kept per remembered line
+
+
+def _find_resume_offset(path: str, fingerprints: list[bytes]) -> Optional[int]:
+    """Byte offset just after the last occurrence of an anchor near EOF.
+
+    ``fingerprints`` are tried in order (strongest first). The file is scanned
+    backwards in chunks, at most ``_RESUME_SCAN_MAX_BYTES`` from the end.
+    Returns None when no anchor is found.
+    """
+    try:
+        with open(path, "rb") as f:
+            size = os.fstat(f.fileno()).st_size
+            floor = max(0, size - _RESUME_SCAN_MAX_BYTES)
+            for needle in fingerprints:
+                if not needle:
+                    continue
+                end = size
+                while end > floor:
+                    start = max(floor, end - _RESUME_SCAN_CHUNK)
+                    f.seek(start)
+                    # Over-read by len-1 so a match straddling the chunk edge is seen.
+                    buf = f.read(min(size, end + len(needle) - 1) - start)
+                    idx = buf.rfind(needle)
+                    if idx >= 0:
+                        return start + idx + len(needle)
+                    end = start
+    except OSError:
+        return None
+    return None
+
+
+class _TailFile:
+    """A tailed log file opened in BINARY mode.
+
+    Binary keeps ``tell()``/``seek()`` true byte offsets (text-mode tell() is an
+    opaque cookie), which is what the backward anchor search needs. Lines are
+    decoded one by one with ``errors="replace"``.
+
+    It remembers the last two complete lines read. When the file is truncated
+    in place or replaced (new inode) we locate those lines in the new file and
+    resume right after them instead of re-reading history.
+    """
+
+    def __init__(self, path: str, from_end: bool = True):
+        self.path = path
+        self.fp = open(path, "rb")
+        self.inode = os.fstat(self.fp.fileno()).st_ino
+        self.tail: deque = deque(maxlen=2)
+        if from_end:
+            self.fp.seek(0, 2)
+
+    def iter_lines(self):
+        """Yield every currently available non-empty line, decoded."""
+        while True:
+            raw = self.fp.readline()
+            if not raw:
+                return
+            if raw.endswith(b"\n") and raw.strip():
+                self.tail.append(raw[-_FINGERPRINT_LINE_CAP:])
+            line = raw.decode("utf-8", "replace").rstrip("\n").rstrip("\r")
+            if line:
+                yield line
+
+    def _anchors(self) -> list[bytes]:
+        if not self.tail:
+            return []
+        anchors = [b"".join(self.tail)]
+        if len(self.tail) == 2:
+            anchors.append(self.tail[-1])
+        return anchors
+
+    def _resume_position(self, size: int) -> int:
+        offset = _find_resume_offset(self.path, self._anchors())
+        if offset is not None:
+            logger.info(f"log_watcher: {self.path} rewritten, resuming at byte {offset}")
+            return offset
+        if size > _RESUME_FALLBACK_MAX_BYTES:
+            logger.warning(
+                f"log_watcher: {self.path} rewritten ({size} bytes) and last "
+                "processed line not found; skipping to EOF instead of re-reading"
+            )
+            return size
+        return 0
+
+    def check_rotation(self) -> None:
+        """Handle truncation (same inode) and rotation (new inode)."""
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            return
+        if _is_truncated(self.fp, self.inode, st):
+            # copytruncate / in-place rewrite. Without a reposition the offset
+            # stays past EOF and the tail silently returns nothing forever.
+            logger.info(f"log_watcher: truncation detected for {self.path}")
+            self.fp.seek(self._resume_position(st.st_size))
+        elif st.st_ino != self.inode:
+            logger.info(f"log_watcher: rotation detected for {self.path}, reopening")
+            try:
+                new_fp = open(self.path, "rb")
+            except OSError as exc:
+                logger.warning(f"log_watcher: reopen failed for {self.path}: {exc}")
+                return
+            try:
+                self.fp.close()
+            except Exception:
+                pass
+            self.fp = new_fp
+            self.inode = os.fstat(new_fp.fileno()).st_ino
+            new_fp.seek(self._resume_position(os.fstat(new_fp.fileno()).st_size))
+
+    def close(self) -> None:
+        try:
+            self.fp.close()
+        except Exception:
+            pass
+
 # Import the canonical safe-IP gate. `_SAFE_NETWORKS` (RFC1918 + CGNAT/
 # Tailscale, plus any CIDRs an operator added via AEGIS_SAFE_IPS or
 # AEGIS_INTERNAL_IPS) and `_is_safe_ip` both live in attack_detector.py --
@@ -651,7 +793,7 @@ class LogWatcher:
 
         pm2_paths = await self._resolve_pm2_log_paths(apps)
 
-        # handle: [fp, inode, path, app_name, stream_kind]
+        # handle: (_TailFile, app_name, stream_kind)
         handles = []
         for app in apps:
             app_paths = pm2_paths.get(app, {})
@@ -666,20 +808,15 @@ class LogWatcher:
                     logger.warning(f"log_watcher: PM2 log file not found, skipping: {fpath}")
                     continue
                 try:
-                    fp = open(fpath, "r", errors="replace")
-                    fp.seek(0, 2)  # seek to EOF -> only tail new lines
-                    inode = os.stat(fpath).st_ino
-                    handles.append([fp, inode, fpath, app, stream])
+                    # opens at EOF -> only tail new lines
+                    handles.append((_TailFile(fpath), app, stream))
                 except Exception as exc:
                     logger.warning(f"log_watcher: cannot open {fpath}: {exc}")
 
         extra_paths_raw = getattr(settings, "AEGIS_EXTRA_LOG_PATHS", "") or ""
         for extra_path in _resolve_extra_log_paths(extra_paths_raw):
             try:
-                fp = open(extra_path, "r", errors="replace")
-                fp.seek(0, 2)
-                inode = os.stat(extra_path).st_ino
-                handles.append([fp, inode, extra_path, "extra", "out"])
+                handles.append((_TailFile(extra_path), "extra", "out"))
                 logger.info(f"log_watcher: tailing extra path: {extra_path}")
             except Exception as exc:
                 logger.warning(f"log_watcher: cannot open extra path {extra_path}: {exc}")
@@ -695,60 +832,28 @@ class LogWatcher:
 
         rotation_check_interval = 30.0
         last_rotation_check = asyncio.get_event_loop().time()
-        self._tail_paths = [h[2] for h in handles]
+        self._tail_paths = [h[0].path for h in handles]
         self._tail_sizes.clear()
 
         try:
             while self._running:
-                for handle in handles:
-                    fp, inode, path, app_name, stream_kind = handle
-                    while True:
-                        line = fp.readline()
-                        if not line:
-                            break
-                        line = line.rstrip("\n").rstrip("\r")
-                        if line:
-                            self._stats["lines_read"] += 1
-                            self._stats["last_line_at"] = datetime.utcnow().isoformat()
-                            await self._process_line(line, source=app_name)
+                for tail_file, app_name, stream_kind in handles:
+                    for line in tail_file.iter_lines():
+                        self._stats["lines_read"] += 1
+                        self._stats["last_line_at"] = datetime.utcnow().isoformat()
+                        await self._process_line(line, source=app_name)
 
                 await asyncio.sleep(0.5)
 
                 now = asyncio.get_event_loop().time()
                 if now - last_rotation_check >= rotation_check_interval:
                     last_rotation_check = now
-                    for handle in handles:
-                        fp, inode, path, app_name, stream_kind = handle
-                        try:
-                            st = os.stat(path)
-                            new_inode = st.st_ino
-                        except OSError:
-                            continue
-                        if new_inode == inode and st.st_size < fp.tell():
-                            # copytruncate-style rotation: same inode, shorter
-                            # file. Without this the read offset stays past EOF
-                            # and the tail silently returns nothing forever.
-                            logger.info(f"log_watcher: truncation detected for {path}, rewinding")
-                            fp.seek(0)
-                        if new_inode != inode:
-                            logger.info(f"log_watcher: rotation detected for {path}, reopening")
-                            try:
-                                fp.close()
-                            except Exception:
-                                pass
-                            try:
-                                new_fp = open(path, "r", errors="replace")
-                                handle[0] = new_fp
-                                handle[1] = new_inode
-                            except Exception as exc:
-                                logger.warning(f"log_watcher: reopen failed for {path}: {exc}")
+                    for tail_file, _app, _stream in handles:
+                        tail_file.check_rotation()
         finally:
             self._tail_paths = []
-            for handle in handles:
-                try:
-                    handle[0].close()
-                except Exception:
-                    pass
+            for tail_file, _app, _stream in handles:
+                tail_file.close()
 
     # ---------------------------------------------------------------
     # Per-line pipeline

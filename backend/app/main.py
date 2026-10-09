@@ -206,47 +206,57 @@ async def _notify_action_executed_impl(data):
     })
 
 
+# At most this many chain evaluations run at once; the rest wait their turn
+# (bounded overall by bg_tasks._MAX_INFLIGHT) instead of piling up on the DB.
+_EDR_CHAIN_CONCURRENCY = 4
+_edr_chain_sem = asyncio.Semaphore(_EDR_CHAIN_CONCURRENCY)
+
+
 async def edr_chain_handler(data):
     """Feed host-monitor process_start events into the attack chain detector.
 
-    Measured at ~2.4 s avg per event on the bus hot path (unbounded 24 h
-    agent_events scan per evaluation) — the dominant term of
-    avg_process_time_ms. The evaluation now runs as a bounded background
-    task (bg_tasks) with its own DB session; detection semantics are
-    unchanged, it just no longer stalls delivery of every queued event.
+    The per-agent process index is cached in memory (process_tree) and kept
+    current here, synchronously, before the evaluation is handed to a bounded
+    background task. The evaluation itself needs no DB session unless a rule
+    matches (to persist the incident), so a stream of events costs no queries.
     """
     if not isinstance(data, dict) or data.get("kind") != "process_start":
         return
     from app.core.bg_tasks import fire_and_forget
+    from app.services.process_tree import feed_payload
 
+    try:
+        feed_payload(data.get("agent_id", HOST_MONITOR_AGENT_ID), data)
+    except Exception as e:
+        logger.debug("edr_chain_handler index feed error: %s", e)
     fire_and_forget(_edr_chain_eval_impl(data), label="edr_chain_eval")
 
 
 async def _edr_chain_eval_impl(data):
     try:
-        from app.services.attack_chain_detector import evaluate_event
-        from app.services.process_tree import build_process_tree
+        from app.services.attack_chain_detector import match_event, persist_matches
+        from app.services.process_tree import ancestors_for
         from app.models.endpoint_agent import EndpointAgent
 
         agent_id = data.get("agent_id", HOST_MONITOR_AGENT_ID)
+
+        async def ancestry_fetcher(pid: int) -> list[dict]:
+            return await ancestors_for(agent_id, pid, session_factory=async_session)
+
+        async with _edr_chain_sem:
+            anchor, matches = await match_event(data, ancestry_fetcher)
+        if not matches:
+            return
         async with async_session() as db:
             agent = await db.get(EndpointAgent, agent_id)
             if not agent:
                 return
-
-            async def ancestry_fetcher(pid: int) -> list[dict]:
-                tree = await build_process_tree(
-                    db, agent_id, pid, ancestors_only=True
-                )
-                return tree.get("ancestors", [])
-
-            matches = await evaluate_event(db, agent, data, ancestry_fetcher)
-            if matches:
-                await db.commit()
-                logger.info(
-                    "EDR chain detector: %d matches for pid=%s",
-                    len(matches), data.get("pid"),
-                )
+            persist_matches(db, agent, anchor, data, matches)
+            await db.commit()
+            logger.info(
+                "EDR chain detector: %d matches for pid=%s",
+                len(matches), data.get("pid"),
+            )
     except Exception as e:
         logger.debug("edr_chain_handler error: %s", e)
 
