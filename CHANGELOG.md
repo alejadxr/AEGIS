@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.27] - 2026-10-23
+
+### Fixed — release pipeline
+- A unit test used `TestClient(client=...)`, which the Starlette pinned in
+  CI (0.41.3) does not support. CI failed from v1.7.25 on, and the release
+  workflow skipped the desktop installers and the Docker images for
+  v1.7.25 and v1.7.26. The test now sets the client address through a small
+  ASGI wrapper; this release ships the missing artifacts, built on Node 22.
+
 ## [1.7.26] - 2026-10-23
 
 ### Security — JavaScript advisories of October 2026

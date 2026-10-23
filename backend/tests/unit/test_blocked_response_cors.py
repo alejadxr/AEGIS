@@ -21,6 +21,16 @@ DENIED = "https://evil.example.com"
 MAIN_PY = Path(__file__).resolve().parents[2] / "app" / "main.py"
 
 
+def _with_client_addr(app, addr):
+    """Force scope["client"]; TestClient(client=...) needs newer Starlette than CI pins."""
+    async def wrapper(scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            scope = {**scope, "client": addr}
+        await app(scope, receive, send)
+
+    return wrapper
+
+
 @pytest.fixture
 def client(monkeypatch):
     # Same registration order as app/main.py: CORS added last = outermost.
@@ -39,7 +49,7 @@ def client(monkeypatch):
         allow_headers=["*"],
     )
     monkeypatch.setattr(attack_detector, "_blocked_ips", {BLOCKED_IP})
-    return TestClient(app, client=(BLOCKED_IP, 50000))
+    return TestClient(_with_client_addr(app, (BLOCKED_IP, 50000)))
 
 
 def test_main_registers_cors_last():
