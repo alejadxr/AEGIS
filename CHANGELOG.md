@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.26] - 2026-10-23
+
+### Security — JavaScript advisories of October 2026
+- Dashboard on Next.js 16.4.1 (GHSA-673q-mjm6-r5xr, CVE-2026-96889,
+  GHSA-p3m5-59mp-jv5r) and React 19.3.1. The repository declared Next 15
+  while production already ran Next 16; both now match.
+- Transitive floors via `overrides`: body-parser 2.4.0 (CVE-2026-111181,
+  one compressed request crashes the process), proxy-addr 2.0.8
+  (GHSA-jqcg-44mw-7w3h, IP spoofing), undici 7.29+, sharp 0.35.5.
+  `npm audit --omit=dev` goes from 2 critical / 18 high to 0 / 8; the
+  remaining high are `d3-color` pulled by `react-simple-maps`.
+- The dashboard Docker image and CI build on Node 22. Node 20 is
+  end-of-life and did not receive the October 2026 Node.js security
+  release (CVE-2026-111497, the Brotli decoder RCE, and nine others).
+
 ## [1.7.25] - 2026-10-22
 
 ### Fixed — AEGIS was blocking its own operators
