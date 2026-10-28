@@ -148,7 +148,10 @@ function buildStatusDistribution(incidents: IncidentItem[]): Array<Record<string
     const dayKey = days[dayIdx];
     const bucket = buckets[dayKey];
     if (!bucket) return;
-    if (inc.status === 'resolved' || inc.status === 'remediated' || inc.status === 'auto_responded') bucket.resolved += 1;
+    // auto_closed = the retention closer gave up on a stale incident. It counts
+    // as no longer active; without it such incidents fell through to `open` and
+    // the chart kept showing a backlog that had already been closed.
+    if (inc.status === 'resolved' || inc.status === 'remediated' || inc.status === 'auto_responded' || inc.status === 'auto_closed') bucket.resolved += 1;
     else if (inc.status === 'investigating' || inc.status === 'contained') bucket.in_progress += 1;
     else if (inc.status === 'escalated') bucket.escalated += 1;
     else bucket.open += 1;

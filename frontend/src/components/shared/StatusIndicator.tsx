@@ -15,6 +15,9 @@ const statusColors: Record<string, string> = {
   approved:       'bg-[var(--success)]',
   remediated:     'bg-[var(--success)]',
   auto_responded: 'bg-[var(--success)]',
+  // Closed for inactivity, not triaged by a human: muted, never green, so it
+  // does not read as "handled".
+  auto_closed:    'bg-muted-foreground/60',
   offline:        'bg-muted-foreground/60',
   stopped:        'bg-muted-foreground/60',
   inactive:       'bg-muted-foreground/60',

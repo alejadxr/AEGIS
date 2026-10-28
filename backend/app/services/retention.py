@@ -5,13 +5,12 @@ Two APScheduler jobs registered on the global `scheduled_scanner.scheduler`:
 1. nightly_retention_purge (cron 03:00) — DELETE incidents older than
    AEGIS_RETENTION_DAYS where status IN ('resolved','auto_responded'). Same
    for attacker_profiles and honeypot_interactions older than the cutoff.
-2. hourly_stuck_incident_closer (interval 1h) — UPDATE incidents older than
-   24h whose status IN ('investigating', 'auto_responded') AND source_ip
-   already in threat_intel (i.e. already blocked) to status='resolved' with
-   resolved_at=now(). 'auto_responded' was added in v1.6.4.x (Fix 5) — it's
-   the status fast_triage-sourced incidents get, and without it those
-   incidents were structurally orphaned (this job never touched them, and
-   firewall_sync._reconcile_incidents didn't either until the same fix).
+2. hourly_stuck_incident_closer (interval 1h) — closes ACTIVE incidents
+   (open / investigating / auto_responded) that have shown no activity for
+   AEGIS_INCIDENT_AUTOCLOSE_DAYS, setting status='auto_closed' plus a reason
+   in ai_analysis.auto_close. It deliberately does not look at threat-feed
+   membership: that says nothing about whether an incident is still live (the
+   old rule matched 0 of 241 stuck incidents in production).
 
 Both jobs honor AEGIS_RETENTION_DRY_RUN=1 (logs intended changes without
 mutating). All deletions are appended to ~/.aegis/retention-audit.jsonl so
@@ -25,7 +24,7 @@ from pathlib import Path
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 
 from app.database import async_session
 from app.models.incident import Incident
@@ -33,12 +32,23 @@ from app.models.action import Action
 from app.models.audit_log import AuditLog
 from app.models.attacker_profile import AttackerProfile
 from app.models.honeypot import HoneypotInteraction
-from app.models.threat_intel import ThreatIntel
 
 logger = logging.getLogger("aegis.retention")
 
 RETENTION_DAYS = int(os.environ.get("AEGIS_RETENTION_DAYS", "90"))
-STUCK_CLOSER_HOURS = int(os.environ.get("AEGIS_STUCK_CLOSER_HOURS", "24"))
+# 7 days: longer than the 24h dedup window and any weekend, so a campaign that
+# pauses for a few days is not closed under the operator's feet, yet short
+# enough that August's noise cannot linger. Criticals get twice as long because
+# a wrongly closed critical costs far more than a stale one.
+AUTOCLOSE_DAYS = int(os.environ.get("AEGIS_INCIDENT_AUTOCLOSE_DAYS", "7"))
+AUTOCLOSE_CRITICAL_DAYS = int(os.environ.get("AEGIS_INCIDENT_AUTOCLOSE_CRITICAL_DAYS", "14"))
+# incidents.status is VARCHAR(20); "auto_closed" fits (11) and, unlike "resolved",
+# can never be mistaken for a human triage decision.
+AUTOCLOSED_STATUS = "auto_closed"
+ACTIVE_STATUSES = ("open", "investigating", "auto_responded")
+PURGEABLE_STATUSES = ("resolved", "auto_responded", AUTOCLOSED_STATUS)
+# Cumulative since process start; the closer's per-run summary is also returned.
+STATS = {"runs": 0, "auto_closed_total": 0, "last_run": None, "last_closed": 0, "last_kept_active": 0}
 # Scans get a tighter window than incidents: the full-scan nmap timeout is 600s,
 # so anything still "running" after hours is dead, not slow.
 SCAN_STUCK_HOURS = int(os.environ.get("AEGIS_SCAN_STUCK_HOURS", "3"))
@@ -76,7 +86,7 @@ async def _purge_incidents(db, cutoff: datetime) -> int:
         ids = [row[0] for row in (await db.execute(
             select(Incident.id).where(
                 Incident.detected_at < cutoff,
-                Incident.status.in_(("resolved", "auto_responded")),
+                Incident.status.in_(PURGEABLE_STATUSES),
             ).limit(PURGE_BATCH_SIZE)
         )).all()]
         if not ids:
@@ -98,7 +108,7 @@ async def nightly_retention_purge() -> dict:
             preview = await db.execute(
                 select(Incident.id).where(
                     Incident.detected_at < cutoff,
-                    Incident.status.in_(("resolved", "auto_responded")),
+                    Incident.status.in_(PURGEABLE_STATUSES),
                 )
             )
             summary["incidents"] = len(preview.all())
@@ -140,56 +150,130 @@ async def nightly_retention_purge() -> dict:
     return summary
 
 
+def _parse_ts(value) -> "datetime | None":
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "")).replace(tzinfo=None)
+    except (ValueError, TypeError):
+        return None
+
+
+def _incident_host(incident) -> "str | None":
+    raw = incident.raw_alert if isinstance(incident.raw_alert, dict) else {}
+    return raw.get("host") or raw.get("hostname")
+
+
 async def hourly_stuck_incident_closer() -> dict:
-    """Auto-resolve stuck incidents (status 'investigating' or 'auto_responded')
-    where source_ip is already blocked.
+    """Close active incidents that have gone quiet.
 
-    v1.6.4.x (Fix 5): widened from 'investigating'-only to also include
-    'auto_responded' — fast_triage is the only source that ever sets that
-    status, and it was never in this job's WHERE clause, so those incidents
-    could never auto-close.
+    An incident is closed when it is open/investigating/auto_responded and
+    NOTHING related to it happened inside its window (AUTOCLOSE_DAYS, doubled
+    for criticals). "Related activity" is whatever AEGIS can actually join on:
+      - ai_analysis.dedup.last_seen: repeat triggers fold into the existing
+        incident (correlation_engine._escalate_incident) without touching
+        detected_at, so an old incident can still be accumulating hits;
+      - any newer incident from the same source_ip, or the same host for
+        host-scoped detections (source_ip is NULL there);
+      - a newer action or audit_log row on the incident itself.
+    Statuses a human set (resolved, false_positive, ...) are never selected.
     """
-    cutoff = datetime.utcnow() - timedelta(hours=STUCK_CLOSER_HOURS)
-    summary = {"closed": 0, "dry_run": DRY_RUN, "cutoff": cutoff.isoformat()}
+    now = datetime.utcnow()
+    window = timedelta(days=AUTOCLOSE_DAYS)
+    crit_window = timedelta(days=max(AUTOCLOSE_CRITICAL_DAYS, AUTOCLOSE_DAYS))
+    summary = {"closed": 0, "kept_active": 0, "dry_run": DRY_RUN,
+               "cutoff": (now - window).isoformat()}
     async with async_session() as db:
-        blocked_q = await db.execute(
-            select(ThreatIntel.ioc_value).where(
-                ThreatIntel.ioc_type == "ip",
-                ThreatIntel.source.in_(("firewall", "tor_exit_nodes", "emerging_threats", "feodo_tracker")),
+        candidates = (await db.execute(
+            select(Incident).where(
+                Incident.status.in_(ACTIVE_STATUSES),
+                Incident.detected_at < now - window,
             )
-        )
-        blocked_ips = {row[0] for row in blocked_q.all()}
-        if not blocked_ips:
-            _audit({"job": "hourly_stuck_incident_closer", **summary, "note": "no blocked_ips snapshot"})
-            return summary
-
-        candidates_q = await db.execute(
-            select(Incident.id, Incident.source_ip).where(
-                Incident.status.in_(("investigating", "auto_responded")),
-                Incident.detected_at < cutoff,
-                Incident.source_ip.in_(blocked_ips),
-            )
-        )
-        candidates = candidates_q.all()
-        summary["closed"] = len(candidates)
+        )).scalars().all()
         if not candidates:
-            _audit({"job": "hourly_stuck_incident_closer", **summary})
-            return summary
+            return _finish_closer_run(summary)
 
-        if not DRY_RUN:
-            ids = [row[0] for row in candidates]
-            await db.execute(
-                update(Incident)
-                .where(Incident.id.in_(ids))
-                .values(status="resolved", resolved_at=datetime.utcnow())
-            )
+        ids = [i.id for i in candidates]
+        ips = {i.source_ip for i in candidates if i.source_ip}
+
+        last_by_ip = {ip: ts for ip, ts in (await db.execute(
+            select(Incident.source_ip, func.max(Incident.detected_at))
+            .where(Incident.source_ip.in_(ips)).group_by(Incident.source_ip)
+        )).all()} if ips else {}
+
+        # raw_alert is a plain json column (no operators), so host matching
+        # happens in Python over the widest window only.
+        last_by_host: dict = {}
+        recent = (await db.execute(
+            select(Incident.raw_alert, Incident.detected_at)
+            .where(Incident.detected_at >= now - crit_window)
+        )).all()
+        for raw, ts in recent:
+            raw = raw if isinstance(raw, dict) else {}
+            host = raw.get("host") or raw.get("hostname")
+            if host and ts > last_by_host.get(host, datetime.min):
+                last_by_host[host] = ts
+
+        last_action = {iid: max(t for t in (c, e) if t) for iid, c, e in (await db.execute(
+            select(Action.incident_id, func.max(Action.created_at), func.max(Action.executed_at))
+            .where(Action.incident_id.in_(ids)).group_by(Action.incident_id)
+        )).all()}
+        last_audit = {iid: ts for iid, ts in (await db.execute(
+            select(AuditLog.incident_id, func.max(AuditLog.timestamp))
+            .where(AuditLog.incident_id.in_(ids)).group_by(AuditLog.incident_id)
+        )).all()}
+
+        for inc in candidates:
+            days = max(AUTOCLOSE_CRITICAL_DAYS, AUTOCLOSE_DAYS) if inc.severity == "critical" else AUTOCLOSE_DAYS
+            dedup = (inc.ai_analysis or {}).get("dedup") or {}
+            signals = [
+                inc.detected_at,
+                _parse_ts(dedup.get("last_seen")),
+                last_by_ip.get(inc.source_ip),
+                last_by_host.get(_incident_host(inc)),
+                last_action.get(inc.id),
+                last_audit.get(inc.id),
+            ]
+            last_activity = max(t for t in signals if t)
+            if last_activity >= now - timedelta(days=days):
+                summary["kept_active"] += 1
+                continue
+            summary["closed"] += 1
+            if DRY_RUN:
+                continue
+            analysis = dict(inc.ai_analysis or {})
+            analysis["auto_close"] = {
+                "reason": f"Auto-closed for inactivity: no activity for {days} days "
+                          f"(last activity {last_activity.isoformat()}). Not a human triage decision.",
+                "previous_status": inc.status,
+                "inactivity_days": days,
+                "last_activity": last_activity.isoformat(),
+                "closed_at": now.isoformat(),
+            }
+            inc.ai_analysis = analysis  # reassign so SQLAlchemy sees the JSON change
+            inc.status = AUTOCLOSED_STATUS
+            inc.resolved_at = now
+            _audit({"event": "incident_auto_closed", "incident_id": str(inc.id),
+                    "previous_status": analysis["auto_close"]["previous_status"],
+                    "severity": inc.severity, "last_activity": last_activity.isoformat()})
+
+        if not DRY_RUN and summary["closed"]:
             await db.commit()
 
+    return _finish_closer_run(summary)
+
+
+def _finish_closer_run(summary: dict) -> dict:
+    STATS["runs"] += 1
+    STATS["last_run"] = datetime.utcnow().isoformat()
+    STATS["last_closed"] = summary["closed"]
+    STATS["last_kept_active"] = summary["kept_active"]
+    if not summary["dry_run"]:
+        STATS["auto_closed_total"] += summary["closed"]
     _audit({"job": "hourly_stuck_incident_closer", **summary})
-    if DRY_RUN:
-        logger.info(f"stuck closer DRY_RUN: would close {summary['closed']} incidents")
-    else:
-        logger.info(f"stuck closer complete: closed {summary['closed']} incidents")
+    logger.info(
+        f"stuck incident closer{' DRY_RUN' if summary['dry_run'] else ''}: "
+        f"closed={summary['closed']} kept_active={summary['kept_active']} "
+        f"window={AUTOCLOSE_DAYS}d (critical {AUTOCLOSE_CRITICAL_DAYS}d)"
+    )
     return summary
 
 
@@ -208,7 +292,7 @@ async def hourly_stuck_scan_closer() -> dict:
     apart from a real one. This is the same structural gap the stuck-INCIDENT
     closer above fixes for incidents.
 
-    Uses SCAN_STUCK_HOURS rather than STUCK_CLOSER_HOURS: a scan that has run
+    Uses SCAN_STUCK_HOURS rather than the incident auto-close window: a scan that has run
     longer than the longest legitimate scan is already dead, and the full-scan
     nmap timeout is 600s, so hours of grace is generous by orders of magnitude.
     """
@@ -380,7 +464,7 @@ async def start() -> None:
         )
         logger.info(
             f"retention service started: RETENTION_DAYS={RETENTION_DAYS}, "
-            f"STUCK_CLOSER_HOURS={STUCK_CLOSER_HOURS}, DRY_RUN={DRY_RUN}, "
+            f"AUTOCLOSE_DAYS={AUTOCLOSE_DAYS}, DRY_RUN={DRY_RUN}, "
             f"audit_log={AUDIT_LOG_PATH}"
         )
     except Exception as exc:

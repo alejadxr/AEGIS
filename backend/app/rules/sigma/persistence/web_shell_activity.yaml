@@ -1,5 +1,5 @@
 id: web_shell_activity
-name: Web Shell Activity Detected
+name: Repeated POSTs to Script Paths (Possible Web Shell Attempt)
 kind: sigma
 severity: critical
 enabled: true
@@ -24,4 +24,4 @@ condition:
 entityMappings:
 - type: IP
   field: source_ip
-description: Suspicious HTTP requests consistent with web shell usage.
+description: Three or more POST requests to .php/.asp/.jsp paths from one source within two minutes. This is a request-shape signature only, no response status or file evidence is checked, so it is an attempt pattern, not confirmed web shell activity.

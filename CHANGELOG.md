@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.29] - 2026-10-28
+
+### Fixed — the incident list was unreadable
+- **One attacker burst is now one incident.** Dedup was keyed on the rule id,
+  so a single scanner run opened an incident per rule it tripped: 221
+  high/critical incidents in 7 days were really 71 bursts, one of them 9
+  incidents in 11 seconds. Merging is keyed on who is attacking and what is
+  targeted, in a 10-minute window sliding from last activity, through one
+  shared path instead of three that disagreed. The matched rules accumulate on
+  the incident, so a merge never hides which CVEs were probed, and severity
+  only rises.
+- **Success is only claimed with evidence.** Twelve incidents said
+  "successfully" and nineteen said "Web Shell Activity Detected" for attacks
+  that had all failed — the software was not installed and the real responses
+  were 404s behind an app that hardcoded 200 in its log. A 2xx is now required,
+  enforced in the AI prompt and again after it. Auth wording is untouched.
+- **Severity reflects whether the target exists.** A 404/410 drops one level
+  with the reason recorded; never on a 2xx, never on a missing status, never
+  for host/EDR incidents.
+- **Stale incidents close.** The closer only looked at IPs present in
+  threat-intel feeds and never at `open`, matching 0 of 241 stuck incidents.
+  It now closes on age plus real inactivity as `auto_closed`, never as
+  `resolved` and never over a human decision, with twice the window for
+  criticals.
+
+### Changed
+- `docs/edr-command-protocol.md` is tracked and marked as a proposal: the
+  endpoints and signed command envelopes it describes do not exist, and
+  host isolation, process kill and file quarantine are stubs.
+
 ## [1.7.28] - 2026-10-28
 
 ### Fixed — every wrong block was permanent and invisible
