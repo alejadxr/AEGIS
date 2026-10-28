@@ -511,9 +511,6 @@ class LogWatcher:
         self._brute_force_window = 60  # seconds (matches inline prune below)
         self._port_scan_tracker = PortScanTracker(window_seconds=60, threshold=10)
         self._recent_alerts: deque = deque(maxlen=500)
-        # Incident deduplication: (ip, threat_type) -> last_created timestamp
-        self._incident_cooldown: dict[str, datetime] = {}
-        self._COOLDOWN_SECONDS = 300  # 5 min between incidents for same IP+type
         # Liveness counters (exposed via /health) so a silently dead tail or
         # pipeline is visible instead of looking like "no attacks".
         self._stats = {
@@ -635,13 +632,11 @@ class LogWatcher:
                 logger.debug(f"log_watcher sweep error: {exc}")
 
     def _sweep_trackers(self, now: Optional[datetime] = None) -> None:
-        """Evict idle keys from every per-IP tracker + prune incident cooldown.
+        """Evict idle keys from every per-IP tracker.
 
         - _brute_force_tracker: `ip -> deque[datetime]`; empty deques (emptied by
           inline age-pruning or q.clear()) previously stayed as dict keys.
         - _rate_tracker / _port_scan_tracker: same empty-key retention pattern.
-        - _incident_cooldown: previously only evicted when len > 1024, so entries
-          accumulated below that threshold forever. Now proactively evicted.
         Only IDLE keys are removed; active-IP windows are preserved.
         """
         if now is None:
@@ -650,11 +645,6 @@ class LogWatcher:
         _prune_dt_deque_map(self._brute_force_tracker, self._brute_force_window, now)
         self._rate_tracker.prune(now)
         self._port_scan_tracker.prune(now)
-        # incident cooldown: drop entries older than 2x the cooldown window.
-        stale_cutoff = now - timedelta(seconds=self._COOLDOWN_SECONDS * 2)
-        self._incident_cooldown = {
-            k: v for k, v in self._incident_cooldown.items() if v >= stale_cutoff
-        }
 
     async def _watch_loop(self):
         while self._running:
@@ -1139,22 +1129,15 @@ class LogWatcher:
             except Exception as exc:
                 logger.debug(f"Tor exit lookup failed for {source_ip}: {exc}")
 
-        # Incident dedup — same (IP, threat_type) within 5 min collapses.
-        cooldown_key = f"{source_ip}:{threat_type}"
-        now = datetime.utcnow()
-        last_created = self._incident_cooldown.get(cooldown_key)
-        if last_created and (now - last_created).total_seconds() < self._COOLDOWN_SECONDS:
-            logger.debug(f'Incident cooldown active for {cooldown_key}, skipping')
-            return
-        self._incident_cooldown[cooldown_key] = now
-        # TTL eviction so the cooldown dict can't grow unbounded under
-        # sustained scan storms.  Drop entries older than 2x window.
-        if len(self._incident_cooldown) > 1024:
-            stale_cutoff = now - timedelta(seconds=self._COOLDOWN_SECONDS * 2)
-            self._incident_cooldown = {
-                k: v for k, v in self._incident_cooldown.items() if v >= stale_cutoff
-            }
-
+        # Dedup is the shared burst lookup (firewall_sync.find_mergeable_incident),
+        # not a private in-memory cooldown. The old (ip, threat_type) 300 s
+        # cooldown DROPPED the repeat outright, so a second pattern from the
+        # same attacker left no trace; merging keeps every pattern on the one
+        # incident. The per-attacker lock serialises find-then-create so a
+        # burst's concurrent detections cannot each open their own.
+        from app.services.incident_quality import burst_lock
+        _burst_lock = burst_lock(source_ip, None)
+        await _burst_lock.acquire()
         try:
             from app.database import async_session
             from app.models.client import Client
@@ -1188,6 +1171,27 @@ class LogWatcher:
                     "title": f"{severity.upper()}: {pattern_name.replace('_', ' ').title()} detected",
                 }
 
+                from app.services.firewall_sync import find_mergeable_incident
+                from app.services.incident_quality import merge_into_incident
+
+                existing = await find_mergeable_incident(
+                    db,
+                    client_id=client.id,
+                    source_ip=source_ip,
+                    source="log_watcher",
+                    kind=pattern_name,
+                )
+                if existing is not None:
+                    merge_into_incident(
+                        existing,
+                        rule_id=pattern_name,
+                        rule_title=pattern_name.replace("_", " ").title(),
+                        severity=severity,
+                    )
+                    await db.commit()
+                    logger.debug(f"log_watcher: folded {pattern_name} from {source_ip} into incident {existing.id}")
+                    return
+
                 logger.warning(
                     f"Security pattern detected [{pattern_name}] from {source_ip}: {description[:100]}"
                 )
@@ -1209,6 +1213,8 @@ class LogWatcher:
 
         except Exception as e:
             logger.error(f"Failed to create incident from log: {e}")
+        finally:
+            _burst_lock.release()
 
 
 log_watcher = LogWatcher()

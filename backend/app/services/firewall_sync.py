@@ -29,6 +29,23 @@ SYNC_INTERVAL_SECONDS = 300  # 5 minutes
 # precedent for _sync_auto_response_events.
 INCIDENT_DEDUP_WINDOW = timedelta(hours=24)
 
+# One scanner run trips many rules (LangFlow, phpunit, web shell, upload...) a
+# few seconds apart. Keyed on the rule id, each one opened its own incident
+# (221 high/critical in 7 days collapsed to 71 bursts of one source). The burst
+# window is therefore keyed on WHO is attacking, not on WHICH rule matched, and
+# it slides: it is measured from the incident's last activity, so a scan that
+# keeps going keeps feeding one incident, while an attacker that comes back
+# after the quiet period gets a fresh, visible incident.
+INCIDENT_BURST_WINDOW = timedelta(minutes=10)
+# Hard ceiling on how old a rolling-window incident may be, so an attacker that
+# never pauses cannot hold one incident open forever (and so the SQL pre-filter
+# stays bounded).
+INCIDENT_BURST_MAX_SPAN = timedelta(hours=1)
+# Detectors whose incidents describe the same attacker's traffic. Deliberately
+# excludes "firewall" (Pi-reported events) and operator/manual sources, which
+# are different records of different things.
+INCIDENT_BURST_SOURCES = ("correlation_engine", "correlation_engine_chain", "log_watcher", "fast_triage")
+
 # v1.6.2: track when each local_only IP first appeared so we can auto-evict
 # entries that have been "local-only" for > AEGIS_STALE_LOCAL_EVICT_HOURS
 # (default 24). Without this, IPs blocked manually or via legacy paths sit in
@@ -189,10 +206,12 @@ async def find_recent_incident(
     *,
     client_id: str,
     source_ip: Optional[str],
-    source: str,
+    source: "Optional[str | tuple]",
     window: timedelta = INCIDENT_DEDUP_WINDOW,
     kind: Optional[str] = None,
     host: Optional[str] = None,
+    target: Optional[str] = None,
+    rolling: bool = False,
     statuses: Optional[tuple] = ("open", "investigating", "auto_responded"),
     scan_limit: int = 50,
 ) -> Optional[Incident]:
@@ -222,14 +241,26 @@ async def find_recent_incident(
     `statuses=None` disables the status filter (matches any status) —
     used by _sync_auto_response_events to preserve its pre-existing,
     status-agnostic dedup behavior exactly.
+
+    Burst mode (see find_mergeable_incident): `source` may be a tuple of
+    detector names (or None for any), `rolling=True` measures `window` from the
+    incident's last recorded activity instead of its first detection, and
+    `target` (the app/host being attacked) must agree when BOTH sides know it.
+    A missing target on either side is "unknown", not "different": the inline
+    log_watcher detectors do not record one, and refusing to merge them would
+    reopen the very split this exists to close.
     """
-    cutoff = datetime.utcnow() - window
+    now = datetime.utcnow()
+    cutoff = now - (INCIDENT_BURST_MAX_SPAN if rolling else window)
     conditions = [
         Incident.client_id == client_id,
         Incident.source_ip == source_ip,
-        Incident.source == source,
         Incident.detected_at >= cutoff,
     ]
+    if isinstance(source, (tuple, list)):
+        conditions.append(Incident.source.in_(tuple(source)))
+    elif source is not None:
+        conditions.append(Incident.source == source)
     if statuses is not None:
         conditions.append(Incident.status.in_(statuses))
     result = await db.execute(
@@ -241,14 +272,22 @@ async def find_recent_incident(
     candidates = result.scalars().all()
     if not candidates:
         return None
-    if not kind and host is None:
+    if not kind and host is None and not rolling and target is None:
         return candidates[0]
+
+    from app.services.incident_quality import incident_target, last_activity
 
     for incident in candidates:
         raw = incident.raw_alert or {}
         analysis = incident.ai_analysis or {}
+        if rolling and now - last_activity(incident) > window:
+            continue
         if host is not None and (raw.get("host") or raw.get("hostname")) != host:
             continue
+        if target is not None:
+            their_target = incident_target(raw)
+            if their_target is not None and their_target != target:
+                continue
         if not kind:
             return incident
         existing_kind = (
@@ -259,6 +298,59 @@ async def find_recent_incident(
         if existing_kind == kind:
             return incident
     return None
+
+
+async def find_mergeable_incident(
+    db: AsyncSession,
+    *,
+    client_id: str,
+    source_ip: Optional[str],
+    source: str,
+    kind: Optional[str] = None,
+    host: Optional[str] = None,
+    target: Optional[str] = None,
+) -> Optional[Incident]:
+    """The one lookup every detector uses to decide "new incident or fold in".
+
+    Two tiers, tried in order:
+
+    1. BURST — same attacker (source_ip, or host when there is no IP) hitting
+       the same target within INCIDENT_BURST_WINDOW of its last activity,
+       whatever rule or detector fired. This is what turns one scanner run
+       into one incident. It is keyed on the source and NOT on the rule id
+       because a scanner trips many unrelated rules in seconds; the rule ids
+       are kept on the incident (ai_analysis.matched_rules) so no CVE probed
+       is hidden by the merge.
+    2. REPEAT — the original same-rule, 24h dedup, unchanged: a slow repeat of
+       one rule that has outlived the burst window still folds into its
+       incident instead of piling up rows.
+
+    Without a source_ip AND without a host there is nothing to key on, so
+    nothing merges (an anonymous alert must never absorb an unrelated one).
+    """
+    if not source_ip and not host:
+        return None
+    burst = await find_recent_incident(
+        db,
+        client_id=client_id,
+        source_ip=source_ip,
+        source=INCIDENT_BURST_SOURCES,
+        window=INCIDENT_BURST_WINDOW,
+        host=host,
+        target=target,
+        rolling=True,
+    )
+    if burst is not None or not kind:
+        return burst
+    return await find_recent_incident(
+        db,
+        client_id=client_id,
+        source_ip=source_ip,
+        source=source,
+        window=INCIDENT_DEDUP_WINDOW,
+        kind=kind,
+        host=host,
+    )
 
 
 async def _sync_auto_response_events(db: AsyncSession, client_id: str) -> int:

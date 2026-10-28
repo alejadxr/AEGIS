@@ -28,6 +28,9 @@ from app.core.ai_mode import degrade_or_call, ai_available, MODE, AIMode
 from app.core.guardrails import guardrail_engine
 from app.core.events import event_bus
 from app.models.client import Client
+from app.services.incident_quality import (
+    EVIDENCE_PROMPT_RULE, apply_probe_evidence, describe_without_overclaim, retitle_severity,
+)
 from app.models.incident import Incident
 from app.models.audit_log import AuditLog
 
@@ -379,7 +382,24 @@ class AIDecisionEngine:
         sigma_matches: list[dict],
         triage_result: dict,
     ):
-        """Create an incident record in the DB (async, non-blocking)."""
+        """Create an incident record in the DB (async, non-blocking).
+
+        Serialised per attacker: fast_triage spawns one of these tasks per
+        event, and without the lock a burst's tasks all look for an incident to
+        merge into before any of them has committed one.
+        """
+        from app.services.incident_quality import burst_lock
+        async with burst_lock(event.get("source_ip"), event.get("hostname")):
+            await self._create_fast_incident_locked(event, threat_type, severity, sigma_matches, triage_result)
+
+    async def _create_fast_incident_locked(
+        self,
+        event: dict,
+        threat_type: str,
+        severity: str,
+        sigma_matches: list[dict],
+        triage_result: dict,
+    ):
         source_ip = event.get("source_ip")
         if source_ip:
             try:
@@ -406,10 +426,39 @@ class AIDecisionEngine:
                 rule_titles = [m.get("title", m.get("rule_title", "")) for m in sigma_matches]
 
                 sigma_rule_ids = [m.get("id", m.get("rule_id")) for m in sigma_matches]
+
+                # This path used to create an incident per event with no
+                # dedup at all. It now joins the same burst lookup as the
+                # correlation engine, so one attacker's run is one incident
+                # across both detectors.
+                from app.services.firewall_sync import find_mergeable_incident
+                from app.services.incident_quality import incident_target, merge_into_incident
+
+                evidence_severity, _ = apply_probe_evidence(event, severity, "")
+                existing = await find_mergeable_incident(
+                    db,
+                    client_id=client.id,
+                    source_ip=event.get("source_ip"),
+                    source="fast_triage",
+                    kind=sigma_rule_ids[0] if sigma_rule_ids else None,
+                    host=event.get("hostname"),
+                    target=incident_target(event),
+                )
+                if existing is not None:
+                    for rid, rtitle in zip(sigma_rule_ids or [None], rule_titles or ["Fast triage detection"]):
+                        merge_into_incident(existing, rule_id=rid, rule_title=rtitle, severity=evidence_severity)
+                    await db.commit()
+                    logger.info(f"Fast triage match folded into incident {existing.id}")
+                    return
+
+                description = describe_without_overclaim(
+                    f"Auto-detected via fast triage pipeline. Threat type: {threat_type}.", event
+                ) or ""
+                severity, description = apply_probe_evidence(event, severity, description)
                 incident = Incident(
                     client_id=client.id,
                     title=f"{severity.upper()}: {', '.join(rule_titles) or 'Fast triage detection'}",
-                    description=f"Auto-detected via fast triage pipeline. Threat type: {threat_type}.",
+                    description=description,
                     severity=severity,
                     status="auto_responded",
                     source="fast_triage",
@@ -972,7 +1021,9 @@ class AIDecisionEngine:
         }
 
         async def _ai_triage(_data: dict) -> dict:
-            messages = [{"role": "user", "content": f"Triage this security event:\n{json.dumps(_data, default=str)}"}]
+            messages = [{"role": "user", "content": (
+                f"Triage this security event:\n{json.dumps(_data, default=str)}\n{EVIDENCE_PROMPT_RULE}"
+            )}]
             response = await openrouter_client.query(messages, "triage")
             result = self._parse_json_response(response.get("content", "{}"), _default)
             raw_model = response.get("model_used", "unknown")
@@ -1017,7 +1068,7 @@ class AIDecisionEngine:
                 "role": "user",
                 "content": (
                     f"Classify this threat in depth.\nAlert: {json.dumps(_data, default=str)}\n"
-                    f"Initial triage: {json.dumps(_triage, default=str)}"
+                    f"Initial triage: {json.dumps(_triage, default=str)}\n{EVIDENCE_PROMPT_RULE}"
                 ),
             }]
             response = await openrouter_client.query(messages, "classification")
@@ -1082,11 +1133,31 @@ class AIDecisionEngine:
         }
         if alert_source in ("log_watcher", "correlation_engine") and alert_data.get("pattern"):
             _origin["rule"] = alert_data.get("pattern")
+        # Evidence gates (v1.7.29). Wording: the model is told not to claim
+        # success without a 2xx, but it does not always obey, so the text that
+        # comes back is scrubbed too. Severity: a 404/410 proves the probe
+        # missed, so the rating drops one level from the rule's static one —
+        # capped from the ALERT's severity as well, because the model tends to
+        # echo it back unchanged.
+        title = describe_without_overclaim(caller_title or fallback_title, alert_data)
+        description = describe_without_overclaim(
+            triage.get("summary", "") or alert_data.get("description", ""), alert_data
+        ) or ""
+        triage_severity = triage.get("severity", "medium")
+        severity = triage_severity
+        alert_severity = alert_data.get("severity")
+        base_severity = alert_severity if alert_severity in ("low", "medium", "high", "critical") else severity
+        lowered, description = apply_probe_evidence(alert_data, base_severity, description)
+        if _severity_order(lowered) < _severity_order(severity):
+            severity = lowered
+        if lowered != base_severity:
+            for old_sev in {triage_severity, base_severity}:
+                title = retitle_severity(title, old_sev, severity)
         incident = Incident(
             client_id=client.id,
-            title=caller_title or fallback_title,
-            description=triage.get("summary", "") or alert_data.get("description", ""),
-            severity=triage.get("severity", "medium"),
+            title=title,
+            description=description,
+            severity=severity,
             status="investigating",
             source=alert_source,
             mitre_technique=mitre.get("technique", triage.get("mitre_technique")),

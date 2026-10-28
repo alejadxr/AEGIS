@@ -543,8 +543,17 @@ BUILT_IN_RULES: list[dict] = [
     # 10 — Web shell activity
     {
         "id": "web_shell_activity",
-        "title": "Web Shell Activity Detected",
-        "description": "Suspicious HTTP requests consistent with web shell usage.",
+        # Title/description say what was OBSERVED (a request shape), not an
+        # outcome: the rule reads no response status and no file evidence, so
+        # it cannot know a shell exists. The id is unchanged on purpose —
+        # playbooks, chains and incident history key on it.
+        "title": "Repeated POSTs to Script Paths (Possible Web Shell Attempt)",
+        "description": (
+            "Three or more POST requests to .php/.asp/.jsp paths from one source "
+            "within two minutes. This is a request-shape signature only: no "
+            "response status or file evidence is checked, so it is an attempt "
+            "pattern, not confirmed web shell activity."
+        ),
         "severity": "critical",
         "enabled": True,
         "source": "builtin",
@@ -3629,46 +3638,40 @@ def _log_filter_problems(rule: Any, origin: str) -> int:
 
 async def _escalate_incident(db: Any, incident: Any, rule: dict, alert_data: dict) -> None:
     """Fold a duplicate correlation trigger into an existing incident instead
-    of creating a new row (v1.6.4.x, Fix 5 — see find_recent_incident() in
-    firewall_sync.py, which is what locates `incident` within the dedup
-    window for the same client/source_ip/rule).
+    of creating a new row (v1.6.4.x, Fix 5 — see find_mergeable_incident() in
+    firewall_sync.py, which locates `incident`).
 
-    Non-destructive JSON merge into ai_analysis, mirroring the pattern
-    firewall_sync._reconcile_incidents already uses for resolution_note:
-    bumps an occurrence counter + last_seen timestamp, and escalates the
-    incident's severity in place if this trigger is MORE severe than what's
-    currently recorded — so a repeat attack is never silently dropped, it's
-    folded in and the incident's urgency reflects the worst trigger seen.
-    `incident` is an app.models.incident.Incident row (loaded lazily to
-    match this module's existing style of deferring model imports).
+    Since v1.7.29 `incident` may belong to a DIFFERENT rule of the same
+    attacker's burst, not only a repeat of this one. The merge itself lives in
+    incident_quality.merge_into_incident: it accumulates the matched rule
+    ids/titles, bumps the occurrence counter and only ever raises severity.
     """
-    from app.services.ai_engine import _severity_order
-
-    analysis = incident.ai_analysis or {}
-    dedup = analysis.get("dedup") or {
-        "count": 1,
-        "first_seen": (incident.detected_at or datetime.utcnow()).isoformat(),
-    }
-    dedup["count"] = dedup.get("count", 1) + 1
-    dedup["last_seen"] = datetime.utcnow().isoformat()
-    dedup["last_rule"] = rule.get("id")
-    analysis["dedup"] = dedup
-    incident.ai_analysis = analysis
+    from app.services.incident_quality import apply_probe_evidence, merge_into_incident
 
     new_severity = alert_data.get("severity") or rule.get("severity")
-    if new_severity and _severity_order(new_severity) > _severity_order(incident.severity):
+    # A 404 on this match lowers what it contributes; it can still not lower
+    # what the incident already is (merge_into_incident only raises).
+    new_severity, _ = apply_probe_evidence(alert_data, new_severity or "", "")
+    before = incident.severity
+    merge_into_incident(
+        incident,
+        rule_id=rule.get("id"),
+        rule_title=rule.get("title"),
+        severity=new_severity or None,
+    )
+    if incident.severity != before:
         logger.info(
             f"correlation_engine dedup: escalating incident {incident.id} "
-            f"severity {incident.severity} -> {new_severity} "
+            f"severity {before} -> {incident.severity} "
             f"(rule={rule.get('id')}, source_ip={incident.source_ip})"
         )
-        incident.severity = new_severity
 
     await db.commit()
+    count = ((incident.ai_analysis or {}).get("dedup") or {}).get("count")
     logger.info(
-        f"correlation_engine dedup: folded repeat trigger into incident "
+        f"correlation_engine dedup: folded trigger into incident "
         f"{incident.id} (rule={rule.get('id')}, source_ip={incident.source_ip}, "
-        f"occurrences={dedup['count']})"
+        f"occurrences={count})"
     )
 
 
@@ -4768,6 +4771,15 @@ class CorrelationEngine:
                     return
             except Exception as exc:
                 logger.warning(f"correlation_engine safelist import failed: {exc}")
+        # The rules of one burst fire in separate tasks within milliseconds of
+        # each other. Holding a per-attacker lock across find-then-create makes
+        # the second task see the first one's incident instead of racing it
+        # and opening its own.
+        from app.services.incident_quality import burst_lock
+        async with burst_lock(source_ip, alert_data.get("host")):
+            await self._create_incident_locked(rule, alert_data, source_ip)
+
+    async def _create_incident_locked(self, rule: dict, alert_data: dict, source_ip: Optional[str]) -> None:
         try:
             from app.database import async_session
             from app.services.ai_engine import ai_engine
@@ -4781,33 +4793,33 @@ class CorrelationEngine:
                     logger.error("Correlation engine: no client found, cannot create incident")
                     return
 
-                # v1.6.4.x (Fix 5): dedup — correlation_engine previously had NO
-                # existence check at all before creating an incident (unlike
-                # firewall_sync, which has had a 24h dedup window since v1.6.3.2).
-                # A repeat trigger of the SAME rule against the SAME source_ip
-                # within the cooldown window now folds into the existing
-                # open/investigating/auto_responded incident (escalating its
-                # severity/occurrence count) instead of creating a new row.
-                # Distinct rule_ids from the same source_ip are NOT collapsed —
-                # find_recent_incident() matches on rule id too, so a genuinely
-                # different attack pattern still opens its own incident.
-                from app.services.firewall_sync import find_recent_incident, INCIDENT_DEDUP_WINDOW
-
+                # Dedup (v1.6.4.x Fix 5, widened in v1.7.29). A trigger folds into
+                # an existing incident when it is (a) the same attacker's burst —
+                # same source_ip (or host) and target within the burst window,
+                # whatever rule fired — or (b) a repeat of the same rule inside
+                # 24h. The burst is keyed on the source and not on the rule id
+                # because one scanner run trips many rules within seconds and
+                # opening one incident per rule buried the operator in 5-15
+                # rows for a single attack; the rule ids stay on the incident
+                # (matched_rules) so nothing probed is hidden.
+                #
                 # alert_data["source"] is "correlation_engine" for sigma rules
                 # (_on_rule_triggered) and "correlation_engine_chain" for chain
                 # rules (_on_chain_triggered) — this is what ai_engine._create_incident
-                # actually writes to Incident.source on the (predominant) AI path,
-                # so matching on it here (rather than hardcoding one string) is
-                # what makes find_recent_incident() actually find prior incidents
-                # for both rule kinds.
-                existing = await find_recent_incident(
+                # actually writes to Incident.source on the (predominant) AI path.
+                from app.services.firewall_sync import find_mergeable_incident
+                from app.services.incident_quality import (
+                    apply_probe_evidence, describe_without_overclaim, incident_target,
+                )
+
+                existing = await find_mergeable_incident(
                     db,
                     client_id=client.id,
                     source_ip=source_ip,
                     source=alert_data.get("source", "correlation_engine"),
-                    window=INCIDENT_DEDUP_WINDOW,
                     kind=rule["id"],
                     host=alert_data.get("host"),
+                    target=incident_target(alert_data),
                 )
                 if existing is not None:
                     await _escalate_incident(db, existing, rule, alert_data)
@@ -4828,11 +4840,22 @@ class CorrelationEngine:
                         mitre_technique = None
                         mitre_tactic = None
                     from datetime import datetime as _dt
+                    # Same evidence gates as the AI path (ai_engine._create_incident):
+                    # a 404 lowers the rating, and the rule text never claims
+                    # more than the response status supports.
+                    fb_severity, fb_description = apply_probe_evidence(
+                        alert_data,
+                        rule["severity"],
+                        describe_without_overclaim(
+                            rule.get("description", "") or alert_data.get("description", ""),
+                            alert_data,
+                        ) or "",
+                    )
                     incident = Incident(
                         client_id=client.id,
-                        title=f"{rule['severity'].upper()}: {rule['title']}",
-                        description=rule.get("description", "") or alert_data.get("description", ""),
-                        severity=rule["severity"],
+                        title=f"{fb_severity.upper()}: {rule['title']}",
+                        description=fb_description,
+                        severity=fb_severity,
                         status="investigating",
                         source="correlation_engine",
                         mitre_technique=mitre_technique,
