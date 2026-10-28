@@ -12,6 +12,7 @@ from app.database import async_session
 from app.models.honeypot import HoneypotInteraction, Honeypot
 from app.models.attacker_profile import AttackerProfile
 from app.models.threat_intel import ThreatIntel
+from app.core.attack_detector import is_shared_egress
 from app.core.events import event_bus
 from app.modules.phantom.safety import should_skip_profile, is_synthetic_ip
 
@@ -188,6 +189,13 @@ class InteractionProcessor:
                 # Safe IPs are still recorded; they simply never become an IOC
                 # (see the threat_intel block below), so nothing gets blocked.
                 treat_as_hostile = not should_skip_profile(source_ip)
+                # Shared consumer egress (WARP / Private Relay) is recorded and
+                # profiled like any other hit, but must not feed anything that
+                # ends in a block: the IOC below, the Pi /analyze call and the
+                # shared threat hub (whose subscribers auto-block shared IOCs).
+                shared_egress = is_shared_egress(source_ip)
+                if shared_egress:
+                    treat_as_hostile = False
 
                 user_agent = data.get("headers", {}).get("User-Agent", "") if data.get("headers") else ""
                 commands = data.get("commands", [])
@@ -312,8 +320,8 @@ class InteractionProcessor:
                         ioc.confidence = min(1.0, (ioc.confidence or 0.7) + 0.05)
                 else:
                     logger.info(
-                        f"[Processor] Recorded honeypot interaction from safelisted "
-                        f"{source_ip} without creating an IOC (no block will follow)"
+                        f"[Processor] Recorded honeypot interaction from safelisted/"
+                        f"shared-egress {source_ip} without creating an IOC (no block will follow)"
                     )
 
                 await db.commit()
@@ -329,7 +337,7 @@ class InteractionProcessor:
                 # Notify external firewall about honeypot interaction from non-trusted IPs
                 trusted_ips = {"127.0.0.1", "::1", "localhost"}
                 firewall_url = os.getenv("AEGIS_FIREWALL_URL", "").rstrip("/")
-                if source_ip not in trusted_ips and firewall_url:
+                if source_ip not in trusted_ips and firewall_url and not shared_egress:
                     try:
                         import aiohttp
                         from app.core.firewall_client import firewall_auth_headers
@@ -351,6 +359,8 @@ class InteractionProcessor:
 
                 # Share to MongoDB aegis_threats collection
                 try:
+                    if shared_egress:
+                        raise RuntimeError("shared-egress IP is not shared as an IOC")
                     from app.services.threat_intel_hub import threat_intel_hub
                     await threat_intel_hub.share_ioc({
                         "ioc_type": "ip",

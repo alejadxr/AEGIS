@@ -37,6 +37,35 @@ _SAFE_NETS = [
     ipaddress.ip_network("127.0.0.0/8"),
 ]
 
+# Shared consumer egress (Cloudflare WARP / iCloud Private Relay): thousands of
+# real users exit through each address, so a block 403s the whole crowd and the
+# attacker just reconnects elsewhere. The hit is still logged and reported to
+# AEGIS (the incident exists); only the Pi block is skipped. Mirrors
+# backend/app/core/attack_detector.py `is_shared_egress` -- this script is
+# stdlib-only and deployed alone, so it cannot import it. WARP 104.28.0.0/16 is
+# built in; the Private Relay list is loaded from `shared_egress_ranges.txt`
+# beside this script (copy backend/app/data/icloud_private_relay_egress.txt) or
+# AEGIS_SHARED_EGRESS_FILE; AEGIS_SHARED_EGRESS_IPS adds IPs/CIDRs.
+_SHARED_EGRESS_NETS = [ipaddress.ip_network("104.28.0.0/16")]
+_SHARED_EGRESS_FILE = os.environ.get(
+    "AEGIS_SHARED_EGRESS_FILE",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "shared_egress_ranges.txt"),
+)
+_shared_egress_lines = list(
+    e.strip() for e in os.environ.get("AEGIS_SHARED_EGRESS_IPS", "").split(",")
+)
+try:
+    with open(_SHARED_EGRESS_FILE) as _f:
+        _shared_egress_lines += [ln.strip() for ln in _f if ln.strip() and not ln.startswith("#")]
+except OSError:
+    pass
+for _entry in _shared_egress_lines:
+    if _entry:
+        try:
+            _SHARED_EGRESS_NETS.append(ipaddress.ip_network(_entry, strict=False))
+        except ValueError:
+            pass
+
 SUSPICIOUS_PATHS = (
     "/.env", "/.git", "/wp-admin", "/wp-config", "/phpmyadmin",
     "/admin.php", "/server-status", "/.ssh", "/etc/passwd",
@@ -83,6 +112,14 @@ def _is_internal(ip):
         return False
 
 
+def _is_shared_egress(ip):
+    try:
+        addr = ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return False
+    return any(addr.version == n.version and addr in n for n in _SHARED_EGRESS_NETS)
+
+
 def _log_event(event):
     event["ts"] = datetime.now(timezone.utc).isoformat()
     line = json.dumps(event, default=str)
@@ -96,6 +133,9 @@ def _log_event(event):
 
 def _block_ip(ip, reason):
     if _is_internal(ip):
+        return
+    if _is_shared_egress(ip):
+        log.warning("NOT blocking shared-egress %s (WARP/Private Relay) reason=%s", ip, reason)
         return
     # force: touching a decoy is deliberate, high-confidence evidence, so skip
     # the agent's "2 sightings without an exploit signature" evidence gate.

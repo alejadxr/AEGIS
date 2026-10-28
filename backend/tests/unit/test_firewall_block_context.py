@@ -65,7 +65,7 @@ def test_responder_forces_with_reason(monkeypatch):
     mock = AsyncMock(return_value={"success": True})
     monkeypatch.setattr(rmod.firewall_client, "block_ip", mock)
     monkeypatch.setattr(rmod, "_is_safe_ip", lambda ip: False)
-    monkeypatch.setattr(rmod.ip_blocker_service, "block_ip", lambda ip: {"success": True})
+    monkeypatch.setattr(rmod.ip_blocker_service, "block_ip", lambda ip, **kw: {"success": True})
     r = rmod.ActiveResponder() if hasattr(rmod, "ActiveResponder") else None
     if r is None:
         r = next(v for v in vars(rmod).values() if isinstance(v, type) and hasattr(v, "_block_ip"))()

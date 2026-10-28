@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     # would leave the operator's entire safelist inert.
     AEGIS_SAFE_IPS: str = ""
     AEGIS_INTERNAL_IPS: str = ""
+    # Shared consumer egress that is detected and alerted on but never
+    # auto-blocked (WARP / Private Relay ranges are built in; this extends them).
+    # Declared for the same extra="ignore" reason as the two above.
+    AEGIS_SHARED_EGRESS_IPS: str = ""
     AEGIS_EDR_TRUSTED_PARENTS: str = ""
     AEGIS_EDR_TRUSTED_INSTALLERS: str = ""
     AEGIS_EDR_PROVISIONING_GRACE_MIN: str = ""

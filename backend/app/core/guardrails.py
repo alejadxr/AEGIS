@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.client import Client
 from app.models.action import Action
 from app.core.events import event_bus
-from app.core.attack_detector import _is_safe_ip
+from app.core.attack_detector import _is_safe_ip, is_shared_egress
 
 logger = logging.getLogger("aegis.guardrails")
 
@@ -151,6 +151,22 @@ class GuardrailEngine:
             return action
 
         policy = self.get_policy(client, action_type)
+
+        # Shared consumer egress (WARP / Private Relay): thousands of real users
+        # sit behind one address, so a block is never safe to automate. The
+        # incident still exists; only the block waits for a human. never_auto
+        # is already stricter, so it is left alone.
+        if (
+            action_type in _IP_TARGET_ACTIONS
+            and policy == "auto_approve"
+            and target
+            and is_shared_egress(target)
+        ):
+            policy = "require_approval"
+            ai_reasoning = (
+                f"{target} is shared consumer egress (WARP / iCloud Private Relay): "
+                f"not auto-blocked, awaiting operator approval. AI reasoning: {ai_reasoning}"
+            )
 
         if policy == "never_auto":
             status = "pending"

@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import log_audit
-from app.core.attack_detector import _is_safe_ip
+from app.core.attack_detector import _is_safe_ip, is_shared_egress
 from app.core.events import event_bus
 from app.core.ip_blocker import ip_blocker_service
 from app.core.firewall_client import firewall_client
@@ -59,6 +59,9 @@ class ActiveResponder:
         if action.action_type == "block_ip":
             # Hand the Pi the context the brain already has (see _block_ip).
             params = dict(params or {})
+            # Shared-egress blocks run only when a human approved them
+            # (approve_action stamps approved_by); guardrails never auto-approve one.
+            params["operator_approved"] = bool(action.approved_by)
             params.setdefault(
                 "reason",
                 f"response action {action.action_type}: {(action.ai_reasoning or 'approved by AEGIS')[:200]}",
@@ -146,6 +149,16 @@ class ActiveResponder:
             logger.warning(f"RESPONSE: Refusing to block safe IP {target} (AEGIS_SAFE_IPS)")
             return {"success": False, "action": "block_ip", "target": target, "skipped": "safe_ip"}
 
+        # Shared consumer egress is never auto-blocked (see attack_detector
+        # _SHARED_EGRESS_NETWORKS); a human-approved action is the override.
+        operator_approved = bool((params or {}).get("operator_approved"))
+        if is_shared_egress(target) and not operator_approved:
+            logger.warning(
+                f"RESPONSE: Refusing to auto-block shared-egress IP {target} "
+                f"(needs operator approval)"
+            )
+            return {"success": False, "action": "block_ip", "target": target, "skipped": "shared_egress"}
+
         logger.warning(f"RESPONSE: Blocking IP {target} — executing real block")
 
         # 1. Block via external firewall (if AEGIS_FIREWALL_URL is configured)
@@ -162,7 +175,7 @@ class ActiveResponder:
         logger.info(f"Firewall block result for {target}: {firewall_result}")
 
         # 2. Block locally via ip_blocker_service (blocked_ips.txt + in-memory set → 403 middleware)
-        local_result = ip_blocker_service.block_ip(target)
+        local_result = ip_blocker_service.block_ip(target, force=operator_approved)
         logger.info(f"Local block result for {target}: {local_result}")
 
         # 3. System-level firewall (pfctl / iptables) — gated by AEGIS_REAL_FW=1
