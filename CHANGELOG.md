@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.28] - 2026-10-28
+
+### Fixed — every wrong block was permanent and invisible
+- The Pi agent parsed `duration` and never read it, with no expiry mechanism
+  at all, so the honeypot's 24h blocks and the detector's 1h blocks never
+  lapsed. Expiries now persist with the block records, a sweep releases them,
+  and `/blocked` hides expired entries so a stalled sweeper cannot keep a
+  stale block trusted. Release verifies the DROP rule is really gone before
+  forgetting the record: `iptables -D` can fail while reporting success.
+- The false-positive auto-unblock POSTed to `/unblock`, a route the agent has
+  never served, and the 404 was swallowed at debug level.
+- A block the agent deferred for lack of evidence was logged as "Firewall
+  notified to block".
+
+### Added — shared consumer egress: detected, never auto-blocked
+- Cloudflare WARP and iCloud Private Relay addresses carry thousands of real
+  users each, so blocking one punishes visitors while the attacker reconnects
+  elsewhere; but marking them safe would blind the platform to real attacks
+  through them. They are now a third category: still detected, correlated and
+  raised, never auto-blocked, and a block needs operator approval. Extend with
+  `AEGIS_SHARED_EGRESS_IPS`.
+
+### Changed
+- The firewall agent's systemd drop-ins ship as commented templates: that
+  configuration existed only on the device, so a reinstall dropped it.
+
 ## [1.7.27] - 2026-10-23
 
 ### Fixed — release pipeline
