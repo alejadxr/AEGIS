@@ -887,11 +887,14 @@ class AIDecisionEngine:
         Safe IPs still short-circuit through guardrail_engine and are never
         blocked at all, provisionally or otherwise.
         """
-        from app.core.attack_detector import _is_safe_ip
+        from app.core.attack_detector import _is_safe_ip, is_shared_egress
         try:
-            if target and _is_safe_ip(target):
+            if target and (_is_safe_ip(target) or is_shared_egress(target)):
                 # Route safe IPs through the guardrail so the existing
                 # skipped_safe_ip handling / event fires exactly as before.
+                # Shared-egress IPs (WARP / Private Relay) take the same road:
+                # the guardrail turns their block into require_approval instead
+                # of an expiring auto-block that would 403 the whole crowd.
                 return await guardrail_engine.evaluate_action(
                     client=client,
                     action_type="block_ip",

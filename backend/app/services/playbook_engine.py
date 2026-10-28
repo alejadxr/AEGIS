@@ -537,6 +537,20 @@ class PlaybookEngine:
 
         return execution_result
 
+    @staticmethod
+    def _shared_egress(ip: str) -> bool:
+        """Playbooks run without guardrail/approval context, so a shared-egress
+        source (WARP / Private Relay) is refused here: the incident stands, the
+        block does not."""
+        try:
+            from app.core.attack_detector import is_shared_egress
+            if is_shared_egress(ip):
+                logger.warning(f"GUARDRAIL (playbook): Refusing block_ip on shared-egress IP {ip}")
+                return True
+        except Exception:
+            pass
+        return False
+
     async def _block_via_firewall(self, ip: str, playbook: Optional[dict] = None) -> dict:
         """Block IP via Firewall (Pi firewall). Fire-and-forget."""
         # BUG-4 fix: enforce the same safe-IP CIDR check that
@@ -558,6 +572,8 @@ class PlaybookEngine:
                 }
         except Exception:
             pass
+        if self._shared_egress(ip):
+            return {"action": "block_ip", "via": "firewall", "status": "skipped_shared_egress", "ip": ip}
         try:
             from app.core.firewall_client import firewall_client
             playbook = playbook or {}
@@ -597,6 +613,8 @@ class PlaybookEngine:
                 }
         except Exception:
             pass
+        if self._shared_egress(ip):
+            return {"action": "block_ip", "via": "local", "status": "skipped_shared_egress", "ip": ip}
         try:
             from app.core.ip_blocker import ip_blocker_service
             result = ip_blocker_service.block_ip(ip)

@@ -47,6 +47,26 @@ Rollback: remove the line on the agent and restart it (back to compat mode).
 Any other client of the agent must send `X-AEGIS-FW-Auth` after enforcement is
 on, or be limited to the public-read paths.
 
+## Runtime configuration (systemd drop-ins)
+
+Everything that tunes the agent lives in drop-ins under
+`/etc/systemd/system/aegis-firewall.service.d/`, not in the unit that ships
+here, so an agent upgrade never overwrites a site's safelist. `examples/systemd-dropins/`
+holds a commented template for each, with placeholder addresses:
+
+| Drop-in | Sets | Why it is not in the unit |
+|---|---|---|
+| `10-safelist.conf` | `AEGIS_SAFE_IPS` | Published crawler/CDN ranges. Blocking one de-indexes the site, so the list is explicit and reviewed. |
+| `20-netshield.conf` | `AEGIS_DOS_NETSHIELD*` | SYN/connection limits are per-link capacity; a wrong value drops real users at the gateway. |
+| `30-local.conf` | `AEGIS_CRAWLER_NETS`, `AEGIS_CRAWLER_AUTO_UNBLOCK`, `AEGIS_ATTACKER_IPS` | Site-specific. The crawler list is generated from the vendor's published JSON (see the template). |
+| `40-secret.conf` | `EnvironmentFile` for the shared secret | Unit files are world-readable via `systemctl cat`; the secret belongs in a root-only file. |
+
+These are the agent's real configuration: back them up with the host, because
+they exist nowhere else. Copy, edit, then `sudo systemctl daemon-reload &&
+sudo systemctl restart aegis-firewall`. Confirm what the service actually
+loaded with `systemctl show aegis-firewall -p Environment` (it prints values,
+so do not paste the output anywhere public).
+
 ## Tests
 
 `cd firewall-agent && python3 -m pytest tests -q`

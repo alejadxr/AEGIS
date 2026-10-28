@@ -10,6 +10,7 @@ frozenset scanner UA check, perf_counter instrumentation, pre-built responses,
 module-level constants. Target: <30ms per detection.
 """
 import asyncio
+import bisect
 import logging
 import os
 import re
@@ -280,6 +281,119 @@ def _is_crawler_ip(ip: str) -> bool:
     except (ValueError, TypeError):
         return False
     return any(addr in net for net in _CRAWLER_NETWORKS)
+
+# ---------------------------------------------------------------------------
+# Shared consumer egress: NO-BLOCK, STILL-ALERT.
+#
+# A third category that is deliberately NOT either of the two above, and must
+# not be collapsed into them:
+#
+#   * `_CRAWLER_NETWORKS` is "trusted": never blocked AND never an incident.
+#     Putting WARP / Private Relay there would blind AEGIS to every real attack
+#     that arrives through them -- a scanner only has to turn WARP on.
+#   * `_SHARED_CLOUD_NETWORKS` is "hostile unless proven a crawler": attackers
+#     rent those VMs, and one IP is one tenant, so blocking it is precise.
+#
+# Consumer egress is the opposite of precise. Thousands of unrelated real
+# people (every iPhone with Private Relay, every browser with WARP) exit
+# through the same few addresses, so blocking one punishes the whole crowd for
+# one visitor's probe -- and gains nothing, because the attacker reconnects
+# through a different exit within seconds. On 2026-10-28 five such addresses
+# were auto-blocked after an `.env` probe and real visitors got 403s from the
+# owner's public sites.
+#
+# So these IPs are fully detected, correlated and raised as incidents, but are
+# never auto-blocked (`is_shared_egress`). They are NOT folded into
+# `_is_safe_ip`: that gate also suppresses detection. Blocking paths consult
+# `is_shared_egress` separately; a human can still block one deliberately via
+# an approved action (guardrails demand approval for it).
+#
+# Ranges, only where the vendor publishes them:
+#   * iCloud Private Relay: Apple's own CSV, vendored (collapsed) in
+#     app/data/icloud_private_relay_egress.txt. Source:
+#     https://mask-api.icloud.com/egress-ip-ranges.csv -- refresh with
+#     scripts/update_shared_egress.py.
+#   * Cloudflare WARP (consumer 1.1.1.1 app): 104.28.0.0/16 below. Cloudflare
+#     does not label WARP egress as such (its docs say Cloudflare One client
+#     egress is "not listed" on cloudflare.com/ips), so this rests on three
+#     facts: it is absent from Cloudflare's published proxy ranges
+#     (https://www.cloudflare.com/ips-v4, which stops at 104.24.0.0/14); it is
+#     published per-/32 with per-country geolocation in Cloudflare's own geofeed
+#     (https://api.cloudflare.com/local-ip-ranges.csv), the shape of client
+#     egress rather than anycast; and the five addresses blocked on 2026-10-28
+#     sit inside it. WARP's IPv6 egress has no authoritative published range, so
+#     none is listed here; the Private Relay file already carries Cloudflare's
+#     v6 relay space.
+# Operators extend this with AEGIS_SHARED_EGRESS_IPS (IPs and/or CIDRs).
+_SHARED_EGRESS_NETWORKS: list = [
+    _ipaddress.ip_network(_cidr)
+    for _cidr in (
+        "104.28.0.0/16",    # Cloudflare WARP consumer egress (see evidence above)
+    )
+]
+
+_SHARED_EGRESS_DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "icloud_private_relay_egress.txt"
+
+
+def _load_range_index(path) -> tuple[list, list]:
+    """Load a one-CIDR-per-line file into sorted (v4, v6) interval lists.
+
+    Each list holds (first, last) integer pairs sorted by `first`, so a lookup
+    is one bisect instead of a scan over ~14k networks. The input is the
+    collapsed Private Relay file, so intervals do not overlap. Fail-safe: a
+    missing/unreadable file yields empty indexes and logs, never raises.
+    """
+    v4: list = []
+    v6: list = []
+    try:
+        for line in Path(path).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                net = _ipaddress.ip_network(line, strict=False)
+            except ValueError:
+                continue
+            (v4 if net.version == 4 else v6).append(
+                (int(net.network_address), int(net.broadcast_address))
+            )
+    except Exception as exc:
+        logger.warning(f"shared-egress range file {path} unavailable: {exc}")
+    v4.sort()
+    v6.sort()
+    return v4, v6
+
+
+_SHARED_EGRESS_V4, _SHARED_EGRESS_V6 = _load_range_index(_SHARED_EGRESS_DATA_FILE)
+_shared_egress_literals, _shared_egress_env_nets = _parse_ip_safelist_env("AEGIS_SHARED_EGRESS_IPS")
+_SHARED_EGRESS_NETWORKS.extend(_shared_egress_env_nets)
+
+
+def _in_range_index(index: list, value: int) -> bool:
+    i = bisect.bisect_right(index, (value, float("inf"))) - 1
+    return i >= 0 and index[i][0] <= value <= index[i][1]
+
+
+def is_shared_egress(ip: str) -> bool:
+    """True if `ip` is shared consumer egress (WARP / Private Relay / operator list).
+
+    Such an IP must never be auto-blocked, but IS still detected and alerted on
+    -- see the block comment above. Parse-safe: malformed input returns False.
+    """
+    if not ip or not isinstance(ip, str):
+        return False
+    if ip in _shared_egress_literals:
+        return True
+    try:
+        addr = _ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return False
+    if any(addr in net for net in _SHARED_EGRESS_NETWORKS):
+        return True
+    return _in_range_index(
+        _SHARED_EGRESS_V4 if addr.version == 4 else _SHARED_EGRESS_V6, int(addr)
+    )
+
 
 # Parse AEGIS_SAFE_IPS (default: loopback/localhost) AND AEGIS_INTERNAL_IPS
 # (no default -- purely additive). Both feed the SAME SAFE_IPS / _SAFE_NETWORKS
@@ -631,6 +745,7 @@ _blocked_ips: set[str] = set()
 _stats = {
     "total_detections": 0,
     "total_blocks": 0,
+    "shared_egress_skips": 0,   # detections on shared-egress IPs that were NOT blocked
     "detections_by_type": defaultdict(int),
     "last_detection_us": 0,      # last detection time in microseconds
     "avg_detection_us": 0.0,     # rolling average detection time
@@ -708,6 +823,18 @@ async def _block_ip(ip: str, reason: str):
         logger.warning(f"[AttackDetector] Refusing to block safe IP {ip}")
         return
 
+    if is_shared_egress(ip):
+        # Detected and alerted, never blocked: thousands of real users share
+        # this address (see _SHARED_EGRESS_NETWORKS). The caller still answers
+        # the offending request with a 403; only the IP-level block is skipped.
+        logger.warning(
+            f"[AttackDetector] NOT blocking shared-egress IP {ip} -- reason: {reason}"
+        )
+        _stats["shared_egress_skips"] += 1
+        if _shared_egress_incident_due(ip):
+            asyncio.ensure_future(_create_block_incident(ip, reason, blocked=False))
+        return
+
     _blocked_ips.add(ip)
     _stats["total_blocks"] += 1
 
@@ -746,7 +873,50 @@ async def _block_ip(ip: str, reason: str):
         logger.debug(f"[AttackDetector] IP investigation skipped: {e}")
 
 
-async def _create_block_incident(ip: str, reason: str):
+# A shared-egress IP is never blocked, so detection keeps firing on every
+# request past the threshold. One incident per IP per hour keeps the operator
+# informed without flooding the table (the blocked path gets this for free:
+# a blocked IP never reaches detection again).
+_SHARED_EGRESS_INCIDENT_COOLDOWN_S = 3600.0
+_SHARED_EGRESS_INCIDENT_MAX = 2048
+_shared_egress_incident_at: dict[str, float] = {}
+
+
+def _shared_egress_incident_due(ip: str) -> bool:
+    now = time.monotonic()
+    last = _shared_egress_incident_at.get(ip)
+    if last is not None and now - last < _SHARED_EGRESS_INCIDENT_COOLDOWN_S:
+        return False
+    if len(_shared_egress_incident_at) >= _SHARED_EGRESS_INCIDENT_MAX:
+        for k in [k for k, v in _shared_egress_incident_at.items()
+                  if now - v >= _SHARED_EGRESS_INCIDENT_COOLDOWN_S]:
+            _shared_egress_incident_at.pop(k, None)
+        while len(_shared_egress_incident_at) >= _SHARED_EGRESS_INCIDENT_MAX:
+            _shared_egress_incident_at.pop(next(iter(_shared_egress_incident_at)), None)
+    _shared_egress_incident_at[ip] = now
+    return True
+
+
+def _block_incident_text(ip: str, reason: str, blocked: bool) -> tuple[str, str]:
+    """(title, description) for the incident raised when an IP crosses the threshold."""
+    if blocked:
+        return (
+            f"CRITICAL: Auto-blocked IP {ip}",
+            f"IP {ip} was auto-blocked after exceeding "
+            f"{BLOCK_THRESHOLD} attacks in {BLOCK_WINDOW}s. Reason: {reason}",
+        )
+    return (
+        f"CRITICAL: Attack from shared-egress IP {ip} (NOT blocked)",
+        f"IP {ip} exceeded {BLOCK_THRESHOLD} attacks in {BLOCK_WINDOW}s but was "
+        f"NOT blocked: it is shared consumer egress (Cloudflare WARP / iCloud "
+        f"Private Relay or an AEGIS_SHARED_EGRESS_IPS entry) used by many "
+        f"legitimate visitors, and the attacker would simply reconnect through "
+        f"another exit. Offending requests are still refused individually. "
+        f"Review it and block deliberately only if you are sure. Reason: {reason}",
+    )
+
+
+async def _create_block_incident(ip: str, reason: str, blocked: bool = True):
     """Create incident in DB. Runs as fire-and-forget task."""
     try:
         from app.database import async_session as _async_session
@@ -758,14 +928,11 @@ async def _create_block_incident(ip: str, reason: str):
             result = await db.execute(select(Client).limit(1))
             client = result.scalar_one_or_none()
             if client:
+                title, description = _block_incident_text(ip, reason, blocked)
                 incident = Incident(
                     client_id=client.id,
-                    title=f"CRITICAL: Auto-blocked IP {ip}",
-                    description=(
-                        f"IP {ip} was auto-blocked after exceeding "
-                        f"{BLOCK_THRESHOLD} attacks in {BLOCK_WINDOW}s. "
-                        f"Reason: {reason}"
-                    ),
+                    title=title,
+                    description=description,
                     severity="critical",
                     status="open",
                     source="attack_detector",
@@ -775,7 +942,8 @@ async def _create_block_incident(ip: str, reason: str):
                 db.add(incident)
                 await db.commit()
                 logger.info(
-                    f"[AttackDetector] Created CRITICAL incident for blocked IP {ip}"
+                    f"[AttackDetector] Created CRITICAL incident for "
+                    f"{'blocked' if blocked else 'unblocked shared-egress'} IP {ip}"
                 )
     except Exception as e:
         logger.error(f"[AttackDetector] Failed to create incident: {e}")
@@ -810,7 +978,21 @@ async def _notify_firewall(ip: str, reason: str):
                         f"HTTP {resp.status} {body} — enforced locally only"
                     )
                 else:
-                    logger.info(f"[AttackDetector] Firewall notified to block {ip}")
+                    # HTTP 200 does not mean enforced: the agent's evidence gate
+                    # answers 200 {"blocked": false, "deferred": true} when it
+                    # declines (see firewall-agent POST /block).
+                    try:
+                        body = await resp.json(content_type=None)
+                    except Exception:
+                        body = None
+                    if isinstance(body, dict) and body.get("blocked") is False:
+                        logger.warning(
+                            f"[AttackDetector] Firewall DEFERRED block for {ip} "
+                            f"(not enforced remotely): "
+                            f"{str(body.get('detail') or body.get('message') or '')[:200]}"
+                        )
+                    else:
+                        logger.info(f"[AttackDetector] Firewall notified to block {ip}")
     except Exception as e:
         logger.warning(f"[AttackDetector] Firewall block failed (non-fatal): {e}")
 

@@ -105,10 +105,25 @@ class IPBlockerService:
     def is_blocked(self, ip: str) -> bool:
         return ip in self._blocked
 
-    def block_ip(self, ip: str) -> dict:
+    def block_ip(self, ip: str, force: bool = False) -> dict:
+        """Add `ip` to the blocklist.
+
+        Shared consumer egress (WARP / Private Relay) is refused unless
+        `force=True`, which only an operator-approved action passes: this is the
+        single chokepoint every automated blocker funnels through, so the guard
+        holds for callers that never heard of the shared-egress category.
+        """
         if not ip or not isinstance(ip, str):
             logger.warning(f"block_ip called with invalid IP: {ip!r}, skipping")
             return {"success": False, "ip": ip, "error": "Invalid IP"}
+        if not force:
+            try:
+                from app.core.attack_detector import is_shared_egress
+                if is_shared_egress(ip):
+                    logger.warning(f"BLOCK_IP: refusing shared-egress IP {ip} (needs operator approval)")
+                    return {"success": False, "ip": ip, "skipped": "shared_egress"}
+            except Exception as exc:
+                logger.debug(f"shared-egress check failed for {ip}: {exc}")
         already_blocked = ip in self._blocked
         self._blocked.add(ip)
         _save_blocked_ips(self._blocked)

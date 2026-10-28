@@ -11,6 +11,7 @@ Flow: block first (safety) -> investigate (2-5s AI call) -> unblock if false pos
 import ipaddress
 import json
 import logging
+import os
 import time
 from datetime import datetime
 from typing import Optional
@@ -253,21 +254,23 @@ class IPInvestigator:
             logger.error(f"[IPInvestigator] Failed to unblock {ip} from ip_blocker: {e}")
 
         # Notify external firewall to unblock
+        # This used to POST {firewall_url}/unblock, a route the agent never
+        # served (it only has DELETE /block/{ip}); the 404 was swallowed at debug
+        # level, so a false positive stayed blocked on the Pi forever. Go through
+        # the client, and warn when it fails so the divergence is visible.
         try:
-            import os
-            import aiohttp
-            firewall_url = os.getenv("AEGIS_FIREWALL_URL", "")
-            if firewall_url:
-                from app.core.firewall_client import firewall_auth_headers
-                async with aiohttp.ClientSession(headers=firewall_auth_headers()) as session:
-                    await session.post(
-                        f"{firewall_url}/unblock",
-                        json={"ip": ip, "reason": "aegis_false_positive_auto_unblock"},
-                        timeout=aiohttp.ClientTimeout(total=3),
+            from app.core.firewall_client import firewall_client
+            if os.getenv("AEGIS_FIREWALL_URL", ""):
+                result = await firewall_client.unblock_ip(ip)
+                if result.get("success"):
+                    logger.info(f"[IPInvestigator] Firewall unblocked {ip}")
+                else:
+                    logger.warning(
+                        f"[IPInvestigator] Firewall unblock of false positive {ip} "
+                        f"FAILED, still blocked on the Pi: {result.get('error')}"
                     )
-                    logger.info(f"[IPInvestigator] Firewall notified to unblock {ip}")
         except Exception as e:
-            logger.debug(f"[IPInvestigator] Firewall unblock failed (non-fatal): {e}")
+            logger.warning(f"[IPInvestigator] Firewall unblock failed (non-fatal): {e}")
 
     async def _log_investigation(
         self,

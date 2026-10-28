@@ -653,6 +653,18 @@ class DoSShield:
         except Exception as exc:
             logger.debug("dos_shield _is_safe_ip check failed for %s: %s", ip, exc)
 
+        # Shared consumer egress (WARP / Private Relay) is detected -- the dos.*
+        # detection events that led here already raise the incident -- but never
+        # blocked: one flooding visitor would take the whole crowd behind that
+        # address offline.
+        try:
+            from app.core.attack_detector import is_shared_egress
+            if is_shared_egress(ip):
+                logger.warning("dos_shield: NOT blocking shared-egress IP %s (%s)", ip, reason)
+                return {"blocked": False, "reason": "shared_egress", "ip": ip, "detail": reason}
+        except Exception as exc:
+            logger.debug("dos_shield shared-egress check failed for %s: %s", ip, exc)
+
         now = time.monotonic()
         last = self._escalated.get(ip)
         if last is not None and (now - last) < self.block_duration:
