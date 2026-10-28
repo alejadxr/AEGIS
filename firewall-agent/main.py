@@ -644,6 +644,82 @@ def get_iptables_rules_parsed() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Block expiry
+# ---------------------------------------------------------------------------
+
+# Callers send `duration` (seconds) for temporary blocks (attack_detector: 1h,
+# aegis_honeypot: 24h). The field used to be parsed and ignored, so every
+# "temporary" block was permanent. ip -> epoch seconds; an IP with no entry is a
+# permanent block. Persisted in records[ip]["expires_at"] so a restart neither
+# resurrects expired blocks nor forgets live ones.
+MAX_BLOCK_DURATION = 30 * 24 * 3600
+EXPIRY_SWEEP_INTERVAL = 30
+_block_expiry: dict[str, float] = {}
+
+
+def _now_ts() -> float:
+    return time.time()
+
+
+def _is_expired(ip: str) -> bool:
+    exp = _block_expiry.get(ip)
+    return exp is not None and exp <= _now_ts()
+
+
+def _release_block(ip: str) -> bool:
+    """Remove the iptables rule and forget the block. Single path shared by
+    DELETE /block/{ip} and the expiry sweep so rule and record cannot diverge.
+
+    unblock_ip() reports success even when `iptables -D` failed (check=False),
+    so verify the rule is really gone. On failure nothing is forgotten: the
+    record stays and the caller decides whether to retry.
+    """
+    unblock_ip(ip)
+    try:
+        still_blocked = _ip_is_blocked(ip)
+    except (subprocess.SubprocessError, OSError) as e:
+        logger.error(f"Could not verify unblock of {ip}: {e}")
+        return False
+    if still_blocked:
+        logger.error(f"Unblock of {ip} failed: DROP rule still present, keeping record")
+        return False
+    _block_expiry.pop(ip, None)
+    if ip in _attackers:
+        _attackers[ip]["blocked"] = False
+    _save_blocked_ips(list_blocked_ips())
+    return True
+
+
+def expire_blocks() -> list[str]:
+    """Release every block whose expiry has passed. Returns the IPs released."""
+    released = []
+    for ip in [i for i in list(_block_expiry) if _is_expired(i)]:
+        reason = ((_attackers.get(ip) or {}).get("intel") or {}).get("reason")
+        try:
+            ok = _release_block(ip)
+        except Exception as e:
+            logger.error(f"Expiry release of {ip} raised: {e}")
+            continue
+        if not ok:
+            continue  # record kept; retried on the next sweep
+        logger.info(f"Block expired, released {ip} (reason: {reason or 'not reported'})")
+        _add_event("ip_block_expired", ip=ip,
+                   details=f"Block expired for {ip}: {reason or 'reason not reported'}",
+                   severity="info")
+        released.append(ip)
+    return released
+
+
+async def _expiry_sweep_loop():
+    while True:
+        await asyncio.sleep(EXPIRY_SWEEP_INTERVAL)
+        try:
+            expire_blocks()
+        except Exception as e:
+            logger.warning(f"Expiry sweep failed: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Persistence
 # ---------------------------------------------------------------------------
 
@@ -692,6 +768,9 @@ def _save_blocked_ips(ips: list[str]):
         for _ip in ips:
             _a = _attackers.get(_ip)
             if not _a:
+                # No classification, but the expiry must still survive a restart.
+                if _ip in _block_expiry:
+                    records[_ip] = {"expires_at": _block_expiry[_ip]}
                 continue
             records[_ip] = {
                 "threat_level": _a.get("threat_level", "HIGH"),
@@ -701,6 +780,8 @@ def _save_blocked_ips(ips: list[str]):
                 "reason": (_a.get("intel") or {}).get("reason"),
                 "total_attempts": (_a.get("stats") or {}).get("total_attempts", 0),
             }
+            if _ip in _block_expiry:
+                records[_ip]["expires_at"] = _block_expiry[_ip]
         data = {
             "blocked": ips,
             "records": records,
@@ -719,6 +800,18 @@ def _restore_iptables_rules():
     if not ips:
         logger.info("No persisted blocked IPs to restore")
         return
+    _recs = _load_blocked_records()
+    for _ip, _r in _recs.items():
+        if isinstance(_r, dict) and isinstance(_r.get("expires_at"), (int, float)):
+            _block_expiry[_ip] = float(_r["expires_at"])
+    # Blocks that lapsed while the agent was down are dropped, not re-applied.
+    lapsed = [i for i in ips if _is_expired(i)]
+    for ip in lapsed:
+        logger.info(f"Block for {ip} expired while agent was down, not restoring")
+        _block_expiry.pop(ip, None)
+    ips = [i for i in ips if i not in lapsed]
+    if lapsed:
+        _save_blocked_ips(ips)
     logger.info(f"Restoring {len(ips)} blocked IPs from {BLOCKED_IPS_FILE}")
     for ip in ips:
         try:
@@ -906,17 +999,19 @@ async def lifespan(app: FastAPI):
     # first refresh completes the whitelist is just the AEGIS_CRAWLER_NETS seed,
     # i.e. exactly today's behaviour. FCrDNS works from the first request.
     crawler_task = asyncio.create_task(_crawler_refresh_loop())
+    expiry_task = asyncio.create_task(_expiry_sweep_loop())
 
     _add_event("startup", details="AEGIS Firewall Agent started", severity="info")
     logger.info("AEGIS Firewall Agent ready on port 8765")
 
     yield
 
-    crawler_task.cancel()
-    try:
-        await crawler_task
-    except (asyncio.CancelledError, Exception):
-        pass
+    for _t in (crawler_task, expiry_task):
+        _t.cancel()
+        try:
+            await _t
+        except (asyncio.CancelledError, Exception):
+            pass
     logger.info("AEGIS Firewall Agent shutting down")
 
 
@@ -1080,7 +1175,9 @@ async def get_attacker(ip: str):
 
 @app.get("/blocked")
 async def get_blocked():
-    blocked = list_blocked_ips()
+    # Filter expired entries here too: a stalled sweeper must not keep a stale
+    # block visible (and thus trusted) to AEGIS.
+    blocked = [i for i in list_blocked_ips() if not _is_expired(i)]
     return {"blocked": blocked, "count": len(blocked)}
 
 
@@ -1156,6 +1253,11 @@ async def post_crawler_reconcile(dry_run: bool = True):
 async def post_block(req: IPRequest):
     ip = _validate_ip(req.ip)
 
+    if req.duration is not None and req.duration <= 0:
+        raise HTTPException(status_code=400,
+                            detail="duration must be a positive number of seconds")
+    duration = min(req.duration, MAX_BLOCK_DURATION) if req.duration is not None else None
+
     # Safety check
     if _is_safe_ip(ip):
         raise HTTPException(
@@ -1217,9 +1319,18 @@ async def post_block(req: IPRequest):
                 "detail": detail,
             }
 
+    # A temporary request must never downgrade an existing permanent block, so
+    # look before block_ip() adds the rule.
+    was_permanent = _ip_is_blocked(ip) and ip not in _block_expiry
+
     success = block_ip(ip)
     if not success:
         raise HTTPException(status_code=500, detail=f"Failed to block {ip}")
+
+    if duration is None:
+        _block_expiry.pop(ip, None)
+    elif not was_permanent:
+        _block_expiry[ip] = max(_block_expiry.get(ip, 0.0), _now_ts() + duration)
 
     # Track the attacker — now WITH the classification the caller sent, instead
     # of the hardcoded HIGH/[] that made /attackers useless (see IPRequest).
@@ -1250,6 +1361,7 @@ async def post_block(req: IPRequest):
         "blocked_count": len(blocked),
         "threat_level": threat_level,
         "attack_types": attack_types,
+        "expires_at": _block_expiry.get(ip),
     }
 
 
@@ -1257,15 +1369,9 @@ async def post_block(req: IPRequest):
 async def delete_block(ip: str):
     ip = _validate_ip(ip)
 
-    unblock_ip(ip)
-
-    # Update attacker state
-    if ip in _attackers:
-        _attackers[ip]["blocked"] = False
-
-    # Update persistence
+    if not _release_block(ip):
+        raise HTTPException(status_code=500, detail=f"Failed to unblock {ip}")
     blocked = list_blocked_ips()
-    _save_blocked_ips(blocked)
 
     # Log event
     _add_event("ip_unblocked", ip=ip, details=f"Unblocked IP {ip}", severity="medium")

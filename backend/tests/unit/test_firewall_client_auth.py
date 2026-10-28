@@ -33,5 +33,7 @@ def test_every_pi_caller_uses_the_shared_helper():
     import pathlib
     root = pathlib.Path(fc.__file__).resolve().parents[1]
     for rel in ("api/firewall.py", "core/attack_detector.py",
-                "modules/phantom/processor.py", "services/ip_investigator.py"):
+                "modules/phantom/processor.py"):
         assert "firewall_auth_headers" in (root / rel).read_text(), rel
+    # ip_investigator goes through firewall_client, which attaches the header itself.
+    assert "firewall_client.unblock_ip" in (root / "services/ip_investigator.py").read_text()

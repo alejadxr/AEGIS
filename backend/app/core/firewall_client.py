@@ -124,10 +124,25 @@ class FirewallClient:
             async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.post(f"{FIREWALL_API}/block", json=payload)
                 resp.raise_for_status()
-                return {"success": True, "response": resp.json()}
+                body = resp.json()
         except Exception as e:
             logger.error(f"Firewall block_ip({ip}) failed: {e}")
             return {"success": False, "error": str(e)}
+        # The agent's evidence gate answers HTTP 200 with {"blocked": false,
+        # "deferred": true} when it declines. That is NOT enforcement; reporting
+        # success made operators read "Firewall notified" as "IP is blocked".
+        # Only an explicit blocked=false is a refusal, so an agent that omits
+        # the key (older builds) keeps its current meaning.
+        if isinstance(body, dict) and body.get("blocked") is False:
+            msg = body.get("detail") or body.get("message") or "block not applied"
+            logger.warning(f"Firewall did not block {ip}: {msg}")
+            return {
+                "success": False,
+                "deferred": bool(body.get("deferred")),
+                "error": msg,
+                "response": body,
+            }
+        return {"success": True, "response": body}
 
     async def unblock_ip(self, ip: str) -> dict:
         try:

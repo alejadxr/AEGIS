@@ -810,7 +810,21 @@ async def _notify_firewall(ip: str, reason: str):
                         f"HTTP {resp.status} {body} — enforced locally only"
                     )
                 else:
-                    logger.info(f"[AttackDetector] Firewall notified to block {ip}")
+                    # HTTP 200 does not mean enforced: the agent's evidence gate
+                    # answers 200 {"blocked": false, "deferred": true} when it
+                    # declines (see firewall-agent POST /block).
+                    try:
+                        body = await resp.json(content_type=None)
+                    except Exception:
+                        body = None
+                    if isinstance(body, dict) and body.get("blocked") is False:
+                        logger.warning(
+                            f"[AttackDetector] Firewall DEFERRED block for {ip} "
+                            f"(not enforced remotely): "
+                            f"{str(body.get('detail') or body.get('message') or '')[:200]}"
+                        )
+                    else:
+                        logger.info(f"[AttackDetector] Firewall notified to block {ip}")
     except Exception as e:
         logger.warning(f"[AttackDetector] Firewall block failed (non-fatal): {e}")
 
