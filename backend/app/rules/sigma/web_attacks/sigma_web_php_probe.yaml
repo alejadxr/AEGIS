@@ -1,0 +1,42 @@
+id: sigma_web_php_probe
+name: PHP / WordPress Probe (Single Request)
+kind: sigma
+severity: low
+enabled: true
+tactics:
+- Reconnaissance
+techniques:
+- T1595.002
+- T1190
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 300
+  group_by: source_ip
+  filter:
+    path_contains:
+    - eval-stdin.php
+    - wp-login.php
+    - wp-admin/install.php
+    - xmlrpc.php
+    - /cgi-bin/
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  A request for a PHP / WordPress / CGI entry point that mass scanners and
+  botnets target: PHPUnit eval-stdin.php (CVE-2017-9841), wp-login.php,
+  wp-admin/install.php, xmlrpc.php and /cgi-bin/. Nothing covered these as a
+  single event: web_shell_activity needs three POSTs in two minutes, so a lone
+  probe vanished, and one Russian host sent wp-admin/install.php 94 times over a
+  week without a single incident. xmlrpc.php POSTs also used to be titled
+  "Malicious File Upload Attempt"; they are reported here as the botnet probe
+  they are. Severity is low on purpose: the request is noise-level recon and
+  could be an operator on a real WordPress site, so it must never auto-block by
+  itself; repeats from one source fold into a single incident through the
+  per-attacker burst merge.
+references:
+- https://nvd.nist.gov/vuln/detail/CVE-2017-9841

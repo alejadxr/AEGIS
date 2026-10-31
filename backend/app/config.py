@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     # auto-blocked (WARP / Private Relay ranges are built in; this extends them).
     # Declared for the same extra="ignore" reason as the two above.
     AEGIS_SHARED_EGRESS_IPS: str = ""
+    # Block permanence (app/services/block_policy.py). Declared for the same
+    # extra="ignore" reason: a value in backend/.env must reach the policy.
+    AEGIS_BLOCKS_PERMANENT: str = ""
+    AEGIS_BLOCK_ESCALATE_AFTER: str = ""
     AEGIS_EDR_TRUSTED_PARENTS: str = ""
     AEGIS_EDR_TRUSTED_INSTALLERS: str = ""
     AEGIS_EDR_PROVISIONING_GRACE_MIN: str = ""

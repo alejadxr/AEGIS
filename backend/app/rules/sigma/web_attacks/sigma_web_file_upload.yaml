@@ -24,7 +24,15 @@ condition:
     - .sh
     - .exe
     - .phtml
+    path_excludes:
+    - xmlrpc.php
 entityMappings:
 - type: IP
   field: source_ip
-description: Upload of potentially malicious file types detected.
+description: >
+  POST to a path with an executable or script extension (.php, .jsp, .aspx, .sh,
+  .exe, .phtml). This is a request-shape signature: no upload body or response
+  is inspected. `xmlrpc.php` is excluded because POSTs to it are the WordPress
+  XML-RPC botnet (brute force / pingback), not a file upload, and were being
+  titled "Malicious File Upload Attempt"; they are reported by
+  sigma_web_php_probe as what they are.

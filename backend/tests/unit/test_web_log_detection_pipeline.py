@@ -53,13 +53,16 @@ async def test_env_probe_line_creates_incident_through_real_pipeline(monkeypatch
     assert engine.stats()["last_rule_fired_at"] is not None
 
 
-async def test_single_env_probe_alone_is_not_an_incident(monkeypatch):
+async def test_single_env_probe_is_low_severity_visibility_only(monkeypatch):
     engine = CorrelationEngine()
     fired = await engine.evaluate(
         {"event_type": "http_request", "source_ip": "45.33.32.156",
          "request_path": "/.env", "request_method": "GET"}
     )
-    assert fired == []
+    # One stray /.env must not reach the high-severity three-hit rule; it only
+    # leaves a low-severity trace (sigma_web_secret_harvest_instant).
+    assert [r["id"] for r in fired] == ["sigma_web_secret_harvest_instant"]
+    assert fired[0]["severity"] == "low"
 
 
 def test_check_liveness_flags_growth_without_reads(tmp_path):

@@ -348,11 +348,24 @@ async def expire_provisional_blocks() -> dict:
     permanent as a confirmed one and false positives would accumulate silently,
     exactly as 66 of them did before this existed.
 
-    Confirmed blocks carry no expires_at and are never touched here.
+    Confirmed blocks carry no expires_at and are never touched here. Three
+    guards keep a real attacker from being released by this job:
+
+    * AEGIS_BLOCKS_PERMANENT=1 turns the whole job into a no-op.
+    * A legacy provisional row whose alert or IP history shows exploit activity
+      (block_policy CONFIRMED) is promoted to permanent instead of lifted.
+    * An IP is only lifted when no OTHER live block action covers it. Two
+      actions for one IP used to race: the older expiry unblocked the address
+      while the newer action still read "executed".
     """
     from app.models.action import Action
+    from app.models.incident import Incident
     from app.core.firewall_client import firewall_client
     from app.core.ip_blocker import ip_blocker_service
+    from app.services import block_policy
+
+    if block_policy.force_permanent():
+        return {"scanned": 0, "expired": 0, "failed": 0, "dry_run": DRY_RUN, "disabled": True}
 
     summary = {"scanned": 0, "expired": 0, "failed": 0, "dry_run": DRY_RUN}
     now = datetime.utcnow()
@@ -391,6 +404,38 @@ async def expire_provisional_blocks() -> dict:
                 continue
 
             try:
+                incident = await db.get(Incident, action.incident_id) if action.incident_id else None
+                cls = block_policy.classify_alert(incident.raw_alert if incident else None)
+                confirmed_why = (
+                    f"confirmed:{cls.matched}" if cls.kind == block_policy.CONFIRMED
+                    else await block_policy.probe_evidence(db, ip)
+                )
+                if confirmed_why:
+                    block_policy.make_permanent(action, confirmed_why)
+                    summary["promoted"] = summary.get("promoted", 0) + 1
+                    _audit({
+                        "event": "provisional_block_promoted",
+                        "ip": ip,
+                        "action_id": str(action.id),
+                        "why": confirmed_why,
+                        "ts": now.isoformat(),
+                    })
+                    logger.warning(f"Kept block on {ip}: promoted to permanent ({confirmed_why})")
+                    continue
+
+                covering = await block_policy.live_block_actions(db, ip, exclude_id=action.id)
+                if covering:
+                    params["expired_at"] = now.isoformat()
+                    params["covered_by"] = str(covering[0].id)
+                    action.parameters = dict(params)
+                    action.status = "expired"
+                    summary["covered"] = summary.get("covered", 0) + 1
+                    logger.info(
+                        f"Provisional block {action.id} on {ip} lapsed but "
+                        f"{covering[0].id} still covers it; IP stays blocked"
+                    )
+                    continue
+
                 # Lift on the Pi executor first (the enforced layer), then the
                 # local 403 blocklist. Order matters: if the remote call fails
                 # we keep the local block rather than half-lifting it.

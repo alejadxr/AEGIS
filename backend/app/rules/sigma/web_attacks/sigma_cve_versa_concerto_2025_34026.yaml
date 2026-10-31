@@ -13,13 +13,23 @@ condition:
   event_type: http_request
   filter:
     path_contains:
-    - /actuator
+    - /actuator/env
+    - /actuator/heapdump
+    - /actuator/threaddump
+    - /actuator/configprops
+    - /actuator/mappings
 entityMappings:
 - type: IP
   field: source_ip
-description: Detects attempted exploitation of CVE-2025-34026 in Versa Concerto (CVSS 9.2).
-  Signature rule. These path fragments are distinctive to exploitation of this CVE and do
-  not occur in ordinary traffic, so a single hit is evidence in itself and the rule fires
-  without a threshold.
+description: >
+  Detects attempted exploitation of CVE-2025-34026 in Versa Concerto (CVSS 9.2),
+  an authentication bypass that exposes Spring Boot Actuator endpoints. Only the
+  endpoints that actually disclose data are matched (env, heapdump, threaddump,
+  configprops, mappings). The earlier bare `/actuator` substring also fired on
+  `/actuator/health` and on plain `/actuator` discovery, which are routine
+  health probes and scanner recon, not exploitation; a bare `/actuator` is now
+  counted as low-severity recon by sigma_web_framework_probe instead. Signature rule: a
+  single hit on these paths is evidence in itself, so it fires without a
+  threshold.
 references:
 - https://www.sentinelone.com/vulnerability-database/cve-2025-34026/

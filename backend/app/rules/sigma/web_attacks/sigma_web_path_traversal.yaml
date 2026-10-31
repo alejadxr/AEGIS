@@ -20,9 +20,21 @@ condition:
     - ../
     - ..\
     - '%2e%2e'
+    - '%252e%252e'
+    - ..%2f
+    - ..%5c
+    - ..;/
+    - /proc/self/environ
     - /etc/passwd
     - /etc/shadow
 entityMappings:
 - type: IP
   field: source_ip
-description: Directory traversal attempt to access files outside web root.
+description: >
+  Directory traversal attempt to access files outside web root. Matching is a
+  case-insensitive substring test, so `..%2F` and `%2E%2E` are covered. Besides
+  the literal `../`, the encodings seen in real scans are matched: `..%2f` and
+  `..%5c` (separator encoded only), `..;/` (Tomcat/Spring path-parameter
+  bypass), `%252e%252e` (double encoding) and `/proc/self/environ` (the usual
+  traversal target for process secrets). Each token contains `..` plus a
+  separator or an encoded dot pair, which a Next.js route or asset never emits.

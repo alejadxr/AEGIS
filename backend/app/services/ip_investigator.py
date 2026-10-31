@@ -18,6 +18,8 @@ from typing import Optional
 
 from sqlalchemy import select
 
+from app.services import block_policy
+
 logger = logging.getLogger("cayde6.ip_investigator")
 
 
@@ -32,15 +34,6 @@ class IPInvestigator:
         ipaddress.ip_network("100.64.0.0/10"),   # CGNAT / Tailscale
         ipaddress.ip_network("127.0.0.0/8"),
     ]
-
-    # Reasons that indicate a real attack (never unblock these)
-    _HARD_BLOCK_REASONS = frozenset({
-        "breadcrumb_credential_used",
-        "command_injection",
-        "sql_injection",
-        "ssrf",
-        "path_traversal",
-    })
 
     # Confidence threshold for auto-unblock
     UNBLOCK_CONFIDENCE_THRESHOLD = 0.8
@@ -64,19 +57,24 @@ class IPInvestigator:
         try:
             evidence = self._gather_evidence(ip, reason)
 
-            # Short-circuit: if reason is a hard attack type, skip AI call
-            reason_base = reason.split("(")[0].strip() if "(" in reason else reason
-            if any(hard in reason_base for hard in self._HARD_BLOCK_REASONS):
+            # The gate is inverted: only reasons classified AMBIGUOUS
+            # (block_policy) are ever put in front of the model. A fixed list of
+            # "hard" reasons let new exploit classes (web shell, CVE rules,
+            # uploads, secret harvesting) fall through to an LLM that could
+            # release them. Anything CONFIRMED, anything unknown-but-forced
+            # permanent by the operator, skips the AI call entirely.
+            cls = block_policy.classify(reason)
+            if cls.kind == block_policy.CONFIRMED or block_policy.force_permanent():
                 result = {
                     "ip": ip,
                     "verdict": "malicious",
                     "confidence": 0.95,
-                    "reasoning": f"Block reason '{reason}' matches known attack pattern. No further investigation needed.",
+                    "reasoning": f"Block reason '{reason}' is classified {cls.kind} ({cls.matched or 'operator policy'}). No further investigation needed.",
                     "action_taken": "block_confirmed",
                     "duration_s": round(time.time() - t0, 2),
                 }
                 await self._log_investigation(ip, reason, evidence, result, client_id)
-                logger.info(f"[IPInvestigator] {ip} confirmed malicious (hard block reason: {reason})")
+                logger.info(f"[IPInvestigator] {ip} confirmed malicious (reason: {reason})")
                 return result
 
             # Ask AI to analyze the evidence
@@ -88,9 +86,27 @@ class IPInvestigator:
                 ai_verdict.get("verdict") == "legitimate"
                 and ai_verdict.get("confidence", 0) > self.UNBLOCK_CONFIDENCE_THRESHOLD
             ):
-                # False positive detected — auto-unblock
-                await self._unblock_ip(ip)
-                action_taken = "auto_unblocked"
+                # An ambiguous-looking reason is not enough: if AEGIS ever
+                # observed this IP probing for secrets or firing an exploit, an
+                # LLM opinion must not override that. A lookup failure raises
+                # into the outer handler, which keeps the block.
+                proof = await self._exploit_evidence(ip)
+                if proof:
+                    logger.warning(
+                        f"[IPInvestigator] Refusing to unblock {ip}: AI said legitimate "
+                        f"but exploit evidence is on record ({proof})"
+                    )
+                    ai_verdict = {
+                        "verdict": "malicious",
+                        "confidence": 0.95,
+                        "reasoning": f"Exploit evidence on record ({proof}); AI verdict overridden.",
+                    }
+                    action_taken = "block_confirmed"
+                else:
+                    # False positive detected — auto-unblock
+                    await self._unblock_ip(ip)
+                    action_taken = "auto_unblocked"
+            if action_taken == "auto_unblocked":
                 logger.warning(
                     f"[IPInvestigator] FALSE POSITIVE: auto-unblocked {ip} "
                     f"(confidence: {ai_verdict.get('confidence', 0):.2f}, "
@@ -127,6 +143,12 @@ class IPInvestigator:
                 "action_taken": "block_kept_on_error",
                 "duration_s": round(time.time() - t0, 2),
             }
+
+    async def _exploit_evidence(self, ip: str) -> Optional[str]:
+        """Observed exploit activity on record for `ip` (see block_policy.probe_evidence)."""
+        from app.database import async_session
+        async with async_session() as db:
+            return await block_policy.probe_evidence(db, ip)
 
     def _gather_evidence(self, ip: str, reason: str) -> dict:
         """Gather evidence about the blocked IP for AI analysis."""
