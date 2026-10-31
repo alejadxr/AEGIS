@@ -1,0 +1,41 @@
+id: sigma_web_framework_probe
+name: Framework / Debug Endpoint Probe (Single Request)
+kind: sigma
+severity: low
+enabled: true
+tactics:
+- Reconnaissance
+techniques:
+- T1595.002
+data_sources:
+- pm2
+- web_log
+condition:
+  event_type: web_request
+  count_threshold: 1
+  time_window_seconds: 300
+  group_by: source_ip
+  filter:
+    path_contains:
+    - /actuator
+    - /swagger
+    - /openapi.json
+    - /graphql
+    - /_cat/indices
+    - /api/datasources
+    - /debug/vars
+    - /server-status
+entityMappings:
+- type: IP
+  field: source_ip
+description: >
+  A request for a framework, API-documentation or debug endpoint that scanners
+  enumerate to fingerprint a stack: Spring Boot /actuator, Swagger/OpenAPI,
+  GraphQL, Elasticsearch /_cat/indices, Grafana /api/datasources, Go
+  /debug/vars and Apache /server-status. All appeared in real traffic. This is
+  reconnaissance, not exploitation, so it is low and single-shot: it leaves a
+  trace and folds into the attacker's burst incident without ever reaching a
+  severity that auto-blocks. Endpoints that actually disclose data stay
+  critical in their own rules (e.g. /actuator/env in
+  sigma_cve_versa_concerto_2025_34026). A legitimate client of your own
+  GraphQL or Swagger endpoint will also match, which is why severity is low.

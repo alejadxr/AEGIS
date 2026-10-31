@@ -76,7 +76,12 @@ def compute_ttl_hours(
 
 
 async def count_recent_blocks(db, ip: str, now: Optional[datetime] = None) -> int:
-    """Earlier block_ip actions on this IP within the repeat window."""
+    """Earlier block_ip actions on this IP within the repeat window.
+
+    Only blocks that actually took effect count. A pending/skipped/failed row
+    or a block the operator rolled back is not an earlier offence, and counting
+    it would escalate a released false positive to a permanent block.
+    """
     from sqlalchemy import func, select
     from app.models.action import Action
 
@@ -85,6 +90,7 @@ async def count_recent_blocks(db, ip: str, now: Optional[datetime] = None) -> in
         select(func.count(Action.id)).where(
             Action.action_type == "block_ip",
             Action.target == ip,
+            Action.status.in_(("approved", "executed", "expired")),
             Action.created_at >= since,
         )
     )

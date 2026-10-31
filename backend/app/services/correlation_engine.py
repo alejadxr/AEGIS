@@ -996,7 +996,7 @@ BUILT_IN_RULES: list[dict] = [
         "mitre": ["T1083"],
         "condition": {
             "event_type": "web_request",
-            "filter": {"path_contains": ["../", "..\\", "%2e%2e", "/etc/passwd", "/etc/shadow"]},
+            "filter": {"path_contains": ["../", "..\\", "%2e%2e", "%252e%252e", "..%2f", "..%5c", "..;/", "/proc/self/environ", "/etc/passwd", "/etc/shadow"]},
             "count_threshold": 1,
             "time_window_seconds": 60,
             "group_by": "source_ip",
@@ -1032,7 +1032,7 @@ BUILT_IN_RULES: list[dict] = [
         "mitre": ["T1190"],
         "condition": {
             "event_type": "web_request",
-            "filter": {"path_contains": ["169.254.169.254", "localhost", "127.0.0.1", "0.0.0.0", "metadata.google"]},
+            "filter": {"path_contains": ["169.254.169.254", "://localhost", "=localhost", "://127.0.0.1", "=127.0.0.1", "://0.0.0.0", "metadata.google"]},
             "count_threshold": 1,
             "time_window_seconds": 60,
             "group_by": "source_ip",
@@ -1050,7 +1050,7 @@ BUILT_IN_RULES: list[dict] = [
         "mitre": ["T1505.003"],
         "condition": {
             "event_type": "web_request",
-            "filter": {"method": "POST", "path_contains": [".php", ".jsp", ".aspx", ".sh", ".exe", ".phtml"]},
+            "filter": {"method": "POST", "path_contains": [".php", ".jsp", ".aspx", ".sh", ".exe", ".phtml"], "path_excludes": ["xmlrpc.php"]},
             "count_threshold": 1,
             "time_window_seconds": 300,
             "group_by": "source_ip",

@@ -26,7 +26,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.core.ip_blocker import BLOCKED_IPS_FILE
+from app.core.ip_blocker import BLOCKED_IPS_FILE, atomic_write_text
 
 logger = logging.getLogger("cayde6.attack_detector")
 
@@ -840,9 +840,9 @@ async def _block_ip(ip: str, reason: str):
 
     # Persist to file
     try:
-        BLOCKED_IPS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(BLOCKED_IPS_FILE, "a") as f:
-            f.write(f"{ip}\n")
+        lines = BLOCKED_IPS_FILE.read_text().splitlines() if BLOCKED_IPS_FILE.exists() else []
+        if ip not in {l.strip() for l in lines}:
+            atomic_write_text(BLOCKED_IPS_FILE, "\n".join(lines + [ip]) + "\n")
     except Exception as e:
         logger.error(f"[AttackDetector] Failed to write blocked IP to file: {e}")
 
@@ -956,14 +956,20 @@ async def _notify_firewall(ip: str, reason: str):
     try:
         import aiohttp
         from app.core.firewall_client import firewall_auth_headers
+        from app.services import block_policy
+        payload = {"ip": ip, "reason": f"aegis_auto_block: {reason}"}
+        # Only an AMBIGUOUS detection gets the 1h Pi-side expiry. A confirmed
+        # attack carries no `duration`, which the agent reads as permanent (and
+        # which upgrades any earlier temporary entry for the same IP).
+        if (
+            block_policy.classify(reason).kind != block_policy.CONFIRMED
+            and not block_policy.force_permanent()
+        ):
+            payload["duration"] = 3600
         async with aiohttp.ClientSession(headers=firewall_auth_headers()) as session:
             async with session.post(
                 f"{FIREWALL_URL}/block",
-                json={
-                    "ip": ip,
-                    "reason": f"aegis_auto_block: {reason}",
-                    "duration": 3600,
-                },
+                json=payload,
                 timeout=aiohttp.ClientTimeout(total=3),
             ) as resp:
                 # Fire-and-forget on the LATENCY, not on the outcome. The call
@@ -1349,7 +1355,7 @@ def unblock_ip(ip: str) -> bool:
         if BLOCKED_IPS_FILE.exists():
             lines = BLOCKED_IPS_FILE.read_text().splitlines()
             filtered = [l for l in lines if l.strip() != ip]
-            BLOCKED_IPS_FILE.write_text("\n".join(filtered) + "\n")
+            atomic_write_text(BLOCKED_IPS_FILE, "\n".join(filtered) + "\n")
     except Exception:
         pass
     return was_blocked

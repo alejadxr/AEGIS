@@ -700,6 +700,8 @@ class AIDecisionEngine:
                         db=db,
                         incident_id=incident_id,
                     )
+                    if action_type == "block_ip":
+                        await self._promote_stale_provisional(action, target, db)
                 actions.append({
                     "id": action.id,
                     "type": action.action_type,
@@ -933,6 +935,12 @@ class AIDecisionEngine:
         real customer out forever, which is precisely the failure this system
         produced when it blocked its own operator's IP.
 
+        Only AMBIGUOUS detections stay provisional. If the alert carries
+        exploit-class evidence (block_policy CONFIRMED), or the IP was already
+        blocked within the repeat window, or AEGIS_BLOCKS_PERMANENT is set, the
+        block is permanent instead: the owner's rule is that a real attack is
+        never unblocked, and the TTL exists only to undo guesses.
+
         Safe IPs still short-circuit through guardrail_engine and are never
         blocked at all, provisionally or otherwise.
         """
@@ -956,14 +964,63 @@ class AIDecisionEngine:
             pass
 
         from app.models.action import Action
-
-        # Severity-aware: critical / exploit-class sources get a long block, and
-        # repeat offenders double it (see app.services.block_ttl).
-        from app.services import block_ttl
+        from app.services import block_policy, block_ttl
         try:
             prior_blocks = await block_ttl.count_recent_blocks(db, target)
         except Exception:
             prior_blocks = 0
+        classification = block_policy.classify_alert(alert_data, threat_type)
+        permanent, why = block_policy.decide_permanence(classification, prior_blocks)
+
+        # One block per IP. A second action with a different expiry is how
+        # 192.187.120.146 ended up unblocked while an action nominally valid for
+        # four more weeks was still "executed": the older one's expiry lifted
+        # the IP and the newer one had no say. Fold into the live action
+        # instead, so there is a single expiry (or none) deciding the IP's fate.
+        live = await block_policy.live_block_actions(db, target)
+        if live:
+            return await self._fold_into_live_block(
+                live[0], permanent, why, classification, ai_reasoning, alert_data,
+                severity, threat_type, prior_blocks, db,
+            )
+
+        from app.models.action import Action
+
+        if permanent:
+            # CONFIRMED (or escalated / operator-forced): no provisional flag and
+            # no expires_at, so retention never scans it. The responder sends
+            # the Pi no `duration`, which the agent reads as permanent.
+            action = Action(
+                incident_id=incident_id or "",
+                client_id=client.id,
+                action_type="block_ip",
+                target=target,
+                parameters={
+                    "permanent": True,
+                    "block_class": classification.kind,
+                    "block_class_reason": why,
+                    "prior_blocks": prior_blocks,
+                },
+                status="approved",
+                requires_approval=False,
+                ai_reasoning=f"{ai_reasoning} [PERMANENT: {why}]",
+            )
+            db.add(action)
+            await db.commit()
+            await db.refresh(action)
+            logger.info(f"Permanent auto-block on {target} ({why}): {ai_reasoning[:120]}")
+            await event_bus.publish("action_auto_approved", {
+                "action_id": str(action.id),
+                "action_type": "block_ip",
+                "target": target,
+                "incident_id": str(incident_id) if incident_id else "",
+                "provisional": False,
+                "permanent": True,
+            })
+            return action
+
+        # Severity-aware: critical sources get a long block, and repeat
+        # offenders double it (see app.services.block_ttl).
         ttl_hours = block_ttl.compute_ttl_hours(
             severity,
             block_ttl.collect_rule_ids(alert_data or {}),
@@ -983,6 +1040,7 @@ class AIDecisionEngine:
                 "expires_at": expires_at.isoformat(),
                 "ttl_hours": ttl_hours,
                 "prior_blocks": prior_blocks,
+                "block_class": classification.kind,
             },
             status="approved",       # executes now — no human in the loop
             requires_approval=False,
@@ -1008,6 +1066,57 @@ class AIDecisionEngine:
             "expires_at": expires_at.isoformat(),
         })
         return action
+
+    async def _promote_stale_provisional(self, action, target: str, db) -> None:
+        """A permanent block just landed: strip the expiry off older ones.
+
+        Otherwise the older provisional action's expiry would still fire and
+        (before retention's coverage check) lift an IP this block holds forever.
+        """
+        from app.services import block_policy
+        try:
+            if action.status not in ("approved", "executed"):
+                return
+            older = await block_policy.live_block_actions(db, target, exclude_id=action.id)
+            changed = False
+            for other in older:
+                if (other.parameters or {}).get("provisional"):
+                    block_policy.make_permanent(other, f"superseded_by:{action.id}")
+                    changed = True
+            if changed:
+                await db.commit()
+        except Exception as exc:
+            logger.warning(f"could not promote stale provisional blocks on {target}: {exc}")
+
+    async def _fold_into_live_block(
+        self, live, permanent, why, classification, ai_reasoning, alert_data,
+        severity, threat_type, prior_blocks, db,
+    ):
+        """Merge a new block request into the Action already covering the IP."""
+        from app.services import block_policy, block_ttl
+
+        params = live.parameters or {}
+        if permanent:
+            if params.get("provisional"):
+                block_policy.make_permanent(live, why, classification.kind)
+                live.ai_reasoning = f"{live.ai_reasoning or ''} [PROMOTED TO PERMANENT: {why}]"
+                logger.info(f"Promoted block on {live.target} to permanent ({why})")
+        elif params.get("provisional"):
+            # Escalation threshold raised above 1: keep the later of the two
+            # expiries on the single live action.
+            ttl_hours = block_ttl.compute_ttl_hours(
+                severity, block_ttl.collect_rule_ids(alert_data or {}), threat_type, prior_blocks,
+            )
+            new_exp = datetime.utcnow() + timedelta(hours=ttl_hours)
+            try:
+                cur = datetime.fromisoformat(str(params.get("expires_at", "")).replace("Z", ""))
+            except ValueError:
+                cur = new_exp
+            if new_exp > cur:
+                live.parameters = {**params, "expires_at": new_exp.isoformat(), "ttl_hours": ttl_hours}
+        await db.commit()
+        await db.refresh(live)
+        return live
 
     async def _triage(self, alert_data: dict) -> dict:
         """Quick triage; uses MITRE heuristics when AI unavailable."""

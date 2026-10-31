@@ -1,6 +1,7 @@
 import ipaddress as _ipaddress
 import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -42,8 +43,48 @@ def _should_purge_ip(ip: str) -> tuple[bool, str]:
     return (False, "")
 
 
-def _load_blocked_ips() -> set:
+def atomic_write_text(path: Path, content: str) -> None:
+    """Replace `path` with `content` so a concurrent reader sees the old file
+    or the new one, never a truncated mix.
+
+    `write_text` truncates in place before writing, and the apps that poll the
+    blocklist (and AEGIS itself at startup) can read in that window and come
+    away with an empty or half-written set, silently dropping blocks. The temp
+    file lives in the same directory so `os.replace` is a same-filesystem
+    rename, which is atomic on POSIX.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        try:
+            os.chmod(tmp, path.stat().st_mode & 0o777)
+        except FileNotFoundError:
+            os.chmod(tmp, 0o644)  # mkstemp creates 0600; readers are other users/apps
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+# A reload that parses fewer than this share of the entries already in memory
+# is treated as a damaged read, not as a mass unblock.
+_RELOAD_MIN_KEEP_RATIO = 0.5
+_RELOAD_GUARD_MIN_PREVIOUS = 10
+
+
+def _load_blocked_ips(previous: Optional[set] = None) -> set:
     """Load blocked IPs from disk with safelist purge.
+
+    `previous` is the set currently in memory on a reload. If the file now
+    parses to under half of it (and `previous` is big enough for that to mean
+    something), the read is assumed damaged and `previous` is kept.
 
     v1.6.2: Any IP matching AEGIS_SAFE_IPS (including CIDR ranges like
     66.249.0.0/16 for Googlebot) or RFC5737 documentation prefixes is dropped
@@ -59,6 +100,17 @@ def _load_blocked_ips() -> set:
     except Exception as e:
         logger.error(f"Failed to load blocked IPs: {e}")
         return set()
+
+    if (
+        previous
+        and len(previous) >= _RELOAD_GUARD_MIN_PREVIOUS
+        and len(raw) < len(previous) * _RELOAD_MIN_KEEP_RATIO
+    ):
+        logger.error(
+            f"ip_blocker: blocklist file parsed to {len(raw)} entries against "
+            f"{len(previous)} in memory; treating it as a damaged read and keeping the previous set"
+        )
+        return set(previous)
 
     purged: dict[str, str] = {}
     kept: set[str] = set()
@@ -85,12 +137,11 @@ def _load_blocked_ips() -> set:
 
 def _save_blocked_ips(ips: set) -> None:
     try:
-        BLOCKED_IPS_FILE.parent.mkdir(parents=True, exist_ok=True)
         content = "# AEGIS Blocked IPs\n# Managed automatically\n"
         content += "\n".join(sorted(ips))
         if ips:
             content += "\n"
-        BLOCKED_IPS_FILE.write_text(content)
+        atomic_write_text(BLOCKED_IPS_FILE, content)
     except Exception as e:
         logger.error(f"Failed to save blocked IPs: {e}")
 
@@ -167,7 +218,7 @@ class IPBlockerService:
         return sorted(self._blocked)
 
     def reload(self) -> int:
-        self._blocked = _load_blocked_ips()
+        self._blocked = _load_blocked_ips(previous=self._blocked)
         return len(self._blocked)
 
 
