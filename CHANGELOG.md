@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.30] - 2026-10-31
+
+### Fixed — AEGIS was releasing confirmed attackers on a timer
+- Every auto-block was created `provisional` with a 6h expiry and the
+  retention job lifted it: **88 blocks expired that way since 2026-08-11**.
+  In production that left a bulletproof host tied to a RedTail C2, the Versa
+  and LangFlow exploiters, a web-shell POSTer and the AI-credential harvesters
+  unblocked. One IP could also hold two block actions with different expiries,
+  and whichever expired first lifted the block — so three attackers read as
+  "blocked until December" while being served.
+- `block_policy.py` classifies every block reason once: **CONFIRMED** (CVE
+  exploitation, web shell, malicious upload, secret harvesting, SQLi, command
+  injection, SSRF, path traversal, honeypot interaction) is permanent and
+  neither retention nor the AI investigator can lift it; **AMBIGUOUS** (401
+  brute force, request rate, port scan, low-severity visibility rules) keeps
+  expiring, because those are the detections that have wrongly blocked the
+  operator's own staff. An unknown reason is treated as ambiguous, and a test
+  fails if a new rule is left unclassified. The second block of an IP within
+  30 days becomes permanent. `AEGIS_BLOCKS_PERMANENT=1` disables all release.
+- The AI investigator may now only investigate ambiguous reasons, and refuses
+  to unblock any IP with recorded exploit evidence however confident the model
+  is. It keeps releasing the false-positive classes.
+
+### Fixed — rules that fired on normal traffic, and probes that left no trace
+- The Versa rule matched **any** path containing `/actuator`; the SSRF rule
+  matched the bare substring `localhost` (a real false positive on
+  `/localhost.key`). The SSRF token list was duplicated in
+  `correlation_engine` and both copies are fixed, with a test against drift.
+- Path traversal missed the encodings actually used: `..%2f`, `..%5c`, `..;/`,
+  `%252e%252e`.
+- New `sigma_ai_credential_probe`: the campaign hunting
+  `.claude/settings.json`, `.cursor/mcp.json`, `.env.anthropic` and
+  `litellm.yaml` matched no rule at all.
+- Probes under the three-hit threshold produced nothing — one host sent
+  `wp-admin/install.php` 94 times over 7 days with zero incidents. Three
+  low-severity single-shot rules restore visibility without earning a block.
+- `xmlrpc.php` was reported as a malicious file upload.
+
+### Fixed
+- The blocklist file was written non-atomically, so a reader could observe it
+  half-written and lose blocks. Writes are now atomic, and a reload that
+  parses suspiciously short keeps the previous set.
+- The landing's blocklist cache was 30s, which served 371 requests to IPs
+  AEGIS had already blocked (153 to one scanner). It is 5s.
+
 ## [1.7.29] - 2026-10-28
 
 ### Fixed — the incident list was unreadable
