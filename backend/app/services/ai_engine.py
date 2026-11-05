@@ -29,7 +29,8 @@ from app.core.guardrails import guardrail_engine
 from app.core.events import event_bus
 from app.models.client import Client
 from app.services.incident_quality import (
-    EVIDENCE_PROMPT_RULE, apply_probe_evidence, describe_without_overclaim, retitle_severity,
+    EVIDENCE_PROMPT_RULE, apply_probe_evidence, bound_escalation, describe_without_overclaim,
+    retitle_severity,
 )
 from app.models.incident import Incident
 from app.models.audit_log import AuditLog
@@ -445,8 +446,17 @@ class AIDecisionEngine:
                     target=incident_target(event),
                 )
                 if existing is not None:
+                    # Ceiling = the strongest authored severity among the matched
+                    # rules; the malicious-IOC boost is hard evidence, so it
+                    # travels as a known-attacker signal.
+                    authored = max(
+                        (m.get("severity") for m in sigma_matches if m.get("severity") in ("low", "medium", "high", "critical")),
+                        key=_severity_order, default=None,
+                    )
+                    evidence_alert = {**event, "known_attacker": True} if triage_result.get("severity_boosted") else event
                     for rid, rtitle in zip(sigma_rule_ids or [None], rule_titles or ["Fast triage detection"]):
-                        merge_into_incident(existing, rule_id=rid, rule_title=rtitle, severity=evidence_severity)
+                        merge_into_incident(existing, rule_id=rid, rule_title=rtitle, severity=evidence_severity,
+                                            alert=evidence_alert, authored=authored)
                     await db.commit()
                     logger.info(f"Fast triage match folded into incident {existing.id}")
                     return
@@ -699,6 +709,7 @@ class AIDecisionEngine:
                         ai_reasoning=reasoning,
                         db=db,
                         incident_id=incident_id,
+                        alert_data=alert_data,
                     )
                     if action_type == "block_ip":
                         await self._promote_stale_provisional(action, target, db)
@@ -945,6 +956,16 @@ class AIDecisionEngine:
         blocked at all, provisionally or otherwise.
         """
         from app.core.attack_detector import _is_safe_ip, is_shared_egress
+        from app.services import authored_rules_registry as _authored
+        from app.services.block_ttl import collect_rule_ids as _collect_ids
+        # An alert-only authored rule (every AI-authored rule until an operator
+        # approves it) must not even earn a provisional block: route it to the
+        # guardrail, which turns it into require_approval.
+        if alert_data and _authored.blocking_held_by(_collect_ids(alert_data)):
+            return await guardrail_engine.evaluate_action(
+                client=client, action_type="block_ip", target=target,
+                ai_reasoning=ai_reasoning, db=db, incident_id=incident_id, alert_data=alert_data,
+            )
         try:
             if target and (_is_safe_ip(target) or is_shared_egress(target)):
                 # Route safe IPs through the guardrail so the existing
@@ -1256,8 +1277,28 @@ class AIDecisionEngine:
         severity = triage_severity
         alert_severity = alert_data.get("severity")
         base_severity = alert_severity if alert_severity in ("low", "medium", "high", "critical") else severity
+        # Severity drives blocking (_alert_block_confirmed reads it), and the
+        # model returns its own rating that can sit well above the rule's: rules
+        # written `low` on purpose came back high/critical. The rule's severity
+        # is the author's statement; the model may raise it one level, more only
+        # on hard evidence. The bounded value is written back into `triage` so
+        # the block gate in process_alert sees it too, and the reason is kept.
+        if alert_severity in ("low", "medium", "high", "critical"):
+            bounded, why = bound_escalation(alert_severity, triage_severity, alert_data)
+            if why:
+                triage["severity_ai"] = triage_severity
+                triage["severity_bound_reason"] = why
+                if bounded != triage_severity:
+                    triage["severity"] = bounded
+                    triage_severity = severity = bounded
+                    base_severity = alert_severity
+                    title = retitle_severity(title, triage["severity_ai"], bounded)
+                    description = f"{description} ({why})".strip()
         lowered, description = apply_probe_evidence(alert_data, base_severity, description)
-        if _severity_order(lowered) < _severity_order(severity):
+        # Only a real downgrade (a 404/410) clamps. When nothing was lowered,
+        # `lowered` is just the alert's own severity, and clamping to it would
+        # veto the evidence-gated raise decided above.
+        if lowered != base_severity and _severity_order(lowered) < _severity_order(severity):
             severity = lowered
         if lowered != base_severity:
             for old_sev in {triage_severity, base_severity}:

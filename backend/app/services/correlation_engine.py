@@ -3658,6 +3658,8 @@ async def _escalate_incident(db: Any, incident: Any, rule: dict, alert_data: dic
         rule_id=rule.get("id"),
         rule_title=rule.get("title"),
         severity=new_severity or None,
+        alert=alert_data,
+        authored=rule.get("severity"),
     )
     if incident.severity != before:
         logger.info(

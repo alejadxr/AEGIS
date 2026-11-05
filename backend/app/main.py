@@ -62,6 +62,7 @@ from app.api import payments as payments_router
 from app.api import compliance as compliance_router
 from app.api import updates as updates_router
 from app.api import firewall as firewall_router
+from app.api import rules as rules_router
 from app.api import ransomware as ransomware_router
 from app.api import deception as deception_router
 from app.api import intel as intel_router
@@ -960,6 +961,7 @@ app.include_router(payments_router.router, prefix="/api/v1")
 app.include_router(compliance_router.router, prefix="/api/v1")
 app.include_router(updates_router.router, prefix="/api/v1")
 app.include_router(firewall_router.router, prefix="/api/v1")
+app.include_router(rules_router.router, prefix="/api/v1")
 app.include_router(ransomware_router.router, prefix="/api/v1")
 app.include_router(deception_router.router, prefix="/api/v1")
 app.include_router(edr_router.router, prefix="/api/v1")

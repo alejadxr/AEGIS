@@ -8,6 +8,7 @@ from app.models.client import Client
 from app.models.action import Action
 from app.core.events import event_bus
 from app.core.attack_detector import _is_safe_ip, is_shared_egress
+from app.services import authored_rules_registry as authored_rules
 
 logger = logging.getLogger("aegis.guardrails")
 
@@ -68,6 +69,32 @@ DEFAULT_GUARDRAILS = {
 APPROVAL_LEVELS = {"auto_approve", "require_approval", "never_auto"}
 
 
+async def _alert_only_reason(db: AsyncSession, incident_id: Optional[str], alert_data: Optional[dict]) -> Optional[str]:
+    """Why this block must wait for a human because an alert-only rule raised it.
+
+    Fast path: no authored rules on disk -> nothing to look up, so the common
+    case costs one directory scan and no query. Fails CLOSED: if authored rules
+    exist and the incident cannot be read, the block waits for approval.
+    """
+    if not authored_rules.states():
+        return None
+    from app.services.block_ttl import collect_rule_ids
+    try:
+        alert = alert_data
+        if alert is None and incident_id:
+            from app.models.incident import Incident
+            inc = await db.get(Incident, incident_id)
+            alert = inc.raw_alert if inc is not None and isinstance(inc.raw_alert, dict) else {}
+        hit = authored_rules.blocking_held_by(collect_rule_ids(alert or {}))
+    except Exception as exc:
+        logger.warning(f"GUARDRAIL: could not verify rule provenance ({exc}); holding block for approval")
+        return "Rule provenance could not be verified while authored rules exist; holding for approval."
+    if hit:
+        logger.warning(f"GUARDRAIL: block held for approval, raised by alert-only authored rule(s) {hit}")
+        return f"Raised by alert-only authored rule(s) {', '.join(hit)}: not auto-blocked until an operator approves."
+    return None
+
+
 class GuardrailEngine:
     """Action approval system that classifies and gates response actions."""
 
@@ -86,6 +113,7 @@ class GuardrailEngine:
         ai_reasoning: str,
         db: AsyncSession,
         incident_id: Optional[str] = None,
+        alert_data: Optional[dict] = None,
     ) -> Action:
         """Evaluate an action against guardrail policies and create an Action record."""
         # SAFE-IP guard: short-circuit IP-targeted actions for safe IPs.
@@ -167,6 +195,15 @@ class GuardrailEngine:
                 f"{target} is shared consumer egress (WARP / iCloud Private Relay): "
                 f"not auto-blocked, awaiting operator approval. AI reasoning: {ai_reasoning}"
             )
+
+        # An alert-only rule (every AI-authored rule until an operator approves
+        # it) may raise incidents but never block by itself. Same lever as the
+        # shared-egress rule above: the incident stands, the block waits.
+        if action_type in _IP_TARGET_ACTIONS and policy == "auto_approve":
+            held = await _alert_only_reason(db, incident_id, alert_data)
+            if held:
+                policy = "require_approval"
+                ai_reasoning = f"{held} AI reasoning: {ai_reasoning}"
 
         if policy == "never_auto":
             status = "pending"

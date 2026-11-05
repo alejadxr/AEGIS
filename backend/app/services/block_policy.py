@@ -29,6 +29,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Iterable, NamedTuple, Optional
 
+from app.services import authored_rules_registry as _authored
+
 logger = logging.getLogger("cayde6.block_policy")
 
 CONFIRMED = "confirmed"
@@ -143,6 +145,13 @@ def classify(
     """
     for token in (*_tokens_from_reason(reason), *(r.lower() for r in rule_ids if isinstance(r, str))):
         if token in CONFIRMED_IDS or token.startswith(CONFIRMED_PREFIXES):
+            return Classification(CONFIRMED, token)
+        # Rules authored at runtime carry their classification in their own
+        # file (authored_rules_registry), not in the sets above: a code edit per
+        # rule is impossible for a rule that did not exist at deploy time. Only
+        # an operator's content-bound approval makes one CONFIRMED; everything
+        # else falls through to AMBIGUOUS like any unclassified rule.
+        if token.startswith(_authored.AUTHORED_PREFIX) and _authored.is_confirmed(token):
             return Classification(CONFIRMED, token)
     tt = (threat_type or "").lower()
     if tt in CONFIRMED_THREAT_TYPES:

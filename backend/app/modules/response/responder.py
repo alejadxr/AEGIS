@@ -149,6 +149,14 @@ class ActiveResponder:
             logger.warning(f"RESPONSE: Refusing to block safe IP {target} (AEGIS_SAFE_IPS)")
             return {"success": False, "action": "block_ip", "target": target, "skipped": "safe_ip"}
 
+        # Defence in depth behind guardrails: an alert-only authored rule never
+        # blocks unless an operator approved the action.
+        from app.services import authored_rules_registry as _authored
+        _rid = (params or {}).get("rule_id") or (params or {}).get("pattern")
+        if isinstance(_rid, str) and _authored.is_alert_only(_rid) and not (params or {}).get("operator_approved"):
+            logger.warning(f"RESPONSE: Refusing to block {target}: rule {_rid} is alert-only (needs operator approval)")
+            return {"success": False, "action": "block_ip", "target": target, "skipped": "alert_only_rule"}
+
         # Shared consumer egress is never auto-blocked (see attack_detector
         # _SHARED_EGRESS_NETWORKS); a human-approved action is the override.
         operator_approved = bool((params or {}).get("operator_approved"))
