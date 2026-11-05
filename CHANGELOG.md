@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.31] - 2026-11-05
+
+### Added — AEGIS can author its own detection rules, behind a dry run
+- `POST /api/v1/rules/propose|/` and friends let AEGIS (or the operator) write
+  and amend rules at runtime, plus `/protect` for "cover me against this CVE".
+  The guardrails are the feature, because this platform has blocked its own
+  operator repeatedly:
+  - **Dry run on real traffic first.** A rule is replayed over recent events
+    and reports what it would have matched, categorised as
+    `owner_or_customer`, `customer`, `shared_egress` or `safelisted`. A flagged
+    match blocks enabling; only an operator can override, with a written reason
+    that is audited. Fewer than 50 replayable events also blocks enabling. The
+    events come from the PM2 logs rather than the correlation engine's window,
+    because `log_watcher` drops safelisted IPs before the engine sees them —
+    the owner-IP check would have been blind there.
+  - **"Too generic" is decided by executing the filter** against ordinary and
+    real traffic, and that refusal cannot be overridden by anyone. Regexes are
+    probed for catastrophic backtracking in a subprocess with a time limit.
+    High or critical severity at a threshold of 1 requires an exploit
+    signature.
+  - **AI-authored rules are born disabled, alert-only and ambiguous**, with an
+    `authored_*` id so they can never match a CONFIRMED prefix and start out
+    permanent. Approval is bound to the rule's content hash, so any later edit
+    drops it back to alert-only. The AI can neither override nor promote.
+  - **An alert-only rule withholds a block only when it is all that matched**,
+    so one broad authored rule cannot park every genuine CVE block behind a
+    human. The decision reads rule ids only, never the AI's threat type.
+  - Authored rules live in `~/.aegis/authored_rules`, not `app/rules`, which
+    the deploy rsyncs with `--delete`.
+  - Versioning with revert (a revert never silently re-enables), and an audit
+    row carrying the request, rule, validation, dry run and approval.
+  - `/protect` answers **not applicable** when the targeted software is absent,
+    and labels indicators unverified when they come from a description rather
+    than an advisory.
+
+### Fixed — severity inflation came from burst merging, not the model
+- Of 171 incidents over 14 days, 51 ended above their rule's severity; 50 of
+  those came from the burst merge taking the maximum. The ceiling for a match
+  is now the matching rule's own authored severity: a critical CVE inside a
+  low-severity burst still reads critical (an earlier cap wrongly pinned it to
+  `low`, hiding a targeted exploitation attempt), while an unjustified raise is
+  capped at one level without hard evidence, with the reason recorded.
+- A merged incident is titled after the rule that earned the severity, not the
+  visibility rule that happened to open it.
+
 ## [1.7.30] - 2026-10-31
 
 ### Fixed — AEGIS was releasing confirmed attackers on a timer
