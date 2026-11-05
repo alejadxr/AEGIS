@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.32] - 2026-11-05
+
+### Added — the operator actions that had no API
+- `POST /api/v1/firewall/blocked` blocks an IP (permanent unless `duration_s`),
+  through the same path the detector uses so the Pi, the 403 list and the
+  system firewall stay consistent. It refuses a safelisted, internal or
+  shared-egress target, so a typo cannot take down the operator's own office.
+  Until now nothing could block: the owner's dashboard had to call the Pi
+  firewall agent directly with the shared secret.
+- `GET/POST/DELETE /api/v1/firewall/safelist/{safe|internal|shared_egress}` —
+  the gap that cost the most. Those lists were env-only, so sparing one address
+  meant SSH, an `.env` edit and a restart. Additions persist to
+  `~/.aegis/safelist.json`, take effect without a restart and survive one;
+  removing an env-pinned entry reports which variable to edit. Mac-Pro-side
+  only, documented on the endpoint: the Pi keeps its env-pinned list.
+- `PATCH /api/v1/response/incidents/{id}` sets a human verdict, recorded
+  separately from the retention closer's `auto_closed`, and the automatic
+  closers now skip anything a human has triaged.
+- `/response/webhook/test` existed in the frontend but not the backend. It is
+  implemented, and a test now walks the live route table and fails if any path
+  the frontend calls is missing.
+
+### Added — the AI assistant can act, within deliberately asymmetric limits
+- It may read, dry-run rules and propose. It may execute a block ONLY when the
+  operator's own message names that exact IP with a block verb, and the reason
+  stored is the operator's words. Safelisting and rule promotion are never
+  automatic.
+- The asymmetry exists because the assistant reads attacker-controlled text:
+  the log watcher feeds it User-Agent strings, paths and request bodies written
+  by whoever is attacking, so a line crafted to read as an instruction would be
+  a prompt-injection path to disabling the platform's own defences. Untrusted
+  content is fenced and stripped of control characters and fence forgery, only
+  the first action block is read, every item is revalidated in code, and a test
+  asserts that module imports nothing that can mutate state.
+- The dashboard renders proposals with a Confirm button; the client accepts
+  only the three matching paths.
+
+### Fixed
+- An explicitly time-boxed block is marked `duration_explicit`, and retention
+  no longer promotes it to permanent on old probe history — that silently
+  overrode a stated duration and made the assistant's 24h limit not a limit.
+  A new confirmed detection on a live block still promotes it: inference must
+  not override the human, but fresh evidence may.
+
 ## [1.7.31] - 2026-11-05
 
 ### Added — AEGIS can author its own detection rules, behind a dry run

@@ -33,6 +33,8 @@ from app.models.audit_log import AuditLog
 from app.models.attacker_profile import AttackerProfile
 from app.models.honeypot import HoneypotInteraction
 
+from app.services.incident_triage import is_human_triaged
+
 logger = logging.getLogger("aegis.retention")
 
 RETENTION_DAYS = int(os.environ.get("AEGIS_RETENTION_DAYS", "90"))
@@ -222,6 +224,11 @@ async def hourly_stuck_incident_closer() -> dict:
         )).all()}
 
         for inc in candidates:
+            # A person set this status (even 'open'/'investigating' is a verdict:
+            # "I am on it"). Inactivity is not a reason to overrule them.
+            if is_human_triaged(inc):
+                summary["kept_active"] += 1
+                continue
             days = max(AUTOCLOSE_CRITICAL_DAYS, AUTOCLOSE_DAYS) if inc.severity == "critical" else AUTOCLOSE_DAYS
             dedup = (inc.ai_analysis or {}).get("dedup") or {}
             signals = [
@@ -406,10 +413,16 @@ async def expire_provisional_blocks() -> dict:
             try:
                 incident = await db.get(Incident, action.incident_id) if action.incident_id else None
                 cls = block_policy.classify_alert(incident.raw_alert if incident else None)
-                confirmed_why = (
-                    f"confirmed:{cls.matched}" if cls.kind == block_policy.CONFIRMED
-                    else await block_policy.probe_evidence(db, ip)
-                )
+                # An explicitly time-boxed block (operator / assistant on his
+                # words) expires as asked; promoting it would override a human
+                # decision. A genuine repeat attack is re-blocked by detection.
+                if params.get("duration_explicit"):
+                    confirmed_why = None
+                else:
+                    confirmed_why = (
+                        f"confirmed:{cls.matched}" if cls.kind == block_policy.CONFIRMED
+                        else await block_policy.probe_evidence(db, ip)
+                    )
                 if confirmed_why:
                     block_policy.make_permanent(action, confirmed_why)
                     summary["promoted"] = summary.get("promoted", 0) + 1

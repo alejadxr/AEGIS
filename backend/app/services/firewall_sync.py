@@ -15,6 +15,7 @@ from app.models.threat_intel import ThreatIntel
 from app.models.incident import Incident
 from app.models.action import Action
 from app.models.client import Client
+from app.services.incident_triage import is_human_triaged
 from app.config import settings
 from app.modules.phantom.safety import should_skip_profile
 
@@ -501,6 +502,8 @@ async def _reconcile_incidents(db: AsyncSession, pi_blocked_ips: Set[str]) -> in
 
     reconciled = 0
     for incident in candidates:
+        if is_human_triaged(incident):
+            continue  # an operator's verdict is not ours to overwrite
         if incident.source_ip in pi_blocked_ips:
             # IP is still enforced — leave the incident alone
             continue

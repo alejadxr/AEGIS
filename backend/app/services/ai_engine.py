@@ -1095,6 +1095,11 @@ class AIDecisionEngine:
         (before retention's coverage check) lift an IP this block holds forever.
         """
         from app.services import block_policy
+        # NOTE (do not "fix" this to match retention): promoting here is right even
+        # when the live block carries `duration_explicit`. A NEW confirmed
+        # detection is fresh evidence of a real attack; letting the block lapse
+        # would drop protection from an IP that just attacked again. Retention,
+        # by contrast, must never promote an explicit duration on old history.
         try:
             if action.status not in ("approved", "executed"):
                 return
@@ -1118,6 +1123,8 @@ class AIDecisionEngine:
 
         params = live.parameters or {}
         if permanent:
+            # Same rule as _promote_stale_provisional: new CONFIRMED evidence may
+            # upgrade even an explicit-duration block (see the note there).
             if params.get("provisional"):
                 block_policy.make_permanent(live, why, classification.kind)
                 live.ai_reasoning = f"{live.ai_reasoning or ''} [PROMOTED TO PERMANENT: {why}]"
