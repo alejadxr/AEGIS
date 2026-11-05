@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { api, getAiMode, type AiMode } from '@/lib/api';
+import { api, getAiMode, type AiMode, type AskProposal } from '@/lib/api';
 
 interface Message {
   id: string;
@@ -9,6 +9,7 @@ interface Message {
   content: string;
   timestamp: Date;
   model?: string;
+  proposals?: AskProposal[];
 }
 
 export function AskAI() {
@@ -79,6 +80,7 @@ export function AskAI() {
         content: res.answer || 'No response received.',
         timestamp: new Date(),
         model: res.model_used,
+        proposals: res.proposals,
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
@@ -93,6 +95,23 @@ export function AskAI() {
       setIsLoading(false);
     }
   };
+
+  // Per-proposal outcome, keyed by message id + index. Nothing is applied until
+  // the operator clicks: safelist and status changes are never done by the AI.
+  const [outcomes, setOutcomes] = useState<Record<string, string>>({});
+  const confirmProposal = async (key: string, p: AskProposal) => {
+    setOutcomes((o) => ({ ...o, [key]: 'working' }));
+    try {
+      await api.ask.confirm(p);
+      setOutcomes((o) => ({ ...o, [key]: 'done' }));
+    } catch (err) {
+      setOutcomes((o) => ({ ...o, [key]: `error: ${err instanceof Error ? err.message : 'failed'}` }));
+    }
+  };
+  const describe = (p: AskProposal) =>
+    p.kind === 'block_ip' ? `Block ${p.ip}`
+    : p.kind === 'safelist_add' ? `Safelist ${p.value} (${p.category})`
+    : `Mark incident ${p.incident_title ?? p.incident_id} as ${p.proposed_status}`;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -176,6 +195,29 @@ export function AskAI() {
                   }`}
                 >
                   <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                  {msg.proposals?.map((p, i) => {
+                    const key = `${msg.id}-${i}`;
+                    const out = outcomes[key];
+                    return (
+                      <div key={key} className="mt-2 rounded-lg border border-white/[0.08] bg-white/[0.03] p-2">
+                        <div className="text-[12px] text-white/80">{describe(p)}</div>
+                        {p.model_reason && <div className="text-[11px] text-white/40">Reason (from AI): {p.model_reason}</div>}
+                        {p.warning && <div className="mt-1 text-[11px] text-orange-400">{p.warning}</div>}
+                        {out === 'done' ? (
+                          <div className="mt-1 text-[11px] text-[var(--brand)]">Applied</div>
+                        ) : (
+                          <button
+                            onClick={() => confirmProposal(key, p)}
+                            disabled={out === 'working'}
+                            className="mt-1.5 rounded-md border border-[var(--brand)]/30 bg-[var(--brand)]/10 px-2 py-1 text-[11px] text-[var(--brand)] hover:bg-[var(--brand)]/20 disabled:opacity-40"
+                          >
+                            {out === 'working' ? 'Applying...' : 'Confirm'}
+                          </button>
+                        )}
+                        {out?.startsWith('error') && <div className="mt-1 text-[11px] text-red-400">{out}</div>}
+                      </div>
+                    );
+                  })}
                   {msg.model && (
                     <div className="mt-1 text-[10px] text-white/20">{msg.model}</div>
                   )}

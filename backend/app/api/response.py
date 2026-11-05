@@ -1,7 +1,7 @@
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Body, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,10 @@ from app.services.ai_engine import ai_engine
 from app.services.counter_attack import counter_attack_engine, COUNTER_ATTACK_ACTIONS
 from app.modules.response.ingestion import alert_ingestion
 from app.modules.response.responder import active_responder
+from app.core.audit import log_audit
+from app.core.ip_blocker import ip_blocker_service
+from app.services import block_policy, incident_triage
+from app.services import safelist as safelist_svc
 
 router = APIRouter(prefix="/response", tags=["response"])
 
@@ -284,6 +288,69 @@ async def analyze_incident(
 
     analysis = await ai_engine.analyze_incident(incident, db)
     return {"incident_id": incident_id, "analysis": analysis}
+
+
+@router.post("/webhook/test")
+async def test_webhook(auth: AuthContext = Depends(require_admin)):
+    """Send a test message to the configured notification webhook.
+
+    The Settings page has called this path since it shipped and it never
+    existed (every click 404'd). The real logic is the webhook branch of
+    POST /settings/notifications, so delegate to it rather than fork it.
+    """
+    from app.api.settings import NotificationTestRequest, test_notification
+    return await test_notification(NotificationTestRequest(channel="webhook"), auth)
+
+
+class IncidentPatch(BaseModel):
+    # The human verdicts only. 'auto_closed' / 'auto_responded' belong to
+    # AEGIS's own jobs and are deliberately not settable here, so a status read
+    # back from the API always says who decided it.
+    status: Literal["open", "investigating", "resolved", "false_positive"]
+    note: Optional[str] = Field(None, max_length=1000)
+    # Opt-in follow-up: lift the block on the incident's source IP. Offered,
+    # never implied; only meaningful with status=false_positive.
+    unblock_source_ip: bool = False
+
+
+@router.patch("/incidents/{incident_id}", response_model=IncidentOut)
+async def patch_incident(
+    incident_id: str,
+    body: IncidentPatch,
+    auth: AuthContext = Depends(require_analyst),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set an incident's status by hand (analyst or admin).
+
+    Recorded in ai_analysis.human_triage (who, when, why, history) so it is never
+    confused with the retention closer's `auto_closed`; every automated closer
+    skips an incident that carries it.
+    """
+    if body.unblock_source_ip and body.status != "false_positive":
+        raise HTTPException(status_code=400, detail="unblock_source_ip is only valid with status=false_positive")
+    incident = (await db.execute(
+        select(Incident).options(selectinload(Incident.actions))
+        .where(Incident.id == incident_id, Incident.client_id == auth.client.id)
+    )).scalar_one_or_none()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    actor = str(auth.email or auth.user_id or auth.client.name or "api-key")
+    extra: dict = {}
+    if body.unblock_source_ip:
+        ip = incident.source_ip
+        if not ip:
+            extra["unblock"] = {"requested": True, "done": False, "reason": "incident has no source_ip"}
+        elif not ip_blocker_service.is_blocked(ip) and not await block_policy.live_block_actions(db, ip):
+            extra["unblock"] = {"requested": True, "done": False, "ip": ip, "reason": "not currently blocked"}
+        else:
+            extra["unblock"] = {"requested": True, "done": True,
+                                "result": await safelist_svc.unblock_everywhere(ip, db, actor), "ip": ip}
+    incident_triage.apply(incident, body.status, actor, body.note, extra)
+    await log_audit(db, "incident_status", f"{incident_id} -> {body.status} by {actor}",
+                    client_id=auth.client.id, user_id=auth.user_id)
+    await db.commit()
+    return await get_incident(incident_id, auth, db)
 
 
 @router.get("/actions", response_model=list[ActionOut])

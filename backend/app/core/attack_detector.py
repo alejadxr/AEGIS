@@ -51,6 +51,8 @@ _BLOCKED_MEDIA = "application/json"
 # Auto-detect the host's own IPs + Tailscale/private ranges
 import ipaddress as _ipaddress
 
+from app.core import safelist_store as _safelist_store
+
 
 def _parse_ip_safelist_env(var_name: str, default: str = "") -> tuple[set[str], list]:
     """Parse a comma-separated env var of literal IPs and/or CIDR ranges.
@@ -390,6 +392,8 @@ def is_shared_egress(ip: str) -> bool:
         return False
     if any(addr in net for net in _SHARED_EGRESS_NETWORKS):
         return True
+    if _safelist_store.matches(_safelist_store.SHARED_EGRESS, ip, addr):
+        return True  # operator addition via the API (live, persisted)
     return _in_range_index(
         _SHARED_EGRESS_V4 if addr.version == 4 else _SHARED_EGRESS_V6, int(addr)
     )
@@ -446,6 +450,12 @@ def _is_safe_ip(ip: str, user_agent: Optional[str] = None) -> bool:
     if addr.is_loopback:
         return True
     if any(addr in net for net in _SAFE_NETWORKS):
+        return True
+    # Operator additions made through the API (safelist_store): same meaning as
+    # the env entries, but live without a restart. Both categories feed the one
+    # gate, exactly like AEGIS_SAFE_IPS / AEGIS_INTERNAL_IPS do.
+    if _safelist_store.matches(_safelist_store.SAFE, ip, addr) or \
+            _safelist_store.matches(_safelist_store.INTERNAL, ip, addr):
         return True
     if any(addr in net for net in _CRAWLER_NETWORKS):
         return True

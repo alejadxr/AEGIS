@@ -70,6 +70,29 @@ function isBlockedBody(body: string): boolean {
   }
 }
 
+export interface AskProposal {
+  kind: 'block_ip' | 'safelist_add' | 'incident_status';
+  status: string;
+  message?: string;
+  warning?: string | null;
+  ip?: string;
+  category?: string;
+  value?: string;
+  incident_id?: string;
+  incident_title?: string;
+  proposed_status?: string;
+  model_reason?: string;
+  confirm: { method: 'POST' | 'PATCH'; path: string; body: Record<string, unknown> };
+}
+
+export interface AskResponse {
+  answer: string;
+  actions_taken: Record<string, unknown>[];
+  proposals?: AskProposal[];
+  suggestions: string[];
+  model_used: string;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit & { skipAuth?: boolean } = {}
@@ -810,10 +833,20 @@ export const api = {
   // Ask (AI Assistant)
   ask: {
     send: async (message: string, context?: string) => {
-      return request<{ answer: string; actions_taken: Record<string, unknown>[]; suggestions: string[]; model_used: string }>('/ask', {
+      return request<AskResponse>('/ask', {
         method: 'POST',
         body: JSON.stringify({ message, context }),
       });
+    },
+    // Runs the request a proposal carries, as the logged-in operator. Only ever
+    // called from an explicit click; the assistant itself has no way to do this.
+    confirm: async (proposal: AskProposal) => {
+      const { method, path, body } = proposal.confirm;
+      const rel = path.replace(/^\/api\/v1/, '');
+      if (!/^\/(firewall\/(blocked|safelist\/[a-z_]+)|response\/incidents\/[\w-]+)$/.test(rel)) {
+        throw new Error('Unexpected confirm path');
+      }
+      return request<Record<string, unknown>>(rel, { method, body: JSON.stringify(body) });
     },
   },
 

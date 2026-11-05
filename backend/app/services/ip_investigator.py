@@ -19,6 +19,7 @@ from typing import Optional
 from sqlalchemy import select
 
 from app.services import block_policy
+from app.services.incident_triage import is_human_triaged
 
 logger = logging.getLogger("cayde6.ip_investigator")
 
@@ -353,7 +354,7 @@ class IPInvestigator:
                     }
                     incident.ai_analysis = analysis
 
-                    if result.get("action_taken") == "auto_unblocked":
+                    if result.get("action_taken") == "auto_unblocked" and not is_human_triaged(incident):
                         incident.status = "resolved"
                         incident.resolved_at = datetime.utcnow()
                         incident.description = (

@@ -14,10 +14,15 @@ GET    /firewall/templates         → list shipped templates
 GET    /firewall/blocked           → live blocked IPs (Pi iptables + local in-memory)
 GET    /firewall/stats             → aggregate firewall counts
 DELETE /firewall/blocked/{ip}      → unblock an IP from Pi + local
+POST   /firewall/blocked           → block an IP (operator; Pi + 403 list + system fw)
+GET    /firewall/safelist          → every safelist entry, env and runtime
+GET    /firewall/safelist/{cat}    → one category (safe | internal | shared_egress)
+POST   /firewall/safelist/{cat}    → add an entry; live at once, kept across restarts
+DELETE /firewall/safelist/{cat}    → remove a runtime entry (?value=...); env entries are pinned
 """
 import os
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 import yaml
@@ -33,7 +38,10 @@ from app.core.ip_blocker import BLOCKED_IPS_FILE, ip_blocker_service
 from app.database import get_db
 from app.models.action import Action
 from app.models.firewall_rule import FirewallRule
+from app.services import operator_block as op_block
+from app.services import safelist as safelist_svc
 from app.services.firewall_engine import DEFAULT_TEMPLATES, firewall_engine
+from app.core.safelist_store import SafelistError
 
 _PI_BASE = (settings.AEGIS_FIREWALL_URL or "").rstrip("/")
 _PI_TIMEOUT = 5.0
@@ -410,3 +418,131 @@ async def unblock_ip(
     results["local"] = local_result
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Operator block
+# ---------------------------------------------------------------------------
+
+class BlockRequest(BaseModel):
+    ip: str = Field(..., min_length=2, max_length=45)
+    # Required free text: it lands in the Pi's attacker record, the Action and the
+    # audit trail, which is the only way to tell later why an address was blocked.
+    reason: str = Field(..., min_length=3, max_length=500)
+    threat_type: Optional[str] = Field(None, max_length=50)
+    severity: Optional[Literal["low", "medium", "high", "critical"]] = None
+    # Omitted = permanent. Bounded by the Pi agent's own 30-day cap.
+    duration_s: Optional[int] = Field(None, ge=op_block.MIN_DURATION_S, le=op_block.MAX_DURATION_S)
+    # Attach to an existing incident instead of creating a closed stub.
+    incident_id: Optional[str] = Field(None, max_length=36)
+
+
+def _actor(auth: AuthContext) -> str:
+    return str(auth.email or auth.user_id or auth.client.name or "api-key")
+
+
+@router.post("/blocked", status_code=201)
+async def block_ip(
+    body: BlockRequest,
+    auth: AuthContext = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Block an IP on all three layers, as the operator.
+
+    Refuses (409) a safelisted, internal, built-in-protected or shared-egress
+    address, and (400) anything that is not a single routable IP: the Pi agent
+    takes single addresses only, so a CIDR is rejected rather than half-applied.
+    """
+    try:
+        result = await op_block.operator_block(
+            db, client_id=auth.client_id, actor=_actor(auth), ip=body.ip, reason=body.reason,
+            threat_type=body.threat_type, severity=body.severity, duration_s=body.duration_s,
+            incident_id=body.incident_id,
+        )
+    except op_block.BlockRefused as exc:
+        raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message})
+    if not result["blocked"]:
+        raise HTTPException(status_code=502, detail={"code": "block_failed", **result})
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Safelist (env layer read-only, runtime layer managed here)
+# ---------------------------------------------------------------------------
+
+SafelistCategory = Literal["safe", "internal", "shared_egress"]
+
+
+class SafelistAdd(BaseModel):
+    value: str = Field(..., min_length=2, max_length=64, description="IP address or CIDR (no wider than /16 IPv4, /32 IPv6)")
+    note: str = Field("", max_length=300)
+    # Opt-in: lifting an existing block is a second decision, not a side effect.
+    unblock_if_blocked: bool = False
+
+
+@router.get("/safelist")
+async def list_safelist(auth: AuthContext = Depends(require_viewer)):
+    """Every category, env and runtime entries together. Built-in ranges (private,
+    Tailscale, crawler/CDN networks) are always on and not listed."""
+    return {"categories": safelist_svc.list_all(), "meaning": safelist_svc.CATEGORY_MEANING}
+
+
+@router.get("/safelist/{category}")
+async def list_safelist_category(category: SafelistCategory, auth: AuthContext = Depends(require_viewer)):
+    return {"category": category, "meaning": safelist_svc.CATEGORY_MEANING[category],
+            "entries": safelist_svc.list_category(category)}
+
+
+@router.post("/safelist/{category}", status_code=201)
+async def add_safelist_entry(
+    category: SafelistCategory,
+    body: SafelistAdd,
+    auth: AuthContext = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add an entry. Takes effect on the next request, no restart; persisted.
+
+    Scope: Mac Pro side only. The Pi firewall agent keeps its own env-pinned
+    safelist and is not told about additions made here (no push to the Pi).
+    """
+    try:
+        result = await safelist_svc.add(
+            category, body.value, added_by=_actor(auth), note=body.note,
+            unblock_if_blocked=body.unblock_if_blocked, db=db,
+        )
+    except SafelistError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        # Not persisted means it would silently vanish on restart: say so loudly.
+        raise HTTPException(status_code=500, detail=f"could not persist the safelist: {exc}")
+    from app.core.audit import log_audit
+    await log_audit(db, "safelist_add", f"{category} += {result['value']} ({body.note[:100]})",
+                    client_id=auth.client_id, user_id=auth.user_id)
+    await db.commit()
+    return result
+
+
+@router.delete("/safelist/{category}")
+async def remove_safelist_entry(
+    category: SafelistCategory,
+    value: str,
+    auth: AuthContext = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a runtime entry (`?value=203.0.113.7`). An entry defined by the
+    server environment is pinned: 409 with the variable to edit, never a silent no-op."""
+    try:
+        result = safelist_svc.remove(category, value)
+    except safelist_svc.EnvPinned as exc:
+        raise HTTPException(status_code=409, detail={"code": "env_pinned", "var": exc.var, "message": str(exc)})
+    except safelist_svc.NotListed:
+        raise HTTPException(status_code=404, detail="Not in the runtime safelist for that category")
+    except SafelistError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"could not persist the safelist: {exc}")
+    from app.core.audit import log_audit
+    await log_audit(db, "safelist_remove", f"{category} -= {result['value']}",
+                    client_id=auth.client_id, user_id=auth.user_id)
+    await db.commit()
+    return result
