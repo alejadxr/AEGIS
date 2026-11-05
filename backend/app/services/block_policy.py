@@ -29,6 +29,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Iterable, NamedTuple, Optional
 
+from app.services import authored_rules_registry as _authored
+
 logger = logging.getLogger("cayde6.block_policy")
 
 CONFIRMED = "confirmed"
@@ -50,7 +52,6 @@ CONFIRMED_IDS = frozenset({
     "sigma_persist_webshell", "sigma_cloud_metadata_ssrf",
     "sigma_web_command_injection", "sigma_web_path_traversal", "sigma_web_ssrf",
     "sigma_web_file_upload", "sigma_web_sensitive_file_probe",
-    "sigma_web_secret_harvest_instant",
     "sigma_web_deserialization", "sigma_web_xxe",
     "sigma_web_sqli_blind", "sigma_web_sqli_time", "sigma_web_sqli_union",
     "sigma_web_aver_ptc_cgi_rce", "sigma_web_baforms_upload_rce",
@@ -87,6 +88,15 @@ AMBIGUOUS_KNOWN = frozenset({
     "high_request_rate", "port_scan", "scanner",
     "xss", "xss_attack_chain", "sigma_web_xss_reflected", "sigma_web_xss_stored",
     "sigma_web_api_abuse", "sigma_web_csrf", "sigma_web_php_probe", "sigma_web_open_redirect",
+    # The single-request visibility rules are AMBIGUOUS on purpose, even though
+    # one `/.env` GET is plainly hostile. They exist so a lone probe leaves a
+    # trace, not so it earns a life sentence: 40+ hosts a day send exactly one,
+    # it is the cheapest request on the internet to forge, and a permanent
+    # verdict from one packet is how a shared-egress or customer address gets
+    # blocked forever. A real sweep still lands permanently through the 3-hit
+    # sigma_web_sensitive_file_probe, and a prober that comes back is escalated
+    # by the repeat-offender rule. Graduated, not trigger-happy.
+    "sigma_web_secret_harvest_instant",
     # Framework/debug endpoint recon (/actuator, /swagger, /graphql, /_cat/indices).
     # Low-severity visibility only: monitoring agents and API explorers hit these
     # legitimately, so a single request must never earn a permanent block. The
@@ -135,6 +145,13 @@ def classify(
     """
     for token in (*_tokens_from_reason(reason), *(r.lower() for r in rule_ids if isinstance(r, str))):
         if token in CONFIRMED_IDS or token.startswith(CONFIRMED_PREFIXES):
+            return Classification(CONFIRMED, token)
+        # Rules authored at runtime carry their classification in their own
+        # file (authored_rules_registry), not in the sets above: a code edit per
+        # rule is impossible for a rule that did not exist at deploy time. Only
+        # an operator's content-bound approval makes one CONFIRMED; everything
+        # else falls through to AMBIGUOUS like any unclassified rule.
+        if token.startswith(_authored.AUTHORED_PREFIX) and _authored.is_confirmed(token):
             return Classification(CONFIRMED, token)
     tt = (threat_type or "").lower()
     if tt in CONFIRMED_THREAT_TYPES:

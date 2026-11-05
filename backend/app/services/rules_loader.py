@@ -115,6 +115,16 @@ def load_rules(path: Path = _DEFAULT_RULES_PATH) -> RulePack:
         return pack
 
     yaml_files = sorted(path.rglob("*.yaml"))
+    # Runtime-authored rules live outside the repo tree (deploys rsync
+    # app/rules with --delete). Only the default pack path pulls them in, so a
+    # test that points load_rules at its own directory stays hermetic.
+    authored_files: set[Path] = set()
+    if path == _DEFAULT_RULES_PATH:
+        from app.services.authored_rules_registry import authored_dir
+        ad = authored_dir()
+        if ad.is_dir():
+            authored_files = set(sorted(ad.glob("*.yaml")))
+            yaml_files += sorted(authored_files)
     logger.info(f"Loading rules from {path} — found {len(yaml_files)} YAML files")
 
     filter_problems = 0
@@ -125,6 +135,10 @@ def load_rules(path: Path = _DEFAULT_RULES_PATH) -> RulePack:
 
         rule = _parse_rule(data, yaml_path)
         if rule is None:
+            continue
+
+        if yaml_path in authored_files and rule.id in pack.by_id:
+            logger.warning(f"Skipping authored rule {yaml_path}: id '{rule.id}' already loaded")
             continue
 
         if isinstance(rule, ChainRule):

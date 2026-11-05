@@ -91,6 +91,10 @@ def probe_failed(alert: Optional[dict]) -> bool:
     """
     if is_host_incident(alert):
         return False
+    # A chain is an ordered sequence, not one request: its last event happening
+    # to be a 404 says nothing about whether the sequence worked.
+    if (alert or {}).get("chain_id"):
+        return False
     return response_status(alert) in (404, 410)
 
 
@@ -136,6 +140,66 @@ def apply_probe_evidence(alert: Optional[dict], severity: str, description: str)
         f"a live endpoint."
     )
     return lowered, f"{description} {note}".strip()
+
+
+def hard_evidence(alert: Optional[dict]) -> Optional[str]:
+    """Why a severity above the rule's own is justified, or None when it is not.
+
+    Only facts count; a model's opinion, a longer burst or more rules matched
+    do not (a scanner trips a dozen rules in seconds, so "many matches" is the
+    normal case, not evidence). The accepted facts:
+    - a 2xx answer on the probed path: the request reached something live;
+    - an attack chain: an ordered multi-stage sequence was observed;
+    - an EDR / host detection: the endpoint itself confirmed it;
+    - a source already known bad (threat-feed / prior-offender flag).
+    """
+    ctx = _context(alert)
+    status = response_status(alert)
+    if is_http_probe(alert) and _is_2xx(status):
+        return f"the probed path answered {status}"
+    if (alert or {}).get("chain_id") or (alert or {}).get("event_type") == "chain_correlation_triggered":
+        return "an attack chain was confirmed"
+    if is_host_incident(alert):
+        return "endpoint (EDR) confirmation"
+    if ctx.get("known_attacker") or ctx.get("known_bad_ip"):
+        return "the source is a known attacker"
+    return None
+
+
+def bound_escalation(
+    authored: Optional[str], proposed: Optional[str], alert: Optional[dict]
+) -> tuple[str, Optional[str]]:
+    """Cap how far above the rule's authored severity an incident may be rated.
+
+    The rule author's severity is a deliberate statement: single-request
+    visibility rules are written `low` precisely so a lone probe leaves a trace
+    without earning a block. Severity drives blocking in this platform (which
+    has blocked its own operator more than once), so a model's or a merge's
+    higher rating must be earned. Without hard evidence (see `hard_evidence`)
+    the result is at most ONE level above `authored`; with it, `proposed`
+    stands. Returns (severity, reason); reason is None when nothing was raised,
+    and otherwise says what justified the jump (or that it was capped), for
+    the audit trail on the incident.
+    """
+    if authored not in _LADDER or proposed not in _LADDER:
+        return (proposed or authored or ""), None
+    a, p = _LADDER.index(authored), _LADDER.index(proposed)
+    if p <= a:
+        return proposed, None
+    if probe_failed(alert):
+        # The target said the path does not exist: the probe provably missed,
+        # so nothing may raise the rule's own rating on this match.
+        return authored, f"not raised: the target answered {response_status(alert)}, the probe missed"
+    evidence = hard_evidence(alert)
+    if evidence:
+        return proposed, f"raised {authored} -> {proposed}: {evidence}"
+    allowed = _LADDER[min(p, a + 1)]
+    if allowed == proposed:
+        return proposed, f"raised {authored} -> {proposed}: one level above the rule, no hard evidence needed"
+    return allowed, (
+        f"capped at {allowed}: {proposed} was proposed for a {authored} rule but "
+        f"nothing confirms it (no 2xx on the probed path, chain, EDR or known-attacker signal)"
+    )
 
 
 def retitle_severity(title: str, old: str, new: str) -> str:
@@ -264,6 +328,8 @@ def merge_into_incident(
     rule_id: Optional[str],
     rule_title: Optional[str],
     severity: Optional[str],
+    alert: Optional[dict] = None,
+    authored: Optional[str] = None,
 ) -> None:
     """Fold one more match into an existing incident (caller commits).
 
@@ -271,8 +337,16 @@ def merge_into_incident(
     - the matched rule ids/titles accumulate in ai_analysis.matched_rules and
       are echoed in the description, so a merge cannot hide which CVEs were
       probed;
-    - severity only goes up (a critical after a high upgrades, the reverse is
-      ignored), and the title's severity prefix follows it.
+    - severity only goes up (the reverse is ignored), and the title's severity
+      prefix follows it. The ceiling for a match is the severity its OWN rule
+      was authored with (`authored`), never the incident's current level: a
+      critical CVE rule matching into an incident a `low` visibility rule
+      opened is that author's statement, not inflation, and flattening it
+      would hide a targeted exploitation attempt. What is bounded is a match
+      rated above its own rule (confidence boosts, the model), via
+      `bound_escalation`. A burst of many rules is not evidence. Reasons go to
+      ai_analysis.severity_escalations. Measured in production: 50 of 51
+      inflated incidents in 14 days came from this merge.
 
     ai_analysis is rebuilt as a NEW dict: the JSON column is not a mutable
     type, so editing the loaded dict in place and assigning it back looks like
@@ -311,11 +385,35 @@ def merge_into_incident(
     elif len(matched) < MAX_MATCHED_RULES:
         matched.append({"id": rule_id, "title": rule_title or rule_id, "severity": severity, "hits": 1})
     analysis["matched_rules"] = matched
+
+    new_severity = None
+    if severity and _severity_rank(severity) > _severity_rank(incident.severity):
+        if authored in _LADDER:
+            new_severity, why = bound_escalation(authored, severity, alert)
+            why = why or f"rule authored {authored}; its match is rated {new_severity}"
+        else:
+            # Unknown authored severity: take the proposed value, and say so
+            # rather than silently pinning it to the incident's level.
+            new_severity, why = severity, "authored severity unavailable; match severity taken as proposed"
+        if _severity_rank(new_severity) > _severity_rank(incident.severity):
+            log = list(analysis.get("severity_escalations") or [])
+            log.append({"rule": rule_id, "from": incident.severity, "to": new_severity,
+                        "proposed": severity, "authored": authored, "reason": why,
+                        "ts": now.isoformat()})
+            analysis["severity_escalations"] = log[-MAX_MATCHED_RULES:]
     incident.ai_analysis = analysis
 
-    if severity and _severity_rank(severity) > _severity_rank(incident.severity):
-        incident.title = retitle_severity(incident.title or "", incident.severity, severity)
-        incident.severity = severity
+    if new_severity and _severity_rank(new_severity) > _severity_rank(incident.severity):
+        # Name the rule that earned the new severity, not the one that happened
+        # to open the incident. A scanner trips a low visibility rule first, so
+        # without this the operator reads "CRITICAL: Secret Harvest Probe" when
+        # the critical part was a CVE exploitation attempt further into the
+        # burst -- the headline would understate the one thing worth opening.
+        if rule_title and _severity_rank(severity) >= _severity_rank(new_severity):
+            incident.title = f"{new_severity.upper()}: {rule_title}"
+        else:
+            incident.title = retitle_severity(incident.title or "", incident.severity, new_severity)
+        incident.severity = new_severity
 
     base = incident.description or ""
     if _DESC_MARKER in base:
