@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import json
+import re
 
 from app.database import get_db
 from app.core.auth import AuthContext, get_auth_context
@@ -20,6 +21,27 @@ from app.services import assistant_actions
 from app.api.rag import router as _rag_router
 
 logger = logging.getLogger("aegis.ask_ai")
+
+_SECRET_KEY_RE = re.compile(
+    r"(key|token|secret|password|passwd|credential|webhook|auth|dsn|private|cookie|session)", re.I
+)
+_URL_WITH_SECRET_RE = re.compile(r"^[a-z][a-z0-9+.\-]*://", re.I)
+
+
+def _redact_settings(value, _key: str = ""):
+    """Copy of a settings tree with every credential-like value replaced."""
+    # A credential-like key hides its whole subtree: {"ai_keys": {"openai": ...}}
+    # has innocent-looking child keys.
+    if _key and _SECRET_KEY_RE.search(_key) and value not in (None, "", False, True, {}, []):
+        return "[redacted]"
+    if isinstance(value, dict):
+        return {k: _redact_settings(v, str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_settings(v, _key) for v in value]
+    if isinstance(value, str) and _URL_WITH_SECRET_RE.match(value):
+        return "[redacted-url]"     # webhook-style URLs carry their secret in the path
+    return value
+
 
 router = APIRouter(prefix="/ask", tags=["ask-ai"])
 
@@ -90,7 +112,9 @@ async def ask_ai(
         for i in recent_incidents
     ]) if recent_incidents else "No recent incidents"
 
-    settings_json = json.dumps(client.settings) if client.settings else "{}"
+    # Settings hold provider keys, bot tokens and webhook URLs. They must not
+    # leave for the AI provider, nor be readable back by any role that can chat.
+    settings_json = json.dumps(_redact_settings(client.settings)) if client.settings else "{}"
     guardrails_json = json.dumps(client.guardrails) if client.guardrails else "{}"
 
     # --- RAG context injection (graceful degradation) ---

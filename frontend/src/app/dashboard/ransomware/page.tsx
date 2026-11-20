@@ -6,6 +6,7 @@ import { RecentEventsTable } from '@/components/ransomware/RecentEventsTable';
 import { RaaSGroupTimeline } from '@/components/ransomware/RaaSGroupTimeline';
 import { DecryptorLookup } from '@/components/ransomware/DecryptorLookup';
 import { cn } from '@/lib/utils';
+import { apiUrl, authHeaders } from '@/lib/api';
 
 interface RansomwareStats {
   rules_active: number;
@@ -50,10 +51,7 @@ export default function RansomwarePage() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const apiKey = localStorage.getItem('aegis_api_key');
-        const res = await fetch('/api/v1/ransomware/stats', {
-          headers: apiKey ? { 'X-API-Key': apiKey } : {},
-        });
+        const res = await fetch(apiUrl('/ransomware/stats'), { headers: authHeaders() });
         if (!res.ok) throw new Error();
         const json = await res.json();
         setStats({

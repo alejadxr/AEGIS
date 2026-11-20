@@ -32,7 +32,7 @@ async def test_pull_appends_new_pi_ips(isolated_blocklist):
     pi_response = ["45.155.205.233", "1.2.3.4", "5.6.7.8"]
 
     with patch.object(
-        firewall_sync.firewall_client, "get_blocked", new=AsyncMock(return_value=pi_response)
+        firewall_sync.firewall_client, "get_blocked_strict", new=AsyncMock(return_value=pi_response)
     ):
         result = await firewall_sync._pull_blocklist_from_pi()
 
@@ -55,7 +55,7 @@ async def test_pull_skips_safe_ips(isolated_blocklist):
     try:
         pi_response = ["66.249.75.164", "9.9.9.9"]
         with patch.object(
-            firewall_sync.firewall_client, "get_blocked", new=AsyncMock(return_value=pi_response)
+            firewall_sync.firewall_client, "get_blocked_strict", new=AsyncMock(return_value=pi_response)
         ):
             result = await firewall_sync._pull_blocklist_from_pi()
         assert result["skipped_safe"] == 1
@@ -71,7 +71,7 @@ async def test_pull_does_not_remove_local_only(isolated_blocklist):
     """Local-only IPs must remain even if absent from Pi."""
     pi_response = ["1.2.3.4"]
     with patch.object(
-        firewall_sync.firewall_client, "get_blocked", new=AsyncMock(return_value=pi_response)
+        firewall_sync.firewall_client, "get_blocked_strict", new=AsyncMock(return_value=pi_response)
     ):
         result = await firewall_sync._pull_blocklist_from_pi()
     assert result["local_only"] == 1  # 45.155.205.233 was local-only
@@ -83,7 +83,7 @@ async def test_pull_ignores_cidr_entries(isolated_blocklist):
     """A CIDR returned by Pi (defensive guard) must not be written."""
     pi_response = ["1.2.3.4", "10.0.0.0/8"]
     with patch.object(
-        firewall_sync.firewall_client, "get_blocked", new=AsyncMock(return_value=pi_response)
+        firewall_sync.firewall_client, "get_blocked_strict", new=AsyncMock(return_value=pi_response)
     ):
         result = await firewall_sync._pull_blocklist_from_pi()
     assert result["added"] == 1
@@ -95,7 +95,7 @@ async def test_pull_idempotent(isolated_blocklist):
     """Running twice with same Pi state must not duplicate entries."""
     pi_response = ["1.2.3.4"]
     with patch.object(
-        firewall_sync.firewall_client, "get_blocked", new=AsyncMock(return_value=pi_response)
+        firewall_sync.firewall_client, "get_blocked_strict", new=AsyncMock(return_value=pi_response)
     ):
         await firewall_sync._pull_blocklist_from_pi()
         result2 = await firewall_sync._pull_blocklist_from_pi()

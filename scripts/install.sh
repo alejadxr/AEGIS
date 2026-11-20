@@ -1,14 +1,16 @@
 #!/bin/bash
 # ============================================================
 # AEGIS Autonomous Defense Platform - Installer
-# Usage: curl -fsSL https://install.aegis.com | bash
-#    or: bash scripts/install.sh
+# Usage: git clone https://github.com/alejadxr/AEGIS && bash AEGIS/scripts/install.sh
+#
+# There is no hosted "curl | bash" installer. Run this script from a checkout
+# you obtained from the official repository; do not pipe a URL into a shell.
 # ============================================================
 
 set -euo pipefail
 
 AEGIS_DIR="${AEGIS_DIR:-$HOME/aegis}"
-REPO_URL="${AEGIS_REPO:-https://github.com/aegis-defense/aegis}"
+REPO_URL="${AEGIS_REPO:-https://github.com/alejadxr/AEGIS}"
 BRANCH="${AEGIS_BRANCH:-main}"
 
 # Colors
@@ -121,18 +123,39 @@ clone_or_download() {
         if [ -d "$AEGIS_DIR/.git" ]; then
             log "Updating existing repository..."
             cd "$AEGIS_DIR"
-            git pull origin "$BRANCH" 2>/dev/null || true
+            # Only pull from the repository this installer was told to use: an
+            # existing checkout with a different origin is not ours to update.
+            local current_origin
+            current_origin="$(git remote get-url origin 2>/dev/null || true)"
+            if [ "${current_origin%.git}" != "${REPO_URL%.git}" ]; then
+                error "$AEGIS_DIR tracks '$current_origin', not '$REPO_URL'. Refusing to update it."
+                exit 1
+            fi
+            git pull --ff-only origin "$BRANCH" || {
+                error "Could not update $AEGIS_DIR from $REPO_URL ($BRANCH)."
+                exit 1
+            }
         else
             log "Cloning AEGIS repository..."
-            git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$AEGIS_DIR" 2>/dev/null || {
-                warn "Git clone failed. If running locally, ensure files are in $AEGIS_DIR"
+            # A failed clone must stop the install: continuing would build and
+            # run whatever happens to be in $AEGIS_DIR.
+            git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$AEGIS_DIR" || {
+                error "Git clone of $REPO_URL ($BRANCH) failed."
+                exit 1
             }
         fi
     else
         warn "Git not found. Downloading release archive..."
-        curl -fsSL "$REPO_URL/archive/refs/heads/$BRANCH.tar.gz" -o /tmp/aegis.tar.gz
-        tar xzf /tmp/aegis.tar.gz -C "$AEGIS_DIR" --strip-components=1
-        rm -f /tmp/aegis.tar.gz
+        local archive
+        archive="$(mktemp "${TMPDIR:-/tmp}/aegis.XXXXXX")"
+        curl -fsSL "$REPO_URL/archive/refs/heads/$BRANCH.tar.gz" -o "$archive" || {
+            rm -f "$archive"
+            error "Could not download $REPO_URL ($BRANCH)."
+            exit 1
+        }
+        mkdir -p "$AEGIS_DIR"
+        tar xzf "$archive" -C "$AEGIS_DIR" --strip-components=1 || { rm -f "$archive"; exit 1; }
+        rm -f "$archive"
     fi
     cd "$AEGIS_DIR"
 }

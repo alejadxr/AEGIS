@@ -12,11 +12,11 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.core.client_ip import rate_limit_key
 
 from app.config import settings
 from app.database import get_db
@@ -29,7 +29,7 @@ from app.services import asset_risk
 
 logger = logging.getLogger("aegis.setup")
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=rate_limit_key)
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -47,6 +47,12 @@ _background_scans: dict[str, dict] = {}
 
 class DiscoverRequest(BaseModel):
     target: str = Field(..., min_length=1, max_length=200, description="IP address or CIDR range")
+
+    @field_validator("target")
+    @classmethod
+    def _target_is_a_host(cls, v: str) -> str:
+        from app.core.scan_target import validate_scan_target
+        return validate_scan_target(v)
 
 
 class DiscoverResponse(BaseModel):

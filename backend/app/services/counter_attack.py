@@ -372,6 +372,11 @@ class CounterAttackEngine:
 
     def _run_nmap(self, target_ip: str) -> str:
         """Run nmap scan (synchronous, in thread executor)."""
+        import ipaddress as _ipaddress
+        try:
+            target_ip = str(_ipaddress.ip_address(str(target_ip).strip()))
+        except ValueError:
+            return "refused: target is not an IP address"
         try:
             result = subprocess.run(
                 ["nmap", "-sV", "-T4", "--top-ports", "100", "-O", target_ip],

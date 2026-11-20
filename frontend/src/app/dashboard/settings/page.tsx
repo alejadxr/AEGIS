@@ -63,11 +63,13 @@ interface ChatMessage {
    Defaults
    ────────────────────────────────────────── */
 
+// Empty until the API answers. A made-up organisation and a placeholder key
+// here were shown (and could be copied) whenever the request failed.
 const DEMO_CLIENT: ClientInfo = {
-  id: 'demo-client-001',
-  name: 'Demo Organization',
-  slug: 'demo-org',
-  api_key: 'your-api-key-here',
+  id: '',
+  name: '',
+  slug: '',
+  api_key: '',
 };
 
 const DEMO_NOTIFICATIONS: NotifSettings = {

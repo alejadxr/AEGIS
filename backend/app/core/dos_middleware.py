@@ -61,56 +61,22 @@ except Exception as _exc:  # noqa: BLE001
 # Trusted-proxy parsing for _client_ip
 # ---------------------------------------------------------------------------
 
-def _parse_trusted_proxies(raw: str) -> tuple[frozenset[str], tuple]:
-    """Split AEGIS_DOS_TRUSTED_PROXIES into (literal ips, networks)."""
-    literals: set[str] = set()
-    networks: list = []
-    for token in (raw or "").split(","):
-        token = token.strip()
-        if not token:
-            continue
-        if "/" in token:
-            try:
-                networks.append(ipaddress.ip_network(token, strict=False))
-            except ValueError:
-                logger.debug("ignoring malformed trusted-proxy CIDR: %s", token)
-        else:
-            literals.add(token)
-    return frozenset(literals), tuple(networks)
-
-
-_TRUSTED_LITERALS, _TRUSTED_NETWORKS = _parse_trusted_proxies(
-    getattr(settings, "AEGIS_DOS_TRUSTED_PROXIES", "127.0.0.1,::1,100.64.0.0/10")
+from app.core.client_ip import (  # noqa: E402
+    client_ip_from_request,
+    is_trusted_proxy as _is_trusted_proxy,
+    parse_trusted_proxies as _parse_trusted_proxies,
 )
 
 
-def _is_trusted_proxy(peer: str) -> bool:
-    if peer in _TRUSTED_LITERALS:
-        return True
-    try:
-        addr = ipaddress.ip_address(peer)
-    except (ValueError, TypeError):
-        return False
-    return any(addr in net for net in _TRUSTED_NETWORKS)
-
-
 def _client_ip(request) -> str:
-    """Derive the rate-accounting client IP.
+    """Derive the client IP. See ``app.core.client_ip`` for the rules.
 
-    Trusts X-Forwarded-For ONLY when the direct socket peer is a configured
-    trusted proxy (localhost / Tailscale CGNAT by default). From any other peer
-    the real socket IP is used, so an attacker rotating XFF cannot dilute or
-    frame per-IP counters.
+    Forwarding headers are honoured ONLY when the direct socket peer is a
+    configured trusted proxy, and then never the attacker-writable first
+    X-Forwarded-For value: ``CF-Connecting-IP`` first, else the right-most
+    non-proxy hop.
     """
-    peer = request.client.host if request.client else "unknown"
-    if _is_trusted_proxy(peer):
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            # First hop is the original client.
-            first = forwarded.split(",")[0].strip()
-            if first:
-                return first
-    return peer
+    return client_ip_from_request(request)
 
 
 # ---------------------------------------------------------------------------

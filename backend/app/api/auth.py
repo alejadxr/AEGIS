@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.core.client_ip import rate_limit_key
 
 from app.database import get_db
 from app.core.auth import (
@@ -25,7 +25,7 @@ from app.core.audit import log_audit
 from app.models.client import Client
 from app.models.user import User, UserRole
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=rate_limit_key)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

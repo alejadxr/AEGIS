@@ -229,9 +229,8 @@ class IPBlockerMiddleware(BaseHTTPMiddleware):
     """FastAPI middleware that blocks requests from known-bad IPs."""
 
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-        if not client_ip:
-            client_ip = request.client.host if request.client else "unknown"
+        from app.core.client_ip import client_ip_from_request
+        client_ip = client_ip_from_request(request)
 
         if ip_blocker_service.is_blocked(client_ip):
             logger.warning(f"Blocked request from {client_ip} to {request.url.path}")

@@ -25,6 +25,9 @@ class FakeIptables:
         rc = 0
         if args[:3] == ("-L", "INPUT", "-n"):
             out = "\n".join(f"DROP all -- {ip} 0.0.0.0/0" for ip in sorted(self.rules))
+        elif args[0] == "-C":
+            # `iptables -C INPUT -s <ip> -j DROP`: exit 0 only for that exact rule.
+            rc = 0 if (args[1] == "INPUT" and args[3] in self.rules) else 1
         elif args[0] == "-I" and args[1] == "INPUT":
             self.rules.add(args[3])
         elif args[0] == "-D":
@@ -143,3 +146,13 @@ def test_expiry_persisted_and_lapsed_block_not_restored(env):
 
     assert fake.rules == {IP_PERM}
     assert IP_PERM in main._block_expiry and IP_TEMP not in main._block_expiry
+
+
+def test_blocking_an_address_that_is_a_prefix_of_a_blocked_one_inserts_its_own_rule(env):
+    """A substring test reported 203.0.113.4 as blocked because 203.0.113.40 was."""
+    fw = main._run_iptables
+    assert main.block_ip("203.0.113.40") is True
+    assert main._ip_is_blocked("203.0.113.4") is False
+    assert main.block_ip("203.0.113.4") is True
+    assert fw.rules == {"203.0.113.40", "203.0.113.4"}
+    assert main._ip_is_blocked("203.0.113.4") is True

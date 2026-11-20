@@ -336,8 +336,12 @@ class InteractionProcessor:
                 })
                 # Notify external firewall about honeypot interaction from non-trusted IPs
                 trusted_ips = {"127.0.0.1", "::1", "localhost"}
-                firewall_url = os.getenv("AEGIS_FIREWALL_URL", "").rstrip("/")
-                if source_ip not in trusted_ips and firewall_url and not shared_egress:
+                from app.core.attack_detector import _firewall_url
+                firewall_url = _firewall_url()
+                # treat_as_hostile already folds in the safelist and shared
+                # egress; the Pi must not be told to analyse (and block) an
+                # address the rest of AEGIS has decided to leave alone.
+                if source_ip not in trusted_ips and firewall_url and treat_as_hostile:
                     try:
                         import aiohttp
                         from app.core.firewall_client import firewall_auth_headers
@@ -359,8 +363,8 @@ class InteractionProcessor:
 
                 # Share to MongoDB aegis_threats collection
                 try:
-                    if shared_egress:
-                        raise RuntimeError("shared-egress IP is not shared as an IOC")
+                    if shared_egress or not treat_as_hostile:
+                        raise RuntimeError("safelisted/shared-egress IP is not shared as an IOC")
                     from app.services.threat_intel_hub import threat_intel_hub
                     await threat_intel_hub.share_ioc({
                         "ioc_type": "ip",

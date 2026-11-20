@@ -90,9 +90,12 @@ class HubSyncClient:
             return False
         try:
             ioc_data["node_id"] = self.node_id
+            from app.config import settings as _settings
+            _key = (_settings.AEGIS_HUB_SHARED_KEY or "").strip()
             resp = await self._client.post(
                 f"{self.hub_url}/api/v1/threats/intel/share",
                 json=ioc_data,
+                headers={"X-AEGIS-Hub-Key": _key} if _key else None,
             )
             if resp.status_code == 200:
                 result = resp.json()
@@ -163,6 +166,19 @@ class HubSyncClient:
     async def _auto_block_ip(self, ip: str, reason: str):
         """Auto-block a high-confidence shared IP locally."""
         try:
+            import ipaddress as _ipaddress
+            from app.core.attack_detector import _is_safe_ip
+            # What the hub says is somebody else's claim: it never overrides
+            # this install's own safelist, and it must at least be an address.
+            try:
+                ip = str(_ipaddress.ip_address(str(ip).strip()))
+            except ValueError:
+                logger.warning("Hub sent a non-IP value as an IP IOC; ignored")
+                return
+            if _is_safe_ip(ip):
+                logger.warning(f"Hub asked to block safelisted address {ip}; refused")
+                self._stats["refused_safe"] = self._stats.get("refused_safe", 0) + 1
+                return
             from app.core.ip_blocker import ip_blocker_service
             result = ip_blocker_service.block_ip(ip)
             if result.get("success"):

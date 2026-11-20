@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { TrendingUp, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiUrl, authHeaders } from '@/lib/api';
 
 interface RaaSDataPoint {
   date: string;
@@ -49,10 +50,7 @@ export function RaaSGroupTimeline() {
     setLoading(true);
     setError(false);
     try {
-      const apiKey = typeof window !== 'undefined' ? localStorage.getItem('aegis_api_key') : null;
-      const res = await fetch('/api/v1/ransomware/raas-groups', {
-        headers: apiKey ? { 'X-API-Key': apiKey } : {},
-      });
+      const res = await fetch(apiUrl('/ransomware/raas-groups'), { headers: authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: RaaSApiResponse = await res.json();
       setData(json.timeline ?? []);

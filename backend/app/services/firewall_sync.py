@@ -527,7 +527,23 @@ async def _reconcile_incidents(db: AsyncSession, pi_blocked_ips: Set[str]) -> in
     return reconciled
 
 
-async def _pull_blocklist_from_pi() -> dict:
+async def _live_block_targets(db, ips) -> set:
+    """Subset of `ips` that a live block_ip Action still covers."""
+    if db is None or not ips:
+        return set()
+    from app.services import block_policy
+    live = set()
+    for ip in ips:
+        try:
+            if await block_policy.live_block_actions(db, ip):
+                live.add(ip)
+        except Exception as exc:
+            logger.warning(f"firewall_sync: could not check live actions for {ip}: {exc}")
+            live.add(ip)   # unknown => keep the block
+    return live
+
+
+async def _pull_blocklist_from_pi(db=None) -> dict:
     """Reconcile Pi blocklist into the local blocked_ips.txt (Pi -> Mac Pro pull).
 
     For every IP on the Pi that is NOT yet in the local middleware blocklist,
@@ -536,7 +552,13 @@ async def _pull_blocklist_from_pi() -> dict:
     AEGIS_SAFE_IPS / private ranges) and CIDR entries are skipped. Local-only
     entries are never removed; they only emit a warning so a human can review.
     """
-    pi_blocked = await firewall_client.get_blocked() or []
+    pi_blocked = await firewall_client.get_blocked_strict()
+    if pi_blocked is None:
+        # Unreachable is not "nothing blocked": evicting on it would empty the
+        # local blocklist after one bad day on the Pi.
+        logger.warning("firewall_sync pull: Pi blocklist unreadable; no adds, no evictions this cycle")
+        return {"added": 0, "skipped_safe": 0, "local_only": 0, "evicted": 0,
+                "repushed": 0, "skipped": "pi_unreachable"}
     local_blocked = set(ip_blocker_service.list_blocked())
     pi_set = {ip for ip in pi_blocked if ip and "/" not in ip}
 
@@ -553,6 +575,19 @@ async def _pull_blocklist_from_pi() -> dict:
     local_only = local_blocked - pi_set
     now = datetime.utcnow()
     evicted = 0
+    # A block AEGIS still stands behind (live Action) that is missing on the Pi
+    # means the push was lost (Pi down at block time). Re-send it; never evict.
+    repushed = 0
+    still_wanted = await _live_block_targets(db, local_only)
+    for ip in sorted(still_wanted):
+        if _is_safe_ip(ip):
+            continue
+        result = await firewall_client.block_ip(ip, reason="reconcile: live AEGIS block missing on agent", force=True)
+        if isinstance(result, dict) and result.get("success"):
+            repushed += 1
+            logger.warning(f"firewall_sync pull: re-pushed live block {ip} to the Pi")
+        _LOCAL_ONLY_FIRST_SEEN.pop(ip, None)
+    local_only = local_only - still_wanted
     if local_only:
         # v1.6.2: first-seen tracking + auto-eviction after grace window.
         for ip in local_only:
@@ -584,7 +619,8 @@ async def _pull_blocklist_from_pi() -> dict:
                 f"{sorted(remaining)[:10]}"
             )
 
-    return {"added": added, "skipped_safe": skipped_safe, "local_only": len(local_only), "evicted": evicted}
+    return {"added": added, "skipped_safe": skipped_safe, "local_only": len(local_only),
+            "evicted": evicted, "repushed": repushed}
 
 
 async def run_sync():
@@ -602,16 +638,19 @@ async def run_sync():
             reconciled = 0
             if settings.AEGIS_AUTO_RECONCILE_INCIDENTS:
                 # Re-fetch the current Pi blocklist as a set for O(1) lookup
-                pi_blocked: list = await firewall_client.get_blocked() or []
-                pi_blocked_set: Set[str] = set(filter(None, pi_blocked))
-                reconciled = await _reconcile_incidents(db, pi_blocked_set)
-                if reconciled:
-                    logger.info(f"Reconciled {reconciled} incidents (auto-resolved)")
+                pi_blocked = await firewall_client.get_blocked_strict()
+                if pi_blocked is None:
+                    logger.warning("Firewall sync: Pi unreadable, skipping incident reconcile")
+                else:
+                    pi_blocked_set: Set[str] = set(filter(None, pi_blocked))
+                    reconciled = await _reconcile_incidents(db, pi_blocked_set)
+                    if reconciled:
+                        logger.info(f"Reconciled {reconciled} incidents (auto-resolved)")
 
             pull_result = {}
             if settings.AEGIS_FIREWALL_PULL_FROM_PI:
                 try:
-                    pull_result = await _pull_blocklist_from_pi()
+                    pull_result = await _pull_blocklist_from_pi(db)
                     logger.info(f"firewall_sync pull: {pull_result}")
                 except Exception as e:
                     logger.error(f"firewall_sync pull failed: {e}", exc_info=True)

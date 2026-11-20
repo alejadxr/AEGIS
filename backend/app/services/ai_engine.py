@@ -984,6 +984,21 @@ class AIDecisionEngine:
         except Exception:
             pass
 
+        # The operator's guardrail is the last word. This path exists so an
+        # unattended install still contains an unconfirmed attack, but it must
+        # not auto-execute when block_ip has been set to require_approval or
+        # never_auto: a setting that binds only CONFIRMED attacks, and lets
+        # guesses through, is the opposite of what the operator asked for.
+        from app.core.guardrails import endpoint_reported_peer
+        if (
+            guardrail_engine.get_policy(client, "block_ip") != "auto_approve"
+            or endpoint_reported_peer(alert_data, target)
+        ):
+            return await guardrail_engine.evaluate_action(
+                client=client, action_type="block_ip", target=target,
+                ai_reasoning=ai_reasoning, db=db, incident_id=incident_id, alert_data=alert_data,
+            )
+
         from app.models.action import Action
         from app.services import block_policy, block_ttl
         try:

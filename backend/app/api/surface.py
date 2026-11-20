@@ -1,6 +1,6 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,19 @@ router = APIRouter(prefix="/surface", tags=["surface"])
 class ScanRequest(BaseModel):
     target: str
     scan_type: str = "full"  # full, discovery, vuln
+
+    @field_validator("target")
+    @classmethod
+    def _target_is_a_host(cls, v: str) -> str:
+        from app.core.scan_target import validate_scan_target
+        return validate_scan_target(v)
+
+    @field_validator("scan_type")
+    @classmethod
+    def _known_scan_type(cls, v: str) -> str:
+        if v not in ("full", "discovery", "vuln", "quick"):
+            raise ValueError("scan_type must be one of: full, discovery, vuln, quick")
+        return v
 
 
 class ScanResponse(BaseModel):

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.auth import require_admin, require_analyst, require_viewer
+from app.core.auth import require_admin, require_analyst, require_rule_author, require_viewer
 
 ROOT = Path(__file__).resolve().parents[3]
 MAIN_PY = ROOT / "backend" / "app" / "main.py"
@@ -90,7 +90,8 @@ EXPECTED = [
     # pre-existing, relied on by the new flows (must not regress)
     ("DELETE", "/api/v1/firewall/blocked/{ip}", require_admin),
     ("POST", "/api/v1/response/actions/{action_id}/approve", require_analyst),
-    ("POST", "/api/v1/rules/propose", require_admin),
+    # Admins, or the dedicated AI-agent credential (origin pinned to "ai").
+    ("POST", "/api/v1/rules/propose", require_rule_author),
 ]
 
 
