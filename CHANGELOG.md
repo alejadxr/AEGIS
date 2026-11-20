@@ -7,6 +7,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.33] - 2026-11-20
+
+Security release. A static audit of the whole codebase, carried out with Claude
+Mythos 5.2, reported 53 findings (3 critical, 9 high, 24 medium, 17 low). This
+release fixes two of the critical ones (the third was a repository-hygiene
+issue, not code), eight of the nine high ones in full and most of the rest.
+The audit was a code review, not a penetration test: nothing here was verified
+by attacking a live system, and some modules were not covered (listed under
+"Not covered"). **Upgrade the backend and the frontend together.**
+
+### Security — critical
+- **Unauthenticated signup created an administrator.** `POST
+  /api/v1/onboarding/signup` minted an organisation and an admin user for any
+  caller, and admin actions reach host-level state (firewall, safelist, EDR
+  response). Signup is now open only on an install with no real organisation
+  yet, or when `AEGIS_ALLOW_SIGNUP=true`.
+- **The client IP could be forged with `X-Forwarded-For`.** Behind a local
+  proxy the first XFF value was trusted, and that value is whatever the client
+  typed: it bypassed the blocklist and detection, or got a third party blocked.
+  One resolver (`app/core/client_ip.py`) now serves the detector, the DoS
+  shield, the rate limiters, the honeypots and the canary endpoint:
+  `CF-Connecting-IP` from a trusted proxy, otherwise the right-most XFF hop
+  that is not itself a proxy, otherwise the socket peer.
+
+### Security — high
+- The live-event WebSocket (`/ws`) streamed log lines, incidents and EDR
+  telemetry to anyone. It now requires a first frame `{"type":"auth",
+  "token"|"api_key"}`, applies the blocklist on connect, and does not deliver
+  events that name another tenant.
+- A line break in a request path, a honeypot username or a node hostname wrote
+  a second line into the log AEGIS tails, read back as an event with an
+  attacker-chosen source IP. Every log record is now flattened to one line.
+- Rolling back a `block_ip` action lifted only the system firewall and reported
+  success. It now lifts the Pi agent, the 403 blocklist and the system
+  firewall, and fails (leaving the action untouched) if the agent refuses.
+- Expiry of a provisional block ignored a failed unblock on the Pi agent and
+  marked the block expired anyway. It is now retried on the next cycle.
+- Scan targets were passed to nmap unvalidated, so a target beginning with `-`
+  was read as an nmap option. Targets must be an IP, a CIDR or a hostname.
+- The HTTP honeypot trusted `X-Forwarded-For`; an indicator could be raised
+  against, and shared for, an address that never connected.
+- Node-facing routes: nobody can post as the in-process host monitor, a
+  presented node token must belong to the node it names, and free-text fields
+  are bounded. See "Upgrade notes" for what is still open here.
+- `scripts/install.sh` cloned from a repository that is not this project and
+  documented a `curl | bash` from a domain the project does not control. It now
+  uses this repository and stops if the clone fails.
+- `pi-deploy/web-server-logger.py` read files outside its directory through an
+  un-normalised request path.
+
+### Security — blocking integrity
+- An unreachable Pi agent is no longer read as an empty blocklist: with
+  `AEGIS_FIREWALL_PULL_FROM_PI` on, one bad day used to evict the whole local
+  blocklist. A live block that is missing on the agent is now re-sent instead
+  of evicted.
+- Inline-detector blocks now have an Action record, so an ambiguous one expires
+  locally as it already did on the agent, and a confirmed one stays permanent.
+- The agent's "already blocked" check matched by substring: blocking
+  `203.0.113.4` while `203.0.113.40` was blocked silently did nothing.
+- A re-offender's behavioural alert (brute force, rate, port scan) was
+  suppressed indefinitely by a count-bounded dedupe; it now has a TTL.
+- Guardrails fail closed: an undeclared action type or an invalid stored policy
+  means "require approval", the configuration is validated on write, and the
+  unconfirmed-attack path now obeys `block_ip: require_approval`.
+- The address an endpoint agent reports as the peer of a connection is that
+  agent's word only; blocking it now waits for approval unless
+  `AEGIS_EDR_NETWORK_AUTOBLOCK=true`.
+
+### Security — other
+- New `AEGIS_AGENT_API_KEY`: a credential for an autonomous agent whose rules
+  are always origin `ai` whatever the request claims, with analyst rights only.
+- Ask-AI no longer serialises tenant settings (provider keys, bot tokens,
+  webhook URLs) into the prompt.
+- `/edr/events` bounds the decompressed size of a gzip body.
+- `/edr/kill-process` and `/edr/quarantine-file` act on the server itself; they
+  now refuse the API, its ancestors, its database and process manager, and the
+  platform's own configuration, credential and system files.
+- `/threats/intel/share` stays open, but an anonymous submission is capped
+  below the auto-block confidence, safelisted addresses are refused on both
+  sides, and a subscriber never blocks its own safelist. Nodes that should keep
+  their stated confidence share `AEGIS_HUB_SHARED_KEY` with the hub.
+- Login rate limits were global (the limiter saw the proxy), so ten bad logins
+  from anyone locked everyone out; they are now per client.
+- Platform incidents and notifications go to a defined primary organisation,
+  not to whichever row the database returned first.
+- Frontend: open redirect through `/login?next=`, an unauthenticated and unused
+  proxy route to the firewall agent, four Ransomware requests that hit a route
+  that does not exist, missing security headers, and invented data shown when
+  the API failed.
+- `docker-compose.yml` passed a secret under a name the backend never read (so
+  the stack could not start) and published PostgreSQL and Redis on every
+  interface. Secrets are now required, and both ports bind to loopback.
+- Response actions that do nothing (`firewall_rule`, unknown types) no longer
+  report success.
+
+### Added
+- **MikroTik switch monitor** (read-only, enabled by `AEGIS_SWITCH_URL`): link
+  flapping, half duplex, rising errors and drops, degraded speed, ports going
+  down, and a device inventory. A burst of new devices is one incident, and
+  devices unseen for 30 days are forgotten.
+
+### Upgrade notes
+- The dashboard receives no live events from an older frontend: `/ws` needs the
+  auth frame.
+- `/threats/nodes`, `/threats/sharing/stats` and `/api/v1/pipeline/stats` now
+  require a signed-in user.
+- Endpoint agents built from this release send their node token on
+  `/nodes/heartbeat`, `/nodes/events` and `/nodes/report-assets`. Once every
+  agent is updated, set `AEGIS_NODE_REQUIRE_TOKEN=true`; until then those
+  routes still accept a node that presents no credential.
+- The firewall-agent fixes take effect when `firewall-agent/` is redeployed.
+- New accounts need a password of at least 10 characters.
+
+### Not covered
+The audit did not review: most of `correlation_engine.py` beyond its filters,
+`rule_dryrun.py`, `rule_vuln_advisor.py`, `ip_intel.py`, the RAG service, threat
+feeds, the playbook engine, the scheduled scanner, `modules/quantum`,
+`modules/network`, the payments/compliance/reports/dashboard routes, the AI
+provider clients, the smart honeypots, the logic of the larger frontend pages,
+and the desktop/agent code under `agent/`, `agent-rust/`, `node-tauri/` and
+`desktop-tauri/`. Known findings left open: chain detections from LAN agents
+(M18), unbounded background tasks (B6), and the hub HMAC secret shared with the
+session secret (B8).
+
+---
+
 ## [1.7.32] - 2026-11-05
 
 ### Added — the operator actions that had no API
