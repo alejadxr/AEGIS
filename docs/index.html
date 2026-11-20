@@ -49,7 +49,7 @@
   "featureList": [
     "164 enabled Sigma rules and 4 multi-step chain detections",
     "Confirmed attacks blocked permanently, unconfirmed ones blocked provisionally with automatic expiry",
-    "Blocking on up to three layers: remote firewall agent, API blocklist, local pfctl/iptables",
+    "Blocking in the host firewall by an agent included in the Docker Compose stack, plus the API's own blocklist",
     "SSH and HTTP honeypots with breadcrumb credentials",
     "Endpoint agent for Windows, macOS and Linux",
     "Runs fully offline with AEGIS_AI_MODE=disabled"
@@ -66,7 +66,7 @@
     { "@type": "Question", "name": "What happens when AEGIS blocks the wrong address?",
       "acceptedAnswer": { "@type": "Answer", "text": "Unless the attack was confirmed, the block is provisional and lifts itself after 6 hours by default. Safelisted addresses, private ranges and verified crawlers are never blocked, and shared egress such as Cloudflare WARP waits for operator approval." } },
     { "@type": "Question", "name": "How do I install AEGIS?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Clone the repository, copy .env.example to .env, set AEGIS_SECRET_KEY and AEGIS_ADMIN_PASSWORD, and run docker compose up -d. The dashboard is at localhost:3000." } }
+      "acceptedAnswer": { "@type": "Answer", "text": "Clone the repository, copy .env.example to .env, set AEGIS_SECRET_KEY, AEGIS_ADMIN_PASSWORD and AEGIS_FIREWALL_SECRET, and run docker compose up -d. The firewall agent that enforces blocks is part of the stack. The dashboard is at localhost:3000." } }
   ]
 }
 </script>
@@ -559,7 +559,7 @@ h2 { margin: 14px 0 0; font-weight: 600; font-size: clamp(32px, 4.2vw, 50px); li
           <div class="num">03</div>
           <h3>Enforce</h3>
           <ul>
-            <li>Firewall agent on your gateway, with <code>iptables</code> (a Raspberry Pi works)</li>
+            <li>Firewall agent with <code>iptables</code>, included in the stack: no extra hardware</li>
             <li>403 blocklist in the API's own middleware</li>
             <li>Local <code>pfctl</code> or <code>iptables</code>, when you opt in</li>
           </ul>
@@ -669,8 +669,8 @@ reports              <span class="c">→ templates</span></pre>
           </div>
 <pre data-copy-src><span class="p">$ </span>git clone https://github.com/alejadxr/AEGIS.git && cd AEGIS
 <span class="p">$ </span>cp .env.example .env
-<span class="c"># in .env: set AEGIS_SECRET_KEY (openssl rand -hex 32)
-# and AEGIS_ADMIN_PASSWORD. Compose won't start without them.</span>
+<span class="c"># in .env: set AEGIS_SECRET_KEY, AEGIS_ADMIN_PASSWORD and
+# AEGIS_FIREWALL_SECRET (openssl rand -hex 32). Compose won't start without them.</span>
 <span class="p">$ </span>docker compose up -d</pre>
         </div>
         <div class="card after reveal" style="--d:1">
@@ -680,7 +680,7 @@ reports              <span class="c">→ templates</span></pre>
             <dt>localhost:8000</dt><dd>API, with OpenAPI docs at <code>/docs</code>.</dd>
             <dt>releases</dt><dd>Endpoint agent for Windows, macOS and Linux.</dd>
           </dl>
-          <p class="small">Real firewall enforcement is opt-in with <code>AEGIS_REAL_FW=1</code>, and the gateway agent lives in <a href="https://github.com/alejadxr/AEGIS/tree/main/firewall-agent">firewall-agent/</a>.</p>
+          <p class="small">The stack includes the <a href="https://github.com/alejadxr/AEGIS/tree/main/firewall-agent">firewall agent</a>, which blocks on this machine. Put your own IP in <code>AEGIS_SAFE_IPS</code>. Network-level blocking needs Linux.</p>
         </div>
       </div>
     </div>
@@ -745,7 +745,7 @@ reports              <span class="c">→ templates</span></pre>
         </details>
         <details>
           <summary>Where does the blocking actually happen?</summary>
-          <div class="a">In up to three places: a small firewall agent on your gateway that manages an <code>iptables</code> chain, the API's own 403 middleware, and the host's <code>pfctl</code> or <code>iptables</code> if you enable <code>AEGIS_REAL_FW=1</code>. Without any of them, AEGIS still detects and records everything.</div>
+          <div class="a">On the same machine, by default. The Compose stack includes a firewall agent that applies each block to that host's <code>iptables</code>, so you don't need a separate box. If you do have a gateway in front of your server, such as a Raspberry Pi, the same agent runs there instead. Blocks also land in the API's own 403 middleware. Network-level blocking needs Linux: Docker Desktop on macOS or Windows can only filter inside its own VM.</div>
         </details>
         <details>
           <summary>Do I need the endpoint agent?</summary>

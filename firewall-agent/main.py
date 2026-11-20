@@ -1,11 +1,19 @@
 """
 AEGIS Firewall Agent v1.0.0
-Single-file FastAPI service that manages iptables on the Raspberry Pi.
-Designed to be the firewall backend for AEGIS (Mac Pro).
+Single-file FastAPI service that manages iptables and enforces the blocks the
+AEGIS backend decides.
+
+Where it runs:
+- In the Docker Compose stack, next to AEGIS (the default): the `aegis-firewall`
+  service, in the host's network namespace, as root with NET_ADMIN.
+- On a separate gateway, for example a Raspberry Pi in front of the server,
+  as a systemd service (see aegis-firewall.service).
 
 Port: 8765
 Persistence: /etc/aegis/blocked_ips.json
-Requires: sudo access to /usr/sbin/iptables (via sudoers.d/aegis-iptables)
+Privileges: runs iptables directly when it is root (the container); otherwise
+through sudo (sudoers.d/aegis-iptables on a gateway). AEGIS_IPTABLES picks the
+binary, e.g. iptables-legacy on a host whose firewall uses the legacy backend.
 
 Deployment note (BUG-3 fix, 2026-05-31):
     Set AEGIS_SAFE_IPS env var on the Pi systemd unit
@@ -55,7 +63,26 @@ ATTACKERS_MAX = 1000  # Max tracked attackers
 # and total_attempts:1. An exploit signature still blocks on the first hit.
 # Set AEGIS_BLOCK_MIN_ATTEMPTS=1 to restore the pre-2026-10-19 behaviour.
 BLOCK_MIN_ATTEMPTS = max(1, int(os.getenv("AEGIS_BLOCK_MIN_ATTEMPTS", "2")))
-IPTABLES = "/usr/sbin/iptables"
+IPTABLES = os.getenv("AEGIS_IPTABLES", "/usr/sbin/iptables").strip() or "/usr/sbin/iptables"
+
+
+def _privileged(cmd: list[str]) -> list[str]:
+    """Prefix `cmd` with sudo unless this process is already root.
+
+    Inside the container the agent is root and the image has no sudo, so a
+    blanket "sudo" prefix made every iptables call fail. AEGIS_FW_SUDO=1 or 0
+    forces either behaviour.
+    """
+    forced = os.getenv("AEGIS_FW_SUDO", "").strip().lower()
+    if forced in ("1", "true", "yes", "on"):
+        use_sudo = True
+    elif forced in ("0", "false", "no", "off"):
+        use_sudo = False
+    else:
+        use_sudo = hasattr(os, "geteuid") and os.geteuid() != 0
+    return (["sudo"] + cmd) if use_sudo else cmd
+
+
 IP_API_URL = "http://ip-api.com/json/{ip}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query"
 
 # Tailscale CGNAT range — never block these
@@ -561,7 +588,7 @@ def _validate_ip(ip: str) -> str:
 
 def _run_iptables(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     """Run an iptables command with sudo."""
-    cmd = ["sudo", IPTABLES] + list(args)
+    cmd = _privileged([IPTABLES] + list(args))
     logger.debug(f"Running: {' '.join(cmd)}")
     return subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=10)
 
@@ -1531,7 +1558,7 @@ async def visitors_recent(minutes: int = 60):
     # Try conntrack first
     try:
         result = subprocess.run(
-            ["sudo", "conntrack", "-L", "-o", "extended"],
+            _privileged(["conntrack", "-L", "-o", "extended"]),
             capture_output=True, text=True, timeout=10, check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
@@ -1569,7 +1596,7 @@ async def visitors_recent(minutes: int = 60):
         if os.path.exists(log_path):
             try:
                 result = subprocess.run(
-                    ["sudo", "tail", "-n", "200", log_path],
+                    _privileged(["tail", "-n", "200", log_path]),
                     capture_output=True, text=True, timeout=10, check=False,
                 )
                 if result.returncode == 0:

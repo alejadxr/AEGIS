@@ -77,7 +77,7 @@ check_compose() {
 }
 
 check_ports() {
-    local ports=("8000" "3000" "5432")
+    local ports=("8000" "3000" "5432" "8765")
     for port in "${ports[@]}"; do
         if lsof -i ":$port" &> /dev/null 2>&1 || ss -tlnp 2>/dev/null | grep -q ":$port "; then
             warn "Port $port is already in use. AEGIS may fail to start."
@@ -165,6 +165,9 @@ create_env() {
     secret_key=$(generate_secret)
     local pg_password
     pg_password=$(generate_secret | head -c 24)
+    local fw_secret
+    fw_secret=$(generate_secret)
+    ADMIN_PASSWORD=$(generate_secret | head -c 20)
 
     if [ -f ".env" ]; then
         warn ".env already exists. Creating .env.new instead."
@@ -180,7 +183,14 @@ create_env() {
 # Core
 AEGIS_ENV=production
 AEGIS_SECRET_KEY=${secret_key}
+AEGIS_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 AEGIS_API_PORT=8000
+
+# Firewall enforcement: the aegis-firewall service applies blocks to this
+# machine's iptables. Both sides read this secret.
+AEGIS_FIREWALL_SECRET=${fw_secret}
+# Your own public IP(s), so AEGIS can never block you out.
+AEGIS_SAFE_IPS=
 
 # AI Provider (set one)
 OPENROUTER_API_KEY=
@@ -262,6 +272,14 @@ print_summary() {
     echo -e "  ${BOLD}API:${NC}        http://localhost:8000"
     echo -e "  ${BOLD}API Docs:${NC}   http://localhost:8000/docs"
     echo -e "  ${BOLD}Health:${NC}     http://localhost:8000/health"
+    echo ""
+    if [ -n "${ADMIN_PASSWORD:-}" ]; then
+        echo -e "  ${BOLD}Sign in:${NC}    admin@aegis.local / ${ADMIN_PASSWORD}"
+        echo "              (also saved in .env as AEGIS_ADMIN_PASSWORD; change it after signing in)"
+        echo ""
+    fi
+    echo -e "  ${BOLD}Firewall:${NC}   blocks are enforced on this machine by the aegis-firewall service."
+    echo "              Add your own public IP to AEGIS_SAFE_IPS in .env so it is never blocked."
     echo ""
     echo -e "  ${BOLD}Manage:${NC}"
     echo "    docker compose ps          # Service status"

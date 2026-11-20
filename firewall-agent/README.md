@@ -1,7 +1,20 @@
 # AEGIS Firewall Agent
 
-FastAPI service (port 8765) that manages the `AEGIS_BLOCK` iptables chain on the
-gateway host. AEGIS (the backend) pushes blocks to it via `firewall_client`.
+FastAPI service (port 8765) that applies AEGIS's blocks with iptables. AEGIS
+(the backend) pushes blocks to it via `firewall_client`.
+
+It runs in one of two places:
+
+- **In the Docker Compose stack (default).** Service `aegis-firewall`, built
+  from this directory's `Dockerfile`, in the host's network namespace with
+  `NET_ADMIN`, so it blocks on the same machine as AEGIS. Nothing to install.
+  It listens only on the stack network's gateway address, refuses to start
+  without `AEGIS_FIREWALL_SECRET`, runs iptables directly as root, and picks
+  the host's iptables backend (nft or legacy) at start; `AEGIS_IPTABLES`
+  overrides that.
+- **On a separate gateway** in front of the server, for example a Raspberry Pi,
+  under systemd (`aegis-firewall.service`, below). Set `AEGIS_FIREWALL_URL` on
+  the backend to it and stop the in-stack agent.
 
 ## Authentication
 

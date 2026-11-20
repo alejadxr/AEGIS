@@ -80,13 +80,13 @@ See the [comparison table](#aegis-vs-wazuh--ossec--elastic-security) below. The 
 
 ### Can I run AEGIS on a homelab or Mac mini?
 
-Yes. AEGIS is tested in production on a Mac Pro (FastAPI + Next.js via PM2) with a Raspberry Pi 5 as a Tailscale relay. A Mac mini, a Pi, or any Linux VPS with Docker is sufficient. The Rust endpoint agent builds for macOS arm64, Linux x64, and Windows x64.
+Yes. One Linux machine with Docker runs the whole thing, enforcement included: the Compose stack ships the firewall agent that applies blocks to that machine's iptables, so no extra hardware is needed. A separate gateway (for example a Raspberry Pi in front of the server) is supported but optional. The Rust endpoint agent builds for macOS arm64, Linux x64, and Windows x64.
 
 ### What are the system requirements?
 
 - Docker + Docker Compose (for the full stack)
 - 2 GB RAM minimum; 4 GB recommended
-- `AEGIS_REAL_FW=1` + root/sudo for real pfctl/iptables enforcement (optional — defaults to in-memory NoopFirewall)
+- Linux for network-level blocking under Docker (the `aegis-firewall` service uses the host network and `NET_ADMIN`). On Docker Desktop for macOS or Windows it can only filter inside Docker's VM; on a Mac, run natively with `AEGIS_REAL_FW=1` for pfctl
 - No external services required in offline mode
 
 ---
@@ -240,7 +240,9 @@ cd AEGIS
 
 # Configure
 cp .env.example .env
-# Edit .env — set AEGIS_SECRET_KEY, AEGIS_ADMIN_PASSWORD and POSTGRES_PASSWORD at minimum
+# Edit .env — set AEGIS_SECRET_KEY, AEGIS_ADMIN_PASSWORD and AEGIS_FIREWALL_SECRET
+# (openssl rand -hex 32 for the secrets), and POSTGRES_PASSWORD.
+# Put your own public IP in AEGIS_SAFE_IPS so AEGIS can never block you.
 # OPENROUTER_API_KEY is optional; omit it and AEGIS runs fully offline
 
 # Launch
@@ -250,7 +252,7 @@ docker compose up -d
 # API at http://localhost:8000
 ```
 
-No default credentials. The setup wizard at `/setup` walks you through creating your admin account.
+Sign in as `admin@aegis.local` with the `AEGIS_ADMIN_PASSWORD` you set. (`scripts/install.sh` does all of the above for you and generates the secrets.)
 
 ### What Gets Deployed
 
@@ -259,6 +261,9 @@ No default credentials. The setup wizard at `/setup` walks you through creating 
 | `aegis-api` | 8000 | FastAPI backend (140+ endpoints, 25 API routers) |
 | `aegis-frontend` | 3000 | Next.js 14 dashboard (21 pages, real-time WebSocket) |
 | `aegis-db` | 5432 | PostgreSQL 16 |
+| `aegis-firewall` | 8765 | Firewall agent: enforces blocks in this host's iptables. Host network + `NET_ADMIN`, listens only on the stack network's gateway |
+
+**All-in-one, or with a gateway.** By default the firewall agent runs in the stack, on the same machine, and blocks there (`INPUT` and `FORWARD`, so host services and published container ports are both covered). It detects whether the host uses the nft or legacy iptables backend; force one with `AEGIS_IPTABLES`. If you already have a gateway in front of the server, install [firewall-agent/](firewall-agent/) on it, set `AEGIS_FIREWALL_URL` to it, and `docker compose stop aegis-firewall`. Blocks also land in the API's own 403 middleware either way.
 
 ### Manual Installation
 
@@ -279,8 +284,8 @@ cd frontend && npm install && npm run build && npm start
 | `AEGIS_AI_MODE` | `optional` | `required` / `optional` / `disabled` — gates every AI call site. `optional` tries AI and falls back to deterministic logic on failure; `disabled` never calls out. (`full` and `offline` are accepted as legacy aliases for `optional` and `disabled`.) |
 | `AEGIS_REAL_RECOVERY` | unset | Set to `1` to enable real snapshot restore |
 | `AEGIS_LIVEFIRE` | unset | Set to `1` to run the ransomware emulation harness |
-| `AEGIS_FIREWALL_URL` | unset | Optional remote firewall agent URL |
-| `AEGIS_FIREWALL_SECRET` | unset | Shared secret for the backend <-> firewall agent channel (header `X-AEGIS-FW-Auth`). Set the SAME value in the backend `.env` and in the agent's environment. Unset on the agent = no auth enforced (compat mode). See [firewall-agent/README.md](firewall-agent/README.md) |
+| `AEGIS_FIREWALL_URL` | in-stack agent | Firewall agent the API pushes blocks to. Docker Compose points it at the `aegis-firewall` service; set it to use a separate gateway instead |
+| `AEGIS_FIREWALL_SECRET` | required (Compose) | Shared secret for the backend <-> firewall agent channel (header `X-AEGIS-FW-Auth`). Compose passes it to both; the in-stack agent refuses to start without it. For a gateway agent, set the SAME value there. See [firewall-agent/README.md](firewall-agent/README.md) |
 | `AEGIS_FIREWALL_PUBLIC_READ` | `/blocked` | Agent side only: comma-separated GET paths reachable without the secret once it is set. Mutating methods are never public |
 | `AEGIS_MONITORED_APPS` | all PM2 apps | Comma-separated PM2 app names to tail |
 | `AEGIS_EXTRA_LOG_PATHS` | unset | Colon-separated extra log files to tail (globs supported), e.g. a unified web-app feed |

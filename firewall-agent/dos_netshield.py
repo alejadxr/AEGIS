@@ -72,8 +72,18 @@ logger = logging.getLogger("aegis-firewall.dos_netshield")
 # Constants / configuration
 # ---------------------------------------------------------------------------
 
-IPTABLES = "/usr/sbin/iptables"
+IPTABLES = os.getenv("AEGIS_IPTABLES", "/usr/sbin/iptables").strip() or "/usr/sbin/iptables"
 SYSCTL = "/usr/sbin/sysctl"
+
+
+def _privileged(cmd: list) -> list:
+    """sudo prefix unless already root (see main._privileged)."""
+    forced = os.getenv("AEGIS_FW_SUDO", "").strip().lower()
+    if forced in ("1", "true", "yes", "on"):
+        return ["sudo"] + cmd
+    if forced in ("0", "false", "no", "off"):
+        return cmd
+    return (["sudo"] + cmd) if (hasattr(os, "geteuid") and os.geteuid() != 0) else cmd
 
 # Dedicated chain — kept strictly separate from AEGIS_BLOCK.
 DOS_CHAIN = "AEGIS_DOS"
@@ -177,7 +187,7 @@ def _now_iso() -> str:
 
 def _run_iptables(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     """Run an iptables command with sudo. argv-list, never shell=True."""
-    cmd = ["sudo", IPTABLES] + list(args)
+    cmd = _privileged([IPTABLES] + list(args))
     logger.debug("dos_netshield iptables: %s", " ".join(cmd))
     return subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=10)
 
@@ -186,7 +196,7 @@ def _run_sysctl_get(key: str) -> Optional[str]:
     """Read a single sysctl key. Returns its value string, or None on failure."""
     try:
         result = subprocess.run(
-            ["sudo", SYSCTL, "-n", key],
+            _privileged([SYSCTL, "-n", key]),
             capture_output=True, text=True, check=True, timeout=10,
         )
         return result.stdout.strip()
@@ -199,7 +209,7 @@ def _run_sysctl_set(key: str, value: str) -> bool:
     """Set a single sysctl key. argv-list, never shell=True."""
     try:
         subprocess.run(
-            ["sudo", SYSCTL, "-w", f"{key}={value}"],
+            _privileged([SYSCTL, "-w", f"{key}={value}"]),
             capture_output=True, text=True, check=True, timeout=10,
         )
         logger.info("sysctl set %s=%s", key, value)
