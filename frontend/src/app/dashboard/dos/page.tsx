@@ -284,7 +284,7 @@ export default function DosShieldPage() {
           <div className="flex items-center gap-2 px-4 sm:px-6 py-4 border-b border-border">
             <Network className="w-4 h-4 text-[var(--brand)]" />
             <h2 className="text-[13px] font-medium uppercase tracking-wider text-foreground">
-              Network tier (Pi gateway)
+              Network tier (firewall agent)
             </h2>
           </div>
           <div className="p-4 sm:p-6 space-y-4">
@@ -306,7 +306,7 @@ export default function DosShieldPage() {
             </p>
             {!status.netshield_env_gate && !status.netshield_enabled && (
               <p className="text-[11px] font-mono text-muted-foreground/50">
-                Env gate closed — set the NetShield flag on the Pi executor to allow enablement.
+                Env gate closed — set AEGIS_DOS_NETSHIELD=1 on the firewall agent to allow enablement.
               </p>
             )}
           </div>

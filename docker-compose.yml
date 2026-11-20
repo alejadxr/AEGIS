@@ -2,8 +2,14 @@
 # AEGIS Autonomous Defense Platform — Docker Compose
 # ============================================================
 #
-# Quick start (no .env needed — sane defaults are built in):
+# Quick start:
+#   cp .env.example .env    # then set the three REQUIRED secrets below
 #   docker compose up -d
+#
+# This is the whole platform on one machine: the API, the dashboard, the
+# database AND the firewall agent that enforces blocks in this host's
+# iptables. No separate gateway (Raspberry Pi or otherwise) is needed; if you
+# have one, point AEGIS_FIREWALL_URL at it and stop aegis-firewall.
 #
 # Full stack (with Redis for event bus + caching):
 #   docker compose --profile full up -d
@@ -24,12 +30,18 @@
 #   OPENROUTER_API_KEY   OpenRouter key (AI features)(default: empty — AI features disabled)
 #   AEGIS_SECRET_KEY     Secret that signs sessions  (REQUIRED, no default: openssl rand -hex 32)
 #   AEGIS_ADMIN_PASSWORD Password of the first admin (REQUIRED, no default)
+#   AEGIS_FIREWALL_SECRET Shared by the API and the firewall agent (REQUIRED)
+#   AEGIS_DOCKER_SUBNET  Subnet of the stack's network (default: 172.30.42.0/24)
+#   AEGIS_DOCKER_GATEWAY Its gateway; the firewall agent listens here only
+#                        (default: 172.30.42.1). Change both if they collide.
 #   AEGIS_MONGODB_URI    MongoDB Atlas connection    (default: empty — threat intel hub disabled)
 #
 # WINDOWS / macOS NOTES:
 #   - Docker Desktop required
 #   - host.docker.internal resolves to the host machine
-#   - Network mode "host" is NOT supported on Docker Desktop
+#   - Network mode "host" is NOT supported on Docker Desktop, so on macOS and
+#     Windows the firewall agent can only filter inside Docker's own VM, not the
+#     machine. To block on a Mac, run AEGIS natively with AEGIS_REAL_FW=1 (pfctl).
 #   - Ensure this file uses LF line endings, not CRLF
 # ============================================================
 
@@ -138,6 +150,10 @@ services:
       - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
       # MongoDB Atlas for threat intel sharing (optional)
       - AEGIS_MONGODB_URI=${AEGIS_MONGODB_URI:-}
+      # Enforcement: the firewall agent of this same stack (aegis-firewall
+      # below). Point it at an external gateway agent to use one instead.
+      - AEGIS_FIREWALL_URL=${AEGIS_FIREWALL_URL:-http://${AEGIS_DOCKER_GATEWAY:-172.30.42.1}:8765}
+      - AEGIS_FIREWALL_SECRET=${AEGIS_FIREWALL_SECRET:?set AEGIS_FIREWALL_SECRET (e.g. openssl rand -hex 32)}
       # Use in-memory event bus when Redis is not available
       - USE_MEMORY_BUS=${USE_MEMORY_BUS:-false}
     volumes:
@@ -164,6 +180,39 @@ services:
           memory: 512M
     networks:
       - aegis-net
+
+  # --- Firewall agent ---
+  # Enforces the API's blocks in THIS host's iptables (INPUT and FORWARD, so
+  # host services and published container ports are both covered). It is the
+  # same agent that can run on a separate gateway; here it ships in the stack.
+  # The only privileged service: host network namespace + NET_ADMIN. It listens
+  # on the stack network's gateway address only, never on every interface, and
+  # refuses to start without AEGIS_FIREWALL_SECRET.
+  aegis-firewall:
+    build:
+      context: ./firewall-agent
+      dockerfile: Dockerfile
+    container_name: aegis-firewall
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - AEGIS_FIREWALL_SECRET=${AEGIS_FIREWALL_SECRET:?set AEGIS_FIREWALL_SECRET (e.g. openssl rand -hex 32)}
+      - AEGIS_FIREWALL_BIND=${AEGIS_DOCKER_GATEWAY:-172.30.42.1}
+      # Addresses this agent must never block, on top of the private, VPN and
+      # loopback ranges it always spares. Put your own IP here.
+      - AEGIS_SAFE_IPS=${AEGIS_SAFE_IPS:-}
+      # Force a backend if detection guesses wrong: /usr/sbin/iptables-legacy
+      - AEGIS_IPTABLES=${AEGIS_IPTABLES:-}
+    volumes:
+      - firewall_data:/etc/aegis
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
 
   # --- Frontend Dashboard ---
   # Next.js application serving the AEGIS web UI
@@ -212,8 +261,16 @@ volumes:
     driver: local
   backend_logs:
     driver: local
+  firewall_data:
+    driver: local
 
 networks:
   aegis-net:
     driver: bridge
     name: aegis-net
+    # Fixed so the firewall agent (host network) knows which address to listen
+    # on and the API knows where to find it.
+    ipam:
+      config:
+        - subnet: ${AEGIS_DOCKER_SUBNET:-172.30.42.0/24}
+          gateway: ${AEGIS_DOCKER_GATEWAY:-172.30.42.1}

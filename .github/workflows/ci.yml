@@ -127,11 +127,47 @@ jobs:
         env:
           AEGIS_SECRET_KEY: ci-placeholder-not-a-secret
           AEGIS_ADMIN_PASSWORD: ci-placeholder-not-a-secret
+          AEGIS_FIREWALL_SECRET: ci-placeholder-not-a-secret
         run: docker compose config --quiet
 
       - name: Compose must refuse to render without its secrets
         run: |
           if docker compose config --quiet 2>/dev/null; then
-            echo "docker-compose.yml rendered without AEGIS_SECRET_KEY / AEGIS_ADMIN_PASSWORD" >&2
+            echo "docker-compose.yml rendered without its required secrets" >&2
             exit 1
           fi
+
+      - name: Firewall agent unit tests
+        run: |
+          python3 -m pip install -q -r firewall-agent/requirements.txt pytest
+          cd firewall-agent && python3 -m pytest tests -q
+
+      # The all-in-one stack depends on the firewall agent changing the HOST's
+      # firewall from a container. Exercise exactly that, the way
+      # docker-compose.yml runs it: host network, NET_ADMIN, listening on the
+      # stack network's gateway, reached from a container on that network.
+      - name: Firewall agent enforces on the host from Docker
+        run: |
+          set -eu
+          docker build -q -t aegis-firewall-ci ./firewall-agent
+          docker network create --subnet 172.30.42.0/24 --gateway 172.30.42.1 aegis-net-ci
+          SECRET=$(openssl rand -hex 16)
+          docker run -d --name aegis-firewall-ci --network host --cap-add NET_ADMIN --cap-add NET_RAW \
+            -e AEGIS_FIREWALL_SECRET="$SECRET" -e AEGIS_FIREWALL_BIND=172.30.42.1 aegis-firewall-ci
+          for i in $(seq 1 30); do curl -sf http://172.30.42.1:8765/health >/dev/null && break; sleep 1; done
+          docker logs aegis-firewall-ci 2>&1 | grep 'host firewall backend'
+          api() { docker run --rm --network aegis-net-ci curlimages/curl:8.11.1 -s -o /dev/null -w '%{http_code}' "$@"; }
+          test "$(api -X POST http://172.30.42.1:8765/block -H 'Content-Type: application/json' -d '{"ip":"203.0.113.50","force":true}')" = 401
+          test "$(api -X POST http://172.30.42.1:8765/block -H "X-AEGIS-FW-Auth: $SECRET" -H 'Content-Type: application/json' -d '{"ip":"203.0.113.50","reason":"ci sql_injection","force":true}')" = 200
+          sudo iptables -C INPUT -s 203.0.113.50 -j DROP
+          sudo iptables -C FORWARD -s 203.0.113.50 -j DROP
+          test "$(api -X POST http://172.30.42.1:8765/block -H "X-AEGIS-FW-Auth: $SECRET" -H 'Content-Type: application/json' -d '{"ip":"172.30.42.9","force":true}')" = 403
+          test "$(api -X DELETE http://172.30.42.1:8765/block/203.0.113.50 -H "X-AEGIS-FW-Auth: $SECRET")" = 200
+          if sudo iptables -C INPUT -s 203.0.113.50 -j DROP 2>/dev/null; then echo "rule survived unblock" >&2; exit 1; fi
+          # Not reachable on the host's other addresses.
+          if curl -s -m 3 "http://$(hostname -I | awk '{print $1}'):8765/health" >/dev/null; then echo "agent listens beyond the gateway" >&2; exit 1; fi
+          echo "firewall agent: host enforcement OK"
+
+      - name: Firewall agent logs
+        if: failure()
+        run: docker logs aegis-firewall-ci 2>&1 | tail -50 || true
