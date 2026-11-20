@@ -17,7 +17,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldCheck, KeyRound, ArrowRight, AlertCircle, Mail, Lock } from 'lucide-react';
-import { setApiKey, setJwtToken, hasAuth, api } from '@/lib/api';
+import { setApiKey, setJwtToken, hasAuth, api, safeNextPath } from '@/lib/api';
 
 // Read from package.json via next.config.mjs — this used to be hand-typed and had
 // drifted to 1.6.3.3 while the product shipped 1.6.4.8.
@@ -45,7 +45,7 @@ const FIELD_CLASS =
 function LoginCard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextParam = searchParams.get('next') || '/dashboard';
+  const nextParam = safeNextPath(searchParams.get('next'));
 
   const [mode, setMode] = useState<AuthMode>('apikey');
   const [key, setKey] = useState('');

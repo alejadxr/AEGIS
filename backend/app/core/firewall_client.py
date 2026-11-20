@@ -82,16 +82,31 @@ class FirewallClient:
             logger.warning(f"Firewall get_attacker({ip}) failed: {e}")
             return {"error": str(e)}
 
-    async def get_blocked(self) -> list:
+    async def get_blocked_strict(self) -> Optional[list]:
+        """The agent's blocklist, or ``None`` when it could not be read.
+
+        An unreachable agent and an empty blocklist are different facts. Any
+        caller that REMOVES state based on what the agent lacks (eviction,
+        incident auto-resolve) must use this and do nothing on ``None``.
+        """
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT, headers=_auth_headers()) as client:
                 resp = await client.get(f"{FIREWALL_API}/blocked")
                 resp.raise_for_status()
                 data = resp.json()
-                return data.get("blocked", [])
+                blocked = data.get("blocked") if isinstance(data, dict) else None
+                if not isinstance(blocked, list):
+                    logger.warning("Firewall get_blocked: malformed response, treating as unreadable")
+                    return None
+                return blocked
         except Exception as e:
             logger.warning(f"Firewall get_blocked failed: {e}")
-            return []
+            return None
+
+    async def get_blocked(self) -> list:
+        """Blocklist for display. Returns ``[]`` on error: never use this to
+        decide that something is NOT blocked (see ``get_blocked_strict``)."""
+        return await self.get_blocked_strict() or []
 
     async def block_ip(
         self,

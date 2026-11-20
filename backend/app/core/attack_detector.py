@@ -36,7 +36,21 @@ logger = logging.getLogger("cayde6.attack_detector")
 
 BLOCK_THRESHOLD = 20         # v1.6.2: raised 3→20. The previous threshold guaranteed auto-block of legitimate GitHub Actions runners, Homebrew installers, and monitoring agents that use python-requests/curl/wget UAs. Pentest tools (sqlmap, nikto) below still hit threshold quickly via SCANNER_UAS path.
 BLOCK_WINDOW    = 300         # seconds (5 min)
-FIREWALL_URL    = os.getenv("AEGIS_FIREWALL_URL", "")
+def _firewall_url() -> str:
+    """The Pi agent URL. pydantic Settings reads backend/.env; os.environ does
+    not, so reading only the environment silently disabled the Pi push for the
+    inline detector whenever the variable lived only in the .env file."""
+    url = os.getenv("AEGIS_FIREWALL_URL", "")
+    if not url:
+        try:
+            from app.config import settings as _settings
+            url = _settings.AEGIS_FIREWALL_URL or ""
+        except Exception:
+            url = ""
+    return url.rstrip("/")
+
+
+FIREWALL_URL    = _firewall_url()
 
 # Pre-built 403 response content (avoid re-creating per request)
 _BLOCKED_BODY = b'{"detail":"blocked"}'
@@ -926,6 +940,41 @@ def _block_incident_text(ip: str, reason: str, blocked: bool) -> tuple[str, str]
     )
 
 
+INLINE_PROVISIONAL_TTL_SECONDS = 3600   # matches the `duration` sent to the Pi
+
+
+async def _record_inline_block_action(db, client_id: str, incident_id: str, ip: str, reason: str) -> None:
+    """Give an inline block the same record every other block has.
+
+    Without an Action the block is invisible to retention: the Pi lifted an
+    ambiguous one after an hour while the local 403 stayed forever, which is the
+    opposite of block_policy ("only confirmed attacks are permanent"). With it,
+    expiry, promotion on later evidence, rollback and the Pi reconcile all
+    apply. Caller commits.
+    """
+    from datetime import timedelta
+    from app.models.action import Action
+    from app.services import block_policy
+
+    if await block_policy.live_block_actions(db, ip):
+        return  # one block per IP: the live action already decides its fate
+    cls = block_policy.classify(reason)
+    permanent = cls.kind == block_policy.CONFIRMED or block_policy.force_permanent()
+    if permanent:
+        params = {"permanent": True, "block_class": cls.kind,
+                  "block_class_reason": f"inline:{cls.matched or reason}"[:200]}
+    else:
+        expires = datetime.utcnow() + timedelta(seconds=INLINE_PROVISIONAL_TTL_SECONDS)
+        params = {"provisional": True, "expires_at": expires.isoformat(),
+                  "ttl_hours": INLINE_PROVISIONAL_TTL_SECONDS / 3600, "block_class": cls.kind}
+    params["origin"] = "attack_detector"
+    db.add(Action(
+        incident_id=incident_id, client_id=client_id, action_type="block_ip", target=ip,
+        parameters=params, status="executed", requires_approval=False,
+        ai_reasoning=f"Inline detector block: {reason}"[:1000],
+    ))
+
+
 async def _create_block_incident(ip: str, reason: str, blocked: bool = True):
     """Create incident in DB. Runs as fire-and-forget task."""
     try:
@@ -935,8 +984,8 @@ async def _create_block_incident(ip: str, reason: str, blocked: bool = True):
         from sqlalchemy import select
 
         async with _async_session() as db:
-            result = await db.execute(select(Client).limit(1))
-            client = result.scalar_one_or_none()
+            from app.core.tenancy import primary_client
+            client = await primary_client(db)
             if client:
                 title, description = _block_incident_text(ip, reason, blocked)
                 incident = Incident(
@@ -950,6 +999,9 @@ async def _create_block_incident(ip: str, reason: str, blocked: bool = True):
                     detected_at=datetime.utcnow(),
                 )
                 db.add(incident)
+                await db.flush()
+                if blocked:
+                    await _record_inline_block_action(db, client.id, incident.id, ip, reason)
                 await db.commit()
                 logger.info(
                     f"[AttackDetector] Created CRITICAL incident for "

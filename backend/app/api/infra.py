@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import platform
@@ -81,11 +82,11 @@ async def get_systems(
 
     # --- Local server metrics (only for the primary/demo tenant that owns the server) ---
     if client and client.slug == "demo":
-        cpu = psutil.cpu_percent(interval=0.5)
+        cpu = await asyncio.to_thread(psutil.cpu_percent, 0.5)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
 
-        pm2_processes = _get_pm2_processes()
+        pm2_processes = await asyncio.to_thread(_get_pm2_processes)
         service_names = [p["name"] for p in pm2_processes]
 
         local = {
@@ -142,4 +143,4 @@ async def get_pm2(
     _auth=Depends(require_viewer),
 ):
     """Return PM2 process list only."""
-    return {"processes": _get_pm2_processes()}
+    return {"processes": await asyncio.to_thread(_get_pm2_processes)}

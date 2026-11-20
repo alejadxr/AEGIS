@@ -114,6 +114,14 @@ class AuthContext:
     def is_api_key(self) -> bool:
         return self.user is None
 
+    # True only for the dedicated AI-agent credential (AEGIS_AGENT_API_KEY).
+    is_ai_agent: bool = False
+
+
+def _is_agent_key(api_key: Optional[str]) -> bool:
+    expected = (settings.AEGIS_AGENT_API_KEY or "").strip()
+    return bool(expected) and bool(api_key) and hmac.compare_digest(api_key, expected)
+
 
 async def get_auth_context(
     api_key: Optional[str] = Security(api_key_header),
@@ -124,6 +132,15 @@ async def get_auth_context(
     Unified authentication dependency.
     Accepts either X-API-Key header (grants admin role) or Bearer JWT (user or client token).
     """
+    # --- Dedicated AI-agent credential: analyst rights, origin pinned to "ai" ---
+    if _is_agent_key(api_key):
+        from app.core.tenancy import primary_client
+        client = await primary_client(db)
+        if client:
+            ctx = AuthContext(client=client, role="analyst", email="ai-agent")
+            ctx.is_ai_agent = True
+            return ctx
+
     # --- Try API key first ---
     if api_key:
         result = await db.execute(select(Client).where(Client.api_key == api_key))
@@ -156,9 +173,9 @@ async def get_auth_context(
                 client = result.scalar_one_or_none()
 
             if not client:
-                # Fallback: get the first client (demo)
-                result = await db.execute(select(Client).limit(1))
-                client = result.scalar_one_or_none()
+                # A user with no organisation is a data error, not a reason to
+                # hand them whichever tenant the database lists first.
+                raise HTTPException(status_code=401, detail="User is not attached to an organisation")
 
             if not client:
                 raise HTTPException(status_code=500, detail="No client configured")
@@ -271,6 +288,15 @@ async def require_admin(
             status_code=403,
             detail="Admin access required",
         )
+    return auth
+
+
+async def require_rule_author(
+    auth: AuthContext = Depends(get_auth_context),
+) -> AuthContext:
+    """Admins, and the AI agent (whose rules are always origin "ai")."""
+    if auth.role != "admin" and not getattr(auth, "is_ai_agent", False):
+        raise HTTPException(status_code=403, detail="Admin access required")
     return auth
 
 

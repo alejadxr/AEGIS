@@ -481,10 +481,10 @@ class SmartHTTPHoneypot:
     # ------------------------------------------------------------------
 
     def _get_client_ip(self, request: web.Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.remote or "unknown"
+        # The honeypot listens on every interface: a direct caller's
+        # X-Forwarded-For is attacker-written and must not become the IOC.
+        from app.core.client_ip import client_ip_from_aiohttp
+        return client_ip_from_aiohttp(request)
 
     async def _capture_request(self, request: web.Request, path: str, method: str, source_ip: str) -> dict:
         """Capture full request details for intelligence."""

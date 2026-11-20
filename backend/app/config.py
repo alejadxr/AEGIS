@@ -9,6 +9,36 @@ class Settings(BaseSettings):
     # Read from .env via pydantic (os.environ does NOT carry .env values);
     # the boot guard and admin seed both read this field, not os.environ.
     AEGIS_ADMIN_PASSWORD: str = "changeme-on-first-login"
+    # Self-serve signup creates an organisation AND an admin user, and admin
+    # actions reach host-level state (firewall, safelist, EDR response). It is
+    # therefore closed once the install has its first real organisation. Set to
+    # true only for a deliberately multi-tenant deployment behind its own
+    # access control.
+    AEGIS_ALLOW_SIGNUP: bool = False
+    # Node-facing routes (/nodes/heartbeat, /events, /report-assets). Agents
+    # built before the per-node token was sent on these routes present no
+    # credential, so the default stays compatible. Once every agent is on a
+    # build that sends X-AEGIS-Node-Token here, set this to true: a node that
+    # holds a token must then present it.
+    AEGIS_NODE_REQUIRE_TOKEN: bool = False
+    # Threat-sharing hub. /threats/intel/share is public by design so any AEGIS
+    # node can contribute, which also means anyone can submit. Submissions that
+    # do not carry this key (header X-AEGIS-Hub-Key) are accepted at a capped
+    # confidence, below the level at which subscribers auto-block. Set the same
+    # value on the hub and on every node you trust.
+    AEGIS_HUB_SHARED_KEY: str = ""
+    # Credential for an autonomous AI agent (sent as X-API-Key). A caller that
+    # authenticates with it is ALWAYS treated as origin "ai" when authoring
+    # rules, whatever the request body claims, and holds analyst rights
+    # elsewhere: it cannot promote a rule to blocking, edit the safelist or use
+    # admin routes. Give the agent this key instead of an admin API key.
+    AEGIS_AGENT_API_KEY: str = ""
+    # An address that only an endpoint agent reported (the remote peer of a
+    # connection it says it saw) is one machine's word. A compromised or
+    # malfunctioning node could otherwise get any external address blocked.
+    # Such blocks wait for operator approval unless this is set to true.
+    AEGIS_EDR_NETWORK_AUTOBLOCK: bool = False
+    AEGIS_HUB_UNTRUSTED_MAX_CONFIDENCE: float = 0.6
     AEGIS_API_PORT: int = 8000
 
     # OpenRouter
@@ -111,6 +141,13 @@ class Settings(BaseSettings):
     # X-AEGIS-FW-Auth). Declared here because backend/.env values only reach
     # pydantic Settings, never os.environ (extra="ignore").
     AEGIS_FIREWALL_SECRET: str = ""
+
+    # MikroTik switch health monitor (read-only REST). Entirely a no-op while
+    # AEGIS_SWITCH_URL is empty. Declared here because backend/.env values only
+    # reach pydantic Settings, never os.environ (extra="ignore").
+    AEGIS_SWITCH_URL: str = ""
+    AEGIS_SWITCH_USER: str = ""
+    AEGIS_SWITCH_PASSWORD: str = ""
 
     # Opt-in incident reconciliation: when enabled, the firewall sync pass will
     # auto-resolve incidents whose source_ip is no longer in the Pi blocklist.

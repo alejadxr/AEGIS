@@ -300,6 +300,16 @@ async def _fcrdns_vendor(ip: str) -> Optional[str]:
         return None  # timeout / resolver failure => no exemption
 
 
+# Whole-token match. A plain substring test found "rce" inside "source" and
+# "lfi" inside "selfish", which switched the verified-crawler exemption off for
+# reasons that named no exploit at all. "cve-" stays a prefix (cve-2026-1234).
+_EXPLOIT_TOKEN_RE = re.compile(
+    r"(?<![a-z0-9])(?:" + "|".join(
+        re.escape(t) for t in sorted(_EXPLOIT_TOKENS - {"cve-"}, key=len, reverse=True)
+    ) + r")(?![a-z0-9])|(?<![a-z0-9])cve-",
+)
+
+
 def _threat_text(*parts: Optional[str]) -> str:
     return " ".join(p for p in parts if p).lower()
 
@@ -310,7 +320,7 @@ def _is_exploit_signal(text: str) -> bool:
     Conservative by construction: any exploit token anywhere in the reported
     reason/pattern/threat_type disables the crawler exemption.
     """
-    return any(tok in text for tok in _EXPLOIT_TOKENS)
+    return bool(_EXPLOIT_TOKEN_RE.search(text))
 
 
 async def _verify_crawler(ip: str, threat_text: str) -> Optional[str]:
@@ -558,11 +568,11 @@ def _run_iptables(*args: str, check: bool = True) -> subprocess.CompletedProcess
 
 def _ip_is_blocked(ip: str) -> bool:
     """Check if IP already has a DROP rule in INPUT chain."""
-    result = _run_iptables("-L", "INPUT", "-n", check=False)
-    for line in result.stdout.splitlines():
-        if "DROP" in line and ip in line:
-            return True
-    return False
+    # Exact rule check. A substring test ("203.0.113.4" in a line that holds
+    # 203.0.113.40) reported a different, already-blocked address as this one,
+    # so the block was skipped while the caller was told it succeeded.
+    result = _run_iptables("-C", "INPUT", "-s", ip, "-j", "DROP", check=False)
+    return result.returncode == 0
 
 
 def block_ip(ip: str) -> bool:

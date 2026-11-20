@@ -94,6 +94,11 @@ class DiscoveryEngine:
             logger.info("nmap not available, using fallback")
             return self._fallback_ports(target)
 
+        from app.core.scan_target import is_valid_scan_target
+        if not is_valid_scan_target(target):
+            logger.warning("refusing nmap scan: %r is not a host, IP or CIDR", target)
+            return []
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 self.nmap_path, "-sT", "--top-ports", "100", "-oG", "-", target,

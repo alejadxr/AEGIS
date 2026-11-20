@@ -92,10 +92,11 @@ def _is_public_ip(ip: str | None) -> bool:
 
 
 def _client_ip(request: Request) -> str:
-    xff = request.headers.get("X-Forwarded-For")
-    if xff:
-        return xff.split(",")[0].strip()
-    return (request.client.host if request.client else "0.0.0.0") or "0.0.0.0"
+    # Shared resolver: forwarding headers count only from a trusted proxy and
+    # never the client-writable first X-Forwarded-For value.
+    from app.core.client_ip import client_ip_from_request
+    ip = client_ip_from_request(request)
+    return ip if ip and ip != "unknown" else "0.0.0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +155,14 @@ async def submit_canary(
     source_ip = network_ip
     if body.source_ip_override:
         if not _is_public_ip(network_ip):
-            # Trusted internal forwarder — accept the override
-            source_ip = body.source_ip_override
+            # Trusted internal forwarder — accept the override, if it is an
+            # address at all. network_ip comes from the shared resolver, so a
+            # caller on the internet cannot make itself look internal with a
+            # forged X-Forwarded-For.
+            try:
+                source_ip = str(ipaddress.ip_address(body.source_ip_override.strip()))
+            except ValueError:
+                raise HTTPException(status_code=422, detail="source_ip_override is not an IP address")
 
     # If the connecting IP is internal AND no override given, skip (self-scan)
     if not _is_public_ip(source_ip) and not body.source_ip_override:

@@ -644,7 +644,7 @@ async fn auto_scan_assets(
     let client = reqwest::Client::new();
     match client
         .post(format!("{}/nodes/report-assets", server_url))
-        .headers(node_auth::headers())
+        .headers(node_auth::node_headers())
         .json(&report)
         .send()
         .await
@@ -717,7 +717,7 @@ async fn auto_scan_loop(state: Arc<Mutex<NodeState>>) {
                 let client = reqwest::Client::new();
                 match client
                     .post(format!("{}/nodes/report-assets", server_url))
-                    .headers(node_auth::headers())
+                    .headers(node_auth::node_headers())
                     .json(&report)
                     .send()
                     .await
@@ -936,7 +936,7 @@ async fn heartbeat_loop(state: Arc<Mutex<NodeState>>, notifier: Notifier) {
 
         match client
             .post(format!("{}/nodes/heartbeat", server_url))
-            .headers(node_auth::headers())
+            .headers(node_auth::node_headers())
             .json(&heartbeat)
             .send()
             .await
@@ -1066,7 +1066,7 @@ async fn event_reporter_loop(state: Arc<Mutex<NodeState>>) {
         for event in &events {
             match client
                 .post(format!("{}/nodes/events", server_url))
-                .headers(node_auth::headers())
+                .headers(node_auth::node_headers())
                 .json(event)
                 .send()
                 .await
@@ -1199,7 +1199,7 @@ async fn fim_reporter_loop(state: Arc<Mutex<NodeState>>) {
                 let client = reqwest::Client::new();
                 match client
                     .post(format!("{}/nodes/events", server_url))
-                    .headers(node_auth::headers())
+                    .headers(node_auth::node_headers())
                     .json(&event)
                     .send()
                     .await
@@ -1382,7 +1382,7 @@ async fn windows_eventlog_loop(state: Arc<Mutex<NodeState>>) {
         for alert in &alerts {
             match client
                 .post(format!("{}/nodes/events", server_url))
-                .headers(node_auth::headers())
+                .headers(node_auth::node_headers())
                 .json(alert)
                 .send()
                 .await
@@ -1605,7 +1605,7 @@ async fn network_monitor_loop(state: Arc<Mutex<NodeState>>) {
         for alert in alerts.iter().take(10) {
             let _ = client
                 .post(format!("{}/nodes/events", server_url))
-                .headers(node_auth::headers())
+                .headers(node_auth::node_headers())
                 .json(alert)
                 .send()
                 .await;
@@ -1854,7 +1854,7 @@ async fn registry_persistence_loop(state: Arc<Mutex<NodeState>>) {
         for alert in alerts.iter().take(10) {
             match client
                 .post(format!("{}/nodes/events", server_url))
-                .headers(node_auth::headers())
+                .headers(node_auth::node_headers())
                 .json(alert)
                 .send()
                 .await

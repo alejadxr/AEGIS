@@ -43,6 +43,18 @@ class NotificationService:
                 if response.status_code < 300:
                     logger.info("Telegram notification sent")
                     return True
+                if response.status_code == 400:
+                    # Usually "can't parse entities": the text carries an
+                    # unbalanced Markdown character (often attacker-supplied,
+                    # e.g. a path with "_"). Deliver it as plain text instead of
+                    # dropping a security alert over formatting.
+                    plain = {"chat_id": chat_id, "text": text}
+                    retry = await client.post(url, json=plain)
+                    if retry.status_code < 300:
+                        logger.info("Telegram notification sent (plain text fallback)")
+                        return True
+                    logger.warning(f"Telegram failed: {retry.status_code}")
+                    return False
                 logger.warning(f"Telegram failed: {response.status_code}")
                 return False
         except Exception as e:
@@ -88,8 +100,8 @@ class NotificationService:
             from sqlalchemy import select as _select
 
             async with async_session() as db:
-                result = await db.execute(_select(Client).limit(1))
-                client = result.scalar_one_or_none()
+                from app.core.tenancy import primary_client
+                client = await primary_client(db)
                 if not client:
                     logger.warning("notify_critical_event: no client found, skipping notification")
                     return

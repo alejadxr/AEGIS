@@ -505,7 +505,11 @@ async def update_guardrails(
     db: AsyncSession = Depends(get_db),
 ):
     """Update guardrail configuration. Admin only."""
-    auth.client.guardrails = body.guardrails
+    from app.core.guardrails import validate_guardrail_config
+    try:
+        auth.client.guardrails = validate_guardrail_config(body.guardrails)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return GuardrailConfig(guardrails=auth.client.guardrails)
 

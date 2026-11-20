@@ -191,4 +191,4 @@ async def test_run_sync_skips_reconcile_when_opt_in_off():
         await run_sync()
 
         mock_reconcile.assert_not_called()
-        mock_fw.get_blocked.assert_not_called()
+        mock_fw.get_blocked_strict.assert_not_called()

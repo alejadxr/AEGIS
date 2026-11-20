@@ -294,6 +294,48 @@ INTERNAL_SOURCE_MARKERS = (
 )
 
 
+_UUID_SHAPE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+BEHAVIOURAL_ALERT_TTL_SECONDS = int(os.environ.get("AEGIS_BEHAVIOURAL_ALERT_TTL", "900"))
+
+
+class _TTLKeySet:
+    """Set of keys that forget themselves after ``ttl_seconds``.
+
+    Supports the two operations the watcher uses (``in`` and ``append``) so it
+    is a drop-in for the deque it replaces.
+    """
+
+    def __init__(self, ttl_seconds: float, max_keys: int = 5000):
+        self.ttl = float(ttl_seconds)
+        self.max_keys = max_keys
+        self._seen: dict[str, float] = {}
+
+    def _now(self) -> float:
+        return time.monotonic()
+
+    def __contains__(self, key) -> bool:
+        ts = self._seen.get(key)
+        if ts is None:
+            return False
+        if self._now() - ts >= self.ttl:
+            self._seen.pop(key, None)
+            return False
+        return True
+
+    def append(self, key) -> None:
+        now = self._now()
+        if len(self._seen) >= self.max_keys:
+            cutoff = now - self.ttl
+            self._seen = {k: t for k, t in self._seen.items() if t > cutoff}
+            while len(self._seen) >= self.max_keys:       # still full: drop oldest
+                self._seen.pop(min(self._seen, key=self._seen.get), None)
+        self._seen[key] = now
+
+    def __len__(self) -> int:
+        return len(self._seen)
+
+
 def _extract_ip(line: str) -> Optional[str]:
     match = IP_PATTERN.search(line)
     return match.group(1) if match else None
@@ -510,7 +552,12 @@ class LogWatcher:
         self._brute_force_tracker: dict = defaultdict(deque)
         self._brute_force_window = 60  # seconds (matches inline prune below)
         self._port_scan_tracker = PortScanTracker(window_seconds=60, threshold=10)
-        self._recent_alerts: deque = deque(maxlen=500)
+        # Behavioural-alert dedupe. This was a deque(maxlen=500) with no notion
+        # of time: an IP that tripped brute force / rate / port scan once was
+        # suppressed until 500 OTHER keys pushed it out, which on a quiet install
+        # is never. That defeats provisional blocks, whose premise is that a
+        # hostile source re-offends and is blocked again.
+        self._recent_alerts = _TTLKeySet(ttl_seconds=BEHAVIOURAL_ALERT_TTL_SECONDS, max_keys=5000)
         # Liveness counters (exposed via /health) so a silently dead tail or
         # pipeline is visible instead of looking like "no attacks".
         self._stats = {
@@ -1065,6 +1112,11 @@ class LogWatcher:
         service.  The tracker raises a CRITICAL incident via incident_cb.
         """
         if "hb" not in line and "-" not in line:
+            return
+        # Nearly every access-log line contains a hyphen, so the test above let
+        # almost everything through to a fresh DB session. A breadcrumb is a
+        # UUID (or an "hb"-tagged token): require that shape first.
+        if "hb" not in line and not _UUID_SHAPE.search(line):
             return
         try:
             from app.services.honey_ai import breadcrumb_tracker

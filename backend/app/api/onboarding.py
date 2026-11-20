@@ -11,15 +11,16 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.core.client_ip import rate_limit_key
 
+from app.config import settings
 from app.database import get_db
 from app.core.auth import generate_api_key, hash_password, create_user_jwt_token
 from app.core.audit import log_audit
 from app.models.client import Client
 from app.models.user import User, UserRole
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=rate_limit_key)
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
@@ -32,7 +33,7 @@ class SignupRequest(BaseModel):
     org_name: str = Field(..., min_length=1, max_length=200, pattern=r"^[\w\s\-\.&,]+$")
     admin_name: str = Field(..., min_length=1, max_length=100)
     admin_email: EmailStr
-    admin_password: str = Field(..., min_length=6, max_length=128)
+    admin_password: str = Field(..., min_length=10, max_length=128)
 
     @field_validator("org_name")
     @classmethod
@@ -63,14 +64,42 @@ def _make_slug(name: str) -> str:
     return slug or "org"
 
 
+async def _signup_open(db: AsyncSession) -> bool:
+    """True while the install is unconfigured, or signup is explicitly enabled."""
+    if settings.AEGIS_ALLOW_SIGNUP:
+        return True
+    real_orgs = await db.execute(
+        select(func.count()).select_from(Client).where(Client.slug != "demo")
+    )
+    return real_orgs.scalar_one() == 0
+
+
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
 
+@router.get("/status")
+async def signup_status(db: AsyncSession = Depends(get_db)):
+    """Lets the setup wizard know whether signup is available."""
+    return {"signup_open": await _signup_open(db)}
+
+
+
 @router.post("/signup", response_model=SignupResponse)
 @limiter.limit("5/minute")
 async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depends(get_db)):
-    """Create a new organization (Client) + admin User. Returns JWT."""
+    """Create a new organization (Client) + admin User. Returns JWT.
+
+    Open ONLY during first-run setup (no organisation besides the seeded
+    ``demo`` exists yet) or when ``AEGIS_ALLOW_SIGNUP`` is set. On a configured
+    install an unauthenticated caller must not be able to mint an admin.
+    """
+
+    if not await _signup_open(db):
+        raise HTTPException(
+            status_code=403,
+            detail="Signup is disabled on this AEGIS instance. Ask an administrator for an account.",
+        )
 
     email_lower = body.admin_email.lower()
 

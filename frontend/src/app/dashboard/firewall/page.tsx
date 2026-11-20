@@ -49,22 +49,6 @@ interface FirewallStats {
   real_firewall_active: boolean;
 }
 
-const DEMO_RULES: FirewallRule[] = [
-  {
-    id: 'demo-1',
-    client_id: 'demo',
-    name: 'Block SSH brute force (demo)',
-    enabled: true,
-    priority: 100,
-    yaml_def:
-      'name: Block SSH brute force\nenabled: true\npriority: 100\nmatch:\n  - port: 22\n  - protocol: tcp\n  - rate_limit: { count: 5, window_seconds: 60 }\naction: block_ip\nduration_seconds: 3600\n',
-    hits: 42,
-    last_hit_at: new Date(Date.now() - 600000).toISOString(),
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    updated_at: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
-
 export default function FirewallPage() {
   const [rules, setRules] = useState<FirewallRule[]>([]);
   const [templates, setTemplates] = useState<FirewallTemplate[]>([]);
@@ -93,7 +77,9 @@ export default function FirewallPage() {
       setRules(data);
       setIsDemo(false);
     } catch {
-      setRules(DEMO_RULES);
+      // Backend unreachable: show an empty list and the banner. Rendering an
+      // invented rule here reads as "this rule is protecting you".
+      setRules([]);
       setIsDemo(true);
     } finally {
       setLoading(false);
@@ -227,10 +213,10 @@ export default function FirewallPage() {
           <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-semibold text-amber-300">
-              Demo mode enabled
+              Firewall rules unavailable
             </div>
             <p className="text-[12.5px] text-amber-100/80 mt-0.5">
-              Read-only preview. Rule changes are disabled. Sign in with a production API key to manage firewall rules.
+              The API did not answer, so no rules are shown and changes are disabled. Check your sign-in and that the backend is reachable.
             </p>
           </div>
           <a

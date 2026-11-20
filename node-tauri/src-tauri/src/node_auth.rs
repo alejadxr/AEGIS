@@ -105,6 +105,17 @@ pub fn upload_headers() -> HeaderMap {
     upload_headers_for(guard.as_ref().map(|(id, t)| (id.as_str(), t)))
 }
 
+/// Headers for the `/nodes/*` routes that post as an enrolled node
+/// (heartbeat, events, report-assets): the shared secret when configured, plus
+/// this node's own id and token once it has one. The backend refuses a post
+/// whose token does not belong to the node it names, so a third party that
+/// learns a node id cannot report as that node.
+pub fn node_headers() -> HeaderMap {
+    let mut map = headers();
+    map.extend(upload_headers());
+    map
+}
+
 /// Build the auth headers for a given secret. Pure: no environment access.
 pub fn headers_for(secret: Option<&str>) -> HeaderMap {
     let mut map = HeaderMap::new();

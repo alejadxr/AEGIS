@@ -138,6 +138,13 @@ def _handle_client(client_sock: socket.socket, client_addr: tuple, host_key: par
                         break
                     channel.send(data)  # Echo back
                     cmd_buf += data
+                    # A client that never sends a newline must not grow this
+                    # buffer (and the session's command list) without limit.
+                    if len(cmd_buf) > 4096:
+                        cmd_buf = cmd_buf[:4096] + b"\n"
+                        data = b"\n"
+                    if len(commands) >= 200:
+                        break
                     if b"\r" in data or b"\n" in data:
                         cmd_str = cmd_buf.decode(errors="replace").strip()
                         if cmd_str:
@@ -186,7 +193,12 @@ def _handle_client(client_sock: socket.socket, client_addr: tuple, host_key: par
             "timestamp": datetime.utcnow().isoformat(),
         }
         try:
-            loop.call_soon_threadsafe(interaction_queue.put_nowait, interaction_data)
+            def _offer(item=interaction_data):
+                try:
+                    interaction_queue.put_nowait(item)
+                except asyncio.QueueFull:
+                    logger.warning("[SSH] interaction queue full; dropping one interaction")
+            loop.call_soon_threadsafe(_offer)
         except Exception as e:
             logger.error(f"[SSH] Failed to queue interaction: {e}")
 

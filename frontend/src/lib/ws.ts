@@ -82,6 +82,11 @@ class LiveWS {
     this.ws.onopen = () => {
       this.reconnectAttempt = 0;
       this.setStatus("open");
+      // The server delivers nothing until the first frame authenticates. The
+      // credential goes in a frame, never in the URL (URLs reach proxy logs).
+      const token = localStorage.getItem("aegis_jwt_token");
+      const apiKey = localStorage.getItem("aegis_api_key");
+      this.sendRaw(token ? { type: "auth", token } : { type: "auth", api_key: apiKey || "" });
       // Re-subscribe to all topics via event_types filter
       if (this.subscribedTopics.size > 0) {
         this.sendRaw({
@@ -99,7 +104,7 @@ class LiveWS {
       } catch {
         return;
       }
-      if (msg.type === "pong" || msg.type === "filters_updated" || msg.type === "subscribed") {
+      if (msg.type === "pong" || msg.type === "filters_updated" || msg.type === "subscribed" || msg.type === "auth_ok") {
         return;
       }
       // Dispatch by topic (msg.topic preferred; fallback to msg.type)
@@ -113,10 +118,13 @@ class LiveWS {
       this.setStatus("error");
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (ev) => {
       this.stopPing();
       this.setStatus("closed");
       this.ws = null;
+      // 4401 = credential rejected, 4403 = blocked. Retrying with the same
+      // credential only hammers the server; a new login reconnects.
+      if (ev && (ev.code === 4401 || ev.code === 4403)) return;
       if (!this.closedByUser) {
         this.scheduleReconnect();
       }

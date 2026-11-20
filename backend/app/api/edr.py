@@ -84,6 +84,91 @@ class EdrEventsOut(BaseModel):
 # Ingestion
 # ---------------------------------------------------------------------------
 
+# --- Guards for the two routes that act on THIS host ---------------------------
+#
+# kill-process and quarantine-file run on the server AEGIS lives on. One wrong
+# PID or path (or a stolen admin credential) could otherwise kill the API, its
+# database or its process manager, or remove the platform's own secrets.
+
+MAX_QUARANTINE_BYTES = 200 * 1024 * 1024
+
+_PROTECTED_PROCESS_NAMES = frozenset({
+    "postgres", "postmaster", "redis-server", "mongod", "pm2", "pm2 god daemon", "god daemon",
+    "cloudflared", "tailscaled", "sshd", "launchd", "systemd", "init", "dockerd", "containerd",
+    "com.docker.backend", "frps", "frpc", "kernel_task", "loginwindow", "windowserver",
+})
+
+
+def _protected_process_reason(proc) -> Optional[str]:
+    """Why `proc` must not be killed through the API, or None if it may be."""
+    try:
+        pid = proc.pid
+        if pid <= 1:
+            return "it is the system's init process"
+        me = psutil.Process(os.getpid())
+        if pid == me.pid:
+            return "it is the AEGIS API itself"
+        if pid in {p.pid for p in me.parents()}:
+            return "it is an ancestor of the AEGIS API (its process manager)"
+        name = (proc.name() or "").lower()
+        if name in _PROTECTED_PROCESS_NAMES or name.startswith("pm2"):
+            return f"'{name}' is infrastructure this platform depends on"
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        raise
+    except Exception as exc:  # cannot tell => do not kill
+        return f"could not verify the process is safe to kill ({exc})"
+    return None
+
+
+def _protected_path_reason(file_path: Path) -> Optional[str]:
+    """Why `file_path` must not be quarantined through the API, or None."""
+    try:
+        real = file_path.resolve(strict=True)
+    except OSError as exc:
+        return f"path cannot be resolved ({exc})"
+    name = real.name.lower()
+    if name.startswith(".env") or name in {"blocked_ips.txt", "safelist.json", "authorized_keys", "known_hosts"}:
+        return "it is a configuration or credential file"
+    home = Path.home().resolve()
+    install_root = Path(__file__).resolve().parents[3]      # the repository checkout
+    protected_roots = [
+        install_root, home / ".aegis", home / ".ssh", home / ".pm2", home / ".config",
+        Path("/etc"), Path("/bin"), Path("/sbin"), Path("/usr"), Path("/lib"), Path("/boot"),
+        Path("/System"), Path("/Library"), Path("/private/etc"), Path("/var/lib"), Path("/opt"),
+        Path("/proc"), Path("/sys"), Path("/dev"),
+    ]
+    for root in protected_roots:
+        try:
+            root_real = root.resolve()
+        except OSError:
+            continue
+        if real == root_real or root_real in real.parents:
+            return f"it lives under {root}"
+    return None
+
+
+MAX_DECOMPRESSED_BYTES = int(os.environ.get("AEGIS_EDR_MAX_DECOMPRESSED_BYTES", str(32 * 1024 * 1024)))
+
+
+def _bounded_gunzip(raw: bytes, limit: Optional[int] = None) -> bytes:
+    """gunzip with a ceiling on the OUTPUT size.
+
+    The body-size middleware only sees the compressed length, and a few
+    kilobytes of gzip expand to gigabytes. Decompress incrementally and stop
+    the moment the ceiling is crossed.
+    """
+    import zlib
+    limit = MAX_DECOMPRESSED_BYTES if limit is None else limit
+    decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    try:
+        out = decoder.decompress(raw, limit + 1)
+    except zlib.error as e:
+        raise HTTPException(status_code=400, detail=f"gzip decode failed: {e}")
+    if len(out) > limit or decoder.unconsumed_tail:
+        raise HTTPException(status_code=413, detail="decompressed payload too large")
+    return out
+
+
 @router.post("/events", response_model=EdrEventsOut)
 async def ingest_events(
     request: Request,
@@ -93,10 +178,7 @@ async def ingest_events(
     # Accept gzipped bodies from the Rust uploader
     raw = await request.body()
     if request.headers.get("content-encoding", "").lower() == "gzip":
-        try:
-            raw = gzip.decompress(raw)
-        except OSError as e:
-            raise HTTPException(status_code=400, detail=f"gzip decode failed: {e}")
+        raw = _bounded_gunzip(raw)
 
     try:
         payload_dict = json.loads(raw)
@@ -453,6 +535,11 @@ async def kill_process(
     try:
         proc = psutil.Process(pid)
         proc_name = proc.name()
+        refusal = _protected_process_reason(proc)
+        if refusal:
+            logger.warning("EDR kill-process REFUSED: pid=%d name=%s (%s) by user=%s",
+                           pid, proc_name, refusal, auth.user_id or auth.client_id)
+            raise HTTPException(status_code=403, detail=f"Refusing to kill pid {pid}: {refusal}")
         proc.kill()
         logger.warning("EDR kill-process: pid=%d name=%s by user=%s", pid, proc_name, auth.user_id or auth.client_id)
 
@@ -468,6 +555,8 @@ async def kill_process(
             pass
 
         return {"success": True, "pid": pid, "process_name": proc_name}
+    except HTTPException:
+        raise
     except psutil.NoSuchProcess:
         raise HTTPException(status_code=404, detail=f"Process {pid} not found")
     except psutil.AccessDenied:
@@ -489,10 +578,14 @@ async def quarantine_file(
     if not file_path.is_file():
         raise HTTPException(status_code=400, detail="Path is not a file")
 
-    # Prevent quarantining AEGIS's own files
-    aegis_dir = Path(__file__).resolve().parent.parent
-    if aegis_dir in file_path.resolve().parents:
-        raise HTTPException(status_code=403, detail="Cannot quarantine AEGIS system files")
+    # Prevent quarantining what the platform (or the host) needs to keep running.
+    refusal = _protected_path_reason(file_path)
+    if refusal:
+        logger.warning("EDR quarantine REFUSED: %s (%s) by user=%s",
+                       body.path, refusal, auth.user_id or auth.client_id)
+        raise HTTPException(status_code=403, detail=f"Cannot quarantine this file: {refusal}")
+    if file_path.stat().st_size > MAX_QUARANTINE_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large to quarantine through the API")
 
     QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
 

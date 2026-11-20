@@ -441,6 +441,8 @@ class AutoDiscovery:
             "50000",                         # Jenkins agent
             "50070",                         # HDFS
         ])
+        from app.core.scan_target import validate_scan_target
+        target = validate_scan_target(target)   # raises ValueError on "-oN=..." etc.
         cmd = [
             nmap_bin,
             "-sV",        # service/version detection

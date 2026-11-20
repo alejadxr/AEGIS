@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import AuthContext, require_admin, require_viewer
+from app.core.auth import AuthContext, require_admin, require_rule_author, require_viewer
 from app.database import get_db
 from app.schemas.rule_authoring import (
     CreateIn, DryRunOut, EnableIn, ProposalOut, ProposeIn, PromoteIn, ProtectIn,
@@ -41,6 +41,12 @@ router = APIRouter(prefix="/rules", tags=["rules"])
 
 
 def _actor(auth: AuthContext, origin: str = "operator") -> Actor:
+    # The agent credential decides the origin; the request body cannot. An
+    # agent that "forgets" to say it is an AI (or is talked into claiming to be
+    # the operator by text it read) still gets the AI limits: no override, no
+    # promotion, alert-only until a human approves.
+    if getattr(auth, "is_ai_agent", False):
+        origin = "ai"
     who = getattr(auth, "email", None) or getattr(auth, "user_id", None) or "api-key"
     return Actor(kind=origin, id=str(who) if origin == "operator" else "ai-agent",
                  client_id=auth.client_id, model=None if origin == "operator" else "ai")
@@ -64,14 +70,14 @@ async def list_rules(
 
 
 @router.post("/propose", response_model=ProposalOut)
-async def propose(body: ProposeIn, auth: AuthContext = Depends(require_admin),
+async def propose(body: ProposeIn, auth: AuthContext = Depends(require_rule_author),
                   db: AsyncSession = Depends(get_db)):
     """Validate and dry-run a draft. Nothing is written, nothing is audited."""
     return await svc.propose(body.rule, db, auth.client_id)
 
 
 @router.post("/protect", response_model=ProtectOut)
-async def protect(body: ProtectIn, auth: AuthContext = Depends(require_admin),
+async def protect(body: ProtectIn, auth: AuthContext = Depends(require_rule_author),
                   db: AsyncSession = Depends(get_db)):
     try:
         return await rule_vuln_advisor.protect(db, _actor(auth, body.origin), body)
@@ -88,7 +94,7 @@ async def get_rule(rule_id: str, auth: AuthContext = Depends(require_viewer)):
 
 
 @router.post("", response_model=WriteOut, status_code=201)
-async def create_rule(body: CreateIn, auth: AuthContext = Depends(require_admin),
+async def create_rule(body: CreateIn, auth: AuthContext = Depends(require_rule_author),
                       db: AsyncSession = Depends(get_db)):
     try:
         return await svc.create(
@@ -100,7 +106,7 @@ async def create_rule(body: CreateIn, auth: AuthContext = Depends(require_admin)
 
 
 @router.put("/{rule_id}", response_model=WriteOut)
-async def update_rule(rule_id: str, body: UpdateIn, auth: AuthContext = Depends(require_admin),
+async def update_rule(rule_id: str, body: UpdateIn, auth: AuthContext = Depends(require_rule_author),
                       db: AsyncSession = Depends(get_db)):
     try:
         return await svc.update(
@@ -112,7 +118,7 @@ async def update_rule(rule_id: str, body: UpdateIn, auth: AuthContext = Depends(
 
 
 @router.post("/{rule_id}/dry-run", response_model=DryRunOut)
-async def dry_run_rule(rule_id: str, auth: AuthContext = Depends(require_admin),
+async def dry_run_rule(rule_id: str, auth: AuthContext = Depends(require_rule_author),
                        db: AsyncSession = Depends(get_db)):
     live = svc._read_live(rule_id)
     if live is None:

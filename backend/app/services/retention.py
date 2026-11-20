@@ -452,7 +452,22 @@ async def expire_provisional_blocks() -> dict:
                 # Lift on the Pi executor first (the enforced layer), then the
                 # local 403 blocklist. Order matters: if the remote call fails
                 # we keep the local block rather than half-lifting it.
-                await firewall_client.unblock_ip(ip)
+                from app.config import settings as _settings
+                remote = await firewall_client.unblock_ip(ip)
+                # The answer only binds when a Pi agent is configured; without
+                # one there is no remote layer to strand.
+                if _settings.AEGIS_FIREWALL_URL:
+                    if not (isinstance(remote, dict) and remote.get("success")):
+                        # Leave the action as it is: the next cycle retries.
+                        # Marking it expired here would strand the DROP rule
+                        # on the Pi with nobody left to lift it.
+                        summary["failed"] += 1
+                        logger.warning(
+                            f"provisional block on {ip} is due but the Pi did not lift it "
+                            f"({(remote or {}).get('error') if isinstance(remote, dict) else remote}); "
+                            f"keeping it in force and retrying next cycle"
+                        )
+                        continue
                 try:
                     ip_blocker_service.unblock_ip(ip)
                 except Exception as exc:

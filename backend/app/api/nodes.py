@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,8 @@ from app.core.events import event_bus
 from app.models.endpoint_agent import EndpointAgent, AgentStatus
 from app.services import asset_risk
 from app.services.edr_transport import publish_agent_batch
+
+from app.config import settings
 
 logger = logging.getLogger("aegis.nodes")
 router = APIRouter(prefix="/nodes", tags=["nodes"])
@@ -54,9 +56,54 @@ def _verify_node_secret(x_aegis_node_auth: Optional[str] = Header(default=None))
     expected = os.getenv("AEGIS_NODE_SECRET", "").strip()
     if not expected:
         return  # compat mode: no secret configured yet — accept
-    if x_aegis_node_auth != expected:
+    if not x_aegis_node_auth or not hmac.compare_digest(x_aegis_node_auth, expected):
         raise HTTPException(status_code=401, detail="invalid or missing X-AEGIS-Node-Auth header")
 
+
+def _node_secret_configured() -> bool:
+    return bool(os.getenv("AEGIS_NODE_SECRET", "").strip())
+
+
+def _authorize_node_post(agent, node_token: Optional[str], node_id_header: Optional[str]) -> None:
+    """Decide whether this HTTP caller may post as `agent`.
+
+    * The host monitor runs inside this process and writes to the database
+      directly. Nothing legitimate ever posts as it over HTTP, and its id is
+      derived from the hostname, so that id is refused outright.
+    * A caller that presents a per-node token is judged on it alone: it must be
+      this node's token. A wrong token is never downgraded to "no credential".
+    * With neither a token nor the shared secret, the request is accepted only
+      in compatibility mode (older agents), i.e. unless
+      AEGIS_NODE_REQUIRE_TOKEN is set and the node holds a token.
+    """
+    from app.core.auth import hash_node_token
+    from app.services.host_monitor import AGENT_ID as _HOST_AGENT_ID
+
+    # Called outside FastAPI (tests, internal callers) the Header() defaults
+    # arrive as marker objects, not strings: that is "no credential".
+    node_token = node_token if isinstance(node_token, str) and node_token else None
+    node_id_header = node_id_header if isinstance(node_id_header, str) else None
+
+    if agent.id == _HOST_AGENT_ID:
+        raise HTTPException(status_code=403, detail="this node does not report over HTTP")
+
+    stored = getattr(agent, "node_token_hash", None)
+    if node_token:
+        ok = bool(stored) and node_id_header == agent.id and hmac.compare_digest(
+            stored, hash_node_token(node_token)
+        )
+        if not ok:
+            raise HTTPException(status_code=401, detail="invalid node token")
+        return
+    if _node_secret_configured():
+        return  # the route dependency already verified X-AEGIS-Node-Auth
+    if settings.AEGIS_NODE_REQUIRE_TOKEN and stored:
+        raise HTTPException(status_code=401, detail="node token required")
+
+
+# Free-text fields a node sends end up in incidents, assets and logs.
+_SAFE_LABEL = r"^[\w .:@/()+\-]*$"
+_MAX_PENDING_ANNOUNCEMENTS = 500
 
 
 def _verify_node_secret_strict(x_aegis_node_auth: Optional[str] = Header(default=None)) -> None:
@@ -206,6 +253,8 @@ async def generate_enrollment_code(
 async def node_heartbeat(
     body: HeartbeatRequest,
     db: AsyncSession = Depends(get_db),
+    x_aegis_node_token: Optional[str] = Header(default=None),
+    x_aegis_node_id: Optional[str] = Header(default=None),
 ):
     """
     Called periodically by the AEGIS Node agent to report health metrics.
@@ -220,6 +269,7 @@ async def node_heartbeat(
 
     if not agent:
         raise HTTPException(status_code=404, detail="Node not registered. Enroll first.")
+    _authorize_node_post(agent, x_aegis_node_token, x_aegis_node_id)
 
     # Update status and heartbeat timestamp
     agent.status = AgentStatus.online
@@ -560,12 +610,12 @@ async def reissue_node_token(
 # ---------------------------------------------------------------------------
 
 class AnnounceRequest(BaseModel):
-    enroll_code: str
-    hostname: str
-    os_name: str | None = None
-    os_version: str | None = None
-    local_ip: str | None = None
-    agent_version: str = "0.1.0"
+    enroll_code: str = Field(..., min_length=4, max_length=32, pattern=r"^[A-Za-z0-9\-]+$")
+    hostname: str = Field(..., min_length=1, max_length=253, pattern=_SAFE_LABEL)
+    os_name: str | None = Field(None, max_length=64, pattern=_SAFE_LABEL)
+    os_version: str | None = Field(None, max_length=64, pattern=_SAFE_LABEL)
+    local_ip: str | None = Field(None, max_length=45, pattern=r"^[0-9A-Fa-f:.]*$")
+    agent_version: str = Field("0.1.0", max_length=32, pattern=_SAFE_LABEL)
 
 
 @router.post("/announce", dependencies=[Depends(_verify_node_secret)])
@@ -581,6 +631,12 @@ async def announce_node(body: AnnounceRequest):
             "client_name": info.get("client_name"),
             "node_id": info.get("node_id"),
         }
+    if code not in _pending_enrollments:
+        waiting = sum(1 for info in _pending_enrollments.values() if not info.get("enrolled"))
+        if waiting >= _MAX_PENDING_ANNOUNCEMENTS:
+            # Unauthenticated callers must not be able to grow this table
+            # without bound; entries expire after ENROLLMENT_TTL_MINUTES.
+            raise HTTPException(status_code=429, detail="too many pending enrollments; retry later")
     _pending_enrollments[code] = {
         "agent_id": "",
         "hostname": body.hostname,
@@ -724,17 +780,27 @@ def _brute_force_is_new(node_id: str, remote: str | None, acct: str | None) -> b
 
 
 class NodeEventRequest(BaseModel):
-    node_id: str
-    event_type: str
-    severity: str = "medium"
+    node_id: str = Field(..., max_length=128)
+    event_type: str = Field(..., max_length=64, pattern=r"^[A-Za-z0-9_.:\-]+$")
+    severity: str = Field("medium", max_length=16, pattern=r"^[A-Za-z]+$")
     details: dict = {}
-    timestamp: str | None = None
+    timestamp: str | None = Field(None, max_length=64)
+
+    @field_validator("details")
+    @classmethod
+    def _details_bounded(cls, v: dict) -> dict:
+        import json as _json
+        if len(_json.dumps(v, default=str)) > 32_768:
+            raise ValueError("details is too large")
+        return v
 
 
 @router.post("/events", dependencies=[Depends(_verify_node_secret)])
 async def receive_node_event(
     body: NodeEventRequest,
     db: AsyncSession = Depends(get_db),
+    x_aegis_node_token: Optional[str] = Header(default=None),
+    x_aegis_node_id: Optional[str] = Header(default=None),
 ):
     result = await db.execute(
         select(EndpointAgent).where(EndpointAgent.id == body.node_id)
@@ -742,6 +808,7 @@ async def receive_node_event(
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Node not found")
+    _authorize_node_post(agent, x_aegis_node_token, x_aegis_node_id)
 
     logger.info(f"Node event from {body.node_id}: {body.event_type} [{body.severity}]")
 
@@ -827,6 +894,8 @@ class AssetReportRequest(BaseModel):
 async def report_assets(
     body: AssetReportRequest,
     db: AsyncSession = Depends(get_db),
+    x_aegis_node_token: Optional[str] = Header(default=None),
+    x_aegis_node_id: Optional[str] = Header(default=None),
 ):
     import uuid as _uuid
     from app.models.asset import Asset
@@ -837,6 +906,7 @@ async def report_assets(
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Node not found")
+    _authorize_node_post(agent, x_aegis_node_token, x_aegis_node_id)
 
     client_id = agent.client_id
     if body.local_ip:

@@ -43,6 +43,24 @@ def _looks_like_ip(value: str) -> bool:
 # counter-attack/recon against third-party infrastructure, deception,
 # tarpitting) default to require_approval so a human signs off before AEGIS
 # acts. Users can still override any of these per-client in client.guardrails.
+def validate_guardrail_config(config) -> dict:
+    """Return a clean {action_type: policy} dict or raise ValueError."""
+    if not isinstance(config, dict):
+        raise ValueError("guardrails must be an object")
+    if len(config) > 64:
+        raise ValueError("too many guardrail entries")
+    clean: dict = {}
+    for action_type, policy in config.items():
+        if not isinstance(action_type, str) or not action_type or len(action_type) > 64:
+            raise ValueError("invalid guardrail action type")
+        if policy not in APPROVAL_LEVELS:
+            raise ValueError(
+                f"invalid policy {policy!r} for '{action_type}': use one of {sorted(APPROVAL_LEVELS)}"
+            )
+        clean[action_type] = policy
+    return clean
+
+
 DEFAULT_GUARDRAILS = {
     "block_ip": "auto_approve",
     "isolate_host": "require_approval",
@@ -54,6 +72,10 @@ DEFAULT_GUARDRAILS = {
     "disable_account": "require_approval",
     "network_segment": "require_approval",
     "custom": "auto_approve",
+    # Record-only step the engine recommends for honeypot recon: it changes
+    # nothing on any system, so it needs no approval. Declared here because an
+    # UNDECLARED action type is now held for approval.
+    "collect_evidence": "auto_approve",
     # Counter-attack actions (active defense) — require_approval: recon touches
     # third-party infrastructure and carries legal risk; counter_attack/
     # deception/tarpit are similarly consequential and must be human-gated.
@@ -95,15 +117,49 @@ async def _alert_only_reason(db: AsyncSession, incident_id: Optional[str], alert
     return None
 
 
+def endpoint_reported_peer(alert_data: Optional[dict], target: Optional[str]) -> bool:
+    """True when `target` is an address that only an endpoint agent vouches for.
+
+    EDR network events put the remote peer of a connection in source_ip, on the
+    agent's say-so. AEGIS never saw that traffic. One node (compromised, or just
+    wrong) must not be able to have an arbitrary external address blocked, so
+    these blocks are held for approval unless AEGIS_EDR_NETWORK_AUTOBLOCK is on.
+    """
+    if not target or not isinstance(alert_data, dict):
+        return False
+    try:
+        from app.config import settings as _settings
+        if _settings.AEGIS_EDR_NETWORK_AUTOBLOCK:
+            return False
+    except Exception:
+        pass
+    event = alert_data.get("triggering_event")
+    event = event if isinstance(event, dict) else alert_data
+    if not (event.get("agent_id") or alert_data.get("agent_id")):
+        return False
+    named = {str(event.get(k)) for k in ("_gate_ip", "remote_ip", "destination_ip") if event.get(k)}
+    return str(target) in named
+
+
 class GuardrailEngine:
     """Action approval system that classifies and gates response actions."""
 
     def get_policy(self, client: Client, action_type: str) -> str:
+        """Policy for `action_type`, failing CLOSED.
+
+        An action type nobody declared and a stored value that is not one of
+        the three policies both used to mean "auto_approve": a typo in the
+        settings, or a new action type, silently became fully automatic.
+        """
         client_guardrails = client.guardrails or {}
-        return client_guardrails.get(
-            action_type,
-            DEFAULT_GUARDRAILS.get(action_type, "auto_approve"),
-        )
+        policy = client_guardrails.get(action_type, DEFAULT_GUARDRAILS.get(action_type))
+        if policy not in APPROVAL_LEVELS:
+            if policy is not None:
+                logger.warning(
+                    f"GUARDRAIL: invalid policy {policy!r} for '{action_type}'; holding for approval"
+                )
+            return "require_approval"
+        return policy
 
     async def evaluate_action(
         self,
@@ -179,6 +235,18 @@ class GuardrailEngine:
             return action
 
         policy = self.get_policy(client, action_type)
+
+        # An address named only by an endpoint agent (see endpoint_reported_peer).
+        if (
+            action_type in _IP_TARGET_ACTIONS
+            and policy == "auto_approve"
+            and endpoint_reported_peer(alert_data, target)
+        ):
+            policy = "require_approval"
+            ai_reasoning = (
+                f"{target} was reported by an endpoint agent, not observed by AEGIS itself: "
+                f"not auto-blocked, awaiting operator approval. AI reasoning: {ai_reasoning}"
+            )
 
         # Shared consumer egress (WARP / Private Relay): thousands of real users
         # sit behind one address, so a block is never safe to automate. The

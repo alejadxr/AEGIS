@@ -22,7 +22,8 @@
 #   OLLAMA_BASE_URL      Ollama inference endpoint   (default: http://host.docker.internal:11434)
 #   AEGIS_PLATFORM       Platform hint for backend   (default: linux)
 #   OPENROUTER_API_KEY   OpenRouter key (AI features)(default: empty — AI features disabled)
-#   JWT_SECRET_KEY       Secret for JWT signing      (default: auto-generated at first run)
+#   AEGIS_SECRET_KEY     Secret that signs sessions  (REQUIRED, no default: openssl rand -hex 32)
+#   AEGIS_ADMIN_PASSWORD Password of the first admin (REQUIRED, no default)
 #   AEGIS_MONGODB_URI    MongoDB Atlas connection    (default: empty — threat intel hub disabled)
 #
 # WINDOWS / macOS NOTES:
@@ -39,7 +40,8 @@ services:
     image: postgres:16-alpine
     container_name: aegis-db
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Loopback only: the database is for the API container, not the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
       # Database credentials — change POSTGRES_PASSWORD in production!
       POSTGRES_DB: ${POSTGRES_DB:-aegis}
@@ -70,7 +72,8 @@ services:
     image: redis:7-alpine
     container_name: aegis-redis
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      # Loopback only: this Redis has no password.
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     command: >
       redis-server
       --appendonly yes
@@ -122,8 +125,15 @@ services:
       # OpenRouter API key for cloud AI (leave empty to disable)
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      # Secrets the backend refuses to boot without (core/boot_guard.py).
+      # These are the names the backend actually reads; the old JWT_SECRET_KEY
+      # was ignored, so the stack failed at start. There is deliberately no
+      # default: compose stops here with a clear message instead of running
+      # with a secret anyone can read in this file. Do NOT work around it with
+      # AEGIS_ENV=development, which switches the guard off.
+      - AEGIS_SECRET_KEY=${AEGIS_SECRET_KEY:?set AEGIS_SECRET_KEY (e.g. openssl rand -hex 32)}
+      - AEGIS_ADMIN_PASSWORD=${AEGIS_ADMIN_PASSWORD:?set AEGIS_ADMIN_PASSWORD}
       # JWT configuration
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-aegis-docker-jwt-secret-change-me}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
       # MongoDB Atlas for threat intel sharing (optional)

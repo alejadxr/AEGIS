@@ -28,13 +28,17 @@ class WSClient:
     """Represents a connected WebSocket client with filtering preferences."""
 
     __slots__ = (
-        "websocket", "client_id", "connected_at", "filters",
+        "websocket", "client_id", "tenant_id", "connected_at", "filters",
         "topics", "events_sent", "last_event_at",
     )
 
-    def __init__(self, websocket: WebSocket, client_id: str = "anonymous"):
+    def __init__(self, websocket: WebSocket, client_id: str = "anonymous",
+                 tenant_id: Optional[str] = None):
         self.websocket = websocket
         self.client_id = client_id
+        # Tenant (Client.id) the socket authenticated as. Events that name a
+        # different tenant are never delivered to it.
+        self.tenant_id = tenant_id
         self.connected_at = datetime.utcnow().isoformat()
         self.filters: dict = {}  # e.g. {"min_severity": "high", "event_types": [...]}
         # Topic subscriptions — if empty set, client gets everything (legacy behavior)
@@ -74,8 +78,17 @@ class WSPushManager:
         }
 
     async def connect(self, websocket: WebSocket, client_id: str = "anonymous") -> WSClient:
-        """Accept a WebSocket connection and register the client."""
+        """Accept a WebSocket connection and register the client.
+
+        Kept for callers that authenticate elsewhere. The public ``/ws`` route
+        accepts, authenticates and then calls :meth:`register`.
+        """
         await websocket.accept()
+        return await self.register(websocket, client_id)
+
+    async def register(self, websocket: WebSocket, client_id: str = "anonymous",
+                       tenant_id: Optional[str] = None) -> WSClient:
+        """Register an already-accepted (and authenticated) socket."""
         # Enforce the cap BEFORE appending: evict oldest zombie(s) if full.
         while len(self._clients) >= self.MAX_CLIENTS:
             oldest = self._clients.pop(0)
@@ -88,7 +101,7 @@ class WSPushManager:
                 await oldest.websocket.close(code=1013)  # 1013 = try again later
             except Exception:
                 pass  # socket already dead — the point is to drop the reference
-        client = WSClient(websocket, client_id)
+        client = WSClient(websocket, client_id, tenant_id)
         self._clients.append(client)
         self._stats["total_connections"] += 1
         logger.info(f"WS client connected: {client_id} (total: {len(self._clients)})")
@@ -140,6 +153,13 @@ class WSPushManager:
 
     def _should_send(self, ws_client: WSClient, event: dict) -> bool:
         """Check if an event passes the client's filters."""
+        # Tenant isolation: an event that names a tenant goes only to it.
+        if ws_client.tenant_id:
+            data = event.get("data")
+            owner = (data.get("client_id") if isinstance(data, dict) else None) or event.get("client_id")
+            if owner and str(owner) != str(ws_client.tenant_id):
+                return False
+
         # Topic filtering first — cheapest, most common path
         event_topic = event.get("topic") or event.get("type") or event.get("_event_type", "")
         if event_topic and not self._topic_matches(ws_client, str(event_topic)):

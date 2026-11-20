@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.core.client_ip import rate_limit_key
 
 from app.core.timeutil import parse_agent_ts
 from app.database import get_db
@@ -26,7 +26,7 @@ from app.core.auth import (
 from app.core.events import event_bus
 from app.services.edr_transport import publish_agent_batch
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=rate_limit_key)
 from app.models.endpoint_agent import (
     EndpointAgent, AgentEvent, ForensicSnapshot,
     AgentStatus, EventSeverity, EventCategory,

@@ -16,8 +16,21 @@ from app.modules.phantom.intel import threat_intel_generator
 from app.services.threat_intel_hub import threat_intel_hub
 from app.core.mongo_client import is_connected as mongo_connected
 from app.services.ioc_validator import validate_ioc, IOCValidationError
+from fastapi import Header
+from slowapi import Limiter
+from app.config import settings
+from app.core.client_ip import rate_limit_key
 
 router = APIRouter(prefix="/threats", tags=["threats"])
+limiter = Limiter(key_func=rate_limit_key)
+
+_MAX_SHARING_NODES = 1000
+
+
+def _hub_key_valid(presented: Optional[str]) -> bool:
+    import hmac
+    expected = (settings.AEGIS_HUB_SHARED_KEY or "").strip()
+    return bool(expected) and bool(presented) and hmac.compare_digest(presented, expected)
 
 
 # --- Schemas ---
@@ -163,24 +176,39 @@ async def get_threat_feed(
 # ---------------------------------------------------------------------------
 
 class SharedIOCSubmit(BaseModel):
-    ioc_type: str = Field(..., description="ip | domain | hash | url")
-    ioc_value: str = Field(..., description="The indicator value")
-    threat_type: str = Field("unknown", description="brute_force, c2, phishing, malware, etc.")
+    ioc_type: str = Field(..., max_length=16, description="ip | domain | hash | url")
+    ioc_value: str = Field(..., max_length=2048, description="The indicator value")
+    threat_type: str = Field("unknown", max_length=64, description="brute_force, c2, phishing, malware, etc.")
     confidence: float = Field(0.75, ge=0.0, le=1.0)
-    mitre_techniques: list[str] = Field(default_factory=list)
-    detection_source: str = Field("remote_node", description="Source: remote_node, honeypot, scanner, etc.")
-    node_id: str = Field("", description="Optional reporting node identifier")
+    mitre_techniques: list[str] = Field(default_factory=list, max_length=32)
+    detection_source: str = Field("remote_node", max_length=64, description="Source: remote_node, honeypot, scanner, etc.")
+    node_id: str = Field("", max_length=128, description="Optional reporting node identifier")
 
 
 @router.post("/intel/share")
-async def share_ioc_public(body: SharedIOCSubmit):
+@limiter.limit("60/minute")
+async def share_ioc_public(
+    request: Request,
+    body: SharedIOCSubmit,
+    x_aegis_hub_key: Optional[str] = Header(default=None),
+):
     """
     Public IOC sharing endpoint -- remote AEGIS nodes submit IOCs here.
 
-    No authentication required so that any AEGIS node configured with
-    the hub URL can contribute threat intelligence.
-    Validates IOCs before accepting to prevent poisoning.
+    No authentication is required to contribute, so an anonymous submission is
+    a tip, not a verdict: its confidence is capped below the auto-block
+    threshold, and an address AEGIS treats as safe or as shared consumer egress
+    is refused. A node that presents the hub key keeps its stated confidence.
     """
+    if body.ioc_type == "ip":
+        from app.core.attack_detector import _is_safe_ip, is_shared_egress
+        candidate = body.ioc_value.strip()
+        if _is_safe_ip(candidate) or is_shared_egress(candidate):
+            return {"status": "rejected", "reason": "address is safelisted or shared egress"}
+    if not _hub_key_valid(x_aegis_hub_key):
+        cap = float(settings.AEGIS_HUB_UNTRUSTED_MAX_CONFIDENCE)
+        if body.confidence > cap:
+            body.confidence = cap
     # Validate IOC to prevent poisoning
     try:
         validated = validate_ioc(
@@ -305,19 +333,25 @@ _sharing_nodes: dict[str, dict] = {}
 
 
 class SharingNodeRegister(BaseModel):
-    node_id: str = Field(..., description="Unique node identifier")
-    node_name: str = Field("", description="Human-readable name")
-    node_url: str = Field("", description="Node's own API URL (for bidirectional sharing)")
-    version: str = Field("1.0.0", description="AEGIS version running on the node")
+    node_id: str = Field(..., min_length=1, max_length=128, description="Unique node identifier")
+    node_name: str = Field("", max_length=128, description="Human-readable name")
+    node_url: str = Field("", max_length=512, description="Node's own API URL (for bidirectional sharing)")
+    version: str = Field("1.0.0", max_length=32, description="AEGIS version running on the node")
 
 
 @router.post("/nodes/register")
-async def register_sharing_node(body: SharingNodeRegister):
+@limiter.limit("20/minute")
+async def register_sharing_node(request: Request, body: SharingNodeRegister):
     """
     Register a remote AEGIS node for threat sharing.
 
     No authentication required -- any AEGIS instance can register.
     """
+    if body.node_id not in _sharing_nodes and len(_sharing_nodes) >= _MAX_SHARING_NODES:
+        # Unauthenticated: keep the registry bounded by dropping the entry
+        # that has been silent the longest.
+        stale = min(_sharing_nodes, key=lambda k: _sharing_nodes[k].get("last_seen", ""))
+        _sharing_nodes.pop(stale, None)
     _sharing_nodes[body.node_id] = {
         "node_id": body.node_id,
         "node_name": body.node_name or body.node_id,
@@ -349,8 +383,9 @@ async def register_sharing_node(body: SharingNodeRegister):
 
 
 @router.get("/nodes")
-async def list_sharing_nodes():
-    """List all registered sharing nodes. Public endpoint."""
+async def list_sharing_nodes(auth: AuthContext = Depends(require_viewer)):
+    """List all registered sharing nodes. Signed-in users only: the registry
+    holds other installs' identifiers and URLs."""
     return {
         "nodes": list(_sharing_nodes.values()),
         "count": len(_sharing_nodes),
@@ -358,7 +393,7 @@ async def list_sharing_nodes():
 
 
 @router.get("/sharing/stats")
-async def get_sharing_stats():
+async def get_sharing_stats(auth: AuthContext = Depends(require_viewer)):
     """Get threat sharing statistics (hub sync + auto-sharer)."""
     from app.services.hub_sync_client import hub_sync_client
     from app.services.auto_sharer import auto_sharer

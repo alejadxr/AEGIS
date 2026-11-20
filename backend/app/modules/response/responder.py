@@ -123,6 +123,7 @@ class ActiveResponder:
             "disable_account": self._disable_account,
             "shutdown_service": self._shutdown_service,
             "network_segment": self._network_segment,
+            "collect_evidence": self._collect_evidence,
         }
         return executors.get(action_type, self._generic_action)
 
@@ -226,7 +227,28 @@ class ActiveResponder:
     async def _unblock_ip(self, target: str, params: dict) -> dict:
         logger.info(f"ROLLBACK: Unblocking IP {target}")
 
-        # System-level unblock — gated by AEGIS_REAL_FW=1
+        # 1. Pi executor first: it is the enforced layer. If it refuses we stop
+        #    and report failure, so the action stays "executed" and the block
+        #    keeps its expiry instead of being orphaned as "rolled_back".
+        from app.config import settings as _settings
+        firewall_result = None
+        if _settings.AEGIS_FIREWALL_URL:
+            firewall_result = await firewall_client.unblock_ip(target)
+            if not (isinstance(firewall_result, dict) and firewall_result.get("success")):
+                logger.error(f"ROLLBACK: Pi did not unblock {target}: {firewall_result}")
+                return {"success": False, "action": "unblock_ip", "target": target,
+                        "firewall": firewall_result,
+                        "error": "The firewall agent did not lift the block; nothing was changed locally."}
+
+        # 2. Local 403 blocklist (blocked_ips.txt + in-memory set)
+        try:
+            local_result = ip_blocker_service.unblock_ip(target)
+        except Exception as e:
+            logger.error(f"ROLLBACK: local unblock of {target} raised: {e}")
+            return {"success": False, "action": "unblock_ip", "target": target,
+                    "firewall": firewall_result, "error": f"local unblock failed: {e}"}
+
+        # 3. System-level unblock — gated by AEGIS_REAL_FW=1
         try:
             _fw = firewall_local.get_firewall()
             fw_ok = _fw.unblock(target)
@@ -244,15 +266,21 @@ class ActiveResponder:
             "success": True,
             "action": "unblock_ip",
             "target": target,
+            "firewall": firewall_result,
+            "local": local_result,
             "system_fw": fw_ok,
         }
 
     async def _add_firewall_rule(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Adding firewall rule for {target}")
-        return {"success": True, "action": "firewall_rule", "target": target}
+        logger.info("RESPONSE: firewall_rule requested for %s (not implemented)", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "firewall_rule", "target": target,
+                "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _remove_firewall_rule(self, target: str, params: dict) -> dict:
-        return {"success": True, "action": "remove_firewall_rule", "target": target}
+        return {"success": False, "status": "not_implemented",
+                "action": "remove_firewall_rule", "target": target,
+                "detail": "No firewall rule was added by AEGIS, so there is nothing to remove."}
 
     async def _isolate_host(self, target: str, params: dict) -> dict:
         logger.info("RESPONSE: isolate_host requested for %s (not implemented)", target)
@@ -261,7 +289,9 @@ class ActiveResponder:
                 "detail": "This response action is not yet implemented; no system change was made."}
 
     async def _unisolate_host(self, target: str, params: dict) -> dict:
-        return {"success": True, "action": "unisolate_host", "target": target}
+        return {"success": False, "status": "not_implemented",
+                "action": "unisolate_host", "target": target,
+                "detail": "isolate_host is not implemented, so there is nothing to undo."}
 
     async def _kill_process(self, target: str, params: dict) -> dict:
         logger.info("RESPONSE: kill_process requested for %s (not implemented)", target)
@@ -299,9 +329,20 @@ class ActiveResponder:
                 "action": "network_segment", "target": target,
                 "detail": "This response action is not yet implemented; no system change was made."}
 
+    async def _collect_evidence(self, target: str, params: dict) -> dict:
+        # Record-only: the evidence is the incident and its raw alert, which are
+        # already stored. Nothing is changed on any system, and saying so is
+        # more useful than a bare "success".
+        return {"success": True, "action": "collect_evidence", "target": target,
+                "detail": "Evidence is retained on the incident record; no system change was made."}
+
     async def _generic_action(self, target: str, params: dict) -> dict:
-        logger.info(f"RESPONSE: Generic action on {target}")
-        return {"success": True, "action": "generic", "target": target}
+        # An unknown action type used to report success while doing nothing,
+        # which the dashboard showed as a threat contained.
+        logger.warning("RESPONSE: unknown action type for %s; nothing was done", target)
+        return {"success": False, "status": "not_implemented",
+                "action": "generic", "target": target,
+                "detail": "Unknown response action type; no system change was made."}
 
     async def _generic_rollback(self, target: str, params: dict) -> dict:
         return {"success": False, "error": "No rollback available for this action type"}

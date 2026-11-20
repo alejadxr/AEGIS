@@ -80,6 +80,17 @@ class AutoSharer:
             self._stats["skipped_dedup"] += 1
             return
 
+        # Never publish an address this install treats as safe or as shared
+        # egress: subscribers act on what the hub lists.
+        try:
+            from app.core.attack_detector import _is_safe_ip, is_shared_egress
+            if _is_safe_ip(ip) or is_shared_egress(ip):
+                self._stats["skipped_safe"] = self._stats.get("skipped_safe", 0) + 1
+                return
+        except Exception:
+            self._stats["skipped_invalid"] += 1
+            return
+
         # Validate
         try:
             from app.services.ioc_validator import validate_ioc

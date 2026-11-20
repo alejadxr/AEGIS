@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Search01Icon } from 'hugeicons-react';
 import { ExternalLink, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiUrl, authHeaders } from '@/lib/api';
 
 interface Decryptor {
   id: string;
@@ -36,10 +37,7 @@ export function DecryptorLookup() {
     setError(false);
     setResults(null);
     try {
-      const apiKey = typeof window !== 'undefined' ? localStorage.getItem('aegis_api_key') : null;
-      const res = await fetch(`/api/v1/ransomware/decryptors?file_extension=${encodeURIComponent(ext)}`, {
-        headers: apiKey ? { 'X-API-Key': apiKey } : {},
-      });
+      const res = await fetch(apiUrl(`/ransomware/decryptors?file_extension=${encodeURIComponent(ext)}`), { headers: authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: DecryptorApiResponse = await res.json();
       const items = Array.isArray(json) ? json : (json.decryptors ?? json.items ?? []);

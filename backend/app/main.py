@@ -4,17 +4,17 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from app.core.client_ip import rate_limit_key
 
 from app.config import settings
 from app.version import __version__
 from app.database import engine, async_session
 from app.models import Base
-from app.core.auth import seed_demo_client, seed_default_admin
+from app.core.auth import seed_demo_client, seed_default_admin, require_viewer as _require_viewer
 from app.core.boot_guard import assert_production_secrets, DEFAULT_ADMIN_PASSWORD
 from app.core.events import event_bus
 from app.core.event_stream import EventStream
@@ -62,6 +62,7 @@ from app.api import payments as payments_router
 from app.api import compliance as compliance_router
 from app.api import updates as updates_router
 from app.api import firewall as firewall_router
+from app.api import switch as switch_router
 from app.api import rules as rules_router
 from app.api import ransomware as ransomware_router
 from app.api import deception as deception_router
@@ -81,6 +82,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
+# AEGIS tails its own log: no record may span lines (see log_sanitize).
+from app.core import log_sanitize  # noqa: E402
+log_sanitize.install()
 logger = logging.getLogger("cayde6")
 
 
@@ -684,8 +688,18 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("External firewall sync disabled (AEGIS_FIREWALL_URL not set)")
 
+    # MikroTik switch health monitor (read-only, diagnostic; conditional on AEGIS_SWITCH_URL)
+    if settings.AEGIS_SWITCH_URL:
+        try:
+            from app.services.switch_monitor import switch_monitor
+            await switch_monitor.start()
+        except Exception as e:
+            logger.error(f"Switch monitor failed to start (non-fatal): {e}")
+
     # Start honeypots (SSH on 2222, HTTP on 8888)
-    honeypot_queue = asyncio.Queue()
+    # Bounded: one processor drains this serially (up to seconds per item), so
+    # a flood on the honeypots must drop interactions, not grow the heap.
+    honeypot_queue = asyncio.Queue(maxsize=5000)
     try:
         await ssh_honeypot.start(honeypot_queue)
         logger.info('SSH honeypot started on port 2222')
@@ -834,6 +848,12 @@ async def lifespan(app: FastAPI):
         await retention_service.stop()
     except Exception:
         pass
+    if settings.AEGIS_SWITCH_URL:
+        try:
+            from app.services.switch_monitor import switch_monitor as _switch_monitor
+            await _switch_monitor.stop()
+        except Exception:
+            pass
     scheduled_scanner.stop()
     await log_watcher.stop()
     _als_task = getattr(app.state, 'attack_log_sweeper_task', None)
@@ -888,7 +908,7 @@ async def lifespan(app: FastAPI):
 # --- App ---
 
 # --- Rate limiter (shared instance used by route decorators) ---
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=rate_limit_key)
 
 app = FastAPI(
     title="Cayde-6 Defense Platform",
@@ -961,6 +981,7 @@ app.include_router(payments_router.router, prefix="/api/v1")
 app.include_router(compliance_router.router, prefix="/api/v1")
 app.include_router(updates_router.router, prefix="/api/v1")
 app.include_router(firewall_router.router, prefix="/api/v1")
+app.include_router(switch_router.router, prefix="/api/v1")
 app.include_router(rules_router.router, prefix="/api/v1")
 app.include_router(ransomware_router.router, prefix="/api/v1")
 app.include_router(deception_router.router, prefix="/api/v1")
@@ -976,9 +997,19 @@ app.include_router(admin.router, prefix="/api/v1")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # Accept query param for client identification
-    client_id = websocket.query_params.get("client_id", "anonymous")
-    ws_client = await ws_push_manager.connect(websocket, client_id)
+    # HTTP middleware never sees this scope: enforce blocklist and auth here.
+    from app.core import ws_auth
+    if ws_auth.websocket_ip_is_blocked(websocket):
+        await websocket.close(code=ws_auth.CLOSE_FORBIDDEN)
+        return
+    await websocket.accept()
+    identity = await ws_auth.authenticate_websocket(websocket, async_session)
+    if identity is None:
+        return
+    # The query param is only a display label; identity comes from the credential.
+    label = websocket.query_params.get("client_id") or identity.label
+    ws_client = await ws_push_manager.register(websocket, label[:64], identity.tenant_id)
+    await websocket.send_json({"type": "auth_ok"})
     try:
         while True:
             data = await websocket.receive_text()
@@ -1059,7 +1090,7 @@ async def api_health():
 # --- Pipeline stats endpoint ---
 
 @app.get("/api/v1/pipeline/stats")
-async def pipeline_stats():
+async def pipeline_stats(_auth=Depends(_require_viewer)):
     from app.services.ai_engine import ai_engine
     return {
         "event_bus": event_bus.stats(),

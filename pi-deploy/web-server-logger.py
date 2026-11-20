@@ -431,6 +431,23 @@ class ProxyLoggingHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": "Proxy error", "details": str(e)}).encode())
 
+    def _safe_local_path(self):
+        """Map the request path to a file INSIDE the served directory.
+
+        http.server does not normalise self.path, so "/assets/../../etc/x-y"
+        reached open() as a relative path that walks out of the docroot.
+        Returns None for anything that resolves outside it.
+        """
+        from urllib.parse import unquote, urlsplit
+        raw = unquote(urlsplit(self.path).path)
+        if '\x00' in raw:
+            return None
+        root = os.path.realpath(os.getcwd())
+        candidate = os.path.realpath(os.path.join(root, raw.lstrip('/')))
+        if candidate != root and not candidate.startswith(root + os.sep):
+            return None
+        return candidate
+
     def do_GET(self):
         if self.is_api_request():
             self.proxy_request('GET')
@@ -452,8 +469,11 @@ class ProxyLoggingHandler(http.server.SimpleHTTPRequestHandler):
                 return
             # Long cache for hashed assets (1 year)
             if '/assets/' in self.path and ('-' in self.path.split('/')[-1]):
+                file_path = self._safe_local_path()
+                if file_path is None or not os.path.isfile(file_path):
+                    self.send_error(404)
+                    return
                 self.send_response(200)
-                file_path = self.path.lstrip('/')
                 ext = os.path.splitext(file_path)[1]
                 content_type = self.extensions_map.get(ext, 'application/octet-stream')
                 self.send_header('Content-Type', content_type)
@@ -467,7 +487,10 @@ class ProxyLoggingHandler(http.server.SimpleHTTPRequestHandler):
                 return
             # No-cache for HTML (index.html, /) to force iOS PWA updates
             if self.path == '/' or self.path.endswith('.html'):
-                file_path = 'index.html' if self.path == '/' else self.path.lstrip('/')
+                file_path = 'index.html' if self.path == '/' else self._safe_local_path()
+                if file_path is None or not os.path.isfile(file_path):
+                    self.send_error(404)
+                    return
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')

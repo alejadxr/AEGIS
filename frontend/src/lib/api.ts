@@ -45,6 +45,30 @@ export function hasAuth(): boolean {
   return hasApiKey() || hasJwtToken();
 }
 
+/** Absolute URL of an API path such as "/ransomware/stats". A relative
+ *  "/api/v1/..." fetch hits the Next.js server, which has no such route. */
+export function apiUrl(path: string): string {
+  return `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+/** Credential headers for a hand-written fetch: JWT first, else the API key. */
+export function authHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const token = getJwtToken();
+  if (token) return { Authorization: `Bearer ${token}` };
+  const key = getApiKey();
+  return key ? { 'X-API-Key': key } : {};
+}
+
+/** Where to go after login. Only same-site paths: "?next=https://evil" or
+ *  "?next=//evil" would otherwise turn the login page into an open redirect. */
+export function safeNextPath(raw: string | null | undefined, fallback = '/dashboard'): string {
+  if (!raw || typeof raw !== 'string') return fallback;
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return fallback;
+  if (/[\u0000-\u001f\\]/.test(raw)) return fallback;
+  return raw;
+}
+
 // Track whether we are already redirecting to avoid loops
 let _isRedirectingToLogin = false;
 
