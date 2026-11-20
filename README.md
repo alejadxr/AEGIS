@@ -36,7 +36,7 @@ Set `AEGIS_AI_MODE=disabled` and the entire stack runs on deterministic rules an
 ```bash
 git clone https://github.com/alejadxr/AEGIS.git && cd AEGIS
 docker compose up -d
-# Dashboard: http://localhost:3007 · API: http://localhost:8000
+# Dashboard: http://localhost:3000 · API: http://localhost:8000
 ```
 
 ---
@@ -240,13 +240,13 @@ cd AEGIS
 
 # Configure
 cp .env.example .env
-# Edit .env — set AEGIS_SECRET_KEY and POSTGRES_PASSWORD at minimum
+# Edit .env — set AEGIS_SECRET_KEY, AEGIS_ADMIN_PASSWORD and POSTGRES_PASSWORD at minimum
 # OPENROUTER_API_KEY is optional; omit it and AEGIS runs fully offline
 
 # Launch
 docker compose up -d
 
-# Dashboard at http://localhost:3007
+# Dashboard at http://localhost:3000
 # API at http://localhost:8000
 ```
 
@@ -257,7 +257,7 @@ No default credentials. The setup wizard at `/setup` walks you through creating 
 | Container | Port | Purpose |
 |---|---|---|
 | `aegis-api` | 8000 | FastAPI backend (140+ endpoints, 25 API routers) |
-| `aegis-frontend` | 3007 | Next.js 14 dashboard (21 pages, real-time WebSocket) |
+| `aegis-frontend` | 3000 | Next.js 14 dashboard (21 pages, real-time WebSocket) |
 | `aegis-db` | 5432 | PostgreSQL 16 |
 
 ### Manual Installation
