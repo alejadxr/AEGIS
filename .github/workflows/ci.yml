@@ -121,4 +121,17 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Verify compose config
+        # The compose file refuses to render without these two secrets (it has
+        # no defaults on purpose). CI only validates the file, so throwaway
+        # values are enough; they are never used to start anything.
+        env:
+          AEGIS_SECRET_KEY: ci-placeholder-not-a-secret
+          AEGIS_ADMIN_PASSWORD: ci-placeholder-not-a-secret
         run: docker compose config --quiet
+
+      - name: Compose must refuse to render without its secrets
+        run: |
+          if docker compose config --quiet 2>/dev/null; then
+            echo "docker-compose.yml rendered without AEGIS_SECRET_KEY / AEGIS_ADMIN_PASSWORD" >&2
+            exit 1
+          fi
