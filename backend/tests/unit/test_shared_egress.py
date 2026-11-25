@@ -358,3 +358,17 @@ def test_pi_honeypot_still_blocks_normal_ip(monkeypatch, tmp_path):
     monkeypatch.setattr(mod.urllib.request, "urlopen", lambda *a, **k: posted.append(a) or _R())
     mod._block_ip(NORMAL, "GET /.env")
     assert len(posted) == 1
+
+
+# WARP also egresses over IPv6; these three were blocked as attackers on 2026-11-25.
+@pytest.mark.parametrize("ip", ["2a09:bac5:484:1028::19c:5f", "2a09:bac1:6160:8::78:2c",
+                                "2a09:bac5:514b:4b4::78:38", "2606:54c1:10::1"])
+def test_warp_ipv6_is_shared_egress(ip):
+    from app.core.attack_detector import is_shared_egress
+    assert is_shared_egress(ip) is True
+
+
+@pytest.mark.parametrize("ip", ["2a06:98c0:3600::103", "2a09:bac8::1", "2606:4700::1111", "2001:db8::1"])
+def test_other_cloudflare_and_unrelated_ipv6_are_not(ip):
+    from app.core.attack_detector import is_shared_egress
+    assert is_shared_egress(ip) is False
