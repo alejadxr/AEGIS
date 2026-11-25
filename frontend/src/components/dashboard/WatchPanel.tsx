@@ -186,7 +186,7 @@ function EnforcementRegion({
       )}
 
       <div className="mt-4 flex flex-col gap-2">
-        <StatusLine label="Pi executor" state={piReachable} trueText="reachable" falseText="unreachable" />
+        <StatusLine label="Firewall agent" state={piReachable} trueText="reachable" falseText="unreachable" />
         <StatusLine label="System firewall" state={realFirewallActive} trueText="active" falseText="inactive" />
       </div>
 

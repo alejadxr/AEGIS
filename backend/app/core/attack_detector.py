@@ -345,6 +345,14 @@ _SHARED_EGRESS_NETWORKS: list = [
     _ipaddress.ip_network(_cidr)
     for _cidr in (
         "104.28.0.0/16",    # Cloudflare WARP consumer egress (see evidence above)
+        # WARP over IPv6. Same three facts as the IPv4 range, checked against
+        # the same sources on 2026-11-25: absent from the published proxy
+        # ranges (https://www.cloudflare.com/ips-v6), and present in the geofeed
+        # as tens of thousands of per-/64 entries with per-city geolocation
+        # (2a09:bac0..bac6 and 2606:54c0, 54c1, 54c3). AEGIS had blocked several
+        # 2a09:bac1/bac5 addresses as ordinary attackers.
+        "2a09:bac0::/29",
+        "2606:54c0::/30",
     )
 ]
 

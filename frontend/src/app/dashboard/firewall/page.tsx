@@ -170,7 +170,7 @@ export default function FirewallPage() {
   };
 
   const handleUnblock = async (ip: string) => {
-    if (!confirm(`Unblock ${ip}? This will remove it from the Pi iptables chain and local 403 middleware.`)) return;
+    if (!confirm(`Unblock ${ip}? This will remove it from the firewall agent and the local 403 middleware.`)) return;
     setUnblockingIP(ip);
     setBlockError(null);
     try {
@@ -344,11 +344,11 @@ export default function FirewallPage() {
           <div>
             <h2 className="text-[16px] font-semibold text-foreground">Active IP Blocks</h2>
             <p className="text-[12px] text-muted-foreground mt-0.5">
-              Real-time enforcement — Pi iptables AEGIS_BLOCK chain + local 403 middleware
+              Real-time enforcement — firewall agent (iptables) + local 403 middleware
               {firewallStats && (
                 <span className={cn('ml-2 text-[11px] font-mono px-1.5 py-0.5 rounded', firewallStats.pi_reachable ? 'text-[var(--success)]' : 'text-[var(--danger)]')}
                   style={{ backgroundColor: firewallStats.pi_reachable ? 'color-mix(in oklab,var(--success) 10%,transparent)' : 'color-mix(in oklab,var(--danger) 10%,transparent)' }}>
-                  {firewallStats.pi_reachable ? 'Pi online' : 'Pi unreachable'}
+                  {firewallStats.pi_reachable ? 'Firewall agent online' : 'Firewall agent unreachable'}
                 </span>
               )}
             </p>
@@ -531,9 +531,9 @@ function extractAction(yaml: string): string | null {
 
 function SourceBadge({ source }: { source: 'pi' | 'local' | 'pi+local' }) {
   const config = {
-    'pi': { label: 'Pi iptables', color: 'var(--brand-accent)' },
+    'pi': { label: 'Firewall agent', color: 'var(--brand-accent)' },
     'local': { label: 'Local 403', color: 'var(--warning)' },
-    'pi+local': { label: 'Pi + Local', color: 'var(--danger)' },
+    'pi+local': { label: 'Agent + Local', color: 'var(--danger)' },
   }[source];
 
   return (

@@ -751,6 +751,49 @@ class AIDecisionEngine:
 
         return result
 
+    @staticmethod
+    def _threat_label_grounded(alert_data: dict, triage: dict, threat_type: str) -> Optional[str]:
+        """What, besides a model's say-so, supports `threat_type`? None if nothing.
+
+        Triage may come from an LLM, which reads attacker-written text and
+        sometimes just guesses. Its label confirms a block only when it agrees
+        with deterministic evidence already on the alert.
+        """
+        prov = triage.get("_provenance") if isinstance(triage, dict) else None
+        if not (isinstance(prov, dict) and prov.get("kind") == "agent"):
+            return "deterministic_triage"
+
+        event = alert_data.get("triggering_event")
+        event = event if isinstance(event, dict) else {}
+
+        # The detector itself named this class.
+        for own in (alert_data.get("threat_type"), event.get("threat_type"), event.get("pattern_name")):
+            if own and normalize_threat_type(own) == threat_type:
+                return "detector_agrees"
+        rule_id = alert_data.get("rule_id") or alert_data.get("pattern") or ""
+        if SIGMA_TO_THREAT_TYPE.get(rule_id) == threat_type:
+            return "rule_maps_to_class"
+
+        # The rules that fired are exploit-class in block_policy's own table.
+        try:
+            from app.services import block_policy
+            from app.services.block_ttl import collect_rule_ids
+            cls = block_policy.classify(reason=None, rule_ids=collect_rule_ids(alert_data), threat_type=None)
+            if cls.kind == block_policy.CONFIRMED:
+                return f"confirmed_rule:{cls.matched}"
+        except Exception:
+            pass
+
+        # "Honeypot" means the event came from a honeypot, not that a model
+        # thought the request looked like reconnaissance.
+        if threat_type == "honeypot_recon":
+            origin = " ".join(str(v) for v in (
+                alert_data.get("source"), event.get("source"), alert_data.get("event_type"),
+                event.get("event_type"), alert_data.get("honeypot_id"), event.get("honeypot_id"),
+            ) if v).lower()
+            return "honeypot_source" if "honeypot" in origin else None
+        return None
+
     def _alert_block_confirmed(
         self, alert_data: dict, triage: dict, threat_type: str,
     ) -> tuple[bool, str]:
@@ -806,7 +849,15 @@ class AIDecisionEngine:
             "honeypot_recon",
         }
         if threat_type in exploit_threat_types:
-            return True, f"confirmed_exploit:{threat_type}"
+            # A class name is evidence only when something other than a model
+            # stands behind it. An LLM called one ordinary POST /graphql from
+            # the operator's own office "honeypot_recon", and that word alone
+            # made the block permanent.
+            grounded = self._threat_label_grounded(alert_data, triage, threat_type)
+            if grounded:
+                return True, f"confirmed_exploit:{threat_type}({grounded})"
+            # Not grounded: fall through. It can still be confirmed by a rule id
+            # or by severity below; otherwise the block is provisional.
 
         # Also honor explicit sigma rule ids carried on the alert.
         pattern = alert_data.get("pattern") or alert_data.get("rule_id") or ""

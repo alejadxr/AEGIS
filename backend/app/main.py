@@ -789,6 +789,13 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error(f"retention service failed to start: {exc}")
 
+    # Own public address: never an attacker, and dynamic, so re-checked on a timer.
+    try:
+        from app.services import own_egress
+        await own_egress.start()
+    except Exception as exc:
+        logger.error(f"own-egress safelist failed to start: {exc}")
+
     # Start host self-monitor (EDR telemetry via psutil — no external agent needed)
     try:
         await host_monitor.start()

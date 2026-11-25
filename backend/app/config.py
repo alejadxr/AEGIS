@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     # true only for a deliberately multi-tenant deployment behind its own
     # access control.
     AEGIS_ALLOW_SIGNUP: bool = False
+    # Keep this install's own public (egress) address in the internal safelist,
+    # re-checked every 10 minutes because most ISP addresses are dynamic. Turn
+    # off on a host whose egress is a shared proxy. The lookup URLs must answer
+    # with the caller's IP as plain text.
+    AEGIS_OWN_EGRESS_SAFELIST: bool = True
+    AEGIS_OWN_EGRESS_URLS: str = ""
     # Node-facing routes (/nodes/heartbeat, /events, /report-assets). Agents
     # built before the per-node token was sent on these routes present no
     # credential, so the default stays compatible. Once every agent is on a
