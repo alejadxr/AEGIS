@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.34] - 2026-11-25
+
+### Added — the whole platform on one machine
+- **The firewall agent now ships in the Docker Compose stack** (`aegis-firewall`).
+  Until now network-level blocking needed the agent on a separate gateway, a
+  Raspberry Pi in the reference deployment, so a `docker compose up` install
+  enforced nothing beyond the API's own 403 responses. The in-stack agent uses
+  the host's network namespace and `NET_ADMIN` to block in the host's INPUT and
+  FORWARD chains, listens only on the stack network's gateway address, refuses
+  to start without `AEGIS_FIREWALL_SECRET`, and picks the iptables backend the
+  host already uses (nft or legacy). A separate gateway is still supported:
+  set `AEGIS_FIREWALL_URL` and stop the in-stack agent. Network-level blocking
+  needs Linux; Docker Desktop on macOS or Windows can only filter inside its VM.
+- AEGIS looks up its own public address every 10 minutes and keeps it in the
+  internal safelist (`AEGIS_OWN_EGRESS_SAFELIST`, on by default). Most ISP
+  addresses are dynamic, so a static safelist entry goes stale without notice.
+- CI runs the agent image the way Compose does on a Linux runner and checks the
+  host's iptables.
+
+### Fixed
+- **A model's label could make a block permanent.** One ordinary request that
+  matched a low-severity rule was labelled "honeypot_recon" by the triage model
+  and blocked for good, although it never touched a honeypot; the address was
+  the operator's own office. A class named by a model now confirms a block
+  only when deterministic evidence agrees. Otherwise the block is provisional
+  and expires.
+- Cloudflare WARP over IPv6 (`2a09:bac0::/29`, `2606:54c0::/30`) is now treated
+  as shared egress, like the IPv4 range: detected and raised, never
+  auto-blocked.
+- `scripts/install.sh` did not generate `AEGIS_ADMIN_PASSWORD` or the firewall
+  secret, so the stack it produced could not start. `.env.example` lacked both.
+- `robots.txt` and `sitemap.xml` pointed at an unfilled placeholder host.
+
+### Changed
+- New landing page, with figures taken from the repository.
+- Dashboard wording says "firewall agent" where it assumed a Raspberry Pi.
+
+### Upgrade notes
+- Docker Compose now requires `AEGIS_FIREWALL_SECRET` in `.env`
+  (`openssl rand -hex 32`). Add your own public IP to `AEGIS_SAFE_IPS`.
+- The stack's network now has a fixed subnet (`172.30.42.0/24`, override with
+  `AEGIS_DOCKER_SUBNET` and `AEGIS_DOCKER_GATEWAY`); recreate it with
+  `docker compose down && docker compose up -d`.
+
+---
+
 ## [1.7.33] - 2026-11-20
 
 Security release. A static audit of the whole codebase, carried out with Claude
